@@ -16,6 +16,16 @@ func RunQueriesPath() string {
 	return "/api/v1/queries/run"
 }
 
+// StatStatementsQueriesPath returns the URL path to the queries service stat_statements HTTP endpoint.
+func StatStatementsQueriesPath() string {
+	return "/api/v1/queries/stats"
+}
+
+// ExplainPlanQueriesPath returns the URL path to the queries service explain_plan HTTP endpoint.
+func ExplainPlanQueriesPath() string {
+	return "/api/v1/queries/explain"
+}
+
 // ListSavedQueriesPath returns the URL path to the queries service list_saved HTTP endpoint.
 func ListSavedQueriesPath() string {
 	return "/api/v1/queries/saved"

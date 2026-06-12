@@ -414,7 +414,7 @@ function ReportList() {
           <CardContent className="py-16 text-center space-y-4">
             <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">No reports yet. Run a query and click Generate Report.</p>
-            <Link to="/query" className={cn(buttonVariants())}>Run a query</Link>
+            <Link to="/query" className={cn(buttonVariants(), "!text-white hover:!text-white dark:!text-black dark:hover:!text-black")}>Run a query</Link>
           </CardContent>
         </Card>
       ) : (

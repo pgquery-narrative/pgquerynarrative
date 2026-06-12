@@ -25,6 +25,17 @@ type RunRequestBody struct {
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 }
 
+// ExplainPlanRequestBody is the type of the "queries" service "explain_plan"
+// endpoint HTTP request body.
+type ExplainPlanRequestBody struct {
+	// Read-only SQL to explain (SELECT or WITH)
+	SQL *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	// When true, run EXPLAIN (ANALYZE, FORMAT JSON) instead of estimate-only
+	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+	// Optional connection ID; defaults to server default connection
+	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+}
+
 // SaveRequestBody is the type of the "queries" service "save" endpoint HTTP
 // request body.
 type SaveRequestBody struct {
@@ -53,6 +64,30 @@ type RunResponseBody struct {
 	PeriodCurrentLabel *string `form:"period_current_label,omitempty" json:"period_current_label,omitempty" xml:"period_current_label,omitempty"`
 	// Label for previous period
 	PeriodPreviousLabel *string `form:"period_previous_label,omitempty" json:"period_previous_label,omitempty" xml:"period_previous_label,omitempty"`
+}
+
+// StatStatementsResponseBody is the type of the "queries" service
+// "stat_statements" endpoint HTTP response body.
+type StatStatementsResponseBody struct {
+	Items []*StatStatementRowResponseBody `form:"items" json:"items" xml:"items"`
+	// Sort key used: total_time, mean_time, or calls
+	OrderBy string `form:"order_by" json:"order_by" xml:"order_by"`
+	Limit   int32  `form:"limit" json:"limit" xml:"limit"`
+}
+
+// ExplainPlanResponseBody is the type of the "queries" service "explain_plan"
+// endpoint HTTP response body.
+type ExplainPlanResponseBody struct {
+	// The inner read-only SQL that was explained
+	SQL string `form:"sql" json:"sql" xml:"sql"`
+	// Estimated total cost from the root plan node
+	TotalCost float64 `form:"total_cost" json:"total_cost" xml:"total_cost"`
+	// Raw EXPLAIN (FORMAT JSON) output
+	Plan any `form:"plan" json:"plan" xml:"plan"`
+	// Notable plan nodes (seq scans, high-cost operators)
+	Findings []*PlanFindingResponseBody `form:"findings" json:"findings" xml:"findings"`
+	// Time to run EXPLAIN and parse the plan
+	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
 }
 
 // ListSavedResponseBody is the type of the "queries" service "list_saved"
@@ -92,6 +127,23 @@ type GetSavedResponseBody struct {
 // RunValidationErrorResponseBody is the type of the "queries" service "run"
 // endpoint HTTP response body for the "validation_error" error.
 type RunValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// StatStatementsValidationErrorResponseBody is the type of the "queries"
+// service "stat_statements" endpoint HTTP response body for the
+// "validation_error" error.
+type StatStatementsValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// ExplainPlanValidationErrorResponseBody is the type of the "queries" service
+// "explain_plan" endpoint HTTP response body for the "validation_error" error.
+type ExplainPlanValidationErrorResponseBody struct {
 	Name    string  `form:"name" json:"name" xml:"name"`
 	Message string  `form:"message" json:"message" xml:"message"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -144,6 +196,38 @@ type PeriodComparisonItemResponseBody struct {
 	ChangePercentage *float64 `form:"change_percentage,omitempty" json:"change_percentage,omitempty" xml:"change_percentage,omitempty"`
 	// up, down, or flat
 	Trend string `form:"trend" json:"trend" xml:"trend"`
+}
+
+// StatStatementRowResponseBody is used to define fields on response body types.
+type StatStatementRowResponseBody struct {
+	// Normalized query identifier when available
+	Queryid *string `form:"queryid,omitempty" json:"queryid,omitempty" xml:"queryid,omitempty"`
+	// Query text (truncated)
+	Query string `form:"query" json:"query" xml:"query"`
+	// Number of times executed
+	Calls int64 `form:"calls" json:"calls" xml:"calls"`
+	// Total execution time in milliseconds
+	TotalTimeMs float64 `form:"total_time_ms" json:"total_time_ms" xml:"total_time_ms"`
+	// Mean execution time per call in milliseconds
+	MeanTimeMs float64 `form:"mean_time_ms" json:"mean_time_ms" xml:"mean_time_ms"`
+	// Total rows retrieved or affected
+	Rows int64 `form:"rows" json:"rows" xml:"rows"`
+}
+
+// PlanFindingResponseBody is used to define fields on response body types.
+type PlanFindingResponseBody struct {
+	// PostgreSQL plan node type (e.g. Seq Scan)
+	NodeType string `form:"node_type" json:"node_type" xml:"node_type"`
+	// Schema name when the node scans a relation
+	Schema *string `form:"schema,omitempty" json:"schema,omitempty" xml:"schema,omitempty"`
+	// Relation name when applicable
+	Relation *string `form:"relation,omitempty" json:"relation,omitempty" xml:"relation,omitempty"`
+	// Planner cost for this node
+	EstimatedCost *float64 `form:"estimated_cost,omitempty" json:"estimated_cost,omitempty" xml:"estimated_cost,omitempty"`
+	// True when the node is a sequential scan
+	IsSeqScan bool `form:"is_seq_scan" json:"is_seq_scan" xml:"is_seq_scan"`
+	// Human-readable summary and optional index hint
+	Message string `form:"message" json:"message" xml:"message"`
 }
 
 // SavedQueryResponseBody is used to define fields on response body types.
@@ -210,6 +294,52 @@ func NewRunResponseBody(res *queries.RunQueryResult) *RunResponseBody {
 			}
 			body.PeriodComparison[i] = marshalQueriesPeriodComparisonItemToPeriodComparisonItemResponseBody(val)
 		}
+	}
+	return body
+}
+
+// NewStatStatementsResponseBody builds the HTTP response body from the result
+// of the "stat_statements" endpoint of the "queries" service.
+func NewStatStatementsResponseBody(res *queries.StatStatementsResult) *StatStatementsResponseBody {
+	body := &StatStatementsResponseBody{
+		OrderBy: res.OrderBy,
+		Limit:   res.Limit,
+	}
+	if res.Items != nil {
+		body.Items = make([]*StatStatementRowResponseBody, len(res.Items))
+		for i, val := range res.Items {
+			if val == nil {
+				body.Items[i] = nil
+				continue
+			}
+			body.Items[i] = marshalQueriesStatStatementRowToStatStatementRowResponseBody(val)
+		}
+	} else {
+		body.Items = []*StatStatementRowResponseBody{}
+	}
+	return body
+}
+
+// NewExplainPlanResponseBody builds the HTTP response body from the result of
+// the "explain_plan" endpoint of the "queries" service.
+func NewExplainPlanResponseBody(res *queries.ExplainQueryResult) *ExplainPlanResponseBody {
+	body := &ExplainPlanResponseBody{
+		SQL:             res.SQL,
+		TotalCost:       res.TotalCost,
+		Plan:            res.Plan,
+		ExecutionTimeMs: res.ExecutionTimeMs,
+	}
+	if res.Findings != nil {
+		body.Findings = make([]*PlanFindingResponseBody, len(res.Findings))
+		for i, val := range res.Findings {
+			if val == nil {
+				body.Findings[i] = nil
+				continue
+			}
+			body.Findings[i] = marshalQueriesPlanFindingToPlanFindingResponseBody(val)
+		}
+	} else {
+		body.Findings = []*PlanFindingResponseBody{}
 	}
 	return body
 }
@@ -289,6 +419,28 @@ func NewRunValidationErrorResponseBody(res *queries.ValidationError) *RunValidat
 	return body
 }
 
+// NewStatStatementsValidationErrorResponseBody builds the HTTP response body
+// from the result of the "stat_statements" endpoint of the "queries" service.
+func NewStatStatementsValidationErrorResponseBody(res *queries.ValidationError) *StatStatementsValidationErrorResponseBody {
+	body := &StatStatementsValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewExplainPlanValidationErrorResponseBody builds the HTTP response body from
+// the result of the "explain_plan" endpoint of the "queries" service.
+func NewExplainPlanValidationErrorResponseBody(res *queries.ValidationError) *ExplainPlanValidationErrorResponseBody {
+	body := &ExplainPlanValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
 // NewGetSavedNotFoundResponseBody builds the HTTP response body from the
 // result of the "get_saved" endpoint of the "queries" service.
 func NewGetSavedNotFoundResponseBody(res *queries.NotFoundError) *GetSavedNotFoundResponseBody {
@@ -322,6 +474,34 @@ func NewRunQueryPayload(body *RunRequestBody) *queries.RunQueryPayload {
 	}
 	if body.Limit == nil {
 		v.Limit = 100
+	}
+
+	return v
+}
+
+// NewStatStatementsPayload builds a queries service stat_statements endpoint
+// payload.
+func NewStatStatementsPayload(orderBy string, limit int32, connectionID *string) *queries.StatStatementsPayload {
+	v := &queries.StatStatementsPayload{}
+	v.OrderBy = orderBy
+	v.Limit = limit
+	v.ConnectionID = connectionID
+
+	return v
+}
+
+// NewExplainPlanExplainQueryPayload builds a queries service explain_plan
+// endpoint payload.
+func NewExplainPlanExplainQueryPayload(body *ExplainPlanRequestBody) *queries.ExplainQueryPayload {
+	v := &queries.ExplainQueryPayload{
+		SQL:          *body.SQL,
+		ConnectionID: body.ConnectionID,
+	}
+	if body.Analyze != nil {
+		v.Analyze = *body.Analyze
+	}
+	if body.Analyze == nil {
+		v.Analyze = false
 	}
 
 	return v
@@ -398,6 +578,28 @@ func ValidateRunRequestBody(body *RunRequestBody) (err error) {
 	if body.Limit != nil {
 		if *body.Limit > 1000 {
 			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", *body.Limit, 1000, false))
+		}
+	}
+	return
+}
+
+// ValidateExplainPlanRequestBody runs the validations defined on
+// explain_plan_request_body
+func ValidateExplainPlanRequestBody(body *ExplainPlanRequestBody) (err error) {
+	if body.SQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
+	}
+	if body.SQL != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+$"))
+	}
+	if body.SQL != nil {
+		if utf8.RuneCountInString(*body.SQL) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", *body.SQL, utf8.RuneCountInString(*body.SQL), 1, true))
+		}
+	}
+	if body.SQL != nil {
+		if utf8.RuneCountInString(*body.SQL) > 10000 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", *body.SQL, utf8.RuneCountInString(*body.SQL), 10000, false))
 		}
 	}
 	return

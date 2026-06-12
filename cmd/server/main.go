@@ -228,11 +228,12 @@ func metricsHandler(client *narrative.Client) http.HandlerFunc {
 	}
 }
 
-// settingsHandler returns read-only analytics and metrics configuration (env-driven). Used by Settings UI.
+// settingsHandler returns read-only analytics, LLM, and embedding configuration (env-driven). Used by Settings UI.
 func settingsHandler(cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		embEnabled := cfg.Embedding.BaseURL != "" && cfg.Embedding.Model != ""
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"analytics": map[string]interface{}{
 				"anomaly_sigma":               cfg.Metrics.AnomalySigma,
@@ -247,6 +248,17 @@ func settingsHandler(cfg config.Config) http.HandlerFunc {
 				"max_seasonal_lag":            cfg.Metrics.MaxSeasonalLag,
 				"min_periods_for_seasonality": cfg.Metrics.MinPeriodsForSeasonality,
 				"max_timeseries_periods":      cfg.Metrics.MaxTimeSeriesPeriods,
+			},
+			"llm": map[string]interface{}{
+				"provider":           cfg.LLM.Provider,
+				"model":              cfg.LLM.Model,
+				"base_url":           cfg.LLM.BaseURL,
+				"api_key_configured": cfg.LLM.APIKey != "",
+			},
+			"embedding": map[string]interface{}{
+				"enabled":  embEnabled,
+				"base_url": cfg.Embedding.BaseURL,
+				"model":    cfg.Embedding.Model,
 			},
 		})
 	}

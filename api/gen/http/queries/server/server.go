@@ -18,12 +18,14 @@ import (
 
 // Server lists the queries service endpoint HTTP handlers.
 type Server struct {
-	Mounts      []*MountPoint
-	Run         http.Handler
-	ListSaved   http.Handler
-	Save        http.Handler
-	GetSaved    http.Handler
-	DeleteSaved http.Handler
+	Mounts         []*MountPoint
+	Run            http.Handler
+	StatStatements http.Handler
+	ExplainPlan    http.Handler
+	ListSaved      http.Handler
+	Save           http.Handler
+	GetSaved       http.Handler
+	DeleteSaved    http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -54,16 +56,20 @@ func New(
 	return &Server{
 		Mounts: []*MountPoint{
 			{"Run", "POST", "/api/v1/queries/run"},
+			{"StatStatements", "GET", "/api/v1/queries/stats"},
+			{"ExplainPlan", "POST", "/api/v1/queries/explain"},
 			{"ListSaved", "GET", "/api/v1/queries/saved"},
 			{"Save", "POST", "/api/v1/queries/saved"},
 			{"GetSaved", "GET", "/api/v1/queries/saved/{id}"},
 			{"DeleteSaved", "DELETE", "/api/v1/queries/saved/{id}"},
 		},
-		Run:         NewRunHandler(e.Run, mux, decoder, encoder, errhandler, formatter),
-		ListSaved:   NewListSavedHandler(e.ListSaved, mux, decoder, encoder, errhandler, formatter),
-		Save:        NewSaveHandler(e.Save, mux, decoder, encoder, errhandler, formatter),
-		GetSaved:    NewGetSavedHandler(e.GetSaved, mux, decoder, encoder, errhandler, formatter),
-		DeleteSaved: NewDeleteSavedHandler(e.DeleteSaved, mux, decoder, encoder, errhandler, formatter),
+		Run:            NewRunHandler(e.Run, mux, decoder, encoder, errhandler, formatter),
+		StatStatements: NewStatStatementsHandler(e.StatStatements, mux, decoder, encoder, errhandler, formatter),
+		ExplainPlan:    NewExplainPlanHandler(e.ExplainPlan, mux, decoder, encoder, errhandler, formatter),
+		ListSaved:      NewListSavedHandler(e.ListSaved, mux, decoder, encoder, errhandler, formatter),
+		Save:           NewSaveHandler(e.Save, mux, decoder, encoder, errhandler, formatter),
+		GetSaved:       NewGetSavedHandler(e.GetSaved, mux, decoder, encoder, errhandler, formatter),
+		DeleteSaved:    NewDeleteSavedHandler(e.DeleteSaved, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -73,6 +79,8 @@ func (s *Server) Service() string { return "queries" }
 // Use wraps the server handlers with the given middleware.
 func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Run = m(s.Run)
+	s.StatStatements = m(s.StatStatements)
+	s.ExplainPlan = m(s.ExplainPlan)
 	s.ListSaved = m(s.ListSaved)
 	s.Save = m(s.Save)
 	s.GetSaved = m(s.GetSaved)
@@ -85,6 +93,8 @@ func (s *Server) MethodNames() []string { return queries.MethodNames[:] }
 // Mount configures the mux to serve the queries endpoints.
 func Mount(mux goahttp.Muxer, h *Server) {
 	MountRunHandler(mux, h.Run)
+	MountStatStatementsHandler(mux, h.StatStatements)
+	MountExplainPlanHandler(mux, h.ExplainPlan)
 	MountListSavedHandler(mux, h.ListSaved)
 	MountSaveHandler(mux, h.Save)
 	MountGetSavedHandler(mux, h.GetSaved)
@@ -126,6 +136,112 @@ func NewRunHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "run")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "queries")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountStatStatementsHandler configures the mux to serve the "queries" service
+// "stat_statements" endpoint.
+func MountStatStatementsHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/api/v1/queries/stats", f)
+}
+
+// NewStatStatementsHandler creates a HTTP handler which loads the HTTP request
+// and calls the "queries" service "stat_statements" endpoint.
+func NewStatStatementsHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeStatStatementsRequest(mux, decoder)
+		encodeResponse = EncodeStatStatementsResponse(encoder)
+		encodeError    = EncodeStatStatementsError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "stat_statements")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "queries")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountExplainPlanHandler configures the mux to serve the "queries" service
+// "explain_plan" endpoint.
+func MountExplainPlanHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/api/v1/queries/explain", f)
+}
+
+// NewExplainPlanHandler creates a HTTP handler which loads the HTTP request
+// and calls the "queries" service "explain_plan" endpoint.
+func NewExplainPlanHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeExplainPlanRequest(mux, decoder)
+		encodeResponse = EncodeExplainPlanResponse(encoder)
+		encodeError    = EncodeExplainPlanError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "explain_plan")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "queries")
 		payload, err := decodeRequest(r)
 		if err != nil {

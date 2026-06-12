@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	queriesapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	reportsapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
-	queriesapi "github.com/pgquerynarrative/pgquerynarrative/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
 )
 
@@ -69,7 +69,7 @@ func (s *SchedulesService) Create(ctx context.Context, payload *schedules.Schedu
 		INSERT INTO app.schedules (name, saved_query_id, sql, connection_id, cron_expr, destination_type, destination_target, enabled, next_run_at)
 		VALUES ($1, $2, NULLIF($3, ''), COALESCE(NULLIF($4, ''), 'default'), $5, $6, $7, COALESCE($8, true), $9)
 		RETURNING id
-	`, payload.Name, payload.SavedQueryID, strings.TrimSpace(payload.SQL), payload.ConnectionID, payload.CronExpr, payload.DestinationType, payload.DestinationTarget, payload.Enabled, nextRunAt).Scan(&id)
+	`, payload.Name, payload.SavedQueryID, strings.TrimSpace(ptrString(payload.SQL)), payload.ConnectionID, payload.CronExpr, payload.DestinationType, payload.DestinationTarget, payload.Enabled, nextRunAt).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -82,13 +82,13 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 		return nil, err
 	}
 	in := &schedules.ScheduleInput{
-		Name:              firstNonEmpty(payload.Name, current.Name),
+		Name:              firstNonBlank(payload.Name, current.Name),
 		SavedQueryID:      coalesceStrPtr(payload.SavedQueryID, current.SavedQueryID),
-		SQL:               firstNonEmpty(payload.SQL, ptrString(current.SQL)),
-		ConnectionID:      firstNonEmpty(payload.ConnectionID, current.ConnectionID),
-		CronExpr:          firstNonEmpty(payload.CronExpr, current.CronExpr),
-		DestinationType:   firstNonEmpty(payload.DestinationType, current.DestinationType),
-		DestinationTarget: firstNonEmpty(payload.DestinationTarget, current.DestinationTarget),
+		SQL:               coalesceStrPtr(payload.SQL, current.SQL),
+		ConnectionID:      coalescePtrOrBlank(payload.ConnectionID, current.ConnectionID),
+		CronExpr:          firstNonBlank(payload.CronExpr, current.CronExpr),
+		DestinationType:   firstNonBlank(payload.DestinationType, current.DestinationType),
+		DestinationTarget: firstNonBlank(payload.DestinationTarget, current.DestinationTarget),
 		Enabled:           coalesceBoolPtr(payload.Enabled, current.Enabled),
 	}
 	if err := validateScheduleInput(in); err != nil {
@@ -281,11 +281,24 @@ func computeNextRun(expr string, from time.Time) (time.Time, error) {
 	return from.Add(d), nil
 }
 
-func firstNonEmpty(v *string, fallback string) string {
-	if v == nil || strings.TrimSpace(*v) == "" {
+func firstNonBlank(v string, fallback string) string {
+	if strings.TrimSpace(v) == "" {
 		return fallback
 	}
-	return strings.TrimSpace(*v)
+	return strings.TrimSpace(v)
+}
+
+func coalescePtrOrBlank(v *string, fallback string) *string {
+	if v != nil {
+		if strings.TrimSpace(*v) == "" {
+			return nil
+		}
+		return v
+	}
+	if strings.TrimSpace(fallback) == "" {
+		return nil
+	}
+	return &fallback
 }
 
 func coalesceStrPtr(v *string, fallback *string) *string {

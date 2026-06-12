@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e lint fmt migrate seed dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init start start-docker start-local stop cli cli-shell changelog build-release
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e lint fmt migrate migrate-docker seed seed-large seed-large-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -9,6 +9,12 @@ GOMODCACHE ?= $(HOME)/.gomodcache
 export GOMODCACHE
 
 DB_URL ?= postgres://pgquerynarrative_app:pgquerynarrative_app@localhost:5432/pgquerynarrative?sslmode=disable
+
+# Row count for `make seed-large` / `make seed-large-docker`. Override: ROWS=5000000
+ROWS ?= 10000000
+
+# Docker-internal URL for migrate-docker (golang container on the compose network).
+DOCKER_MIGRATE_DB_URL ?= postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable
 
 # ============================================================================
 # SIMPLIFIED COMMANDS - Start here!
@@ -70,15 +76,15 @@ docker-start:
 	@$(MAKE) db-init || true
 	@echo ""
 	@echo "Step 3: Running migrations..."
-	@docker compose run --rm app /app/bin/migrate -path /app/app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" up || true
+	@docker compose run --rm --entrypoint /app/bin/migrate app -path /app/app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" up || true
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -c "ALTER ROLE pgquerynarrative_readonly SET default_transaction_read_only = on;" 2>/dev/null || true
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -c "UPDATE schema_migrations SET version = 11, dirty = false;" 2>/dev/null || true
 	@echo ""
 	@echo "Step 4: Seeding demo data..."
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -f - < tools/db/seed.sql || echo "⚠️  Seed data already exists or database not accessible"
 	@echo ""
-	@echo "Step 5: Building application..."
-	@$(MAKE) generate build
+	@echo "Step 5: Building application image (Docker; avoids host CGO/macOS SDK issues)..."
+	@docker compose build app
 	@echo ""
 	@echo "Step 6: Starting application..."
 	@echo "✅ PgQueryNarrative is starting!"
@@ -143,12 +149,13 @@ tidy:
 # Generate: goa -> gen/ (ephemeral), then patch and sync to api/gen/ (committed). App imports only api/gen/.
 generate:
 	@echo "🔧 Generating API code..."
-	@if ! command -v goa >/dev/null 2>&1; then \
+	@export PATH="$$($(GO) env GOPATH)/bin:$$PATH"; \
+	if ! command -v goa >/dev/null 2>&1; then \
 		echo "Installing Goa..."; \
 		$(GO) install goa.design/goa/v3/cmd/goa@$(GOA_VERSION); \
-	fi
-	$(GO) generate ./...
-	$(GOA) gen github.com/pgquerynarrative/pgquerynarrative/api/design
+	fi && \
+	$(GO) generate ./... && \
+	goa gen github.com/pgquerynarrative/pgquerynarrative/api/design
 	@sh ./tools/fix-gen-metrics-validator.sh 2>/dev/null || true
 	@sh ./tools/copy-gen-to-api-gen.sh 2>/dev/null || true
 	@echo "✅ Code generated"
@@ -201,7 +208,7 @@ test: test-unit test-integration
 
 test-unit:
 	@echo "🧪 Running unit tests..."
-	$(GO) test ./test/unit/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... -v
+	$(GO) test ./test/unit/... ./app/queryrunner/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:
@@ -252,6 +259,42 @@ migrate-force:
 	if [ -z "$$DB_URL" ]; then DB_URL="$(LOCAL_DB_URL)"; fi; \
 	sh ./tools/db/migrate.sh force "$(VERSION)" "$$DB_URL"
 
+# Start the Postgres container and wait until it accepts connections.
+# pg_stat_statements uses shared_preload_libraries in docker-compose.yml; that setting
+# only applies on server start. After changing Postgres command/config, run:
+#   make postgres-recreate && make migrate-docker
+postgres-up:
+	@docker compose up -d postgres
+	@echo "⏳ Waiting for PostgreSQL..."
+	@timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then \
+			echo "✅ PostgreSQL is ready"; \
+			break; \
+		fi; \
+		sleep 1; \
+		timeout=$$((timeout - 1)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then echo "❌ PostgreSQL failed to start"; exit 1; fi
+
+# Recreate Postgres so shared_preload_libraries (pg_stat_statements) takes effect.
+postgres-recreate:
+	@echo "♻️  Recreating PostgreSQL container (required after shared_preload_libraries change)..."
+	@docker compose up -d --force-recreate postgres
+	@$(MAKE) postgres-up
+
+# Run migrations without host Go/psql — uses a one-off golang container on the compose network.
+# Prerequisite: docker compose up -d postgres (or: make postgres-up)
+migrate-docker: postgres-up
+	@$(MAKE) db-init || true
+	@echo "📦 Running migrations via Docker (no host Go required)..."
+	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
+		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
+	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
+		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
+	@echo "✅ Migrations applied"
+
 seed:
 	@DB_URL="$${DB_URL:-$${DATABASE_URL:-$(LOCAL_DB_URL)}}"; \
 	if [ -z "$$DB_URL" ]; then \
@@ -259,6 +302,26 @@ seed:
 		DB_URL="$(LOCAL_DB_URL)"; \
 	fi; \
 	psql "$$DB_URL" -f ./tools/db/seed.sql || echo "⚠️  Seed data already exists or database not accessible"
+
+# Large, reproducible seed (~10M rows by default). Run after migrate (000018 partition).
+# Host needs psql. No host psql/go? Use: make seed-large-docker
+seed-large:
+	@echo "🌱 Seeding ~$(ROWS) rows into demo.sales (this can take a few minutes)..."
+	@DB_URL="$${DB_URL:-$${DATABASE_URL:-$(LOCAL_DB_URL)}}"; \
+	if [ -z "$$DB_URL" ]; then \
+		echo "❌ DB_URL or DATABASE_URL not set. Using default..."; \
+		DB_URL="$(LOCAL_DB_URL)"; \
+	fi; \
+	psql "$$DB_URL" -v rows=$(ROWS) -f ./tools/db/seed-large.sql
+
+# Docker-only seed — no host psql required. Run after: make migrate-docker
+seed-large-docker: postgres-up
+	@echo "🌱 Seeding ~$(ROWS) rows into demo.sales via Docker (no host psql required)..."
+	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
+		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
+	@docker compose cp tools/db/seed-large.sql postgres:/tmp/seed-large.sql
+	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative \
+		-v rows=$(ROWS) -f /tmp/seed-large.sql
 
 db-init:
 	@echo "🗄️  Initializing database..."
@@ -333,6 +396,16 @@ cli-shell:
 changelog:
 	@echo "📝 Building CHANGELOG.md from changelog/..."
 	@sh ./tools/changelog/build.sh
+
+# ============================================================================
+# LinkedIn (draft → approve → post); see: go run ./cmd/linkedin-social help
+# ============================================================================
+
+linkedin-social-help:
+	@$(GO) run ./cmd/linkedin-social help
+
+linkedin-social-draft:
+	@$(GO) run ./cmd/linkedin-social draft
 
 # ============================================================================
 # PostgreSQL Extension

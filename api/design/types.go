@@ -112,3 +112,55 @@ var SavedQueryList = Type("SavedQueryList", func() {
 	Attribute("offset", Int32)
 	Required("items", "limit", "offset")
 })
+
+var ExplainQueryPayload = Type("ExplainQueryPayload", func() {
+	Attribute("sql", String, "Read-only SQL to explain (SELECT or WITH)", func() {
+		MinLength(1)
+		MaxLength(10000)
+		Pattern("^[^;]+$")
+	})
+	Attribute("analyze", Boolean, "When true, run EXPLAIN (ANALYZE, FORMAT JSON) instead of estimate-only", func() {
+		Default(false)
+	})
+	Attribute("connection_id", String, "Optional connection ID; defaults to server default connection")
+	Required("sql")
+})
+
+var ExplainQueryResult = Type("ExplainQueryResult", func() {
+	Attribute("sql", String, "The inner read-only SQL that was explained")
+	Attribute("total_cost", Float64, "Estimated total cost from the root plan node")
+	Attribute("plan", Any, "Raw EXPLAIN (FORMAT JSON) output")
+	Attribute("findings", ArrayOf(PlanFinding), "Notable plan nodes (seq scans, high-cost operators)")
+	Attribute("execution_time_ms", Int64, "Time to run EXPLAIN and parse the plan")
+	Required("sql", "total_cost", "plan", "findings", "execution_time_ms")
+})
+
+// StatStatementRow is one entry from pg_stat_statements.
+var StatStatementRow = Type("StatStatementRow", func() {
+	Attribute("queryid", String, "Normalized query identifier when available")
+	Attribute("query", String, "Query text (truncated)")
+	Attribute("calls", Int64, "Number of times executed")
+	Attribute("total_time_ms", Float64, "Total execution time in milliseconds")
+	Attribute("mean_time_ms", Float64, "Mean execution time per call in milliseconds")
+	Attribute("rows", Int64, "Total rows retrieved or affected")
+	Required("query", "calls", "total_time_ms", "mean_time_ms", "rows")
+})
+
+// StatStatementsResult is a ranked list from pg_stat_statements.
+var StatStatementsResult = Type("StatStatementsResult", func() {
+	Attribute("items", ArrayOf(StatStatementRow))
+	Attribute("order_by", String, "Sort key used: total_time, mean_time, or calls")
+	Attribute("limit", Int32)
+	Required("items", "order_by", "limit")
+})
+
+// PlanFinding highlights a notable node in an EXPLAIN plan.
+var PlanFinding = Type("PlanFinding", func() {
+	Attribute("node_type", String, "PostgreSQL plan node type (e.g. Seq Scan)")
+	Attribute("schema", String, "Schema name when the node scans a relation")
+	Attribute("relation", String, "Relation name when applicable")
+	Attribute("estimated_cost", Float64, "Planner cost for this node")
+	Attribute("is_seq_scan", Boolean, "True when the node is a sequential scan")
+	Attribute("message", String, "Human-readable summary and optional index hint")
+	Required("node_type", "is_seq_scan", "message")
+})

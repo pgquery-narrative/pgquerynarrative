@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/contexts/theme-context";
-import { LayoutDashboard, Terminal, Bookmark, FileText, Settings, PanelLeftClose, PanelLeft, Moon, Sun, PanelsTopLeft, CalendarClock } from "lucide-react";
+import { LayoutDashboard, Terminal, Bookmark, FileText, Settings, PanelLeftClose, PanelLeft, Moon, Sun, PanelsTopLeft, CalendarClock, Activity } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/query", icon: Terminal, label: "Query Runner" },
+  { to: "/stats", icon: Activity, label: "Query Stats" },
   { to: "/saved", icon: Bookmark, label: "Saved Queries" },
   { to: "/reports", icon: FileText, label: "Reports" },
   { to: "/dashboards", icon: PanelsTopLeft, label: "Dashboards" },

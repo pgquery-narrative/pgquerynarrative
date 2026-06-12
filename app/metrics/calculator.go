@@ -10,6 +10,23 @@ import (
 	"time"
 )
 
+// TrendFromChangePct maps percent change to up/down/flat using the configured threshold.
+func TrendFromChangePct(changePct *float64, trendThresholdPercent float64) string {
+	if changePct == nil {
+		return "flat"
+	}
+	if trendThresholdPercent <= 0 {
+		trendThresholdPercent = 0.5
+	}
+	if math.Abs(*changePct) < trendThresholdPercent {
+		return "flat"
+	}
+	if *changePct > 0 {
+		return "up"
+	}
+	return "down"
+}
+
 // CalculateMetrics computes all metrics from query results.
 // If opts is nil, default options are used (0.5% trend threshold, 2.0 sigma, 6 trend periods, 3-period MA).
 func CalculateMetrics(columns []string, rows [][]interface{}, profiles []ColumnProfile, opts *Options) *Metrics {
@@ -178,6 +195,10 @@ func (m *Metrics) calculateTopCategories(columns []string, rows [][]interface{},
 	}
 }
 
+// calculateTimeSeries buckets rows by period in Go and compares the last two periods.
+// Period-over-period for POST /queries/run prefers SQL window functions (LAG) in
+// app/queryrunner/period_comparison.go; this path remains the fallback when SQL
+// comparison is unavailable (e.g. profiling cannot detect time + measure columns).
 func (m *Metrics) calculateTimeSeries(columns []string, rows [][]interface{}, profiles []ColumnProfile, opts *Options) {
 	var timeColIdx = -1
 	measureCols := make([]int, 0, len(profiles))
@@ -320,16 +341,7 @@ func (m *Metrics) calculateTimeSeries(columns []string, rows [][]interface{}, pr
 			changePct = &pct
 		}
 
-		trend := "flat"
-		if changePct != nil {
-			if math.Abs(*changePct) < trendThresholdPercent {
-				trend = "flat"
-			} else if *changePct > 0 {
-				trend = "up"
-			} else {
-				trend = "down"
-			}
-		}
+		trend := TrendFromChangePct(changePct, trendThresholdPercent)
 
 		ts := TimeSeriesMetric{
 			CurrentPeriod:    current,

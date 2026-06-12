@@ -29,7 +29,7 @@ PgQueryNarrative is configured via **environment variables** only. Sensible defa
 | `PGQUERYNARRATIVE_HOST` | `0.0.0.0` | Bind address. |
 | `PGQUERYNARRATIVE_PORT` | `8080` | Server port. |
 | `PGQUERYNARRATIVE_READ_TIMEOUT` | `15s` | Request read timeout. |
-| `PGQUERYNARRATIVE_WRITE_TIMEOUT` | `60s` | Response write timeout. |
+| `PGQUERYNARRATIVE_WRITE_TIMEOUT` | `300s` | Response write timeout (LLM + report paths need headroom). |
 | `SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout. |
 | `CORS_ORIGINS` | (empty) | Comma-separated origins for CORS; when set, `Access-Control-Allow-Origin` is sent for matching request origins. Empty = same-origin only. |
 

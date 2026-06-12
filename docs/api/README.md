@@ -7,6 +7,7 @@ REST API base: `http://localhost:8080/api/v1` (override with [Configuration](../
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/queries/run` | Body: `{"sql":"...", "limit": 100, "connection_id":"default"}`. `connection_id` optional. Run read-only SQL. Returns `columns`, `rows`, `row_count`, `execution_time_ms`, optional `period_comparison`, `chart_suggestions`. |
+| POST | `/queries/explain` | Body: `{"sql":"...", "analyze": false, "connection_id":"default"}`. `connection_id` optional. Run `EXPLAIN (FORMAT JSON)` on read-only SQL. Returns `total_cost`, `plan`, `findings` (seq scans, high-cost nodes), `execution_time_ms`. |
 | POST | `/queries/saved` | Body: `{"name","sql","tags","connection_id":"default"}`. `connection_id` optional. Save query. |
 | GET | `/queries/saved` | Query: `limit`, `offset`, `tags`, `connection_id`. List saved queries; optional connection filter. |
 | GET | `/queries/saved/{id}` | Get saved query by ID. |

@@ -15,6 +15,10 @@ import (
 type Service interface {
 	// Execute a SQL query and return results
 	Run(context.Context, *RunQueryPayload) (res *RunQueryResult, err error)
+	// List top queries from pg_stat_statements (read-only observability)
+	StatStatements(context.Context, *StatStatementsPayload) (res *StatStatementsResult, err error)
+	// Run EXPLAIN (FORMAT JSON) on a read-only query and return plan analysis
+	ExplainPlan(context.Context, *ExplainQueryPayload) (res *ExplainQueryResult, err error)
 	// List saved queries
 	ListSaved(context.Context, *ListSavedPayload) (res *SavedQueryList, err error)
 	// Save a query
@@ -39,7 +43,7 @@ const ServiceName = "queries"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [5]string{"run", "list_saved", "save", "get_saved", "delete_saved"}
+var MethodNames = [7]string{"run", "stat_statements", "explain_plan", "list_saved", "save", "get_saved", "delete_saved"}
 
 type ChartSuggestion struct {
 	// Chart type identifier: bar, line, pie, area, table
@@ -59,6 +63,32 @@ type ColumnInfo struct {
 // method.
 type DeleteSavedPayload struct {
 	ID string
+}
+
+// ExplainQueryPayload is the payload type of the queries service explain_plan
+// method.
+type ExplainQueryPayload struct {
+	// Read-only SQL to explain (SELECT or WITH)
+	SQL string
+	// When true, run EXPLAIN (ANALYZE, FORMAT JSON) instead of estimate-only
+	Analyze bool
+	// Optional connection ID; defaults to server default connection
+	ConnectionID *string
+}
+
+// ExplainQueryResult is the result type of the queries service explain_plan
+// method.
+type ExplainQueryResult struct {
+	// The inner read-only SQL that was explained
+	SQL string
+	// Estimated total cost from the root plan node
+	TotalCost float64
+	// Raw EXPLAIN (FORMAT JSON) output
+	Plan any
+	// Notable plan nodes (seq scans, high-cost operators)
+	Findings []*PlanFinding
+	// Time to run EXPLAIN and parse the plan
+	ExecutionTimeMs int64
 }
 
 // GetSavedPayload is the payload type of the queries service get_saved method.
@@ -94,6 +124,21 @@ type PeriodComparisonItem struct {
 	ChangePercentage *float64
 	// up, down, or flat
 	Trend string
+}
+
+type PlanFinding struct {
+	// PostgreSQL plan node type (e.g. Seq Scan)
+	NodeType string
+	// Schema name when the node scans a relation
+	Schema *string
+	// Relation name when applicable
+	Relation *string
+	// Planner cost for this node
+	EstimatedCost *float64
+	// True when the node is a sequential scan
+	IsSeqScan bool
+	// Human-readable summary and optional index hint
+	Message string
 }
 
 // RunQueryPayload is the payload type of the queries service run method.
@@ -151,6 +196,40 @@ type SavedQueryList struct {
 	Items  []*SavedQuery
 	Limit  int32
 	Offset int32
+}
+
+type StatStatementRow struct {
+	// Normalized query identifier when available
+	Queryid *string
+	// Query text (truncated)
+	Query string
+	// Number of times executed
+	Calls int64
+	// Total execution time in milliseconds
+	TotalTimeMs float64
+	// Mean execution time per call in milliseconds
+	MeanTimeMs float64
+	// Total rows retrieved or affected
+	Rows int64
+}
+
+// StatStatementsPayload is the payload type of the queries service
+// stat_statements method.
+type StatStatementsPayload struct {
+	// Sort key: total_time, mean_time, or calls
+	OrderBy string
+	Limit   int32
+	// Optional connection ID; defaults to server default connection
+	ConnectionID *string
+}
+
+// StatStatementsResult is the result type of the queries service
+// stat_statements method.
+type StatStatementsResult struct {
+	Items []*StatStatementRow
+	// Sort key used: total_time, mean_time, or calls
+	OrderBy string
+	Limit   int32
 }
 
 type ValidationError struct {

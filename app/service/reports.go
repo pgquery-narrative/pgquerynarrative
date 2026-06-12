@@ -40,6 +40,13 @@ type ReportsService struct {
 	connectionResolver
 }
 
+// reportGenOpts toggles optional stages inside report generation.
+type reportGenOpts struct {
+	// skipNarrativeLLM skips the story LLM and RAG/embedding work tied to narrative quality.
+	// Used for Ask + Ollama so only the NL→SQL call hits the local model (second call was often minutes or appeared hung).
+	skipNarrativeLLM bool
+}
+
 func NewReportsService(readOnlyPool, appPool *pgxpool.Pool, runner *queryrunner.Runner, llmClient llm.Client, metricsCfg config.MetricsConfig) *ReportsService {
 	opts := metricsOptionsFromConfig(metricsCfg)
 	return &ReportsService{
@@ -98,6 +105,21 @@ func NewReportsServiceMultiConnection(appPool *pgxpool.Pool, runners map[string]
 }
 
 func (s *ReportsService) Generate(ctx context.Context, payload *reports.GenerateReportPayload) (*reports.Report, error) {
+	return s.generateReport(ctx, payload, reportGenOpts{})
+}
+
+// GenerateForAsk is like Generate but, when the LLM provider is Ollama, skips the
+// narrative LLM and embedding/RAG steps so Ask returns after a single local model
+// round-trip (NL→SQL). Use Generate Report on the SQL for a full narrative.
+func (s *ReportsService) GenerateForAsk(ctx context.Context, payload *reports.GenerateReportPayload) (*reports.Report, error) {
+	opts := reportGenOpts{}
+	if s.llmClient != nil && s.llmClient.Name() == "ollama" {
+		opts.skipNarrativeLLM = true
+	}
+	return s.generateReport(ctx, payload, opts)
+}
+
+func (s *ReportsService) generateReport(ctx context.Context, payload *reports.GenerateReportPayload, opts reportGenOpts) (*reports.Report, error) {
 	debuglog.Log("report generation started")
 	// Execute query
 	connectionID := s.normalizedConnectionID(payload.ConnectionID)
@@ -133,7 +155,7 @@ func (s *ReportsService) Generate(ctx context.Context, payload *reports.Generate
 
 	// Optional RAG: retrieve similar past queries and add to prompt context
 	var similarContext string
-	if s.embedder != nil && s.embeddingStore != nil {
+	if !opts.skipNarrativeLLM && s.embedder != nil && s.embeddingStore != nil {
 		if vec, err := s.embedder.Embed(ctx, payload.SQL); err == nil {
 			if similar, err := s.embeddingStore.FindSimilar(ctx, vec, 3); err == nil && len(similar) > 0 {
 				const maxSQLLen = 200
@@ -154,19 +176,27 @@ func (s *ReportsService) Generate(ctx context.Context, payload *reports.Generate
 		}
 	}
 
-	// Generate narrative
-	debuglog.Log("calling LLM for narrative generation")
-	narrative, err := s.generator.Generate(ctx, payload.SQL, columnNames, queryResult.Rows, calcMetrics, similarContext)
-	if err != nil {
-		llmMsg := err.Error()
-		apilog.LLMError(llmMsg)
-		// Fallback keeps report generation and Ask usable even when the model is slow
-		// or temporarily unavailable.
-		narrative = buildFallbackNarrative(queryResult.RowCount, calcMetrics.PerfSuggestions)
+	var narrative *story.NarrativeContent
+	if opts.skipNarrativeLLM {
+		debuglog.Log("skipping narrative LLM (Ask + Ollama fast path)")
+		narrative = buildOllamaAskFastNarrative(queryResult.RowCount, calcMetrics.PerfSuggestions)
+	} else {
+		debuglog.Log("calling LLM for narrative generation")
+		var errGen error
+		narrative, errGen = s.generator.Generate(ctx, payload.SQL, columnNames, queryResult.Rows, calcMetrics, similarContext)
+		if errGen != nil {
+			llmMsg := errGen.Error()
+			apilog.LLMError(llmMsg)
+			narrative = buildFallbackNarrative(queryResult.RowCount, calcMetrics.PerfSuggestions)
+		}
 	}
-	// Optional LLM pass: reorder/add one primary chart recommendation on top
-	// of rules so chart choice can better align with the generated story.
-	finalSuggestions := s.applyLLMChartRecommendation(ctx, narrative.Headline, columnNames, columnTypes, queryResult.RowCount, ruleSuggestions)
+
+	var finalSuggestions []charts.Suggestion
+	if opts.skipNarrativeLLM {
+		finalSuggestions = ruleSuggestions
+	} else {
+		finalSuggestions = s.applyLLMChartRecommendation(ctx, narrative.Headline, columnNames, columnTypes, queryResult.RowCount, ruleSuggestions)
+	}
 	chartSuggestions := suggestToReports(finalSuggestions)
 
 	// Convert metrics to API format
@@ -179,7 +209,9 @@ func (s *ReportsService) Generate(ctx context.Context, payload *reports.Generate
 	if err != nil {
 		return nil, err
 	}
-	s.storeReportEmbedding(ctx, reportID, narrative, modelName)
+	if !opts.skipNarrativeLLM {
+		s.storeReportEmbedding(ctx, reportID, narrative, modelName)
+	}
 	apilog.Request("generate", "report_id="+reportID)
 
 	// Convert narrative to API format
@@ -207,6 +239,11 @@ func (s *ReportsService) Generate(ctx context.Context, payload *reports.Generate
 
 func (s *ReportsService) enrichTimeSeriesExplanations(ctx context.Context, m *metrics.Metrics) {
 	if s.llmClient == nil || m == nil || len(m.TimeSeries) == 0 {
+		return
+	}
+	// Local Ollama: one HTTP generate per trend/anomaly would serialize to minutes and
+	// overwhelm the server; main narrative already summarizes the metrics.
+	if s.llmClient.Name() == "ollama" {
 		return
 	}
 	for measure, ts := range m.TimeSeries {
@@ -379,6 +416,16 @@ func buildFallbackNarrative(rowCount int, perfSuggestions []string) *story.Narra
 	return n
 }
 
+// buildOllamaAskFastNarrative is used when Ask skips the narrative LLM for local Ollama.
+func buildOllamaAskFastNarrative(rowCount int, perfSuggestions []string) *story.NarrativeContent {
+	n := buildFallbackNarrative(rowCount, perfSuggestions)
+	n.Headline = "Query ran — charts and metrics below"
+	n.Limitations = append([]string{
+		"Ask with Ollama skips the second LLM pass (full narrative) so the button returns quickly. Paste the SQL into the editor and click “Generate Report” for a full story, or use Groq/Gemini/OpenAI in .env for narrative on Ask.",
+	}, n.Limitations...)
+	return n
+}
+
 // suggestToReports converts charts.Suggestion slice to reports API type.
 func suggestToReports(in []charts.Suggestion) []*reports.ChartSuggestion {
 	if len(in) == 0 {
@@ -397,6 +444,9 @@ func suggestToReports(in []charts.Suggestion) []*reports.ChartSuggestion {
 
 func (s *ReportsService) applyLLMChartRecommendation(ctx context.Context, headline string, columnNames, columnTypes []string, rowCount int, base []charts.Suggestion) []charts.Suggestion {
 	if len(base) == 0 || s.llmClient == nil {
+		return base
+	}
+	if s.llmClient.Name() == "ollama" {
 		return base
 	}
 	prompt := buildChartRecommendationPrompt(headline, columnNames, columnTypes, rowCount, base)

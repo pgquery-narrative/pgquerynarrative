@@ -54,3 +54,11 @@ site/
 
 # Release planning (local-only)
 release-2.md
+
+# Private LinkedIn content (local-only)
+docs/linkedin/POST_SERIES.md
+
+# LinkedIn automation queue (keep templates; ignore draft JSON)
+automation/linkedin/pending/*.json
+automation/linkedin/approved/*.json
+automation/linkedin/posted/*.json

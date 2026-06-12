@@ -15,21 +15,25 @@ import (
 
 // Client is the "queries" service client.
 type Client struct {
-	RunEndpoint         goa.Endpoint
-	ListSavedEndpoint   goa.Endpoint
-	SaveEndpoint        goa.Endpoint
-	GetSavedEndpoint    goa.Endpoint
-	DeleteSavedEndpoint goa.Endpoint
+	RunEndpoint            goa.Endpoint
+	StatStatementsEndpoint goa.Endpoint
+	ExplainPlanEndpoint    goa.Endpoint
+	ListSavedEndpoint      goa.Endpoint
+	SaveEndpoint           goa.Endpoint
+	GetSavedEndpoint       goa.Endpoint
+	DeleteSavedEndpoint    goa.Endpoint
 }
 
 // NewClient initializes a "queries" service client given the endpoints.
-func NewClient(run, listSaved, save, getSaved, deleteSaved goa.Endpoint) *Client {
+func NewClient(run, statStatements, explainPlan, listSaved, save, getSaved, deleteSaved goa.Endpoint) *Client {
 	return &Client{
-		RunEndpoint:         run,
-		ListSavedEndpoint:   listSaved,
-		SaveEndpoint:        save,
-		GetSavedEndpoint:    getSaved,
-		DeleteSavedEndpoint: deleteSaved,
+		RunEndpoint:            run,
+		StatStatementsEndpoint: statStatements,
+		ExplainPlanEndpoint:    explainPlan,
+		ListSavedEndpoint:      listSaved,
+		SaveEndpoint:           save,
+		GetSavedEndpoint:       getSaved,
+		DeleteSavedEndpoint:    deleteSaved,
 	}
 }
 
@@ -44,6 +48,32 @@ func (c *Client) Run(ctx context.Context, p *RunQueryPayload) (res *RunQueryResu
 		return
 	}
 	return ires.(*RunQueryResult), nil
+}
+
+// StatStatements calls the "stat_statements" endpoint of the "queries" service.
+// StatStatements may return the following errors:
+//   - "validation_error" (type *ValidationError)
+//   - error: internal error
+func (c *Client) StatStatements(ctx context.Context, p *StatStatementsPayload) (res *StatStatementsResult, err error) {
+	var ires any
+	ires, err = c.StatStatementsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*StatStatementsResult), nil
+}
+
+// ExplainPlan calls the "explain_plan" endpoint of the "queries" service.
+// ExplainPlan may return the following errors:
+//   - "validation_error" (type *ValidationError)
+//   - error: internal error
+func (c *Client) ExplainPlan(ctx context.Context, p *ExplainQueryPayload) (res *ExplainQueryResult, err error) {
+	var ires any
+	ires, err = c.ExplainPlanEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ExplainQueryResult), nil
 }
 
 // ListSaved calls the "list_saved" endpoint of the "queries" service.

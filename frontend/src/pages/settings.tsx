@@ -2,13 +2,22 @@ import { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Database, Cpu, Settings2, BarChart3 } from "lucide-react";
-import { api, type AnalyticsSettings } from "@/api/client";
+import { api, type AnalyticsSettings, type EmbeddingSettings, type LLMSettings } from "@/api/client";
 
 export default function SettingsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsSettings | null>(null);
+  const [llm, setLlm] = useState<LLMSettings | null>(null);
+  const [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null);
 
   useEffect(() => {
-    api.getSettings().then((r) => setAnalytics(r.analytics)).catch(() => {});
+    api
+      .getSettings()
+      .then((r) => {
+        setAnalytics(r.analytics);
+        if (r.llm) setLlm(r.llm);
+        if (r.embedding) setEmbedding(r.embedding);
+      })
+      .catch(() => {});
   }, []);
 
   return (
@@ -45,10 +54,32 @@ export default function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="Provider" value={envOrDefault("LLM_PROVIDER", "ollama")} />
-            <Row label="Model" value={envOrDefault("LLM_MODEL", "llama3")} />
-            <Row label="Base URL" value={envOrDefault("LLM_BASE_URL", "http://localhost:11434")} />
-            <Row label="API Key" value={envOrDefault("LLM_API_KEY", "—")} masked />
+            {llm ? (
+              <>
+                <Row label="Provider" value={llm.provider} />
+                <Row label="Model" value={llm.model} />
+                <Row label="Base URL" value={llm.base_url || "—"} />
+                <Row label="API key" value={llm.api_key_configured ? "set" : "—"} masked={llm.api_key_configured} />
+              </>
+            ) : (
+              <>
+                <Row label="Provider" value="ollama" />
+                <Row label="Model" value="llama3.2" />
+                <Row label="Base URL" value="http://localhost:11434" />
+                <Row label="API key" value="—" />
+              </>
+            )}
+            {embedding && (
+              <>
+                <Row label="Embeddings" value={embedding.enabled ? "on" : "off"} title="Similar queries / RAG when on" />
+                {embedding.enabled && (
+                  <>
+                    <Row label="Embedding model" value={embedding.model || "—"} />
+                    <Row label="Embedding URL" value={embedding.base_url || "—"} />
+                  </>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
 

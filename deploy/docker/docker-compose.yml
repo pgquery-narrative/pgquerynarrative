@@ -8,6 +8,12 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:18-alpine}
     container_name: pgquerynarrative-postgres
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

@@ -1,0 +1,11 @@
+Building in public: PgQueryNarrative
+
+{{DATE}}
+
+PgQueryNarrative runs read-only SQL on PostgreSQL, derives metrics and chart hints, and turns results into narrative reports with your choice of LLM—API, web UI, and CLI.
+
+Today: {{HIGHLIGHT}}
+
+#PostgreSQL #OpenSource #GoLang
+
+Repo: https://github.com/pgquerynarrative/pgquerynarrative

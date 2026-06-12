@@ -12,10 +12,10 @@ import (
 
 // Validator validates SQL queries to ensure they are safe to execute.
 // It enforces:
-//   - Read-only queries (SELECT/WITH only)
+//   - Read-only queries (SELECT/WITH, or EXPLAIN of a SELECT/WITH)
 //   - Single statement execution
 //   - Allowed schemas only
-//   - No dangerous keywords
+//   - No dangerous statement types in the parse tree
 type Validator struct {
 	allowedSchemas map[string]bool // Set of allowed schema names (lowercase)
 	maxQueryLength int             // Maximum query length in bytes
@@ -59,12 +59,20 @@ var disallowedASTNodes = map[string]struct{}{
 	"CallStmt":          {},
 	"ExecuteStmt":       {},
 	"DeclareCursorStmt": {},
+	"CreateStmt":        {},
+	"CreateTableAsStmt": {},
+	"DropStmt":          {},
+	"AlterTableStmt":    {},
+	"IndexStmt":         {},
+	"ViewStmt":          {},
+	"GrantStmt":         {},
+	"VacuumStmt":        {},
 }
 
 // Validation rules:
 //   - Query length must not exceed maxQueryLength
 //   - Must be a single statement
-//   - Must be a top-level SELECT/WITH SELECT
+//   - Must be a top-level SELECT/WITH SELECT, or EXPLAIN of one
 //   - Must reject write/unsafe statements in nested CTE/subquery contexts
 //   - Must only reference allowed schemas
 //
@@ -103,22 +111,19 @@ func (v *Validator) Validate(sql string) error {
 		return errors.ErrOnlySelectAllowed
 	}
 
-	// Must be SELECT (WITH ... SELECT is still SelectStmt in PostgreSQL AST).
-	rootStmt := tree.Stmts[0].Stmt
-	rootSelect, ok := rootStmt["SelectStmt"]
-	if !ok {
-		// Any non-SELECT top-level statements are blocked.
-		return errors.ErrOnlySelectAllowed
+	readOnlyQuery, err := extractReadOnlyQuery(tree.Stmts[0].Stmt)
+	if err != nil {
+		return err
 	}
 
 	// Reject writes/unsafe statements that can be nested inside CTEs/subqueries.
-	if containsDisallowedNodes(rootSelect) {
+	if containsDisallowedNodes(readOnlyQuery) {
 		return errors.ErrDisallowedKeyword
 	}
 
 	// Check schema access (if schema restrictions are configured)
 	if len(v.allowedSchemas) > 0 {
-		for _, schemaName := range collectSchemaNames(rootSelect) {
+		for _, schemaName := range collectSchemaNames(readOnlyQuery) {
 			if !v.allowedSchemas[schemaName] {
 				return errors.ErrSchemaNotAllowed
 			}
@@ -126,6 +131,36 @@ func (v *Validator) Validate(sql string) error {
 	}
 
 	return nil
+}
+
+// extractReadOnlyQuery returns the SelectStmt subtree to validate.
+// Top-level SELECT/WITH queries and EXPLAIN (including FORMAT JSON) of a SELECT are allowed.
+func extractReadOnlyQuery(rootStmt map[string]interface{}) (interface{}, error) {
+	if rootSelect, ok := rootStmt["SelectStmt"]; ok {
+		return rootSelect, nil
+	}
+
+	explain, ok := rootStmt["ExplainStmt"]
+	if !ok {
+		return nil, errors.ErrOnlySelectAllowed
+	}
+
+	explainMap, ok := explain.(map[string]interface{})
+	if !ok {
+		return nil, errors.ErrOnlySelectAllowed
+	}
+
+	query, ok := explainMap["query"].(map[string]interface{})
+	if !ok || len(query) == 0 {
+		return nil, errors.ErrOnlySelectAllowed
+	}
+
+	rootSelect, ok := query["SelectStmt"]
+	if !ok {
+		return nil, errors.ErrOnlySelectAllowed
+	}
+
+	return rootSelect, nil
 }
 
 func containsDisallowedNodes(node interface{}) bool {

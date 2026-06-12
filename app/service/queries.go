@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"strings"
@@ -133,7 +134,7 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 	}
 
 	chartSuggestions := suggestToQueries(charts.Suggest(colNames, colTypes, result.Rows))
-	periodComparison, currentLabel, previousLabel := timeSeriesToPeriodComparison(colNames, result.Rows, s.metricsOpts)
+	periodComparison, currentLabel, previousLabel := s.periodComparison(ctx, runner, payload.SQL, colNames, result.Rows)
 
 	var rowCount32 int32 = math.MaxInt32
 	if result.RowCount < math.MaxInt32 {
@@ -155,6 +156,92 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 		res.PeriodPreviousLabel = &previousLabel
 	}
 	return res, nil
+}
+
+// ExplainPlan runs EXPLAIN (FORMAT JSON) on a read-only query and returns plan analysis.
+func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.ExplainQueryPayload) (*queries.ExplainQueryResult, error) {
+	runner := s.connectionResolver.runnerFor(payload.ConnectionID)
+	result, err := runner.Explain(ctx, payload.SQL, payload.Analyze)
+	if err != nil {
+		kind, userMsg := ClassifyRunError(err)
+		if kind == RunErrorTimeout {
+			apilog.ValidationError("explain_plan", "timeout_error", err.Error())
+			return nil, &queries.ValidationError{Name: "timeout_error", Message: userMsg, Code: strPtr("TIMEOUT_ERROR")}
+		}
+		apilog.ValidationError("explain_plan", "validation_error", err.Error())
+		return nil, &queries.ValidationError{Name: "validation_error", Message: userMsg, Code: strPtr("VALIDATION_ERROR")}
+	}
+
+	findings := make([]*queries.PlanFinding, 0, len(result.Findings))
+	for _, f := range result.Findings {
+		cost := f.EstimatedCost
+		pf := &queries.PlanFinding{
+			NodeType:      f.NodeType,
+			EstimatedCost: &cost,
+			IsSeqScan:     f.IsSeqScan,
+			Message:       f.Message,
+		}
+		if f.Schema != "" {
+			pf.Schema = &f.Schema
+		}
+		if f.Relation != "" {
+			pf.Relation = &f.Relation
+		}
+		findings = append(findings, pf)
+	}
+
+	var plan any
+	if len(result.Plan) > 0 {
+		_ = json.Unmarshal(result.Plan, &plan)
+	}
+
+	return &queries.ExplainQueryResult{
+		SQL:             result.SQL,
+		TotalCost:       result.TotalCost,
+		Plan:            plan,
+		Findings:        findings,
+		ExecutionTimeMs: result.ExecutionTimeMs,
+	}, nil
+}
+
+// StatStatements returns top queries from pg_stat_statements for observability.
+func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.StatStatementsPayload) (*queries.StatStatementsResult, error) {
+	runner := s.connectionResolver.runnerFor(payload.ConnectionID)
+	orderBy := payload.OrderBy
+	if orderBy == "" {
+		orderBy = "total_time"
+	}
+	limit := int(payload.Limit)
+	if limit == 0 {
+		limit = 20
+	}
+
+	result, err := runner.StatStatements(ctx, orderBy, limit)
+	if err != nil {
+		apilog.ValidationError("stat_statements", "validation_error", err.Error())
+		return nil, &queries.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
+
+	items := make([]*queries.StatStatementRow, 0, len(result.Items))
+	for _, row := range result.Items {
+		item := &queries.StatStatementRow{
+			Query:       row.Query,
+			Calls:       row.Calls,
+			TotalTimeMs: row.TotalTimeMs,
+			MeanTimeMs:  row.MeanTimeMs,
+			Rows:        row.Rows,
+		}
+		if row.QueryID != "" {
+			item.Queryid = &row.QueryID
+		}
+		items = append(items, item)
+	}
+
+	return &queries.StatStatementsResult{
+		Items:   items,
+		OrderBy: result.OrderBy,
+		Limit:   int32(result.Limit),
+	}, nil
 }
 
 // suggestToQueries converts charts.Suggestion slice to API type.
@@ -193,8 +280,49 @@ func metricsOptionsFromConfig(c config.MetricsConfig) *metrics.Options {
 	return o
 }
 
-// timeSeriesToPeriodComparison computes period-over-period from query result and returns API slice and period labels.
-func timeSeriesToPeriodComparison(columnNames []string, rows [][]interface{}, opts *metrics.Options) ([]*queries.PeriodComparisonItem, string, string) {
+// periodComparison prefers SQL window functions (LAG); falls back to in-memory Go metrics.
+func (s *QueriesService) periodComparison(ctx context.Context, runner *queryrunner.Runner, sql string, columnNames []string, rows [][]interface{}) ([]*queries.PeriodComparisonItem, string, string) {
+	if len(rows) < 2 {
+		return nil, "", ""
+	}
+
+	profiles := metrics.ProfileColumns(columnNames, rows)
+	timeCol, measureCols := queryrunner.PeriodColumnsFromProfiles(columnNames, profiles)
+	if timeCol != "" && len(measureCols) > 0 {
+		threshold := s.metricsOpts.TrendThresholdPercent
+		if out, err := runner.PeriodComparison(ctx, sql, timeCol, measureCols, threshold); err == nil && out != nil {
+			return periodComparisonToAPI(out), out.CurrentPeriodLabel, out.PreviousPeriodLabel
+		}
+	}
+
+	return timeSeriesToPeriodComparisonFallback(columnNames, rows, s.metricsOpts)
+}
+
+func periodComparisonToAPI(out *queryrunner.PeriodComparisonOutput) []*queries.PeriodComparisonItem {
+	items := make([]*queries.PeriodComparisonItem, 0, len(out.Comparisons))
+	for _, pc := range out.Comparisons {
+		item := &queries.PeriodComparisonItem{
+			Measure: pc.Measure,
+			Current: pc.Current,
+			Trend:   pc.Trend,
+		}
+		if pc.Previous != nil {
+			item.Previous = pc.Previous
+		}
+		if pc.Change != nil {
+			item.Change = pc.Change
+		}
+		if pc.ChangePercentage != nil {
+			item.ChangePercentage = pc.ChangePercentage
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+// timeSeriesToPeriodComparisonFallback computes period-over-period in Go from raw result rows.
+// Used when SQL LAG comparison is unavailable; full report metrics still use CalculateMetrics.
+func timeSeriesToPeriodComparisonFallback(columnNames []string, rows [][]interface{}, opts *metrics.Options) ([]*queries.PeriodComparisonItem, string, string) {
 	if len(rows) < 2 {
 		return nil, "", ""
 	}

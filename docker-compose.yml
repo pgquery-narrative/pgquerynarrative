@@ -2,8 +2,18 @@ name: pgquerynarrative
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    # Default 16-alpine for broad compatibility. Override: POSTGRES_IMAGE=postgres:18-alpine
+    # pgvector semantic search (B11): POSTGRES_IMAGE=pgvector/pgvector:pg16 then make migrate-docker
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: pgquerynarrative-postgres
+    # pg_stat_statements (B9): shared_preload_libraries only applies on server start.
+    # After changing this block, recreate the container: make postgres-recreate
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -22,7 +32,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          # 10M-row seed-large needs headroom; raise further if OOM during seed.
+          memory: 2G
 
   app:
     build:
@@ -51,8 +62,9 @@ services:
       DATABASE_READONLY_PASSWORD: ${DATABASE_READONLY_PASSWORD:-pgquerynarrative_readonly}
       DATABASE_SSL_MODE: disable
       DATABASE_MAX_CONNECTIONS: 5
+      # LLM: repo-root .env (see .env.example). Free + strong: Groq llama-3.3-70b-versatile or Gemini gemini-2.0-flash + LLM_API_KEY.
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
-      LLM_MODEL: ${LLM_MODEL:-llama2}
+      LLM_MODEL: ${LLM_MODEL:-llama3.2}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
       LOG_DEBUG: ${LOG_DEBUG:-}

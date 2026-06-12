@@ -15,27 +15,33 @@ import (
 
 // Endpoints wraps the "queries" service endpoints.
 type Endpoints struct {
-	Run         goa.Endpoint
-	ListSaved   goa.Endpoint
-	Save        goa.Endpoint
-	GetSaved    goa.Endpoint
-	DeleteSaved goa.Endpoint
+	Run            goa.Endpoint
+	StatStatements goa.Endpoint
+	ExplainPlan    goa.Endpoint
+	ListSaved      goa.Endpoint
+	Save           goa.Endpoint
+	GetSaved       goa.Endpoint
+	DeleteSaved    goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "queries" service with endpoints.
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
-		Run:         NewRunEndpoint(s),
-		ListSaved:   NewListSavedEndpoint(s),
-		Save:        NewSaveEndpoint(s),
-		GetSaved:    NewGetSavedEndpoint(s),
-		DeleteSaved: NewDeleteSavedEndpoint(s),
+		Run:            NewRunEndpoint(s),
+		StatStatements: NewStatStatementsEndpoint(s),
+		ExplainPlan:    NewExplainPlanEndpoint(s),
+		ListSaved:      NewListSavedEndpoint(s),
+		Save:           NewSaveEndpoint(s),
+		GetSaved:       NewGetSavedEndpoint(s),
+		DeleteSaved:    NewDeleteSavedEndpoint(s),
 	}
 }
 
 // Use applies the given middleware to all the "queries" service endpoints.
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Run = m(e.Run)
+	e.StatStatements = m(e.StatStatements)
+	e.ExplainPlan = m(e.ExplainPlan)
 	e.ListSaved = m(e.ListSaved)
 	e.Save = m(e.Save)
 	e.GetSaved = m(e.GetSaved)
@@ -48,6 +54,24 @@ func NewRunEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*RunQueryPayload)
 		return s.Run(ctx, p)
+	}
+}
+
+// NewStatStatementsEndpoint returns an endpoint function that calls the method
+// "stat_statements" of service "queries".
+func NewStatStatementsEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*StatStatementsPayload)
+		return s.StatStatements(ctx, p)
+	}
+}
+
+// NewExplainPlanEndpoint returns an endpoint function that calls the method
+// "explain_plan" of service "queries".
+func NewExplainPlanEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ExplainQueryPayload)
+		return s.ExplainPlan(ctx, p)
 	}
 }
 

@@ -85,6 +85,12 @@ var (
 
 	// ErrInvalidQueryLimit indicates the query limit is invalid (negative or too large).
 	ErrInvalidQueryLimit = errors.New("invalid query limit")
+
+	// ErrInvalidStatStatementsOrder indicates an unsupported order_by for pg_stat_statements.
+	ErrInvalidStatStatementsOrder = errors.New("invalid stat_statements order_by")
+
+	// ErrStatStatementsUnavailable indicates pg_stat_statements is not enabled or not readable.
+	ErrStatStatementsUnavailable = errors.New("pg_stat_statements is not available")
 )
 
 // Helper functions for wrapping errors with context. Use %w so callers can use errors.Is/As.

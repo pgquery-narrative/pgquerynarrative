@@ -133,6 +133,21 @@ func TestCalculateMetrics_DataQualityAndStats(t *testing.T) {
 	}
 }
 
+func TestTrendFromChangePct(t *testing.T) {
+	up := 10.0
+	down := -10.0
+	flat := 0.2
+	if metrics.TrendFromChangePct(&up, 0.5) != "up" {
+		t.Error("expected up")
+	}
+	if metrics.TrendFromChangePct(&down, 0.5) != "down" {
+		t.Error("expected down")
+	}
+	if metrics.TrendFromChangePct(&flat, 0.5) != "flat" {
+		t.Error("expected flat")
+	}
+}
+
 func TestCalculateMetrics_TimeSeries_PeriodLabelsAndPreviousPeriod(t *testing.T) {
 	columns := []string{"month", "revenue"}
 	profiles := []metrics.ColumnProfile{

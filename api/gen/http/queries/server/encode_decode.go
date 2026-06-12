@@ -89,6 +89,168 @@ func EncodeRunError(encoder func(context.Context, http.ResponseWriter) goahttp.E
 	}
 }
 
+// EncodeStatStatementsResponse returns an encoder for responses returned by
+// the queries stat_statements endpoint.
+func EncodeStatStatementsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*queries.StatStatementsResult)
+		enc := encoder(ctx, w)
+		body := NewStatStatementsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeStatStatementsRequest returns a decoder for requests sent to the
+// queries stat_statements endpoint.
+func DecodeStatStatementsRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*queries.StatStatementsPayload, error) {
+	return func(r *http.Request) (*queries.StatStatementsPayload, error) {
+		var (
+			orderBy      string
+			limit        int32
+			connectionID *string
+			err          error
+		)
+		qp := r.URL.Query()
+		orderByRaw := qp.Get("order_by")
+		if orderByRaw != "" {
+			orderBy = orderByRaw
+		} else {
+			orderBy = "total_time"
+		}
+		if !(orderBy == "total_time" || orderBy == "mean_time" || orderBy == "calls") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("order_by", orderBy, []any{"total_time", "mean_time", "calls"}))
+		}
+		{
+			limitRaw := qp.Get("limit")
+			if limitRaw == "" {
+				limit = 20
+			} else {
+				v, err2 := strconv.ParseInt(limitRaw, 10, 32)
+				if err2 != nil {
+					err = goa.MergeErrors(err, goa.InvalidFieldTypeError("limit", limitRaw, "integer"))
+				}
+				limit = int32(v)
+			}
+		}
+		if limit < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 1, true))
+		}
+		if limit > 100 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 100, false))
+		}
+		connectionIDRaw := qp.Get("connection_id")
+		if connectionIDRaw != "" {
+			connectionID = &connectionIDRaw
+		}
+		if err != nil {
+			return nil, err
+		}
+		payload := NewStatStatementsPayload(orderBy, limit, connectionID)
+
+		return payload, nil
+	}
+}
+
+// EncodeStatStatementsError returns an encoder for errors returned by the
+// stat_statements queries endpoint.
+func EncodeStatStatementsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "validation_error":
+			var res *queries.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStatStatementsValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeExplainPlanResponse returns an encoder for responses returned by the
+// queries explain_plan endpoint.
+func EncodeExplainPlanResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*queries.ExplainQueryResult)
+		enc := encoder(ctx, w)
+		body := NewExplainPlanResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeExplainPlanRequest returns a decoder for requests sent to the queries
+// explain_plan endpoint.
+func DecodeExplainPlanRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*queries.ExplainQueryPayload, error) {
+	return func(r *http.Request) (*queries.ExplainQueryPayload, error) {
+		var (
+			body ExplainPlanRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateExplainPlanRequestBody(&body)
+		if err != nil {
+			return nil, err
+		}
+		payload := NewExplainPlanExplainQueryPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeExplainPlanError returns an encoder for errors returned by the
+// explain_plan queries endpoint.
+func EncodeExplainPlanError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "validation_error":
+			var res *queries.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewExplainPlanValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeListSavedResponse returns an encoder for responses returned by the
 // queries list_saved endpoint.
 func EncodeListSavedResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -361,6 +523,37 @@ func marshalQueriesPeriodComparisonItemToPeriodComparisonItemResponseBody(v *que
 		Change:           v.Change,
 		ChangePercentage: v.ChangePercentage,
 		Trend:            v.Trend,
+	}
+
+	return res
+}
+
+// marshalQueriesStatStatementRowToStatStatementRowResponseBody builds a value
+// of type *StatStatementRowResponseBody from a value of type
+// *queries.StatStatementRow.
+func marshalQueriesStatStatementRowToStatStatementRowResponseBody(v *queries.StatStatementRow) *StatStatementRowResponseBody {
+	res := &StatStatementRowResponseBody{
+		Queryid:     v.Queryid,
+		Query:       v.Query,
+		Calls:       v.Calls,
+		TotalTimeMs: v.TotalTimeMs,
+		MeanTimeMs:  v.MeanTimeMs,
+		Rows:        v.Rows,
+	}
+
+	return res
+}
+
+// marshalQueriesPlanFindingToPlanFindingResponseBody builds a value of type
+// *PlanFindingResponseBody from a value of type *queries.PlanFinding.
+func marshalQueriesPlanFindingToPlanFindingResponseBody(v *queries.PlanFinding) *PlanFindingResponseBody {
+	res := &PlanFindingResponseBody{
+		NodeType:      v.NodeType,
+		Schema:        v.Schema,
+		Relation:      v.Relation,
+		EstimatedCost: v.EstimatedCost,
+		IsSeqScan:     v.IsSeqScan,
+		Message:       v.Message,
 	}
 
 	return res

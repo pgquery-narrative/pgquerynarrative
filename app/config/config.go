@@ -125,10 +125,11 @@ type LLMConfig struct {
 func Load() Config {
 	cfg := Config{
 		Server: ServerConfig{
-			Host:            getEnv("PGQUERYNARRATIVE_HOST", "0.0.0.0"),
-			Port:            getEnvInt("PGQUERYNARRATIVE_PORT", 8080),
-			ReadTimeout:     getEnvDuration("PGQUERYNARRATIVE_READ_TIMEOUT", 15*time.Second),
-			WriteTimeout:    getEnvDuration("PGQUERYNARRATIVE_WRITE_TIMEOUT", 60*time.Second),
+			Host:        getEnv("PGQUERYNARRATIVE_HOST", "0.0.0.0"),
+			Port:        getEnvInt("PGQUERYNARRATIVE_PORT", 8080),
+			ReadTimeout: getEnvDuration("PGQUERYNARRATIVE_READ_TIMEOUT", 15*time.Second),
+			// Ask / report generation can chain several LLM calls; 60s was too low for local Ollama.
+			WriteTimeout:    getEnvDuration("PGQUERYNARRATIVE_WRITE_TIMEOUT", 300*time.Second),
 			ShutdownTimeout: getEnvDuration("SHUTDOWN_TIMEOUT", 10*time.Second),
 			CORSOrigins:     getEnvSlice("CORS_ORIGINS", ","),
 		},

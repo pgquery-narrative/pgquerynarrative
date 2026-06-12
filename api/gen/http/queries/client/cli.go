@@ -25,7 +25,7 @@ func BuildRunPayload(queriesRunBody string) (*queries.RunQueryPayload, error) {
 	{
 		err = json.Unmarshal([]byte(queriesRunBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Explicabo odit.\",\n      \"limit\": 654,\n      \"sql\": \"y3\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Inventore incidunt ut omnis mollitia quo.\",\n      \"limit\": 137,\n      \"sql\": \"e\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
@@ -59,6 +59,92 @@ func BuildRunPayload(queriesRunBody string) (*queries.RunQueryPayload, error) {
 	return v, nil
 }
 
+// BuildStatStatementsPayload builds the payload for the queries
+// stat_statements endpoint from CLI flags.
+func BuildStatStatementsPayload(queriesStatStatementsOrderBy string, queriesStatStatementsLimit string, queriesStatStatementsConnectionID string) (*queries.StatStatementsPayload, error) {
+	var err error
+	var orderBy string
+	{
+		if queriesStatStatementsOrderBy != "" {
+			orderBy = queriesStatStatementsOrderBy
+			if !(orderBy == "total_time" || orderBy == "mean_time" || orderBy == "calls") {
+				err = goa.MergeErrors(err, goa.InvalidEnumValueError("order_by", orderBy, []any{"total_time", "mean_time", "calls"}))
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	var limit int32
+	{
+		if queriesStatStatementsLimit != "" {
+			var v int64
+			v, err = strconv.ParseInt(queriesStatStatementsLimit, 10, 32)
+			limit = int32(v)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for limit, must be INT32")
+			}
+			if limit < 1 {
+				err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 1, true))
+			}
+			if limit > 100 {
+				err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 100, false))
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	var connectionID *string
+	{
+		if queriesStatStatementsConnectionID != "" {
+			connectionID = &queriesStatStatementsConnectionID
+		}
+	}
+	v := &queries.StatStatementsPayload{}
+	v.OrderBy = orderBy
+	v.Limit = limit
+	v.ConnectionID = connectionID
+
+	return v, nil
+}
+
+// BuildExplainPlanPayload builds the payload for the queries explain_plan
+// endpoint from CLI flags.
+func BuildExplainPlanPayload(queriesExplainPlanBody string) (*queries.ExplainQueryPayload, error) {
+	var err error
+	var body ExplainPlanRequestBody
+	{
+		err = json.Unmarshal([]byte(queriesExplainPlanBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"connection_id\": \"Cum quia sit architecto eaque quam aut.\",\n      \"sql\": \"ff6\"\n   }'")
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
+		if utf8.RuneCountInString(body.SQL) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
+		}
+		if utf8.RuneCountInString(body.SQL) > 10000 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 10000, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &queries.ExplainQueryPayload{
+		SQL:          body.SQL,
+		Analyze:      body.Analyze,
+		ConnectionID: body.ConnectionID,
+	}
+	{
+		var zero bool
+		if v.Analyze == zero {
+			v.Analyze = false
+		}
+	}
+
+	return v, nil
+}
+
 // BuildListSavedPayload builds the payload for the queries list_saved endpoint
 // from CLI flags.
 func BuildListSavedPayload(queriesListSavedTags string, queriesListSavedConnectionID string, queriesListSavedLimit string, queriesListSavedOffset string) (*queries.ListSavedPayload, error) {
@@ -68,7 +154,7 @@ func BuildListSavedPayload(queriesListSavedTags string, queriesListSavedConnecti
 		if queriesListSavedTags != "" {
 			err = json.Unmarshal([]byte(queriesListSavedTags), &tags)
 			if err != nil {
-				return nil, fmt.Errorf("invalid JSON for tags, \nerror: %s, \nexample of valid JSON:\n%s", err, "'[\n      \"Voluptas sint.\",\n      \"Dolore vel cum quo magnam quia.\",\n      \"Et architecto.\",\n      \"Labore voluptatem.\"\n   ]'")
+				return nil, fmt.Errorf("invalid JSON for tags, \nerror: %s, \nexample of valid JSON:\n%s", err, "'[\n      \"Dolores aut alias.\",\n      \"Sunt nemo facere nisi reiciendis doloribus.\",\n      \"Nemo repudiandae.\"\n   ]'")
 			}
 		}
 	}
@@ -132,7 +218,7 @@ func BuildSavePayload(queriesSaveBody string) (*queries.SaveQueryPayload, error)
 	{
 		err = json.Unmarshal([]byte(queriesSaveBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Consectetur repellendus et non aut libero.\",\n      \"description\": \"mqc\",\n      \"name\": \"b5i\",\n      \"sql\": \"f\",\n      \"tags\": [\n         \"Eos aliquam sint similique.\",\n         \"Sapiente vel.\",\n         \"Nobis incidunt veniam quibusdam.\"\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Quis distinctio ut eligendi a iusto.\",\n      \"description\": \"2rv\",\n      \"name\": \"gv8\",\n      \"sql\": \"tbl\",\n      \"tags\": [\n         \"Aut est veniam et voluptas.\",\n         \"Et voluptate dignissimos quaerat assumenda et ducimus.\",\n         \"Consequatur aut sint corporis id in.\"\n      ]\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))

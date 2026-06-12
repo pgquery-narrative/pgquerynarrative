@@ -1,13 +1,20 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PgQueryNarrative</title>
   <link rel="icon" type="image/png" href="/logo.png" />
-  <script type="module" crossorigin src="/assets/index-MedjKM17.js"></script>
+  <script>
+    (function(){
+      var t=localStorage.getItem("pgquerynarrative-theme");
+      if(t==="light"||t==="dark"){document.documentElement.classList.add(t);}
+      else{var dark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.add(dark?"dark":"light");}
+    })();
+  </script>
+  <script type="module" crossorigin src="/assets/index-D6OpqHA_.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/charts-B_8WDyZX.js">
-  <link rel="stylesheet" crossorigin href="/assets/index-Bdri4MNK.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-C9fp4ELC.css">
 </head>
 <body class="bg-background text-foreground antialiased">
   <div id="root"></div>

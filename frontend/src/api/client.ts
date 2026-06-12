@@ -152,6 +152,21 @@ export interface ChatResult {
 
 export interface ConnectionInfo { id: string; name: string; }
 
+export interface StatStatementRow {
+  queryid?: string;
+  query: string;
+  calls: number;
+  total_time_ms: number;
+  mean_time_ms: number;
+  rows: number;
+}
+
+export interface StatStatementsResult {
+  items: StatStatementRow[];
+  order_by: string;
+  limit: number;
+}
+
 export interface SchemaInfo { name: string; tables: { name: string; columns: Column[] }[]; }
 
 export interface AnalyticsSettings {
@@ -169,8 +184,25 @@ export interface AnalyticsSettings {
   max_timeseries_periods?: number;
 }
 
+/** LLM section from GET /settings (server env after load). */
+export interface LLMSettings {
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key_configured: boolean;
+}
+
+/** Embedding section from GET /settings. */
+export interface EmbeddingSettings {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+}
+
 export interface SettingsResponse {
   analytics: AnalyticsSettings;
+  llm?: LLMSettings;
+  embedding?: EmbeddingSettings;
 }
 
 // Normalize SQL for API: trim and strip trailing semicolon (API rejects ";" in sql).
@@ -179,6 +211,11 @@ function normalizeSql(sql: string): string {
 }
 
 export const api = {
+  listStatStatements: (orderBy: "total_time" | "mean_time" | "calls" = "total_time", limit = 20, connectionId?: string) =>
+    request<StatStatementsResult>(
+      `/queries/stats?order_by=${encodeURIComponent(orderBy)}&limit=${limit}${connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ""}`
+    ),
+
   runQuery: (sql: string, limit = 100, connectionId?: string) =>
     request<RunQueryResult>("/queries/run", {
       method: "POST",
@@ -187,6 +224,11 @@ export const api = {
 
   listSaved: (limit = 50, offset = 0, connectionId?: string) =>
     request<{ items: SavedQuery[]; limit: number; offset: number }>(`/queries/saved?limit=${limit}&offset=${offset}${connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ""}`),
+
+  findSimilarQueries: (text: string, limit = 10) =>
+    request<{ suggestions: { sql: string; title: string; source: string }[] }>(
+      `/suggestions/similar?text=${encodeURIComponent(text)}&limit=${limit}`
+    ),
 
   saveQuery: (name: string, sql: string, tags: string[] = [], connectionId?: string) =>
     request<SavedQuery>("/queries/saved", { method: "POST", body: JSON.stringify({ name, sql, tags, connection_id: connectionId }) }),
@@ -233,11 +275,13 @@ export const api = {
     request<AskResult>("/suggestions/ask", {
       method: "POST",
       body: JSON.stringify({ question: question.trim(), connection_id: connectionId }),
+      signal: AbortSignal.timeout(240_000),
     }),
   askChat: (question: string, sessionId?: string, connectionId?: string) =>
     request<ChatResult>("/suggestions/chat", {
       method: "POST",
       body: JSON.stringify({ question: question.trim(), session_id: sessionId, connection_id: connectionId }),
+      signal: AbortSignal.timeout(240_000),
     }),
 
   listDashboards: () => request<{ items: Dashboard[] }>("/dashboards"),

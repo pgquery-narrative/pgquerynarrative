@@ -106,7 +106,7 @@ export default function Dashboard() {
             ) : reports.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-4 text-center">
                 <p className="text-sm text-muted-foreground">No reports yet.</p>
-                <Link to="/query" className={cn(buttonVariants({ size: "sm" }))}>Run a query</Link>
+                <Link to="/query" className={cn(buttonVariants({ size: "sm" }), "!text-white hover:!text-white dark:!text-black dark:hover:!text-black")}>Run a query</Link>
               </div>
             ) : (
               <div className="space-y-3">
@@ -140,7 +140,7 @@ export default function Dashboard() {
             ) : saved.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-4 text-center">
                 <p className="text-sm text-muted-foreground">No saved queries yet.</p>
-                <Link to="/query" className={cn(buttonVariants({ size: "sm" }))}>Go to Query Runner</Link>
+                <Link to="/query" className={cn(buttonVariants({ size: "sm" }), "!text-white hover:!text-white dark:!text-black dark:hover:!text-black")}>Go to Query Runner</Link>
               </div>
             ) : (
               <div className="space-y-3">

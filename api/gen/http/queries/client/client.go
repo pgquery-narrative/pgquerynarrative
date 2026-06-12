@@ -20,6 +20,14 @@ type Client struct {
 	// Run Doer is the HTTP client used to make requests to the run endpoint.
 	RunDoer goahttp.Doer
 
+	// StatStatements Doer is the HTTP client used to make requests to the
+	// stat_statements endpoint.
+	StatStatementsDoer goahttp.Doer
+
+	// ExplainPlan Doer is the HTTP client used to make requests to the
+	// explain_plan endpoint.
+	ExplainPlanDoer goahttp.Doer
+
 	// ListSaved Doer is the HTTP client used to make requests to the list_saved
 	// endpoint.
 	ListSavedDoer goahttp.Doer
@@ -56,6 +64,8 @@ func NewClient(
 ) *Client {
 	return &Client{
 		RunDoer:             doer,
+		StatStatementsDoer:  doer,
+		ExplainPlanDoer:     doer,
 		ListSavedDoer:       doer,
 		SaveDoer:            doer,
 		GetSavedDoer:        doer,
@@ -87,6 +97,54 @@ func (c *Client) Run() goa.Endpoint {
 		resp, err := c.RunDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("queries", "run", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// StatStatements returns an endpoint that makes HTTP requests to the queries
+// service stat_statements server.
+func (c *Client) StatStatements() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeStatStatementsRequest(c.encoder)
+		decodeResponse = DecodeStatStatementsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildStatStatementsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.StatStatementsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("queries", "stat_statements", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ExplainPlan returns an endpoint that makes HTTP requests to the queries
+// service explain_plan server.
+func (c *Client) ExplainPlan() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeExplainPlanRequest(c.encoder)
+		decodeResponse = DecodeExplainPlanResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildExplainPlanRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ExplainPlanDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("queries", "explain_plan", err)
 		}
 		return decodeResponse(resp)
 	}

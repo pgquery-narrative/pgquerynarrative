@@ -107,6 +107,185 @@ func DecodeRunResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody
 	}
 }
 
+// BuildStatStatementsRequest instantiates a HTTP request object with method
+// and path set to call the "queries" service "stat_statements" endpoint
+func (c *Client) BuildStatStatementsRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: StatStatementsQueriesPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("queries", "stat_statements", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeStatStatementsRequest returns an encoder for requests sent to the
+// queries stat_statements server.
+func EncodeStatStatementsRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*queries.StatStatementsPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("queries", "stat_statements", "*queries.StatStatementsPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("order_by", p.OrderBy)
+		values.Add("limit", fmt.Sprintf("%v", p.Limit))
+		if p.ConnectionID != nil {
+			values.Add("connection_id", *p.ConnectionID)
+		}
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeStatStatementsResponse returns a decoder for responses returned by the
+// queries stat_statements endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeStatStatementsResponse may return the following errors:
+//   - "validation_error" (type *queries.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeStatStatementsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body StatStatementsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "stat_statements", err)
+			}
+			err = ValidateStatStatementsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "stat_statements", err)
+			}
+			res := NewStatStatementsResultOK(&body)
+			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body StatStatementsValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "stat_statements", err)
+			}
+			err = ValidateStatStatementsValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "stat_statements", err)
+			}
+			return nil, NewStatStatementsValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("queries", "stat_statements", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildExplainPlanRequest instantiates a HTTP request object with method and
+// path set to call the "queries" service "explain_plan" endpoint
+func (c *Client) BuildExplainPlanRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ExplainPlanQueriesPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("queries", "explain_plan", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeExplainPlanRequest returns an encoder for requests sent to the queries
+// explain_plan server.
+func EncodeExplainPlanRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*queries.ExplainQueryPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("queries", "explain_plan", "*queries.ExplainQueryPayload", v)
+		}
+		body := NewExplainPlanRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("queries", "explain_plan", err)
+		}
+		return nil
+	}
+}
+
+// DecodeExplainPlanResponse returns a decoder for responses returned by the
+// queries explain_plan endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeExplainPlanResponse may return the following errors:
+//   - "validation_error" (type *queries.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeExplainPlanResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ExplainPlanResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "explain_plan", err)
+			}
+			err = ValidateExplainPlanResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "explain_plan", err)
+			}
+			res := NewExplainPlanExplainQueryResultOK(&body)
+			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body ExplainPlanValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "explain_plan", err)
+			}
+			err = ValidateExplainPlanValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "explain_plan", err)
+			}
+			return nil, NewExplainPlanValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("queries", "explain_plan", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildListSavedRequest instantiates a HTTP request object with method and
 // path set to call the "queries" service "list_saved" endpoint
 func (c *Client) BuildListSavedRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -447,6 +626,37 @@ func unmarshalPeriodComparisonItemResponseBodyToQueriesPeriodComparisonItem(v *P
 		Change:           v.Change,
 		ChangePercentage: v.ChangePercentage,
 		Trend:            *v.Trend,
+	}
+
+	return res
+}
+
+// unmarshalStatStatementRowResponseBodyToQueriesStatStatementRow builds a
+// value of type *queries.StatStatementRow from a value of type
+// *StatStatementRowResponseBody.
+func unmarshalStatStatementRowResponseBodyToQueriesStatStatementRow(v *StatStatementRowResponseBody) *queries.StatStatementRow {
+	res := &queries.StatStatementRow{
+		Queryid:     v.Queryid,
+		Query:       *v.Query,
+		Calls:       *v.Calls,
+		TotalTimeMs: *v.TotalTimeMs,
+		MeanTimeMs:  *v.MeanTimeMs,
+		Rows:        *v.Rows,
+	}
+
+	return res
+}
+
+// unmarshalPlanFindingResponseBodyToQueriesPlanFinding builds a value of type
+// *queries.PlanFinding from a value of type *PlanFindingResponseBody.
+func unmarshalPlanFindingResponseBodyToQueriesPlanFinding(v *PlanFindingResponseBody) *queries.PlanFinding {
+	res := &queries.PlanFinding{
+		NodeType:      *v.NodeType,
+		Schema:        v.Schema,
+		Relation:      v.Relation,
+		EstimatedCost: v.EstimatedCost,
+		IsSeqScan:     *v.IsSeqScan,
+		Message:       *v.Message,
 	}
 
 	return res

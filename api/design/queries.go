@@ -19,6 +19,46 @@ var _ = Service("queries", func() {
 		})
 	})
 
+	Method("stat_statements", func() {
+		Description("List top queries from pg_stat_statements (read-only observability)")
+		Payload(func() {
+			Attribute("order_by", String, "Sort key: total_time, mean_time, or calls", func() {
+				Enum("total_time", "mean_time", "calls")
+				Default("total_time")
+			})
+			Attribute("limit", Int32, func() {
+				Default(20)
+				Minimum(1)
+				Maximum(100)
+			})
+			Attribute("connection_id", String, "Optional connection ID; defaults to server default connection")
+		})
+		Result(StatStatementsResult)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			GET("/api/v1/queries/stats")
+			Params(func() {
+				Param("order_by")
+				Param("limit")
+				Param("connection_id")
+			})
+			Response(StatusOK)
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
+	Method("explain_plan", func() {
+		Description("Run EXPLAIN (FORMAT JSON) on a read-only query and return plan analysis")
+		Payload(ExplainQueryPayload)
+		Result(ExplainQueryResult)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/queries/explain")
+			Response(StatusOK)
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
 	Method("list_saved", func() {
 		Description("List saved queries")
 		Payload(func() {

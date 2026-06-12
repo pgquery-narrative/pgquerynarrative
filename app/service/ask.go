@@ -106,7 +106,7 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 	}
 
 	reportPayload := &reports.GenerateReportPayload{SQL: sql, ConnectionID: payload.ConnectionID}
-	report, err := s.reportsSvc.Generate(ctx, reportPayload)
+	report, err := s.reportsSvc.GenerateForAsk(ctx, reportPayload)
 	if err != nil {
 		if ve, ok := err.(*reports.ValidationError); ok {
 			return nil, &suggestions.ValidationError{Name: ve.Name, Message: ve.Message, Code: ve.Code}
@@ -154,7 +154,7 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	if err := s.validator.Validate(sqlText); err != nil {
 		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
-	report, err := s.reportsSvc.Generate(ctx, &reports.GenerateReportPayload{SQL: sqlText, ConnectionID: payload.ConnectionID})
+	report, err := s.reportsSvc.GenerateForAsk(ctx, &reports.GenerateReportPayload{SQL: sqlText, ConnectionID: payload.ConnectionID})
 	if err != nil {
 		if ve, ok := err.(*reports.ValidationError); ok {
 			return nil, &suggestions.ValidationError{Name: ve.Name, Message: ve.Message, Code: ve.Code}
@@ -275,6 +275,10 @@ func summarizeChatHistory(history []*suggestions.ChatTurn) string {
 
 func (s *AskService) buildFollowUps(ctx context.Context, history []*suggestions.ChatTurn, latestQuestion string) []string {
 	if len(history) == 0 || s.llmClient == nil {
+		return defaultFollowUps(latestQuestion)
+	}
+	// Third LLM round-trip per Ask; skip for Ollama so Ask returns in reasonable time.
+	if s.llmClient.Name() == "ollama" {
 		return defaultFollowUps(latestQuestion)
 	}
 	var b strings.Builder
