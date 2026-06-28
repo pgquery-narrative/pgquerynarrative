@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
     title: PgQueryNarrative API
-    description: Data Storyteller AI - Convert PostgreSQL SQL queries to business narratives
+    description: 'Postgres-native query intelligence: secure read-only SQL, EXPLAIN plan analysis, and optional AI narratives'
     version: v1
 servers:
     - url: http://localhost:8080

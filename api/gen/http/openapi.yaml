@@ -1,7 +1,7 @@
 swagger: "2.0"
 info:
     title: PgQueryNarrative API
-    description: Data Storyteller AI - Convert PostgreSQL SQL queries to business narratives
+    description: 'Postgres-native query intelligence: secure read-only SQL, EXPLAIN plan analysis, and optional AI narratives'
     version: v1
 host: localhost:8080
 consumes:

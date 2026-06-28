@@ -47,7 +47,7 @@ export default function Layout() {
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-sm font-semibold tracking-tight truncate">PgQueryNarrative</p>
-              <p className="text-[11px] text-muted-foreground truncate">SQL to business narrative</p>
+              <p className="text-[11px] text-muted-foreground truncate">Postgres query intelligence</p>
             </div>
           )}
         </div>

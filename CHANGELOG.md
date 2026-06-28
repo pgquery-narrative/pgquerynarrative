@@ -24,6 +24,27 @@ Entries: edit `changelog/unreleased.md` then run `make changelog`.
 
 Additional analytics: further cohort metrics and seasonal adjustments.
 
+## [2.0.0] - 2026-06-28
+
+Postgres-first repositioning: secure read-only SQL, plan analysis, and analytics at scale, with optional AI narratives.
+
+### Added
+
+- **10M-row benchmark dataset:** Monthly range-partitioned `demo.sales`, reproducible via `make seed-large-docker` ([docs/DATASET.md](docs/DATASET.md)).
+- **EXPLAIN JSON API:** `POST /api/v1/queries/explain` with seq-scan detection, cost flags, and index suggestions.
+- **Parser-based SQL validation:** `pg_query_go` parse-tree walk in `app/queryrunner/validator.go` (replaces substring blocklist).
+- **`pg_stat_statements` dashboard:** Query stats UI and `GET /api/v1/queries/stats`.
+- **RLS multi-tenant demo:** Row-level security on `demo.sales` ([docs/ops/rls-demo.md](docs/ops/rls-demo.md)).
+- **pgvector semantic search:** HNSW index on saved-query embeddings.
+- **SQL period comparison:** `LAG` window functions in `app/queryrunner/period_comparison.go`; Go metrics path is fallback.
+- **Case study:** 1.1s → 145ms covering index optimization on 10M rows ([docs/case-studies/01-query-optimization.md](docs/case-studies/01-query-optimization.md)).
+- **Production ops docs:** Backup, migrations, monitoring ([docs/ops/PRODUCTION.md](docs/ops/PRODUCTION.md)).
+
+### Changed
+
+- README and public positioning lead with Postgres query intelligence; AI narrative layer is optional.
+- `default_transaction_read_only` enforced on the read-only database role.
+
 ## [1.0.0]
 
 ### Planned (Release 2)

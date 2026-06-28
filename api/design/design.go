@@ -6,7 +6,7 @@ import (
 
 var _ = API("pgquerynarrative", func() {
 	Title("PgQueryNarrative API")
-	Description("Data Storyteller AI - Convert PostgreSQL SQL queries to business narratives")
+	Description("Postgres-native query intelligence: secure read-only SQL, EXPLAIN plan analysis, and optional AI narratives")
 	Version("v1")
 	Server("pgquerynarrative", func() {
 		Host("localhost", func() {

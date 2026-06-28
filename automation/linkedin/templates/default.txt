@@ -2,7 +2,7 @@ Building in public: PgQueryNarrative
 
 {{DATE}}
 
-PgQueryNarrative runs read-only SQL on PostgreSQL, derives metrics and chart hints, and turns results into narrative reports with your choice of LLM—API, web UI, and CLI.
+PgQueryNarrative runs secure read-only SQL on PostgreSQL with EXPLAIN plan analysis, metrics, and an optional LLM narrative layer—API, web UI, and CLI.
 
 Today: {{HIGHLIGHT}}
 

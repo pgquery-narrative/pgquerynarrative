@@ -120,9 +120,20 @@ Full documentation in **[docs/](docs/README.md)**:
 | **API** | [Reference](docs/api/README.md) · [Examples](docs/api/examples.md) |
 | **Reference** | [Deployment](docs/reference/deployment.md) · [Operations](docs/reference/operations.md) · [Troubleshooting](docs/reference/troubleshooting.md) · [PostgreSQL extension](docs/reference/postgres-extension.md) · [Semantic search (pgvector)](docs/reference/semantic-search-pgvector.md) |
 | **Development** | [Setup](docs/development/setup.md) · [Testing](docs/development/testing.md) · [Runbook](docs/development/runbook.md) |
-| **Dataset** | [10M-row benchmark & partition pruning](docs/DATASET.md) |
+| **Dataset & case studies** | [10M-row benchmark & partition pruning](docs/DATASET.md) · [Query optimization case study](docs/case-studies/01-query-optimization.md) |
+| **Operations** | [Production ops](docs/ops/PRODUCTION.md) · [RLS demo](docs/ops/rls-demo.md) |
 
 **Contributing & security:** [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) · [.github/SECURITY.md](.github/SECURITY.md). **Changelog:** [CHANGELOG.md](CHANGELOG.md).
+
+## Branches & releases
+
+| Branch / tag | Purpose |
+|--------------|---------|
+| [`main`](https://github.com/pgquerynarative/pgquerynarrative/tree/main) | Latest development (Postgres-first query intelligence) |
+| [`stable-v2.0.0`](https://github.com/pgquerynarative/pgquerynarrative/tree/stable-v2.0.0) | v2 release line — EXPLAIN API, 10M-row benchmark, parser validation, RLS/pgvector |
+| [`stable-v1.0.0`](https://github.com/pgquerynarative/pgquerynarrative/tree/stable-v1.0.0) | v1 release line — AI narrative focus, pre-Postgres pivot |
+| Tag [`v2.0.0`](https://github.com/pgquerynarative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release snapshot |
+| Tag [`v1.0.0`](https://github.com/pgquerynarative/pgquerynarrative/releases/tag/v1.0.0) | v1.0.0 release snapshot |
 
 ## License
 
