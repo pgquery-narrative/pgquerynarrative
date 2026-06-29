@@ -89,7 +89,7 @@ func TestQueriesE2E(t *testing.T) {
 
 	t.Run("Run_DisallowedSchema", func(t *testing.T) {
 		// Validator allows only "demo"; public schema is disallowed when not in list
-		payload := map[string]interface{}{"sql": "SELECT * FROM demo.sales LIMIT 1", "limit": 10}
+		payload := map[string]interface{}{"sql": "SELECT * FROM public.pg_database LIMIT 1", "limit": 10}
 		body, _ := json.Marshal(payload)
 		resp, err := http.Post(base+"/api/v1/queries/run", "application/json", bytes.NewReader(body))
 		if err != nil {

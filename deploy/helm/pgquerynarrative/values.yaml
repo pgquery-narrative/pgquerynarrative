@@ -8,26 +8,40 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+appEnv: production
+
 # Database: point to your Postgres (in-cluster or external)
 database:
   host: postgres
   port: "5432"
   name: pgquerynarrative
   user: pgquerynarrative_app
-  sslMode: disable
+  sslMode: require
   maxConnections: 5
   readonlyUser: pgquerynarrative_readonly
+  allowedSchemas: demo
 
 # Secrets: set via --set or a values file; do not commit real passwords
 secret:
   databasePassword: changeme
   databaseReadonlyPassword: changeme
+  apiKey: changeme-replace-with-long-random-api-key-at-least-32-chars
 
-# LLM for report generation
+security:
+  authEnabled: true
+  rateLimitRPM: 120
+  rateLimitDistributed: true
+  explainAnalyzeEnabled: false
+  statStatementsEnabled: true
+  shareLinkDefaultHours: 168
+  scheduleRunnerEnabled: true
+  scheduleRunnerInterval: 1m
+
 llm:
   provider: ollama
   model: llama3.2
   baseURL: http://host.docker.internal:11434
+  redactPII: true
   # apiKey: ""  # for OpenAI, Groq, etc.
 
 server:

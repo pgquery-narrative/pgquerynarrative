@@ -11,6 +11,29 @@ import (
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 )
 
+// StatStatementRow is one row from pg_stat_statements for the current database.
+type StatStatementRow struct {
+	QueryID     string
+	Query       string
+	Calls       int64
+	TotalTimeMs float64
+	MeanTimeMs  float64
+	Rows        int64
+}
+
+// StatStatementsResult holds top-N statement stats.
+type StatStatementsResult struct {
+	Items   []StatStatementRow
+	OrderBy string
+	Limit   int
+}
+
+var statStatementsOrderColumns = map[string]string{
+	"total_time": "total_exec_time",
+	"mean_time":  "mean_exec_time",
+	"calls":      "calls",
+}
+
 // StatStatements queries pg_stat_statements using the app pool (pg_read_all_stats) and
 // filters to statements executed by filterRole when non-empty.
 func StatStatements(ctx context.Context, statsPool *pgxpool.Pool, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {

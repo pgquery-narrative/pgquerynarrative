@@ -12,6 +12,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
 )
@@ -37,6 +38,15 @@ func TestReadOnlyRole_CannotQueryPublicSchema(t *testing.T) {
 	}
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		t.Fatalf("migrate up: %v", err)
+	}
+
+	adminPool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatalf("admin pool: %v", err)
+	}
+	defer adminPool.Close()
+	if err := db.CheckMigrationVersion(ctx, adminPool); err != nil {
+		t.Fatalf("migration version check: %v", err)
 	}
 
 	readonlyURL := strings.Replace(connStr, "postgres://postgres:", "postgres://pgquerynarrative_readonly:pgquerynarrative_readonly@", 1)

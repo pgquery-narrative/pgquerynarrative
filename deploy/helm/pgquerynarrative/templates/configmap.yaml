@@ -8,14 +8,25 @@ metadata:
 data:
   PGQUERYNARRATIVE_HOST: {{ .Values.server.host | quote }}
   PGQUERYNARRATIVE_PORT: {{ .Values.server.port | quote }}
+  APP_ENV: {{ .Values.appEnv | quote }}
   DATABASE_HOST: {{ .Values.database.host | quote }}
   DATABASE_PORT: {{ .Values.database.port | quote }}
   DATABASE_NAME: {{ .Values.database.name | quote }}
   DATABASE_USER: {{ .Values.database.user | quote }}
   DATABASE_SSL_MODE: {{ .Values.database.sslMode | quote }}
+  DATABASE_ALLOWED_SCHEMAS: {{ .Values.database.allowedSchemas | quote }}
   DATABASE_MAX_CONNECTIONS: {{ .Values.database.maxConnections | quote }}
   DATABASE_READONLY_USER: {{ .Values.database.readonlyUser | quote }}
+  SECURITY_AUTH_ENABLED: {{ .Values.security.authEnabled | quote }}
+  SECURITY_RATE_LIMIT_RPM: {{ .Values.security.rateLimitRPM | quote }}
+  SECURITY_RATE_LIMIT_DISTRIBUTED: {{ .Values.security.rateLimitDistributed | quote }}
+  SECURITY_EXPLAIN_ANALYZE_ENABLED: {{ .Values.security.explainAnalyzeEnabled | quote }}
+  SECURITY_STAT_STATEMENTS_ENABLED: {{ .Values.security.statStatementsEnabled | quote }}
+  SECURITY_SHARE_LINK_DEFAULT_HOURS: {{ .Values.security.shareLinkDefaultHours | quote }}
+  SCHEDULE_RUNNER_ENABLED: {{ .Values.security.scheduleRunnerEnabled | quote }}
+  SCHEDULE_RUNNER_INTERVAL: {{ .Values.security.scheduleRunnerInterval | quote }}
   LLM_PROVIDER: {{ .Values.llm.provider | quote }}
   LLM_MODEL: {{ .Values.llm.model | quote }}
   LLM_BASE_URL: {{ .Values.llm.baseURL | quote }}
+  LLM_REDACT_PII: {{ .Values.llm.redactPII | quote }}
   PGQUERYNARRATIVE_SEED: {{ .Values.seed | quote }}

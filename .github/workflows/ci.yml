@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.24']
+        go-version: ['1.25']
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: ./.github/actions/setup-go-cgo
@@ -80,3 +80,24 @@ jobs:
           name: binary
           path: bin/server
           retention-days: 1
+
+  # Mirrors release.yml linux/amd64 CGO build (pg_query) on every push.
+  release-smoke:
+    name: Release build smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-go-cgo
+      - name: Install dependencies
+        run: go mod download
+      - name: Generate code
+        run: make generate
+      - name: Build release binaries (linux/amd64)
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: "1"
+        run: |
+          go build -ldflags "-X main.Version=smoke" -o pgquerynarrative-server-linux-amd64 ./cmd/server
+          CGO_ENABLED=0 go build -ldflags "-X main.Version=smoke" -o pgquerynarrative-mcp-linux-amd64 ./cmd/mcp-server
+          ls -la pgquerynarrative-*

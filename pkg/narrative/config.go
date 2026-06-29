@@ -82,6 +82,7 @@ type LLMConfig struct {
 	MaxSampleRows     int
 	SendRowData       bool
 	AllowExternalData bool
+	RedactPII         bool
 }
 
 // MetricsConfig holds metrics and period-comparison settings.
@@ -126,6 +127,7 @@ func FromAppConfig(cfg config.Config) Config {
 			MaxSampleRows:     cfg.LLM.MaxSampleRows,
 			SendRowData:       cfg.LLM.SendRowData,
 			AllowExternalData: cfg.LLM.AllowExternalData,
+			RedactPII:         cfg.LLM.RedactPII,
 		},
 		Metrics: MetricsConfig{
 			TrendThresholdPercent:    cfg.Metrics.TrendThresholdPercent,

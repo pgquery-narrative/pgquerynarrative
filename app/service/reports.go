@@ -838,7 +838,7 @@ func (s *ReportsService) CreateShare(ctx context.Context, payload *reports.Creat
 		expiresHours = s.shareLinkDefaultHours
 	}
 	if payload.ExpiresInHours != nil && *payload.ExpiresInHours > 0 {
-		expiresHours = *payload.ExpiresInHours
+		expiresHours = int(*payload.ExpiresInHours)
 	}
 	if expiresHours > 8760 {
 		return nil, &reports.ValidationError{Name: "validation_error", Message: "expires_in_hours must be at most 8760 (1 year)", Code: strPtr("VALIDATION_ERROR")}
