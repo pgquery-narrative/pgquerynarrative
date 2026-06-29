@@ -3,11 +3,17 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Database, Cpu, Settings2, BarChart3 } from "lucide-react";
 import { api, type AnalyticsSettings, type EmbeddingSettings, type LLMSettings } from "@/api/client";
+import { getApiKey, setApiKey } from "@/api/auth";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default function SettingsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsSettings | null>(null);
   const [llm, setLlm] = useState<LLMSettings | null>(null);
   const [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null);
+  const [authEnabled, setAuthEnabled] = useState(false);
+  const [apiKey, setApiKeyState] = useState(getApiKey());
+  const [apiKeySaved, setApiKeySaved] = useState(false);
 
   useEffect(() => {
     api
@@ -16,6 +22,7 @@ export default function SettingsPage() {
         setAnalytics(r.analytics);
         if (r.llm) setLlm(r.llm);
         if (r.embedding) setEmbedding(r.embedding);
+        if (r.security) setAuthEnabled(r.security.auth_enabled);
       })
       .catch(() => {});
   }, []);
@@ -118,7 +125,32 @@ export default function SettingsPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="Allowed schemas" value="public, demo" />
+            <Row label="Auth enabled" value={authEnabled ? "yes" : "no"} />
+            {authEnabled && (
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <label htmlFor="api-key" className="text-sm text-muted-foreground">API key (Bearer token)</label>
+                <Input
+                  id="api-key"
+                  type="password"
+                  placeholder="Paste SECURITY_API_KEY"
+                  value={apiKey}
+                  onChange={(e) => setApiKeyState(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    setApiKey(apiKey);
+                    setApiKeySaved(true);
+                    setTimeout(() => setApiKeySaved(false), 2000);
+                  }}
+                >
+                  {apiKeySaved ? "Saved" : "Save API key"}
+                </Button>
+                <p className="text-xs text-muted-foreground">Stored in this browser only (localStorage).</p>
+              </div>
+            )}
+            <Row label="Allowed schemas" value="demo (default)" />
             <Row label="Max query length" value="10,000 chars" />
             <Row label="Max rows per query" value="1,000" />
             <Row label="Server port" value={envOrDefault("PORT", "8080")} />

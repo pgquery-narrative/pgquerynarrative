@@ -29,23 +29,38 @@ type Result struct {
 }
 
 type Runner struct {
-	pool       *pgxpool.Pool
-	validator  *Validator
-	maxRows    int
-	queryLimit time.Duration
+	pool                *pgxpool.Pool
+	validator           *Validator
+	maxRows             int
+	queryLimit          time.Duration
+	allowExplainAnalyze bool
 }
 
-func NewRunner(pool *pgxpool.Pool, validator *Validator, maxRows int, timeout time.Duration) *Runner {
-	return &Runner{
+// RunnerOption configures optional Runner behavior.
+type RunnerOption func(*Runner)
+
+// WithExplainAnalyze sets whether EXPLAIN ANALYZE (query execution) is permitted.
+func WithExplainAnalyze(enabled bool) RunnerOption {
+	return func(r *Runner) {
+		r.allowExplainAnalyze = enabled
+	}
+}
+
+func NewRunner(pool *pgxpool.Pool, validator *Validator, maxRows int, timeout time.Duration, opts ...RunnerOption) *Runner {
+	r := &Runner{
 		pool:       pool,
 		validator:  validator,
 		maxRows:    maxRows,
 		queryLimit: timeout,
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error) {
-	if err := r.validator.Validate(sql); err != nil {
+	if err := r.ValidateQuery(sql); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
 
@@ -113,4 +128,14 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 		RowLimitApplied:  limit,
 		OriginalRowLimit: limit,
 	}, nil
+}
+
+// ValidateQuery checks SQL safety without executing it.
+func (r *Runner) ValidateQuery(sql string) error {
+	return r.validator.Validate(sql)
+}
+
+// QueryTimeout returns the per-query execution timeout configured for this runner.
+func (r *Runner) QueryTimeout() time.Duration {
+	return r.queryLimit
 }

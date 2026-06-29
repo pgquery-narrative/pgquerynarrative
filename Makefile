@@ -76,9 +76,8 @@ docker-start:
 	@$(MAKE) db-init || true
 	@echo ""
 	@echo "Step 3: Running migrations..."
-	@docker compose run --rm --entrypoint /app/bin/migrate app -path /app/app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" up || true
+	@docker compose run --rm --entrypoint /app/bin/migrate app -path /app/app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" up
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -c "ALTER ROLE pgquerynarrative_readonly SET default_transaction_read_only = on;" 2>/dev/null || true
-	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -c "UPDATE schema_migrations SET version = 11, dirty = false;" 2>/dev/null || true
 	@echo ""
 	@echo "Step 4: Seeding demo data..."
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -f - < tools/db/seed.sql || echo "⚠️  Seed data already exists or database not accessible"
@@ -185,16 +184,16 @@ build-mcp:
 	$(GO) build $(MCP_LDFLAGS) -o bin/mcp-server ./cmd/mcp-server
 	@echo "✅ MCP server: bin/mcp-server"
 
-# Release build: multi-arch server + MCP binaries and checksums. Set VERSION (e.g. 1.0.0) or leave empty for dev.
+# Release build: native server + MCP binaries and checksums.
+# Multi-arch release assets are built in .github/workflows/release.yml (CGO per platform).
 VERSION ?=
-RELEASE_GOOS_ARCH ?= linux/amd64 darwin/amd64 darwin/arm64
 build-release:
 	@mkdir -p bin
-	@for pair in $(RELEASE_GOOS_ARCH); do \
-		GOOS=$${pair%%/*} GOARCH=$${pair##*/} $(GO) build $(SERVER_LDFLAGS) -o bin/pgquerynarrative-server-$${pair%%/*}-$${pair##*/} ./cmd/server; \
-		GOOS=$${pair%%/*} GOARCH=$${pair##*/} $(GO) build $(MCP_LDFLAGS) -o bin/pgquerynarrative-mcp-$${pair%%/*}-$${pair##*/} ./cmd/mcp-server; \
-	done
-	@(cd bin && sha256sum pgquerynarrative-* 2>/dev/null > checksums.txt || true)
+	@native_os=$$($(GO) env GOOS); native_arch=$$($(GO) env GOARCH); \
+	echo "Building release binaries for $$native_os/$$native_arch..."; \
+	CGO_ENABLED=1 $(GO) build $(SERVER_LDFLAGS) -o bin/pgquerynarrative-server-$$native_os-$$native_arch ./cmd/server; \
+	CGO_ENABLED=0 $(GO) build $(MCP_LDFLAGS) -o bin/pgquerynarrative-mcp-$$native_os-$$native_arch ./cmd/mcp-server; \
+	(cd bin && sha256sum pgquerynarrative-* > checksums.txt)
 	@echo "✅ Release binaries in bin/ (VERSION=$(VERSION))"
 
 run:

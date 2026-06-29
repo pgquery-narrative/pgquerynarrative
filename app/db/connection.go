@@ -1,15 +1,13 @@
-// Package db provides PostgreSQL connection pools for the application.
-// ReadOnly is used for executing user queries (least privilege); App is used
-// for saved_queries, reports, and other app tables. Used by the server and by
-// pkg/narrative when constructing the client.
 package db
 
 import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
@@ -21,6 +19,13 @@ type Pools struct {
 	ReadOnlyPools       map[string]*pgxpool.Pool
 	DefaultConnectionID string
 	App                 *pgxpool.Pool
+}
+
+type poolOptions struct {
+	maxConns        int32
+	searchPath      []string
+	maxConnIdleTime time.Duration
+	connectTimeout  time.Duration
 }
 
 // NewPools creates both connection pools from the given database config. It retries
@@ -50,6 +55,13 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 			AllowedSchemas:   append([]string(nil), cfg.AllowedSchemas...),
 		}}
 	}
+	maxConns32 := maxConns(cfg.MaxConnections)
+	poolDefaults := poolOptions{
+		maxConns:        maxConns32,
+		maxConnIdleTime: 5 * time.Minute,
+		connectTimeout:  10 * time.Second,
+	}
+
 	readOnlyPools := make(map[string]*pgxpool.Pool, len(connections))
 	for _, conn := range connections {
 		readOnlyURL := buildConnectionURL(
@@ -60,7 +72,9 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 			conn.Database,
 			conn.SSLMode,
 		)
-		pool, err := newPoolWithRetries(ctx, readOnlyURL)
+		opts := poolDefaults
+		opts.searchPath = append([]string(nil), conn.AllowedSchemas...)
+		pool, err := newPoolWithRetries(ctx, readOnlyURL, opts)
 		if err != nil {
 			closePools(readOnlyPools)
 			return nil, fmt.Errorf("%w (%s): %v", errors.ErrReadOnlyPoolFailed, conn.ID, err)
@@ -68,22 +82,11 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 		readOnlyPools[conn.ID] = pool
 	}
 
-	maxConns32 := maxConns(cfg.MaxConnections)
-	for _, p := range readOnlyPools {
-		p.Config().MaxConns = maxConns32
-		p.Config().MaxConnLifetime = 30 * time.Minute
-		p.Config().MinConns = 2
-	}
-
-	appPool, err := newPoolWithRetries(ctx, appURL)
+	appPool, err := newPoolWithRetries(ctx, appURL, poolDefaults)
 	if err != nil {
 		closePools(readOnlyPools)
 		return nil, fmt.Errorf("%w: %v", errors.ErrAppPoolFailed, err)
 	}
-
-	appPool.Config().MaxConns = maxConns32
-	appPool.Config().MaxConnLifetime = 30 * time.Minute
-	appPool.Config().MinConns = 2
 
 	defaultID := cfg.DefaultID
 	if defaultID == "" {
@@ -103,13 +106,13 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 	}, nil
 }
 
-func newPoolWithRetries(ctx context.Context, connURL string) (*pgxpool.Pool, error) {
+func newPoolWithRetries(ctx context.Context, connURL string, opts poolOptions) (*pgxpool.Pool, error) {
 	var pool *pgxpool.Pool
 	var err error
 	maxRetries := 3
 	retryDelay := 2 * time.Second
 	for i := 0; i < maxRetries; i++ {
-		pool, err = pgxpool.New(ctx, connURL)
+		pool, err = newPool(ctx, connURL, opts)
 		if err == nil {
 			if pingErr := pool.Ping(ctx); pingErr != nil {
 				pool.Close()
@@ -127,6 +130,36 @@ func newPoolWithRetries(ctx context.Context, connURL string) (*pgxpool.Pool, err
 		return nil, err
 	}
 	return pool, nil
+}
+
+func newPool(ctx context.Context, connURL string, opts poolOptions) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(connURL)
+	if err != nil {
+		return nil, err
+	}
+	if opts.maxConns > 0 {
+		cfg.MaxConns = opts.maxConns
+	}
+	cfg.MinConns = 2
+	cfg.MaxConnLifetime = 30 * time.Minute
+	if opts.maxConnIdleTime > 0 {
+		cfg.MaxConnIdleTime = opts.maxConnIdleTime
+	}
+	if opts.connectTimeout > 0 {
+		cfg.ConnConfig.ConnectTimeout = opts.connectTimeout
+	}
+	if len(opts.searchPath) > 0 {
+		schemas := opts.searchPath
+		cfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+			parts := make([]string, len(schemas))
+			for i, s := range schemas {
+				parts[i] = pgx.Identifier{s}.Sanitize()
+			}
+			_, err := conn.Exec(ctx, "SET search_path TO "+strings.Join(parts, ", "))
+			return err
+		}
+	}
+	return pgxpool.NewWithConfig(ctx, cfg)
 }
 
 func maxConns(max int) int32 {

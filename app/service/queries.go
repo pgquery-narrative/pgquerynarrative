@@ -19,6 +19,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/charts"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
+	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 	"github.com/pgquerynarrative/pgquerynarrative/app/format"
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
@@ -34,6 +35,12 @@ type QueriesService struct {
 	embeddingStore *embedding.Store    // Optional: for RAG / similar-query retrieval
 	embeddingModel string              // Model name to store with embedding (e.g. nomic-embed-text)
 	connectionResolver
+	statStatementsEnabled bool
+}
+
+// SetStatStatementsEnabled toggles the pg_stat_statements API.
+func (s *QueriesService) SetStatStatementsEnabled(enabled bool) {
+	s.statStatementsEnabled = enabled
 }
 
 var strPtr = format.StrPtr
@@ -49,8 +56,17 @@ func NewQueriesService(readOnlyPool, appPool *pgxpool.Pool, runner *queryrunner.
 		appPool:            appPool,
 		runner:             runner,
 		metricsOpts:        opts,
-		connectionResolver: newConnectionResolver("default", defaultRunners, defaultLoaders),
+		connectionResolver: newConnectionResolver("default", defaultRunners, defaultLoaders, nil),
 	}
+}
+
+// ValidateQuery checks SQL safety for the given connection without executing it.
+func (s *QueriesService) ValidateQuery(connectionID *string, sql string) error {
+	sql = strings.TrimSpace(sql)
+	if sql == "" {
+		return nil
+	}
+	return s.connectionResolver.runnerFor(connectionID).ValidateQuery(sql)
 }
 
 // NewQueriesServiceWithEmbedding is like NewQueriesService but enables storing embeddings
@@ -68,12 +84,12 @@ func NewQueriesServiceWithEmbedding(readOnlyPool, appPool *pgxpool.Pool, runner 
 		embedder:           embedder,
 		embeddingStore:     embeddingStore,
 		embeddingModel:     embeddingModel,
-		connectionResolver: newConnectionResolver("default", defaultRunners, defaultLoaders),
+		connectionResolver: newConnectionResolver("default", defaultRunners, defaultLoaders, nil),
 	}
 }
 
 // NewQueriesServiceMultiConnection creates a queries service with one runner per connection.
-func NewQueriesServiceMultiConnection(appPool *pgxpool.Pool, runners map[string]*queryrunner.Runner, defaultConnectionID string, metricsCfg config.MetricsConfig, embedder embedding.Embedder, embeddingStore *embedding.Store, embeddingModel string) *QueriesService {
+func NewQueriesServiceMultiConnection(appPool *pgxpool.Pool, runners map[string]*queryrunner.Runner, defaultConnectionID string, metricsCfg config.MetricsConfig, embedder embedding.Embedder, embeddingStore *embedding.Store, embeddingModel string, readonlyUsers map[string]string) *QueriesService {
 	var defaultRunner *queryrunner.Runner
 	if r, ok := runners[defaultConnectionID]; ok {
 		defaultRunner = r
@@ -85,13 +101,14 @@ func NewQueriesServiceMultiConnection(appPool *pgxpool.Pool, runners map[string]
 	}
 	opts := metricsOptionsFromConfig(metricsCfg)
 	return &QueriesService{
-		appPool:            appPool,
-		runner:             defaultRunner,
-		metricsOpts:        opts,
-		embedder:           embedder,
-		embeddingStore:     embeddingStore,
-		embeddingModel:     embeddingModel,
-		connectionResolver: newConnectionResolver(defaultConnectionID, runners, map[string]*catalog.Loader{}),
+		appPool:               appPool,
+		runner:                defaultRunner,
+		metricsOpts:           opts,
+		embedder:              embedder,
+		embeddingStore:        embeddingStore,
+		embeddingModel:        embeddingModel,
+		statStatementsEnabled: true,
+		connectionResolver:    newConnectionResolver(defaultConnectionID, runners, map[string]*catalog.Loader{}, readonlyUsers),
 	}
 }
 
@@ -206,6 +223,9 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 
 // StatStatements returns top queries from pg_stat_statements for observability.
 func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.StatStatementsPayload) (*queries.StatStatementsResult, error) {
+	if !s.statStatementsEnabled {
+		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
 	runner := s.connectionResolver.runnerFor(payload.ConnectionID)
 	orderBy := payload.OrderBy
 	if orderBy == "" {
@@ -216,10 +236,15 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 		limit = 20
 	}
 
-	result, err := runner.StatStatements(ctx, orderBy, limit)
+	timeout := 30 * time.Second
+	if runner != nil {
+		timeout = runner.QueryTimeout()
+	}
+	result, err := queryrunner.StatStatements(ctx, s.appPool, s.connectionResolver.readOnlyUserFor(payload.ConnectionID), orderBy, limit, timeout)
 	if err != nil {
 		apilog.ValidationError("stat_statements", "validation_error", err.Error())
-		return nil, &queries.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		msg := SanitizeClientMessage(err)
+		return nil, &queries.ValidationError{Name: "validation_error", Message: msg, Code: strPtr("VALIDATION_ERROR")}
 	}
 
 	items := make([]*queries.StatStatementRow, 0, len(result.Items))

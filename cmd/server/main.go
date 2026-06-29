@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,7 +30,9 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/logger"
+	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 	"github.com/pgquerynarrative/pgquerynarrative/app/ratelimit"
+	"github.com/pgquerynarrative/pgquerynarrative/app/service"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/connections"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
 	connectionsServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/connections/server"
@@ -58,6 +59,9 @@ const requestIDContextKey contextKey = "request_id"
 // and web UI to that client, and runs the HTTP server with graceful shutdown.
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("invalid configuration: %v", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -77,6 +81,11 @@ func main() {
 	schedulesEndpoints := schedules.NewEndpoints(client.SchedulesService())
 	schemaEndpoints := schema.NewEndpoints(client.SchemaService())
 	suggestionsEndpoints := suggestions.NewEndpoints(client.SuggestionsService())
+
+	if cfg.Security.ScheduleRunnerEnabled {
+		service.StartScheduleRunner(ctx, client.AppPool(), client.SchedulesRunner(), cfg.Security.ScheduleRunnerInterval)
+		appLogger.Info("schedule runner started", "interval", cfg.Security.ScheduleRunnerInterval.String())
+	}
 
 	// Configure HTTP server
 	httpServer := setupHTTPServer(cfg, client, queriesEndpoints, connectionsEndpoints, reportsEndpoints, dashboardsEndpoints, schedulesEndpoints, schemaEndpoints, suggestionsEndpoints, appLogger)
@@ -164,11 +173,24 @@ func setupHTTPServer(
 	if pool := client.AppPool(); pool != nil {
 		auditStore = audit.NewStore(pool)
 	}
-	rl := ratelimit.NewLimiter(cfg.Security.RateLimitRPM, cfg.Security.RateLimitBurst)
+	oidc := auth.NewOIDCValidator(auth.OIDCConfig{
+		Issuer:   cfg.Security.OIDCIssuer,
+		Audience: cfg.Security.OIDCAudience,
+		JWKSURL:  cfg.Security.OIDCJWKSURL,
+	})
+	authenticator := auth.NewAuthenticator(
+		cfg.Security.AuthEnabled,
+		cfg.Security.APIKey,
+		cfg.Security.APIKeysJSON,
+		oidc,
+	)
+	rl := ratelimit.NewLimiterFromConfig(client.AppPool(), cfg.Security.RateLimitRPM, cfg.Security.RateLimitBurst, cfg.Security.RateLimitDistributed)
+	trusted := newTrustedProxyMatcher(cfg.Security.TrustedProxies)
 
-	handler := requestIDMiddleware(requestLoggingMiddleware(combinedMux, appLogger, auditStore))
-	handler = authMiddleware(handler, cfg.Security.AuthEnabled, cfg.Security.APIKey, auditStore)
-	handler = rateLimitMiddleware(handler, rl, auditStore)
+	handler := requestIDMiddleware(requestLoggingMiddleware(combinedMux, appLogger, auditStore, trusted))
+	handler = maxBodyMiddleware(handler, cfg.Security.MaxRequestBodyBytes)
+	handler = authMiddleware(handler, authenticator, auditStore, trusted)
+	handler = rateLimitMiddleware(handler, rl, auditStore, trusted)
 	handler = securityHeadersMiddleware(handler)
 	if len(cfg.Server.CORSOrigins) > 0 {
 		handler = corsMiddleware(handler, cfg.Server.CORSOrigins)
@@ -179,6 +201,7 @@ func setupHTTPServer(
 		Handler:      handler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  120 * time.Second,
 	}
 }
 
@@ -211,7 +234,20 @@ func versionHandler() http.HandlerFunc {
 }
 
 func metricsHandler(client *narrative.Client) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+		if format == "" {
+			accept := r.Header.Get("Accept")
+			if strings.Contains(accept, "text/plain") && strings.Contains(accept, "openmetrics") {
+				format = "prometheus"
+			}
+		}
+		if format == "prometheus" || format == "openmetrics" {
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(observability.PrometheusPoolMetrics(Version, client.AppPool())))
+			return
+		}
 		out := map[string]interface{}{"version": Version}
 		if pool := client.AppPool(); pool != nil {
 			stat := pool.Stat()
@@ -235,6 +271,10 @@ func settingsHandler(cfg config.Config) http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		embEnabled := cfg.Embedding.BaseURL != "" && cfg.Embedding.Model != ""
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"security": map[string]interface{}{
+				"auth_enabled":   cfg.Security.AuthEnabled,
+				"rate_limit_rpm": cfg.Security.RateLimitRPM,
+			},
 			"analytics": map[string]interface{}{
 				"anomaly_sigma":               cfg.Metrics.AnomalySigma,
 				"anomaly_method":              cfg.Metrics.AnomalyMethod,
@@ -283,8 +323,8 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 }
 
 // authMiddleware requires Bearer token for /api/* and /web/reports/export* when enabled.
-// Sets auth identity in context for audit. Health and ready are never protected.
-func authMiddleware(next http.Handler, enabled bool, apiKey string, auditStore *audit.Store) http.Handler {
+// Sets auth identity and role in context for audit and RBAC. Health and ready are never protected.
+func authMiddleware(next http.Handler, authenticator *auth.Authenticator, auditStore *audit.Store, trusted *trustedProxyMatcher) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if path == "" {
@@ -292,14 +332,16 @@ func authMiddleware(next http.Handler, enabled bool, apiKey string, auditStore *
 		}
 		isPublicSharedAPI := strings.HasPrefix(path, "/api/v1/reports/shared/")
 		isPublicSharedPDF := path == "/web/reports/export/shared/pdf"
-		needAuth := (strings.HasPrefix(path, "/api/") && !isPublicSharedAPI) || ((path == "/web/reports/export" || path == "/web/reports/export/pdf") && !isPublicSharedPDF)
-		if !enabled || !needAuth || apiKey == "" {
+		needAuth := (strings.HasPrefix(path, "/api/") && !isPublicSharedAPI) ||
+			path == "/metrics" ||
+			((path == "/web/reports/export" || path == "/web/reports/export/pdf") && !isPublicSharedPDF)
+		if authenticator == nil || !authenticator.AuthRequired() || !needAuth {
 			next.ServeHTTP(w, r)
 			return
 		}
-		identity, ok := auth.ValidateRequest(r, apiKey)
+		identity, role, ok := authenticator.ValidateRequest(r)
 		if !ok {
-			clientIP := clientIPFromRequest(r)
+			clientIP := clientIPFromRequest(r, trusted)
 			if auditStore != nil {
 				auditStore.Record(r.Context(), audit.Entry{
 					EventType: audit.EventAuthFailure,
@@ -313,19 +355,24 @@ func authMiddleware(next http.Handler, enabled bool, apiKey string, auditStore *
 			_, _ = w.Write([]byte(`{"name":"unauthorized","message":"missing or invalid Authorization","code":"UNAUTHORIZED"}`))
 			return
 		}
+		if !auth.AllowsMethod(role, r.Method, path) {
+			auth.WriteForbidden(w)
+			return
+		}
 		ctx := context.WithValue(r.Context(), auth.IdentityContextKey, identity)
+		ctx = context.WithValue(ctx, auth.RoleContextKey, role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 // rateLimitMiddleware limits requests per client IP when limiter is non-nil. Returns 429 when exceeded.
-func rateLimitMiddleware(next http.Handler, limiter *ratelimit.Limiter, auditStore *audit.Store) http.Handler {
+func rateLimitMiddleware(next http.Handler, limiter ratelimit.AllowFunc, auditStore *audit.Store, trusted *trustedProxyMatcher) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if limiter == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		key := clientIPFromRequest(r)
+		key := clientIPFromRequest(r, trusted)
 		if !limiter.Allow(key) {
 			if auditStore != nil {
 				auditStore.Record(r.Context(), audit.Entry{
@@ -349,6 +396,19 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func maxBodyMiddleware(next http.Handler, maxBytes int64) http.Handler {
+	if maxBytes <= 0 {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -375,10 +435,10 @@ func corsMiddleware(next http.Handler, origins []string) http.Handler {
 }
 
 // requestLoggingMiddleware logs each HTTP request and records API_REQUEST in the audit log when auditStore is set.
-func requestLoggingMiddleware(next http.Handler, appLogger *logger.Logger, auditStore *audit.Store) http.Handler {
+func requestLoggingMiddleware(next http.Handler, appLogger *logger.Logger, auditStore *audit.Store, trusted *trustedProxyMatcher) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		clientIP := clientIPFromRequest(r)
+		clientIP := clientIPFromRequest(r, trusted)
 		path := r.URL.Path
 		if path == "" {
 			path = "/"
@@ -482,18 +542,4 @@ func spaHandler(dir string) http.Handler {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		fileServer.ServeHTTP(w, r)
 	})
-}
-
-func clientIPFromRequest(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

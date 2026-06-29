@@ -44,6 +44,7 @@ func TestValidator(t *testing.T) {
 		{"disallowed_keyword_drop", "SELECT * FROM demo.sales; DROP TABLE demo.sales", errors.ErrMultipleStatements},
 		{"write_inside_cte", "WITH changed AS (DELETE FROM demo.sales WHERE quantity = 0 RETURNING id) SELECT * FROM changed", errors.ErrDisallowedKeyword},
 		{"schema_not_allowed", "SELECT * FROM public.users", errors.ErrSchemaNotAllowed},
+		{"unqualified_table", "SELECT * FROM sales", errors.ErrUnqualifiedTable},
 		{"schema_allowed_in_join", "SELECT * FROM demo.sales s JOIN demo.inventory i ON i.id = s.id", nil},
 		{"semicolon_in_string_literal", "SELECT ';' AS literal_value", nil},
 		{"alias_column_allowed", "WITH cte AS (SELECT region AS r FROM demo.sales) SELECT c.r FROM cte c", nil},

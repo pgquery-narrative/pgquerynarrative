@@ -1,0 +1,23 @@
+name: Setup Go with CGO
+description: Install Go and a C toolchain required by libpg_query (pg_query_go).
+inputs:
+  go-version:
+    description: Go version to install
+    required: false
+    default: '1.24'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache-dependency-path: go.sum
+    - name: Install C toolchain (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y gcc libc6-dev
+    - name: Verify CGO
+      shell: bash
+      run: |
+        go env CGO_ENABLED
+        command -v gcc || command -v cc || command -v clang

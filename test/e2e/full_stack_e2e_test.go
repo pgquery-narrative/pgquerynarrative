@@ -347,7 +347,7 @@ func TestFullStackE2E(t *testing.T) {
 	})
 
 	t.Run("ReportsGenerate_ValidationError", func(t *testing.T) {
-		payload := map[string]interface{}{"sql": "SELECT * FROM public.pg_database LIMIT 1"}
+		payload := map[string]interface{}{"sql": "SELECT * FROM demo.sales LIMIT 1"}
 		body, _ := json.Marshal(payload)
 		resp, err := http.Post(base+"/api/v1/reports/generate", "application/json", bytes.NewReader(body))
 		if err != nil {

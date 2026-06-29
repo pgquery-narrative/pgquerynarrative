@@ -20,7 +20,7 @@ type SchemaService struct {
 func NewSchemaService(loader *catalog.Loader) *SchemaService {
 	return &SchemaService{
 		loader:             loader,
-		connectionResolver: newConnectionResolver("default", nil, map[string]*catalog.Loader{"default": loader}),
+		connectionResolver: newConnectionResolver("default", nil, map[string]*catalog.Loader{"default": loader}, nil),
 	}
 }
 
@@ -37,7 +37,7 @@ func NewSchemaServiceMultiConnection(loaders map[string]*catalog.Loader, default
 	}
 	return &SchemaService{
 		loader:             defaultLoader,
-		connectionResolver: newConnectionResolver(defaultConnectionID, nil, loaders),
+		connectionResolver: newConnectionResolver(defaultConnectionID, nil, loaders, nil),
 	}
 }
 

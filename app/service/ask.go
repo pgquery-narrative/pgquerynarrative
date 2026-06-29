@@ -45,7 +45,7 @@ func NewAskService(
 			"default": reportsSvc.runner,
 		}, map[string]*catalog.Loader{
 			"default": catalogLoader,
-		}),
+		}, nil),
 	}
 }
 
@@ -73,7 +73,7 @@ func NewAskServiceMultiConnection(
 		validator:          validator,
 		reportsSvc:         reportsSvc,
 		appPool:            appPool,
-		connectionResolver: newConnectionResolver(defaultConnectionID, reportsSvc.runners, loaders),
+		connectionResolver: newConnectionResolver(defaultConnectionID, reportsSvc.runners, loaders, nil),
 	}
 }
 

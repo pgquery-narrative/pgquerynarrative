@@ -26,6 +26,10 @@ var (
 	// This enforces schema-level access control.
 	ErrSchemaNotAllowed = errors.New("query references disallowed schema")
 
+	// ErrUnqualifiedTable indicates a table reference without an explicit schema qualifier.
+	// Unqualified names resolve via search_path and bypass schema allowlists.
+	ErrUnqualifiedTable = errors.New("table references must use an explicit schema (e.g. demo.sales)")
+
 	// ErrMultipleStatements indicates the query contains multiple SQL statements.
 	// Only single-statement queries are allowed for security.
 	ErrMultipleStatements = errors.New("multiple SQL statements are not allowed")
@@ -91,6 +95,9 @@ var (
 
 	// ErrStatStatementsUnavailable indicates pg_stat_statements is not enabled or not readable.
 	ErrStatStatementsUnavailable = errors.New("pg_stat_statements is not available")
+
+	// ErrExplainAnalyzeDisabled indicates EXPLAIN ANALYZE was requested but is disabled by policy.
+	ErrExplainAnalyzeDisabled = errors.New("EXPLAIN ANALYZE is disabled")
 )
 
 // Helper functions for wrapping errors with context. Use %w so callers can use errors.Is/As.

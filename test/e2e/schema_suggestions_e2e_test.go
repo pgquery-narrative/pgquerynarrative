@@ -39,7 +39,7 @@ func TestSchemaAndSuggestionsE2E(t *testing.T) {
 	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
 	mockLLM := &e2eLLM{response: ""}
 	reportsService := service.NewReportsService(pool, pool, runner, mockLLM, config.MetricsConfig{})
-	askService := service.NewAskService(loader, mockLLM, validator, reportsService)
+	askService := service.NewAskService(pool, loader, mockLLM, validator, reportsService)
 	suggestionsService := &service.SuggestionsServiceWrapper{Suggester: suggester, AskSvc: askService}
 	schemaEndpoints := schema.NewEndpoints(schemaService)
 	suggestionsEndpoints := suggestions.NewEndpoints(suggestionsService)

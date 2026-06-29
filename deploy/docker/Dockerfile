@@ -5,7 +5,7 @@
 FROM golang:1.24.4-alpine AS builder
 WORKDIR /app
 
-RUN apk add --no-cache git
+RUN apk add --no-cache git build-base
 
 # Dependencies first for better layer caching
 COPY go.mod go.sum ./
@@ -23,7 +23,7 @@ COPY pkg pkg/
 COPY web web/
 RUN go install goa.design/goa/v3/cmd/goa@latest
 RUN goa gen github.com/pgquerynarrative/pgquerynarrative/api/design
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/server ./cmd/server
+RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o bin/server ./cmd/server
 
 # ---- Runtime ----
 FROM alpine:3.20

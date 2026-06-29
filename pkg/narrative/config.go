@@ -26,6 +26,15 @@ type Config struct {
 	MaxQueryLength int
 	// MaxRowsPerQuery is the maximum rows returned per query execution.
 	MaxRowsPerQuery int
+	// Security holds security-related settings propagated from app config.
+	Security SecurityConfig
+}
+
+// SecurityConfig holds security settings for narrative client services.
+type SecurityConfig struct {
+	ShareLinkDefaultHours int
+	ExplainAnalyzeEnabled bool
+	StatStatementsEnabled bool
 }
 
 // EmbeddingConfig holds optional embedding model settings (e.g. Ollama nomic-embed-text).
@@ -66,10 +75,13 @@ type DataConnectionConfig struct {
 
 // LLMConfig holds LLM provider settings.
 type LLMConfig struct {
-	Provider string // "ollama", "gemini", "claude", "openai", "groq"
-	Model    string
-	APIKey   string
-	BaseURL  string
+	Provider          string
+	Model             string
+	APIKey            string
+	BaseURL           string
+	MaxSampleRows     int
+	SendRowData       bool
+	AllowExternalData bool
 }
 
 // MetricsConfig holds metrics and period-comparison settings.
@@ -107,10 +119,13 @@ func FromAppConfig(cfg config.Config) Config {
 			Connections:      toNarrativeConnections(cfg.Database.Connections),
 		},
 		LLM: LLMConfig{
-			Provider: cfg.LLM.Provider,
-			Model:    cfg.LLM.Model,
-			APIKey:   cfg.LLM.APIKey,
-			BaseURL:  cfg.LLM.BaseURL,
+			Provider:          cfg.LLM.Provider,
+			Model:             cfg.LLM.Model,
+			APIKey:            cfg.LLM.APIKey,
+			BaseURL:           cfg.LLM.BaseURL,
+			MaxSampleRows:     cfg.LLM.MaxSampleRows,
+			SendRowData:       cfg.LLM.SendRowData,
+			AllowExternalData: cfg.LLM.AllowExternalData,
 		},
 		Metrics: MetricsConfig{
 			TrendThresholdPercent:    cfg.Metrics.TrendThresholdPercent,
@@ -132,6 +147,11 @@ func FromAppConfig(cfg config.Config) Config {
 		AllowedSchemas:  allowedSchemasOrDefault(cfg.Database.AllowedSchemas),
 		MaxQueryLength:  10000,
 		MaxRowsPerQuery: 1000,
+		Security: SecurityConfig{
+			ShareLinkDefaultHours: cfg.Security.ShareLinkDefaultHours,
+			ExplainAnalyzeEnabled: cfg.Security.ExplainAnalyzeEnabled,
+			StatStatementsEnabled: cfg.Security.StatStatementsEnabled,
+		},
 	}
 }
 
@@ -139,7 +159,7 @@ func allowedSchemasOrDefault(schemas []string) []string {
 	if len(schemas) > 0 {
 		return schemas
 	}
-	return []string{"public", "demo"}
+	return []string{"demo"}
 }
 
 func toNarrativeConnections(in []config.DataConnectionConfig) []DataConnectionConfig {

@@ -38,6 +38,7 @@ type ReportsService struct {
 	embeddingStore *embedding.Store
 	runners        map[string]*queryrunner.Runner
 	connectionResolver
+	shareLinkDefaultHours int
 }
 
 // reportGenOpts toggles optional stages inside report generation.
@@ -45,6 +46,20 @@ type reportGenOpts struct {
 	// skipNarrativeLLM skips the story LLM and RAG/embedding work tied to narrative quality.
 	// Used for Ask + Ollama so only the NL→SQL call hits the local model (second call was often minutes or appeared hung).
 	skipNarrativeLLM bool
+}
+
+// SetPromptOptions configures LLM data governance for narrative generation.
+func (s *ReportsService) SetPromptOptions(opts llm.PromptOptions) {
+	if s.generator != nil {
+		s.generator.SetPromptOptions(opts)
+	}
+}
+
+// SetShareLinkDefaultHours sets the default TTL for share links when expires_in_hours is omitted.
+func (s *ReportsService) SetShareLinkDefaultHours(hours int) {
+	if hours > 0 {
+		s.shareLinkDefaultHours = hours
+	}
 }
 
 func NewReportsService(readOnlyPool, appPool *pgxpool.Pool, runner *queryrunner.Runner, llmClient llm.Client, metricsCfg config.MetricsConfig) *ReportsService {
@@ -57,7 +72,7 @@ func NewReportsService(readOnlyPool, appPool *pgxpool.Pool, runner *queryrunner.
 		generator:          story.NewGenerator(llmClient),
 		metricsOpts:        opts,
 		runners:            map[string]*queryrunner.Runner{"default": runner},
-		connectionResolver: newConnectionResolver("default", map[string]*queryrunner.Runner{"default": runner}, nil),
+		connectionResolver: newConnectionResolver("default", map[string]*queryrunner.Runner{"default": runner}, nil, nil),
 	}
 }
 
@@ -75,7 +90,7 @@ func NewReportsServiceWithRAG(readOnlyPool, appPool *pgxpool.Pool, runner *query
 		embedder:           embedder,
 		embeddingStore:     embeddingStore,
 		runners:            map[string]*queryrunner.Runner{"default": runner},
-		connectionResolver: newConnectionResolver("default", map[string]*queryrunner.Runner{"default": runner}, nil),
+		connectionResolver: newConnectionResolver("default", map[string]*queryrunner.Runner{"default": runner}, nil, nil),
 	}
 }
 
@@ -100,7 +115,7 @@ func NewReportsServiceMultiConnection(appPool *pgxpool.Pool, runners map[string]
 		embedder:           embedder,
 		embeddingStore:     embeddingStore,
 		runners:            runners,
-		connectionResolver: newConnectionResolver(defaultConnectionID, runners, nil),
+		connectionResolver: newConnectionResolver(defaultConnectionID, runners, nil, nil),
 	}
 }
 
@@ -818,13 +833,23 @@ func (s *ReportsService) CreateShare(ctx context.Context, payload *reports.Creat
 	if err != nil {
 		return nil, err
 	}
+	expiresHours := 168
+	if s.shareLinkDefaultHours > 0 {
+		expiresHours = s.shareLinkDefaultHours
+	}
+	if payload.ExpiresInHours != nil && *payload.ExpiresInHours > 0 {
+		expiresHours = *payload.ExpiresInHours
+	}
+	if expiresHours > 8760 {
+		return nil, &reports.ValidationError{Name: "validation_error", Message: "expires_in_hours must be at most 8760 (1 year)", Code: strPtr("VALIDATION_ERROR")}
+	}
 	var expiresAt sql.NullTime
 	err = s.appPool.QueryRow(ctx, `
 		INSERT INTO app.report_share_tokens (report_id, token, expires_at)
-		VALUES ($1, $2, CASE WHEN $3::int IS NULL THEN NULL ELSE NOW() + ($3::text || ' hours')::interval END)
+		VALUES ($1, $2, NOW() + ($3::text || ' hours')::interval)
 		ON CONFLICT (report_id) DO UPDATE SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at, created_at = NOW()
 		RETURNING expires_at
-	`, payload.ReportID, token, payload.ExpiresInHours).Scan(&expiresAt)
+	`, payload.ReportID, token, expiresHours).Scan(&expiresAt)
 	if err != nil {
 		return nil, err
 	}
@@ -846,7 +871,7 @@ func (s *ReportsService) GetShared(ctx context.Context, payload *reports.GetShar
 		SELECT report_id
 		FROM app.report_share_tokens
 		WHERE token = $1
-		  AND (expires_at IS NULL OR expires_at > NOW())
+		  AND expires_at > NOW()
 	`, payload.Token).Scan(&reportID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

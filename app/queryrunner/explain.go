@@ -33,6 +33,9 @@ type ExplainResult struct {
 // Explain runs EXPLAIN (FORMAT JSON) on a validated read-only query and analyzes the plan.
 // When analyze is true, uses EXPLAIN (ANALYZE, FORMAT JSON) (executes the query; timeout-guarded).
 func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*ExplainResult, error) {
+	if analyze && !r.allowExplainAnalyze {
+		return nil, apperrors.ErrExplainAnalyzeDisabled
+	}
 	if err := r.validator.Validate(sql); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}

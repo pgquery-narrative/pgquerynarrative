@@ -4,10 +4,13 @@ package config
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 )
 
 // Config holds all application configuration.
@@ -106,18 +109,34 @@ type DataConnectionConfig struct {
 
 // SecurityConfig contains security-related settings.
 type SecurityConfig struct {
-	AuthEnabled    bool   // When true, API and web export require Bearer token (SECURITY_API_KEY).
-	APIKey         string // Bearer token for API auth; required when AuthEnabled is true.
-	RateLimitRPM   int    // Max requests per minute per client (0 = disabled). Applied when > 0.
-	RateLimitBurst int    // Burst size for rate limiter (allow short spikes). Default 2 * RateLimitRPM when 0.
+	AuthEnabled            bool     // When true, API and web export require Bearer token (SECURITY_API_KEY).
+	APIKey                 string   // Bearer token for API auth; required when AuthEnabled is true.
+	RateLimitRPM           int      // Max requests per minute per client (0 = disabled). Applied when > 0.
+	RateLimitBurst         int      // Burst size for rate limiter (allow short spikes). Default 2 * RateLimitRPM when 0.
+	TrustedProxies         []string // IPs/CIDRs that may set X-Forwarded-For / X-Real-IP (empty = use RemoteAddr only).
+	MaxRequestBodyBytes    int64    // Max HTTP request body size (0 = default 5 MiB).
+	ShareLinkDefaultHours  int      // Default share-link TTL when expires_in_hours is omitted (default 168).
+	ExplainAnalyzeEnabled  bool     // Allow EXPLAIN ANALYZE (executes query). Default false.
+	StatStatementsEnabled  bool     // Expose pg_stat_statements API. Default true.
+	APIKeysJSON            string   // Optional JSON array of {key,id,role} for multi-key RBAC.
+	RateLimitDistributed   bool     // Use PostgreSQL-backed rate limiting (multi-replica safe).
+	OIDCIssuer             string   // Optional OIDC issuer URL for JWT Bearer auth.
+	OIDCAudience           string   // Expected JWT aud claim.
+	OIDCJWKSURL            string   // Optional JWKS URL (defaults to issuer/.well-known/jwks.json).
+	ScheduleRunnerEnabled  bool     // Background schedule execution. Default true.
+	ScheduleRunnerInterval time.Duration
 }
 
 // LLMConfig contains settings for the LLM provider used for narrative generation.
 type LLMConfig struct {
-	Provider string // Provider name: "ollama", "gemini", "claude", "openai", "groq"
-	Model    string // Model name (e.g., "llama3.2", "gpt-4o-mini")
-	APIKey   string // API key (for cloud providers)
-	BaseURL  string // Base URL (for local providers like Ollama)
+	Provider          string // Provider name: "ollama", "gemini", "claude", "openai", "groq"
+	Model             string // Model name (e.g., "llama3.2", "gpt-4o-mini")
+	APIKey            string // API key (for cloud providers)
+	BaseURL           string // Base URL (for local providers like Ollama)
+	MaxSampleRows     int    // Max result rows included in narrative prompts (default 5)
+	SendRowData       bool   // When false, prompts omit row values (columns + metrics only)
+	AllowExternalData bool   // Explicit opt-in to send data to non-local LLM providers
+	RedactPII         bool   // Mask sensitive columns and PII patterns in LLM prompts
 }
 
 // Load reads configuration from environment variables and returns a Config struct.
@@ -144,19 +163,35 @@ func Load() Config {
 			ReadOnlyPassword: getEnv("DATABASE_READONLY_PASSWORD", "pgquerynarrative_readonly"),
 			SSLMode:          getEnv("DATABASE_SSL_MODE", "disable"),
 			QueryTimeout:     getEnvDuration("QUERY_TIMEOUT", 30*time.Second),
-			AllowedSchemas:   getEnvAllowedSchemas("DATABASE_ALLOWED_SCHEMAS", "public,demo"),
+			AllowedSchemas:   getEnvAllowedSchemas("DATABASE_ALLOWED_SCHEMAS", "demo"),
 		},
 		Security: SecurityConfig{
-			AuthEnabled:    getEnvBool("SECURITY_AUTH_ENABLED", false),
-			APIKey:         getEnv("SECURITY_API_KEY", ""),
-			RateLimitRPM:   getEnvInt("SECURITY_RATE_LIMIT_RPM", 0),
-			RateLimitBurst: getEnvInt("SECURITY_RATE_LIMIT_BURST", 0),
+			AuthEnabled:            getEnvBool("SECURITY_AUTH_ENABLED", false),
+			APIKey:                 getEnv("SECURITY_API_KEY", ""),
+			RateLimitRPM:           getEnvInt("SECURITY_RATE_LIMIT_RPM", 0),
+			RateLimitBurst:         getEnvInt("SECURITY_RATE_LIMIT_BURST", 0),
+			TrustedProxies:         getEnvSlice("SECURITY_TRUSTED_PROXIES", ","),
+			MaxRequestBodyBytes:    getEnvInt64("SECURITY_MAX_REQUEST_BODY_BYTES", 5*1024*1024),
+			ShareLinkDefaultHours:  getEnvInt("SECURITY_SHARE_LINK_DEFAULT_HOURS", 168),
+			ExplainAnalyzeEnabled:  getEnvBool("SECURITY_EXPLAIN_ANALYZE_ENABLED", false),
+			StatStatementsEnabled:  getEnvBool("SECURITY_STAT_STATEMENTS_ENABLED", true),
+			APIKeysJSON:            auth.LoadAPIKeysJSON(getEnv("SECURITY_API_KEYS_JSON", "")),
+			RateLimitDistributed:   getEnvBool("SECURITY_RATE_LIMIT_DISTRIBUTED", false),
+			OIDCIssuer:             getEnv("SECURITY_OIDC_ISSUER", ""),
+			OIDCAudience:           getEnv("SECURITY_OIDC_AUDIENCE", ""),
+			OIDCJWKSURL:            getEnv("SECURITY_OIDC_JWKS_URL", ""),
+			ScheduleRunnerEnabled:  getEnvBool("SCHEDULE_RUNNER_ENABLED", true),
+			ScheduleRunnerInterval: getEnvDuration("SCHEDULE_RUNNER_INTERVAL", time.Minute),
 		},
 		LLM: LLMConfig{
-			Provider: getEnv("LLM_PROVIDER", "ollama"),
-			Model:    getEnv("LLM_MODEL", "llama3.2"),
-			APIKey:   getEnv("LLM_API_KEY", ""),
-			BaseURL:  getEnv("LLM_BASE_URL", "http://localhost:11434"),
+			Provider:          getEnv("LLM_PROVIDER", "ollama"),
+			Model:             getEnv("LLM_MODEL", "llama3.2"),
+			APIKey:            getEnv("LLM_API_KEY", ""),
+			BaseURL:           getEnv("LLM_BASE_URL", "http://localhost:11434"),
+			MaxSampleRows:     clampInt(getEnvInt("LLM_MAX_SAMPLE_ROWS", 5), 0, 10),
+			SendRowData:       getEnvBool("LLM_SEND_ROW_DATA", true),
+			AllowExternalData: getEnvBool("LLM_ALLOW_EXTERNAL_DATA", false),
+			RedactPII:         getEnvBool("LLM_REDACT_PII", true),
 		},
 		Metrics: validateMetricsConfig(MetricsConfig{
 			TrendThresholdPercent:    getEnvFloat("PERIOD_TREND_THRESHOLD_PERCENT", 0.5),
@@ -292,6 +327,15 @@ func getEnvInt(key string, fallback int) int {
 	return fallback
 }
 
+func getEnvInt64(key string, fallback int64) int64 {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return parsed
+		}
+	}
+	return fallback
+}
+
 // getEnvBool retrieves a boolean environment variable or returns a default value.
 // Accepts: "true", "1", "yes", "on" (case-insensitive) for true; "false", "0", "no", "off" for false.
 func getEnvBool(key string, fallback bool) bool {
@@ -375,6 +419,7 @@ func loadDataConnections(db DatabaseConfig) []DataConnectionConfig {
 	}
 	var parsed []DataConnectionConfig
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		log.Printf("config: ignoring DATABASE_CONNECTIONS_JSON: %v", err)
 		return out
 	}
 	for _, c := range parsed {
@@ -411,4 +456,24 @@ func hasConnectionID(connections []DataConnectionConfig, id string) bool {
 		}
 	}
 	return false
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// IsCloudLLMProvider reports whether the provider sends prompts to a third-party API.
+func IsCloudLLMProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama", "":
+		return false
+	default:
+		return true
+	}
 }

@@ -46,7 +46,7 @@ func (h *Handlers) ExportReport(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "report not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	report, ok := got.(*reports.Report)
@@ -88,7 +88,7 @@ func (h *Handlers) ExportReportPDF(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "report not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	report, ok := got.(*reports.Report)
@@ -127,7 +127,7 @@ func (h *Handlers) ExportSharedReportPDF(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "shared report not found or expired", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	filenameID := report.ID

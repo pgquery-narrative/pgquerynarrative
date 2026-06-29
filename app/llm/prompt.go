@@ -11,7 +11,10 @@ import (
 // BuildNarrativePrompt creates a prompt for narrative generation from query results.
 // hasPeriodComparison should be true only when metrics contain time_series with a real previous period (so the narrative may mention "vs previous period").
 // similarQueriesContext is optional RAG context: short descriptions of similar past queries to ground the narrative.
-func BuildNarrativePrompt(sql string, columns []string, rows [][]interface{}, metricsJSON string, hasPeriodComparison bool, similarQueriesContext string) string {
+func BuildNarrativePrompt(sql string, columns []string, rows [][]interface{}, metricsJSON string, hasPeriodComparison bool, similarQueriesContext string, opts PromptOptions) string {
+	if opts.MaxSampleRows <= 0 && opts.SendRowData {
+		opts.MaxSampleRows = DefaultPromptOptions().MaxSampleRows
+	}
 	var sb strings.Builder
 
 	sb.WriteString("You are a data analyst expert. Your task is to convert SQL query results into a clear, evidence-based business narrative.\n\n")
@@ -44,32 +47,39 @@ func BuildNarrativePrompt(sql string, columns []string, rows [][]interface{}, me
 	sb.WriteString(strings.Join(columns, ", "))
 	sb.WriteString("\n\n")
 
-	// Include sample rows (first 10)
-	sampleRows := rows
-	if len(sampleRows) > 10 {
-		sampleRows = sampleRows[:10]
-	}
+	if opts.SendRowData && len(rows) > 0 {
+		sampleRows := rows
+		if opts.RedactPII {
+			sampleRows = RedactRows(columns, sampleRows)
+		}
+		if len(sampleRows) > opts.MaxSampleRows {
+			sampleRows = sampleRows[:opts.MaxSampleRows]
+		}
 
-	sb.WriteString("Sample Data (showing first 10 rows):\n")
-	maxCols := 0
-	for _, row := range sampleRows {
-		if len(row) > maxCols {
-			maxCols = len(row)
+		sb.WriteString(fmt.Sprintf("Sample Data (showing first %d rows):\n", len(sampleRows)))
+		maxCols := 0
+		for _, row := range sampleRows {
+			if len(row) > maxCols {
+				maxCols = len(row)
+			}
+		}
+		rowStr := make([]string, maxCols)
+		for i, row := range sampleRows {
+			sb.WriteString(fmt.Sprintf("Row %d: ", i+1))
+			n := len(row)
+			for j := 0; j < n; j++ {
+				rowStr[j] = formatCellForPrompt(row[j])
+			}
+			sb.WriteString(strings.Join(rowStr[:n], " | "))
+			sb.WriteString("\n")
+		}
+
+		if len(rows) > opts.MaxSampleRows {
+			sb.WriteString(fmt.Sprintf("... and %d more rows\n", len(rows)-opts.MaxSampleRows))
 		}
 	}
-	rowStr := make([]string, maxCols)
-	for i, row := range sampleRows {
-		sb.WriteString(fmt.Sprintf("Row %d: ", i+1))
-		n := len(row)
-		for j := 0; j < n; j++ {
-			rowStr[j] = formatCellForPrompt(row[j])
-		}
-		sb.WriteString(strings.Join(rowStr[:n], " | "))
-		sb.WriteString("\n")
-	}
-
-	if len(rows) > 10 {
-		sb.WriteString(fmt.Sprintf("... and %d more rows\n", len(rows)-10))
+	if !opts.SendRowData {
+		sb.WriteString("Row values omitted by data governance policy (columns and metrics only).\n")
 	}
 
 	sb.WriteString("\n")

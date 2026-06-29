@@ -17,7 +17,7 @@ func TestRequestLoggingMiddleware_errorResponseLogsBody(t *testing.T) {
 	handler := requestLoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"name":"validation_error","message":"only SELECT allowed"}`))
-	}), appLogger, nil)
+	}), appLogger, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/queries/run", nil)
 	req.RemoteAddr = "192.168.1.1:12345"
@@ -43,7 +43,7 @@ func TestRequestLoggingMiddleware_successDoesNotLogErrorLine(t *testing.T) {
 	handler := requestLoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"columns":[]}`))
-	}), appLogger, nil)
+	}), appLogger, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/queries/run", nil)
 	req.RemoteAddr = "127.0.0.1:8080"

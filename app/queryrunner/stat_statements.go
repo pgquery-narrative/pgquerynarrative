@@ -4,35 +4,20 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 )
 
-// StatStatementRow is one row from pg_stat_statements for the current database.
-type StatStatementRow struct {
-	QueryID     string
-	Query       string
-	Calls       int64
-	TotalTimeMs float64
-	MeanTimeMs  float64
-	Rows        int64
-}
+// StatStatements queries pg_stat_statements using the app pool (pg_read_all_stats) and
+// filters to statements executed by filterRole when non-empty.
+func StatStatements(ctx context.Context, statsPool *pgxpool.Pool, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {
+	if statsPool == nil {
+		return nil, fmt.Errorf("%w: stats pool not configured", apperrors.ErrStatStatementsUnavailable)
+	}
 
-// StatStatementsResult holds top-N statement stats.
-type StatStatementsResult struct {
-	Items   []StatStatementRow
-	OrderBy string
-	Limit   int
-}
-
-var statStatementsOrderColumns = map[string]string{
-	"total_time": "total_exec_time",
-	"mean_time":  "mean_exec_time",
-	"calls":      "calls",
-}
-
-// StatStatements returns top queries from pg_stat_statements for the current database.
-func (r *Runner) StatStatements(ctx context.Context, orderBy string, limit int) (*StatStatementsResult, error) {
 	col, ok := statStatementsOrderColumns[strings.ToLower(strings.TrimSpace(orderBy))]
 	if !ok {
 		return nil, fmt.Errorf("%w: order_by must be total_time, mean_time, or calls", apperrors.ErrInvalidStatStatementsOrder)
@@ -44,8 +29,15 @@ func (r *Runner) StatStatements(ctx context.Context, orderBy string, limit int) 
 		limit = 100
 	}
 
-	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
+	queryCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	roleFilter := ""
+	args := []any{limit}
+	if strings.TrimSpace(filterRole) != "" {
+		roleFilter = " AND userid = (SELECT oid FROM pg_roles WHERE rolname = $2)"
+		args = append(args, strings.TrimSpace(filterRole))
+	}
 
 	sql := fmt.Sprintf(`
 SELECT
@@ -56,16 +48,13 @@ SELECT
   ROUND(mean_exec_time::numeric, 3)::float8 AS mean_time_ms,
   rows
 FROM pg_stat_statements
-WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())%s
 ORDER BY %s DESC
-LIMIT $1`, col)
+LIMIT $1`, roleFilter, col)
 
-	rows, err := r.pool.Query(queryCtx, sql, limit)
+	rows, err := statsPool.Query(queryCtx, sql, args...)
 	if err != nil {
-		if strings.Contains(err.Error(), "pg_stat_statements") {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrStatStatementsUnavailable, err)
-		}
-		if strings.Contains(err.Error(), "permission denied") {
+		if strings.Contains(err.Error(), "pg_stat_statements") || strings.Contains(err.Error(), "permission denied") {
 			return nil, fmt.Errorf("%w: %v", apperrors.ErrStatStatementsUnavailable, err)
 		}
 		return nil, fmt.Errorf("pg_stat_statements query failed: %w", err)
@@ -89,4 +78,9 @@ LIMIT $1`, col)
 		OrderBy: strings.ToLower(strings.TrimSpace(orderBy)),
 		Limit:   limit,
 	}, nil
+}
+
+// StatStatements on Runner delegates to StatStatements using the runner pool (legacy/tests).
+func (r *Runner) StatStatements(ctx context.Context, orderBy string, limit int) (*StatStatementsResult, error) {
+	return StatStatements(ctx, r.pool, "", orderBy, limit, r.queryLimit)
 }

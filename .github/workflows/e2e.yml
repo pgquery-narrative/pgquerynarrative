@@ -30,10 +30,7 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: '1.24'
-          cache-dependency-path: go.sum
+      - uses: ./.github/actions/setup-go-cgo
       - name: Install dependencies
         run: go mod download
       - name: Generate code
@@ -47,6 +44,7 @@ jobs:
       - name: Run E2E tests
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true"
+          CGO_ENABLED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/pgquerynarrative_test?sslmode=disable
         run: make test-e2e
       - name: Upload test results

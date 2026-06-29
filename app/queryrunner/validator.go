@@ -123,6 +123,9 @@ func (v *Validator) Validate(sql string) error {
 
 	// Check schema access (if schema restrictions are configured)
 	if len(v.allowedSchemas) > 0 {
+		if hasUnqualifiedTables(readOnlyQuery) {
+			return errors.ErrUnqualifiedTable
+		}
 		for _, schemaName := range collectSchemaNames(readOnlyQuery) {
 			if !v.allowedSchemas[schemaName] {
 				return errors.ErrSchemaNotAllowed
@@ -184,17 +187,6 @@ func containsDisallowedNodes(node interface{}) bool {
 	return false
 }
 
-func collectSchemaNames(node interface{}) []string {
-	schemaSet := make(map[string]struct{})
-	collectSchemaNamesInto(node, schemaSet)
-
-	out := make([]string, 0, len(schemaSet))
-	for schema := range schemaSet {
-		out = append(out, schema)
-	}
-	return out
-}
-
 func collectSchemaNamesInto(node interface{}, out map[string]struct{}) {
 	switch n := node.(type) {
 	case map[string]interface{}:
@@ -215,6 +207,49 @@ func collectSchemaNamesInto(node interface{}, out map[string]struct{}) {
 	case []interface{}:
 		for _, item := range n {
 			collectSchemaNamesInto(item, out)
+		}
+	}
+}
+
+func collectSchemaNames(node interface{}) []string {
+	schemaSet := make(map[string]struct{})
+	collectSchemaNamesInto(node, schemaSet)
+
+	out := make([]string, 0, len(schemaSet))
+	for schema := range schemaSet {
+		out = append(out, schema)
+	}
+	return out
+}
+
+func hasUnqualifiedTables(node interface{}) bool {
+	found := false
+	collectUnqualifiedTables(node, &found)
+	return found
+}
+
+func collectUnqualifiedTables(node interface{}, found *bool) {
+	if *found {
+		return
+	}
+	switch n := node.(type) {
+	case map[string]interface{}:
+		for key, value := range n {
+			if key == "RangeVar" {
+				if rangeVar, ok := value.(map[string]interface{}); ok {
+					schemaVal, _ := rangeVar["schemaname"].(string)
+					if strings.TrimSpace(schemaVal) == "" {
+						*found = true
+						return
+					}
+				}
+				continue
+			}
+			collectUnqualifiedTables(value, found)
+		}
+	case []interface{}:
+		for _, item := range n {
+			collectUnqualifiedTables(item, found)
 		}
 	}
 }

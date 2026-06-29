@@ -15,6 +15,7 @@ import (
 
 	queriesapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	reportsapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/security"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
 )
 
@@ -60,6 +61,9 @@ func (s *SchedulesService) Create(ctx context.Context, payload *schedules.Schedu
 	if err := validateScheduleInput(payload); err != nil {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
+	if err := s.validateScheduleSQL(ctx, payload); err != nil {
+		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
 	nextRunAt, err := computeNextRun(payload.CronExpr, time.Now().UTC())
 	if err != nil {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
@@ -94,6 +98,9 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 	if err := validateScheduleInput(in); err != nil {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
+	if err := s.validateScheduleSQL(ctx, in); err != nil {
+		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
 	nextRunAt, err := computeNextRun(in.CronExpr, time.Now().UTC())
 	if err != nil {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
@@ -126,7 +133,7 @@ func (s *SchedulesService) RunNow(ctx context.Context, payload *schedules.RunNow
 	lastErr := ""
 	if runErr != nil {
 		status = "failed"
-		lastErr = runErr.Error()
+		lastErr = SanitizeStoredError(runErr)
 	}
 	nextRun, _ := computeNextRun(sc.CronExpr, time.Now().UTC())
 	_, _ = s.appPool.Exec(ctx, `
@@ -165,6 +172,9 @@ func (s *SchedulesService) deliverReport(ctx context.Context, sc *schedules.Sche
 	case "webhook":
 		if strings.TrimSpace(sc.DestinationTarget) == "" {
 			return false, errors.New("webhook target is required")
+		}
+		if err := security.ValidateWebhookURL(sc.DestinationTarget); err != nil {
+			return false, err
 		}
 		body := map[string]any{
 			"schedule_id": sc.ID,
@@ -264,6 +274,29 @@ func validateScheduleInput(in *schedules.ScheduleInput) error {
 	}
 	if strings.TrimSpace(in.DestinationTarget) == "" {
 		return errors.New("destination_target is required")
+	}
+	if dt == "webhook" {
+		if err := security.ValidateWebhookURL(in.DestinationTarget); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SchedulesService) validateScheduleSQL(ctx context.Context, in *schedules.ScheduleInput) error {
+	sqlText := strings.TrimSpace(ptrString(in.SQL))
+	if in.SavedQueryID != nil && strings.TrimSpace(*in.SavedQueryID) != "" {
+		sq, err := s.queriesSvc.GetSaved(ctx, &queriesapi.GetSavedPayload{ID: *in.SavedQueryID})
+		if err != nil {
+			return errors.New("saved_query_id is invalid")
+		}
+		sqlText = sq.SQL
+	}
+	if sqlText == "" {
+		return errors.New("sql or saved_query_id is required")
+	}
+	if err := s.queriesSvc.ValidateQuery(in.ConnectionID, sqlText); err != nil {
+		return err
 	}
 	return nil
 }

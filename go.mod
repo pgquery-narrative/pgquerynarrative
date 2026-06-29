@@ -5,14 +5,17 @@ go 1.24.0
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/labstack/echo/v4 v4.15.0
 	github.com/modelcontextprotocol/go-sdk v1.3.1
+	github.com/pganalyze/pg_query_go/v5 v5.1.0
 	github.com/rs/zerolog v1.34.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0
 	goa.design/goa/v3 v3.24.1
+	golang.org/x/term v0.40.0
 )
 
 require (
@@ -78,7 +81,6 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
-	github.com/pganalyze/pg_query_go/v5 v5.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
@@ -110,7 +112,6 @@ require (
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/tools v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

@@ -80,6 +80,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 
 	runners := make(map[string]*queryrunner.Runner, len(dbCfg.Connections))
 	loaders := make(map[string]*catalog.Loader, len(dbCfg.Connections))
+	readonlyUsers := make(map[string]string, len(dbCfg.Connections))
 	connectionItems := make([]*connections.ConnectionInfo, 0, len(dbCfg.Connections))
 	for _, conn := range dbCfg.Connections {
 		roPool := pools.ReadOnly(conn.ID)
@@ -92,9 +93,16 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		if timeout <= 0 {
 			timeout = cfg.Database.QueryTimeout
 		}
-		runners[conn.ID] = queryrunner.NewRunner(roPool, connValidator, maxRows, timeout)
+		runners[conn.ID] = queryrunner.NewRunner(roPool, connValidator, maxRows, timeout, queryrunner.WithExplainAnalyze(cfg.Security.ExplainAnalyzeEnabled))
 		loaders[conn.ID] = catalog.NewLoader(roPool, connSchemas)
+		readonlyUsers[conn.ID] = conn.ReadOnlyUser
 		connectionItems = append(connectionItems, &connections.ConnectionInfo{ID: conn.ID, Name: conn.Name})
+	}
+
+	promptOpts := llm.PromptOptions{
+		MaxSampleRows: cfg.LLM.MaxSampleRows,
+		SendRowData:   cfg.LLM.SendRowData,
+		RedactPII:     cfg.LLM.RedactPII,
 	}
 
 	var queriesService *service.QueriesService
@@ -117,12 +125,18 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	if cfg.Embedding.BaseURL != "" && cfg.Embedding.Model != "" {
 		emb := embedding.NewOllamaEmbedder(cfg.Embedding.BaseURL, cfg.Embedding.Model)
-		queriesService = service.NewQueriesServiceMultiConnection(pools.App, runners, defaultConnectionID, metricsCfg, emb, embeddingStore, cfg.Embedding.Model)
+		queriesService = service.NewQueriesServiceMultiConnection(pools.App, runners, defaultConnectionID, metricsCfg, emb, embeddingStore, cfg.Embedding.Model, readonlyUsers)
+		queriesService.SetStatStatementsEnabled(cfg.Security.StatStatementsEnabled)
 		reportsService = service.NewReportsServiceMultiConnection(pools.App, runners, defaultConnectionID, llmClient, metricsCfg, emb, embeddingStore)
+		reportsService.SetShareLinkDefaultHours(cfg.Security.ShareLinkDefaultHours)
+		reportsService.SetPromptOptions(promptOpts)
 		suggester = pkgsuggestions.NewSuggesterWithEmbedding(pools.App, emb, embeddingStore)
 	} else {
-		queriesService = service.NewQueriesServiceMultiConnection(pools.App, runners, defaultConnectionID, metricsCfg, nil, nil, "")
+		queriesService = service.NewQueriesServiceMultiConnection(pools.App, runners, defaultConnectionID, metricsCfg, nil, nil, "", readonlyUsers)
+		queriesService.SetStatStatementsEnabled(cfg.Security.StatStatementsEnabled)
 		reportsService = service.NewReportsServiceMultiConnection(pools.App, runners, defaultConnectionID, llmClient, metricsCfg, nil, nil)
+		reportsService.SetShareLinkDefaultHours(cfg.Security.ShareLinkDefaultHours)
+		reportsService.SetPromptOptions(promptOpts)
 		suggester = pkgsuggestions.NewSuggester(pools.App)
 	}
 	schemaService := service.NewSchemaServiceMultiConnection(loaders, defaultConnectionID)
@@ -151,6 +165,11 @@ func (c *Client) DashboardsService() dashboards.Service {
 
 // SchedulesService returns the schedules service for use with Goa endpoints.
 func (c *Client) SchedulesService() schedules.Service {
+	return c.schedulesService
+}
+
+// SchedulesRunner returns the concrete schedules service for background execution.
+func (c *Client) SchedulesRunner() *service.SchedulesService {
 	return c.schedulesService
 }
 

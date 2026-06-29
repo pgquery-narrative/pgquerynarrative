@@ -12,37 +12,93 @@ on:
         type: string
 
 jobs:
-  release:
-    name: Create Release
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          - runner: macos-latest
+            goos: darwin
+            goarch: amd64
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
-        with:
-          go-version: '1.24'
-          cache-dependency-path: go.sum
+      - uses: ./.github/actions/setup-go-cgo
       - name: Install dependencies
         run: go mod download
       - name: Generate code
         run: make generate
       - name: Set version
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then VER="${{ github.event.inputs.version }}"; else VER="${{ github.ref_name }}"; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${{ github.ref_name }}"
+          fi
           echo "VERSION=${VER#v}" >> $GITHUB_ENV
-      - name: Build binaries
+      - name: Build server (CGO required for pg_query)
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          go build -ldflags "-X main.Version=$VERSION" \
+            -o pgquerynarrative-server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/server
+      - name: Build MCP server
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -ldflags "-X main.Version=$VERSION" \
+            -o pgquerynarrative-mcp-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/mcp-server
+      - name: Upload binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            pgquerynarrative-server-${{ matrix.goos }}-${{ matrix.goarch }}
+            pgquerynarrative-mcp-${{ matrix.goos }}-${{ matrix.goarch }}
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Download build artifacts
+        uses: actions/download-artifact@65a9edc588144a91c09efa18addce5f7ff05fc9b
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Set version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${{ github.ref_name }}"
+          fi
+          echo "VERSION=${VER#v}" >> $GITHUB_ENV
+      - name: Package release assets
         run: |
           mkdir -p bin
-          for pair in linux/amd64 darwin/amd64 darwin/arm64; do
-            GOOS=${pair%%/*} GOARCH=${pair##*/} go build -ldflags "-X main.Version=$VERSION" -o bin/pgquerynarrative-server-${pair%%/*}-${pair##*/} ./cmd/server
-            GOOS=${pair%%/*} GOARCH=${pair##*/} go build -ldflags "-X main.Version=$VERSION" -o bin/pgquerynarrative-mcp-${pair%%/*}-${pair##*/} ./cmd/mcp-server
-          done
-      - name: Create checksums
-        run: |
-          cd bin && sha256sum pgquerynarrative-* > checksums.txt
+          mv artifacts/pgquerynarrative-* bin/
+          (cd bin && sha256sum pgquerynarrative-* > checksums.txt)
+          ls -la bin
       - name: Create Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:

@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +70,23 @@ func TestExplainIntegration(t *testing.T) {
 		t.Fatalf("failed to seed data: %v", err)
 	}
 
+	// Stabilize planner output across PostgreSQL versions (partitioned demo.sales has region indexes).
+	_, err = pool.Exec(ctx, `
+		SET enable_indexscan = off;
+		SET enable_bitmapscan = off;
+		SET max_parallel_workers_per_gather = 0;
+	`)
+	if err != nil {
+		t.Fatalf("failed to set planner GUCs: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `
+			RESET enable_indexscan;
+			RESET enable_bitmapscan;
+			RESET max_parallel_workers_per_gather;
+		`)
+	})
+
 	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
 	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
 
@@ -88,16 +106,23 @@ func TestExplainIntegration(t *testing.T) {
 		t.Fatalf("expected normalized sql %q, got %q", sql, result.SQL)
 	}
 
+	if len(result.Findings) == 0 {
+		t.Fatalf("expected at least one plan finding, got empty findings")
+	}
+	if !strings.Contains(strings.ToLower(string(result.Plan)), "sales") {
+		t.Fatalf("expected plan to reference demo.sales, plan=%s", string(result.Plan))
+	}
+
 	foundSeqScan := false
 	for _, f := range result.Findings {
 		if f.IsSeqScan {
 			foundSeqScan = true
-			if f.Relation != "sales" {
-				t.Fatalf("expected seq scan on sales, got %+v", f)
+			if f.Relation != "" && f.Relation != "sales" && !strings.HasPrefix(f.Relation, "sales_") {
+				t.Fatalf("expected seq scan on sales partition, got %+v", f)
 			}
 		}
 	}
 	if !foundSeqScan {
-		t.Fatalf("expected at least one seq scan finding, got %+v", result.Findings)
+		t.Fatalf("expected at least one sequential scan finding after disabling index scans, got %+v", result.Findings)
 	}
 }

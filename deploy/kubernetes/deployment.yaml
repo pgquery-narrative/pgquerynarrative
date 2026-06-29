@@ -48,14 +48,14 @@ spec:
               cpu: "500m"
           livenessProbe:
             httpGet:
-              path: /api/v1/queries/saved
+              path: /health
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 10
             timeoutSeconds: 3
           readinessProbe:
             httpGet:
-              path: /api/v1/queries/saved
+              path: /ready
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
