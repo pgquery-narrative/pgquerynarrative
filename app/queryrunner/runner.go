@@ -50,7 +50,7 @@ func NewRunner(pool *pgxpool.Pool, validator *Validator, maxRows int, timeout ti
 	r := &Runner{
 		pool:       pool,
 		validator:  validator,
-		maxRows:    maxRows,
+		maxRows:    capRowCount(maxRows),
 		queryLimit: timeout,
 	}
 	for _, opt := range opts {
@@ -71,6 +71,7 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	if limit <= 0 || limit > r.maxRows {
 		limit = r.maxRows
 	}
+	rowCap := capRowCount(limit)
 
 	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
 	defer cancel()
@@ -78,7 +79,7 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	wrappedSQL := fmt.Sprintf("SELECT * FROM (%s) AS pgqn_sub LIMIT $1", cleanedSQL)
 
 	start := time.Now()
-	rows, err := r.pool.Query(queryCtx, wrappedSQL, limit)
+	rows, err := r.pool.Query(queryCtx, wrappedSQL, rowCap)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s: query exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
@@ -104,7 +105,7 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 		}
 	}
 
-	resultRows := make([][]interface{}, 0, limit)
+	resultRows := make([][]interface{}, 0, rowCap)
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
@@ -125,8 +126,8 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 		Rows:             resultRows,
 		RowCount:         len(resultRows),
 		ExecutionTimeMs:  executionTime.Milliseconds(),
-		RowLimitApplied:  limit,
-		OriginalRowLimit: limit,
+		RowLimitApplied:  rowCap,
+		OriginalRowLimit: rowCap,
 	}, nil
 }
 

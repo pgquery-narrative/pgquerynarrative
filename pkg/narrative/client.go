@@ -71,7 +71,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	maxRows := cfg.MaxRowsPerQuery
 	if maxRows <= 0 {
-		maxRows = 1000
+		maxRows = queryrunner.DefaultMaxRows
 	}
 
 	validator := queryrunner.NewValidator(allowedSchemas, maxQueryLength)
