@@ -10,6 +10,11 @@ on:
         description: 'Release version (e.g., v1.0.0)'
         required: true
         type: string
+      publish:
+        description: 'Create GitHub release (false = build-only verification)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -53,6 +58,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
         run: |
+          if [ "${{ matrix.goos }}" = "darwin" ] && [ "${{ matrix.goarch }}" = "amd64" ] && [ "$(uname -m)" = "arm64" ]; then
+            SDK="$(xcrun --show-sdk-path)"
+            export CC="clang -arch x86_64 -isysroot ${SDK}"
+            export CXX="clang++ -arch x86_64 -isysroot ${SDK}"
+          fi
           go build -ldflags "-X main.Version=$VERSION" \
             -o pgquerynarrative-server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/server
       - name: Build MCP server
@@ -75,6 +85,7 @@ jobs:
   release:
     name: Create Release
     needs: build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -204,6 +204,9 @@ func (p *Pools) Health(ctx context.Context) error {
 	if err := p.App.Ping(ctx); err != nil {
 		return fmt.Errorf("%w (app): %v", errors.ErrPoolHealthCheckFailed, err)
 	}
+	if err := CheckMigrationVersion(ctx, p.App); err != nil {
+		return err
+	}
 	return nil
 }
 

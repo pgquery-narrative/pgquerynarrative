@@ -1,13 +1,13 @@
 module github.com/pgquerynarrative/pgquerynarrative
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.0
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/labstack/echo/v4 v4.15.0
 	github.com/modelcontextprotocol/go-sdk v1.3.1
