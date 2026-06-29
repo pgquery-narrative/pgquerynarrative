@@ -11,7 +11,7 @@ require (
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/labstack/echo/v4 v4.15.0
 	github.com/modelcontextprotocol/go-sdk v1.3.1
-	github.com/pganalyze/pg_query_go/v5 v5.1.0
+	github.com/pganalyze/pg_query_go/v6 v6.2.2
 	github.com/rs/zerolog v1.34.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0
 	goa.design/goa/v3 v3.24.1
