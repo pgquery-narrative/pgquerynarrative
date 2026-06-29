@@ -123,7 +123,8 @@ func (v *Validator) Validate(sql string) error {
 
 	// Check schema access (if schema restrictions are configured)
 	if len(v.allowedSchemas) > 0 {
-		if hasUnqualifiedTables(readOnlyQuery) {
+		cteNames := collectCTENames(readOnlyQuery)
+		if hasUnqualifiedTables(readOnlyQuery, cteNames) {
 			return errors.ErrUnqualifiedTable
 		}
 		for _, schemaName := range collectSchemaNames(readOnlyQuery) {
@@ -222,13 +223,39 @@ func collectSchemaNames(node interface{}) []string {
 	return out
 }
 
-func hasUnqualifiedTables(node interface{}) bool {
+func hasUnqualifiedTables(node interface{}, cteNames map[string]struct{}) bool {
 	found := false
-	collectUnqualifiedTables(node, &found)
+	collectUnqualifiedTables(node, cteNames, &found)
 	return found
 }
 
-func collectUnqualifiedTables(node interface{}, found *bool) {
+func collectCTENames(node interface{}) map[string]struct{} {
+	out := make(map[string]struct{})
+	collectCTENamesInto(node, out)
+	return out
+}
+
+func collectCTENamesInto(node interface{}, out map[string]struct{}) {
+	switch n := node.(type) {
+	case map[string]interface{}:
+		for key, value := range n {
+			if key == "CommonTableExpr" {
+				if cte, ok := value.(map[string]interface{}); ok {
+					if name, ok := cte["ctename"].(string); ok {
+						out[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+					}
+				}
+			}
+			collectCTENamesInto(value, out)
+		}
+	case []interface{}:
+		for _, item := range n {
+			collectCTENamesInto(item, out)
+		}
+	}
+}
+
+func collectUnqualifiedTables(node interface{}, cteNames map[string]struct{}, found *bool) {
 	if *found {
 		return
 	}
@@ -239,17 +266,21 @@ func collectUnqualifiedTables(node interface{}, found *bool) {
 				if rangeVar, ok := value.(map[string]interface{}); ok {
 					schemaVal, _ := rangeVar["schemaname"].(string)
 					if strings.TrimSpace(schemaVal) == "" {
+						relName, _ := rangeVar["relname"].(string)
+						if _, isCTE := cteNames[strings.ToLower(strings.TrimSpace(relName))]; isCTE {
+							continue
+						}
 						*found = true
 						return
 					}
 				}
 				continue
 			}
-			collectUnqualifiedTables(value, found)
+			collectUnqualifiedTables(value, cteNames, found)
 		}
 	case []interface{}:
 		for _, item := range n {
-			collectUnqualifiedTables(item, found)
+			collectUnqualifiedTables(item, cteNames, found)
 		}
 	}
 }
