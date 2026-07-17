@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	maxWebhookAttempts  = 5
-	webhookRetryBackoff = 2 * time.Minute
-	maxScheduleAttempts = 5
+	maxWebhookAttempts      = 5
+	webhookRetryBaseBackoff = 30 * time.Second
+	webhookRetryMaxBackoff  = 30 * time.Minute
+	webhookClaimLease       = 5 * time.Minute
+	maxScheduleAttempts     = 5
 )
 
 // StartWebhookRetryWorker polls failed webhook deliveries and retries with backoff.
@@ -56,16 +58,25 @@ func (s *SchedulesService) RetryFailedWebhooks(ctx context.Context, rawPool *pgx
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	workerID := scheduleWorkerID()
+	claimUntil := time.Now().UTC().Add(webhookClaimLease)
 	rows, err := tx.Query(ctx, `
-		SELECT id, organization_id::text, schedule_id::text, destination_url, payload, attempt_count, idempotency_key
-		FROM app.webhook_deliveries
-		WHERE status = 'failed'
-		  AND attempt_count < $1
-		  AND (completed_at IS NULL OR completed_at <= NOW() - ($2::text || ' seconds')::interval)
-		ORDER BY completed_at NULLS FIRST
-		FOR UPDATE SKIP LOCKED
-		LIMIT 20
-	`, maxWebhookAttempts, int(webhookRetryBackoff.Seconds()))
+		UPDATE app.webhook_deliveries
+		SET claimed_by = $1,
+		    claimed_until = $2
+		WHERE id IN (
+			SELECT id
+			FROM app.webhook_deliveries
+			WHERE status = 'failed'
+			  AND attempt_count < $3
+			  AND (claimed_until IS NULL OR claimed_until < NOW())
+			  AND (completed_at IS NULL OR completed_at <= NOW() - make_interval(secs => LEAST($4::int, (POWER(2, GREATEST(attempt_count, 0)) * $5)::int)))
+			ORDER BY completed_at NULLS FIRST
+			FOR UPDATE SKIP LOCKED
+			LIMIT 20
+		)
+		RETURNING id, organization_id::text, schedule_id::text, destination_url, payload, attempt_count, idempotency_key
+	`, workerID, claimUntil, maxWebhookAttempts, int(webhookRetryMaxBackoff.Seconds()), int(webhookRetryBaseBackoff.Seconds()))
 	if err != nil {
 		return err
 	}
@@ -107,8 +118,7 @@ func (s *SchedulesService) RetryFailedWebhooks(ctx context.Context, rawPool *pgx
 		}
 		observability.IncWebhookDelivery()
 		result, postErr := client.PostJSON(ctx, item.url, item.idempotencyKey, body)
-		status := "delivered"
-		errMsg := ""
+		var status, errMsg string
 		httpStatus := 0
 		respBytes := 0
 		if postErr != nil {
@@ -117,14 +127,17 @@ func (s *SchedulesService) RetryFailedWebhooks(ctx context.Context, rawPool *pgx
 		} else {
 			httpStatus = result.StatusCode
 			respBytes = result.ResponseBytes
-			if result.StatusCode >= 300 {
-				status = "failed"
-				errMsg = "webhook delivery failed"
-			}
+			status, errMsg = classifyWebhookHTTPStatus(result.StatusCode)
 		}
 		nextAttempts := item.attempts + 1
 		if status == "failed" && nextAttempts >= maxWebhookAttempts {
 			status = "dead_letter"
+		}
+		if status == "dead_letter" {
+			observability.IncWebhookDeadLetter()
+		}
+		if status == "failed" || status == "dead_letter" {
+			observability.IncWebhookFailure()
 		}
 		runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "system", OrgID: item.orgID, Role: auth.RoleAdmin})
 		_, _ = s.appPool.Exec(runCtx, `
@@ -134,29 +147,43 @@ func (s *SchedulesService) RetryFailedWebhooks(ctx context.Context, rawPool *pgx
 			    http_status = $4,
 			    response_bytes = $5,
 			    error_message = NULLIF($6, ''),
-			    completed_at = NOW()
+			    completed_at = NOW(),
+			    claimed_by = NULL,
+			    claimed_until = NULL
 			WHERE id = $1
 		`, item.id, status, nextAttempts, nullInt(httpStatus), respBytes, errMsg)
 	}
 	return nil
 }
 
+func classifyWebhookHTTPStatus(code int) (status, errMsg string) {
+	if code >= 200 && code < 300 {
+		return "delivered", ""
+	}
+	// Permanent client errors: do not retry (except 408/429).
+	if code >= 400 && code < 500 && code != 408 && code != 429 {
+		return "dead_letter", "webhook permanent client error"
+	}
+	return "failed", "webhook delivery failed"
+}
+
 // RecoverExpiredScheduleLeases reclaims stuck running schedule_runs whose lease expired.
-func (s *SchedulesService) RecoverExpiredScheduleLeases(ctx context.Context, rawPool *pgxpool.Pool, workerID string) error {
+// It returns claimed runs that this worker should execute.
+func (s *SchedulesService) RecoverExpiredScheduleLeases(ctx context.Context, rawPool *pgxpool.Pool, workerID string) ([]claimedScheduleRun, error) {
 	if rawPool == nil {
 		rawPool = s.rawPool
 	}
 	if rawPool == nil {
-		return errors.New("raw pool required for lease recovery")
+		return nil, errors.New("raw pool required for lease recovery")
 	}
 	tx, err := db.BeginSchedulerTx(ctx, rawPool)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	rows, err := tx.Query(ctx, `
-		SELECT id, schedule_id, organization_id::text, attempt_count
+		SELECT id, schedule_id, organization_id::text, attempt_count, scheduled_for
 		FROM app.schedule_runs
 		WHERE status = 'running'
 		  AND lease_until IS NOT NULL
@@ -166,29 +193,32 @@ func (s *SchedulesService) RecoverExpiredScheduleLeases(ctx context.Context, raw
 		LIMIT 20
 	`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 
 	type stuck struct {
 		runID, scheduleID, orgID string
 		attempts                 int
+		scheduledFor             time.Time
 	}
 	var items []stuck
 	for rows.Next() {
-		var s stuck
-		if err := rows.Scan(&s.runID, &s.scheduleID, &s.orgID, &s.attempts); err != nil {
-			return err
+		var item stuck
+		if err := rows.Scan(&item.runID, &item.scheduleID, &item.orgID, &item.attempts, &item.scheduledFor); err != nil {
+			return nil, err
 		}
-		items = append(items, s)
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return nil, err
 	}
 
+	var recovered []claimedScheduleRun
 	for _, item := range items {
 		next := item.attempts + 1
 		if next >= maxScheduleAttempts {
+			observability.IncScheduleDeadLetter()
 			_, err := tx.Exec(ctx, `
 				UPDATE app.schedule_runs
 				SET status = 'dead_letter', failure_code = 'max_attempts',
@@ -197,13 +227,14 @@ func (s *SchedulesService) RecoverExpiredScheduleLeases(ctx context.Context, raw
 				WHERE id = $1
 			`, item.runID, next)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			_, _ = tx.Exec(ctx, `
 				UPDATE app.schedules SET locked_by = NULL, locked_until = NULL, updated_at = NOW() WHERE id = $1
 			`, item.scheduleID)
 			continue
 		}
+		observability.IncScheduleLeaseRecovery()
 		leaseUntil := time.Now().UTC().Add(defaultScheduleLease)
 		_, err := tx.Exec(ctx, `
 			UPDATE app.schedule_runs
@@ -212,14 +243,23 @@ func (s *SchedulesService) RecoverExpiredScheduleLeases(ctx context.Context, raw
 			WHERE id = $1
 		`, item.runID, next, workerID, leaseUntil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		_, err = tx.Exec(ctx, `
 			UPDATE app.schedules SET locked_by = $2, locked_until = $3, updated_at = NOW() WHERE id = $1
 		`, item.scheduleID, workerID, leaseUntil)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		recovered = append(recovered, claimedScheduleRun{
+			RunID:        item.runID,
+			ScheduleID:   item.scheduleID,
+			OrgID:        item.orgID,
+			ScheduledFor: item.scheduledFor,
+		})
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return recovered, nil
 }

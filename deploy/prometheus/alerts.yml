@@ -45,3 +45,39 @@ groups:
         annotations:
           summary: App DB pool near capacity
           runbook: docs/ops/INCIDENT_RUNBOOKS.md#db-pool-saturation
+
+      - alert: PgqnSchedulerFailures
+        expr: increase(pgqn_scheduler_failures_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Scheduled report runs are failing
+          runbook: docs/ops/INCIDENT_RUNBOOKS.md#scheduler-stuck--duplicate-runs
+
+      - alert: PgqnScheduleDeadLetters
+        expr: increase(pgqn_schedule_dead_letters_total[30m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Scheduled report runs reached dead-letter state
+          runbook: docs/ops/INCIDENT_RUNBOOKS.md#scheduler-stuck--duplicate-runs
+
+      - alert: PgqnWebhookFailures
+        expr: increase(pgqn_webhook_failures_total[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Webhook deliveries are failing
+          runbook: docs/ops/INCIDENT_RUNBOOKS.md#webhook-delivery-failures--dead-letter
+
+      - alert: PgqnWebhookDeadLetters
+        expr: increase(pgqn_webhook_dead_letters_total[30m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Webhook deliveries reached dead-letter state
+          runbook: docs/ops/INCIDENT_RUNBOOKS.md#webhook-delivery-failures--dead-letter

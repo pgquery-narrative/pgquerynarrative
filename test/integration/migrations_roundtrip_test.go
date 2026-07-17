@@ -73,18 +73,18 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
-	var tableExists bool
+	var claimColExists bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'llm_user_budget_usage'
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'app' AND table_name = 'webhook_deliveries' AND column_name = 'claimed_by'
 		)
-	`).Scan(&tableExists)
+	`).Scan(&claimColExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tableExists {
-		t.Fatal("llm_user_budget_usage still exists after rolling back migration 32")
+	if claimColExists {
+		t.Fatal("webhook_deliveries.claimed_by still exists after rolling back migration 33")
 	}
 
 	if err := m.Steps(1); err != nil {
@@ -103,14 +103,14 @@ func TestMigrationsRoundTrip(t *testing.T) {
 
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'llm_user_budget_usage'
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'app' AND table_name = 'webhook_deliveries' AND column_name = 'claimed_by'
 		)
-	`).Scan(&tableExists)
+	`).Scan(&claimColExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !tableExists {
-		t.Fatal("llm_user_budget_usage missing after re-applying migration 32")
+	if !claimColExists {
+		t.Fatal("webhook_deliveries.claimed_by missing after re-applying migration 33")
 	}
 }

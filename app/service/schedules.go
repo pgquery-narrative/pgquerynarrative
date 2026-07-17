@@ -233,6 +233,9 @@ func (s *SchedulesService) deliverReport(ctx context.Context, sc *schedules.Sche
 		}
 		idempotencyKey := deliveryID
 		payloadJSON, _ := json.Marshal(payload)
+		if status == "failed" {
+			observability.IncWebhookFailure()
+		}
 		_, _ = s.appPool.Exec(ctx, `
 			INSERT INTO app.webhook_deliveries (
 				organization_id, schedule_id, destination_url, idempotency_key, payload, status,

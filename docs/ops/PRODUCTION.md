@@ -36,7 +36,7 @@ only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
 | Public share links | Preview/internal only | Disabled by default (`SECURITY_SHARE_LINKS_ENABLED=false`). |
 | Observability | Preview | Prometheus counters + Grafana dashboard (`deploy/grafana/`) + alert rules (`deploy/prometheus/alerts.yml`). |
 | Incident response | Preview | Formal runbooks in `docs/ops/INCIDENT_RUNBOOKS.md`. |
-| CI quality gates | Preview | Unit/integration tests, race detector, gosec (blocking), govulncheck, frontend typecheck/lint, CodeQL Go+JS, SBOM on release. |
+| CI quality gates | Preview | Unit/integration tests, race detector, gosec artifact scan, govulncheck, frontend typecheck/lint/Vitest, Playwright, load smoke, CodeQL Go+JS, OSSF Scorecard, npm/pip audits, SBOM on release. |
 | Multi-organisation SaaS | Preview (internal) | Membership table + OIDC mapping + fail-closed RLS; not a public multi-tenant SaaS yet. |
 
 ### Production non-goals for this release
@@ -618,7 +618,7 @@ Use this checklist before promoting a deployment from staging to a measured prod
 4. **LLM:** `app.llm_audit_events` records narrative and NL→SQL calls; cloud provider blocked without `LLM_ALLOW_EXTERNAL_DATA=true`.
 5. **Scheduler:** Duplicate replicas do not double-deliver; inspect `GET /api/v1/schedules/{id}/runs`; retry dead letters with `POST /api/v1/schedule-runs/{run_id}/retry`.
 6. **Webhooks:** Private IP destinations rejected; optional allowlist via `SECURITY_WEBHOOK_ALLOWED_HOSTS`; inspect `GET /api/v1/webhook-deliveries`.
-7. **Observability:** `/metrics?format=prometheus` scraped; alert on `pgqn_auth_failures_total` and `pgqn_http_errors_total`.
+7. **Observability:** `/metrics?format=prometheus` scraped; alert on HTTP errors, auth failures, scheduler failures/dead letters, webhook failures/dead letters, LLM budget denials, and pool saturation.
 8. **Backups:** Restore drill completed for app metadata tables and readonly data source.
 
 Run automated checks (Docker required):

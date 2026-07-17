@@ -36,7 +36,7 @@ oidc:
   clientID: ""
   redirectURL: ""
   sessionTTL: 8h
-  autoJoinDefaultOrg: true
+  autoJoinDefaultOrg: false
 
 webhook:
   allowedHosts: ""

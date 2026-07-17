@@ -40,29 +40,28 @@ else
 fi
 
 DIRTY="$(docker compose exec -T postgres psql -U postgres -d pgquerynarrative -tAc 'SELECT dirty FROM schema_migrations LIMIT 1' 2>/dev/null | tr -d '[:space:]' || true)"
+REQUIRED="$(grep 'RequiredMigrationVersion uint' app/db/migrations_check.go | sed -E 's/.*= ([0-9]+).*/\1/')"
 if [[ "$DIRTY" == "t" ]]; then
-  echo "⚠️  schema_migrations dirty; forcing version 30 and re-applying..."
-  docker run --rm -v "$(pwd):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
-    sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
-      -path ./app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" force 30 && \
-      go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
-      -path ./app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" up' \
-    >/dev/null 2>&1 || true
-  MIGRATE_MSG="recovered dirty migration and re-applied"
+  echo "⚠️  schema_migrations dirty; refusing automatic force (required version ${REQUIRED:-unknown}). Resolve manually with migrate force."
+  record fail "migrate-docker" "dirty schema_migrations; manual force required (do not auto-force)"
 fi
 
 VERSION="$(docker compose exec -T postgres psql -U postgres -d pgquerynarrative -tAc 'SELECT version FROM schema_migrations LIMIT 1' 2>/dev/null | tr -d '[:space:]' || true)"
-REQUIRED="$(grep 'RequiredMigrationVersion uint' app/db/migrations_check.go | sed -E 's/.*= ([0-9]+).*/\1/')"
-if [[ -n "$VERSION" && -n "$REQUIRED" && "$VERSION" -ge "$REQUIRED" ]]; then
+MIGRATE_MSG="${MIGRATE_MSG:-applied}"
+if [[ "$DIRTY" != "t" && -n "$VERSION" && -n "$REQUIRED" && "$VERSION" -ge "$REQUIRED" ]]; then
   record pass "migrate-docker" "${MIGRATE_MSG}; version=$VERSION"
 else
-  record fail "migrate-docker" "${MIGRATE_MSG}; got version=${VERSION:-none}"
+  if [[ "$DIRTY" != "t" ]]; then
+    record fail "migrate-docker" "${MIGRATE_MSG}; got version=${VERSION:-none}"
+  fi
 fi
 
-if [[ -n "$VERSION" && -n "$REQUIRED" && "$VERSION" -ge "$REQUIRED" ]]; then
+if [[ "$DIRTY" != "t" && -n "$VERSION" && -n "$REQUIRED" && "$VERSION" -ge "$REQUIRED" ]]; then
   record pass "migration-version" "schema_migrations.version=$VERSION (required >= $REQUIRED)"
 else
-  record fail "migration-version" "got=${VERSION:-none} required>=${REQUIRED:-?}"
+  if [[ "$DIRTY" != "t" ]]; then
+    record fail "migration-version" "got=${VERSION:-none} required>=${REQUIRED:-?}"
+  fi
 fi
 
 # 2. Readonly role write block
@@ -173,10 +172,11 @@ if chmod +x tools/ops/backup.sh && DATABASE_HOST=localhost DATABASE_USER=postgre
   if docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE ${DRILL_DB};" >/dev/null 2>&1; then
     if gunzip -c "$BACKUP" | docker compose exec -T postgres psql -U postgres -d "$DRILL_DB" -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
       APP_TABLES="$(docker compose exec -T postgres psql -U postgres -d "$DRILL_DB" -tAc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app'" 2>/dev/null | tr -d '[:space:]' || true)"
-      if [[ -n "$APP_TABLES" && "$APP_TABLES" -gt 0 ]]; then
-        record pass "backup-restore-drill" "restored ${APP_TABLES} app tables to isolated DB ${DRILL_DB}"
+      MIG_VER="$(docker compose exec -T postgres psql -U postgres -d "$DRILL_DB" -tAc "SELECT version FROM public.schema_migrations LIMIT 1" 2>/dev/null | tr -d '[:space:]' || true)"
+      if [[ -n "$APP_TABLES" && "$APP_TABLES" -gt 0 && -n "$MIG_VER" ]]; then
+        record pass "backup-restore-drill" "restored ${APP_TABLES} app tables; schema_migrations.version=${MIG_VER} in ${DRILL_DB}"
       else
-        record fail "backup-restore-drill" "restored database missing app schema tables"
+        record fail "backup-restore-drill" "restored database missing app tables or schema_migrations (tables=${APP_TABLES:-0} version=${MIG_VER:-none})"
       fi
     else
       record fail "backup-restore-drill" "psql restore into ${DRILL_DB} failed"
@@ -187,7 +187,7 @@ if chmod +x tools/ops/backup.sh && DATABASE_HOST=localhost DATABASE_USER=postgre
   fi
   rm -f "$BACKUP"
 else
-  record skip "backup-restore-drill" "backup failed (is postgres up and pg_dump installed?)"
+  record fail "backup-restore-drill" "backup failed (is postgres up and pg_dump installed?)"
 fi
 
 echo ""

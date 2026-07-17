@@ -38,7 +38,7 @@ func (s *SchedulesService) ListRuns(ctx context.Context, payload *schedules.List
 	return &schedules.ScheduleRunListResult{Items: items}, rows.Err()
 }
 
-// RetryRun requeues a failed or dead-letter schedule run for manual recovery.
+// RetryRun requeues a failed or dead-letter schedule run and executes it on this worker.
 func (s *SchedulesService) RetryRun(ctx context.Context, payload *schedules.RetryRunPayload) (*schedules.ScheduleRunRecord, error) {
 	row := s.appPool.QueryRow(ctx, `
 		SELECT id, schedule_id, status, attempt_count, scheduled_for, started_at, completed_at,
@@ -56,17 +56,33 @@ func (s *SchedulesService) RetryRun(ctx context.Context, payload *schedules.Retr
 	if current.Status != "failed" && current.Status != "dead_letter" {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: "only failed or dead_letter runs can be retried", Code: strPtr("VALIDATION_ERROR")}
 	}
+	workerID := scheduleWorkerID()
 	leaseUntil := time.Now().UTC().Add(defaultScheduleLease)
 	_, err = s.appPool.Exec(ctx, `
 		UPDATE app.schedule_runs
 		SET status = 'running', attempt_count = attempt_count + 1,
-		    lease_until = $2, started_at = NOW(), completed_at = NULL,
+		    lease_until = $2, worker_id = $4, started_at = NOW(), completed_at = NULL,
 		    failure_code = NULL, failure_message = NULL
 		WHERE id = $1 AND organization_id = $3
-	`, payload.RunID, leaseUntil, orgID(ctx))
+	`, payload.RunID, leaseUntil, orgID(ctx), workerID)
 	if err != nil {
 		return nil, err
 	}
+	_, _ = s.appPool.Exec(ctx, `
+		UPDATE app.schedules
+		SET locked_by = $2, locked_until = $3, updated_at = NOW()
+		WHERE id = $1 AND organization_id = $4
+	`, current.ScheduleID, workerID, leaseUntil, orgID(ctx))
+
+	scheduledFor, _ := time.Parse(time.RFC3339, current.ScheduledFor)
+	claim := claimedScheduleRun{
+		RunID:        current.ID,
+		ScheduleID:   current.ScheduleID,
+		OrgID:        orgID(ctx),
+		ScheduledFor: scheduledFor,
+	}
+	_ = s.executeClaimedRun(ctx, workerID, claim)
+
 	row = s.appPool.QueryRow(ctx, `
 		SELECT id, schedule_id, status, attempt_count, scheduled_for, started_at, completed_at,
 		       report_id, failure_code, failure_message

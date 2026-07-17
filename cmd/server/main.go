@@ -407,9 +407,11 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 
 func observabilityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
 		observability.IncRequest()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
+		observability.ObserveRequestDuration(time.Since(start))
 		if rec.status >= 500 {
 			observability.IncRequestError()
 		}

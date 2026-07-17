@@ -4,19 +4,47 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - go
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5
   - package-ecosystem: npm
     directory: /test/playwright
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - e2e
+    groups:
+      playwright-dependencies:
+        patterns:
+          - "*"
     open-pull-requests-limit: 3
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      github-actions:
+        patterns:
+          - "*"
     open-pull-requests-limit: 5

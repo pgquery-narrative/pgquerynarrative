@@ -215,21 +215,39 @@ func (b *BrowserOIDC) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 		ttl = 8 * time.Hour
 	}
 	renew := s.ExpiresAt.Sub(time.Now().UTC()) < ttl/4
-	if renew && strings.TrimSpace(s.RefreshToken) != "" {
+	if renew {
+		if strings.TrimSpace(s.RefreshToken) == "" {
+			b.session.Clear(w)
+			http.Error(w, "session refresh required", http.StatusUnauthorized)
+			return
+		}
 		tokenResp, refreshErr := b.refreshTokens(r.Context(), s.RefreshToken)
-		if refreshErr == nil {
-			if idToken, _ := tokenResp["id_token"].(string); idToken != "" && b.oidc != nil && b.oidc.Enabled() {
-				if sub, roles, validateErr := b.oidc.Validate(r.Context(), idToken); validateErr == nil && strings.TrimSpace(sub) != "" {
-					s.UserID = sub
-					if len(roles) > 0 {
-						s.Role = mapOIDCRole(roles[0])
-					}
+		if refreshErr != nil {
+			b.session.Clear(w)
+			http.Error(w, "provider refresh failed", http.StatusUnauthorized)
+			return
+		}
+		if idToken, _ := tokenResp["id_token"].(string); idToken != "" && b.oidc != nil && b.oidc.Enabled() {
+			if sub, roles, validateErr := b.oidc.Validate(r.Context(), idToken); validateErr == nil && strings.TrimSpace(sub) != "" {
+				s.UserID = sub
+				if len(roles) > 0 {
+					s.Role = mapOIDCRole(roles[0])
 				}
 			}
-			if rt, _ := tokenResp["refresh_token"].(string); rt != "" {
-				s.RefreshToken = rt
-			}
 		}
+		if rt, _ := tokenResp["refresh_token"].(string); rt != "" {
+			s.RefreshToken = rt
+		}
+	}
+	if b.membership != nil {
+		p, resolveErr := b.membership.ResolvePrincipal(r.Context(), s.UserID, s.OrgID, s.Role)
+		if resolveErr != nil {
+			b.session.Clear(w)
+			http.Error(w, "no organization membership", http.StatusForbidden)
+			return
+		}
+		s.OrgID = p.OrgID
+		s.Role = p.Role
 	}
 	s.ExpiresAt = time.Now().UTC().Add(ttl)
 	if err := b.session.Issue(w, *s); err != nil {

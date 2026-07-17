@@ -1,6 +1,7 @@
 package security
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -81,6 +82,17 @@ type DeliveryResult struct {
 	ResponseBytes int
 }
 
+// WebhookSignature returns the HMAC signature for timestamp, delivery ID, and payload.
+func WebhookSignature(secret, timestamp, deliveryID string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(strings.TrimSpace(secret)))
+	_, _ = mac.Write([]byte(timestamp))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write([]byte(deliveryID))
+	_, _ = mac.Write([]byte("."))
+	_, _ = mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
 // PostJSON validates the URL, signs the payload, and POSTs JSON to the destination.
 func (c *WebhookClient) PostJSON(ctx context.Context, destination string, deliveryID string, payload map[string]any) (*DeliveryResult, error) {
 	if err := ValidateWebhookURL(destination); err != nil {
@@ -93,17 +105,16 @@ func (c *WebhookClient) PostJSON(ctx context.Context, destination string, delive
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, destination, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, destination, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
+	timestamp := time.Now().UTC().Format(time.RFC3339)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-PGQN-Delivery-ID", deliveryID)
-	req.Header.Set("X-PGQN-Timestamp", time.Now().UTC().Format(time.RFC3339))
+	req.Header.Set("X-PGQN-Timestamp", timestamp)
 	if len(c.secret) > 0 {
-		mac := hmac.New(sha256.New, c.secret)
-		_, _ = mac.Write(body)
-		req.Header.Set("X-PGQN-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+		req.Header.Set("X-PGQN-Signature", WebhookSignature(string(c.secret), timestamp, deliveryID, body))
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

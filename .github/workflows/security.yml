@@ -10,6 +10,50 @@ on:
     - cron: '0 0 * * 0'
 
 jobs:
+  supply-chain:
+    name: Supply Chain Baseline
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go-cgo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            test/playwright/package-lock.json
+      - name: Verify Go module checksums
+        run: go mod verify
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+      - name: Audit Playwright dependencies
+        working-directory: test/playwright
+        run: npm audit --audit-level=high
+      - name: Audit Python tooling dependencies
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit -r tools/db/requirements-nyc.txt
+      - name: OSSF Scorecard
+        uses: ossf/scorecard-action@0864cf19026789058feabb7e87baa5f140aac736
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+      - name: Upload Scorecard SARIF
+        uses: github/codeql-action/upload-sarif@45580472a5bb82c4681c4ac726cfdb60060c2ee1
+        if: always()
+        with:
+          sarif_file: scorecard.sarif
+
   # Secret scanning - GitHub automatically scans, but we can add explicit checks
   # Only run on PRs so BASE and HEAD differ (TruffleHog requires different commits)
   secret-scanning:

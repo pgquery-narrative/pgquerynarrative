@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 )
 
 // CreateShare creates or refreshes a shareable read-only token for a report.
@@ -40,11 +42,15 @@ func (s *ReportsService) CreateShare(ctx context.Context, payload *reports.Creat
 	}
 	var expiresAt sql.NullTime
 	err = s.appPool.QueryRow(ctx, `
-		INSERT INTO app.report_share_tokens (report_id, token, expires_at)
-		VALUES ($1, $2, NOW() + ($3::text || ' hours')::interval)
-		ON CONFLICT (report_id) DO UPDATE SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at, created_at = NOW()
+		INSERT INTO app.report_share_tokens (report_id, organization_id, token, expires_at)
+		VALUES ($1, $2, $3, NOW() + ($4::text || ' hours')::interval)
+		ON CONFLICT (report_id) DO UPDATE SET
+			token = EXCLUDED.token,
+			expires_at = EXCLUDED.expires_at,
+			organization_id = EXCLUDED.organization_id,
+			created_at = NOW()
 		RETURNING expires_at
-	`, payload.ReportID, token, expiresHours).Scan(&expiresAt)
+	`, payload.ReportID, orgID(ctx), token, expiresHours).Scan(&expiresAt)
 	if err != nil {
 		return nil, err
 	}
@@ -60,21 +66,26 @@ func (s *ReportsService) CreateShare(ctx context.Context, payload *reports.Creat
 }
 
 // GetShared fetches a report through a valid share token.
+// Token resolution is org-independent (SECURITY DEFINER); the report is then loaded
+// under the owning organization so unauthenticated callers are not tied to default-org.
 func (s *ReportsService) GetShared(ctx context.Context, payload *reports.GetSharedPayload) (*reports.Report, error) {
-	var reportID string
+	var reportID, tokenOrg string
 	err := s.appPool.QueryRow(ctx, `
-		SELECT report_id
-		FROM app.report_share_tokens
-		WHERE token = $1
-		  AND expires_at > NOW()
-	`, payload.Token).Scan(&reportID)
+		SELECT report_id::text, organization_id::text
+		FROM app.resolve_report_share_token($1)
+	`, payload.Token).Scan(&reportID, &tokenOrg)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &reports.NotFoundError{Name: "not_found", Message: "shared report link is invalid or expired", Code: strPtr("NOT_FOUND")}
 		}
 		return nil, err
 	}
-	return s.Get(ctx, &reports.GetPayload{ID: reportID})
+	shareCtx := auth.WithPrincipal(ctx, auth.Principal{
+		UserID: "share-token",
+		OrgID:  tokenOrg,
+		Role:   auth.RoleViewer,
+	})
+	return s.Get(shareCtx, &reports.GetPayload{ID: reportID})
 }
 
 func newShareToken() (string, error) {

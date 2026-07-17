@@ -202,6 +202,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push image
+        id: build_push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: .
@@ -212,3 +213,16 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           sbom: true
           provenance: true
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.7.0
+      - name: Sign OCI image by digest
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          DIGEST="${{ steps.build_push.outputs.digest }}"
+          test -n "$DIGEST"
+          cosign sign --yes "ghcr.io/${{ github.repository }}@${DIGEST}"
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.*" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "ghcr.io/${{ github.repository }}@${DIGEST}"

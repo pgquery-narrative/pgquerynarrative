@@ -28,7 +28,7 @@ data:
   SECURITY_OIDC_CLIENT_ID: ""
   SECURITY_OIDC_REDIRECT_URL: ""    # e.g. https://pgquerynarrative.example.com/auth/callback
   SECURITY_SESSION_TTL: "8h"
-  SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG: "true"
+  SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG: "false"
   SECURITY_WEBHOOK_ALLOWED_HOSTS: ""  # comma-separated hostnames
   LLM_REDACT_PII: "true"
   SCHEDULE_RUNNER_ENABLED: "true"

@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -21,7 +24,12 @@
     {
       "title": "HTTP requests",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
           "expr": "rate(pgqn_http_requests_total[5m])",
@@ -36,7 +44,12 @@
     {
       "title": "Auth failures / denials",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "targets": [
         {
           "expr": "rate(pgqn_auth_failures_total[5m])",
@@ -51,7 +64,12 @@
     {
       "title": "Query runs / timeouts",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
         {
           "expr": "rate(pgqn_query_runs_total[5m])",
@@ -66,7 +84,12 @@
     {
       "title": "LLM calls / budget denials / tokens",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
       "targets": [
         {
           "expr": "rate(pgqn_llm_calls_total[5m])",
@@ -85,7 +108,12 @@
     {
       "title": "Scheduler / webhooks",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "targets": [
         {
           "expr": "rate(pgqn_scheduler_runs_total[5m])",
@@ -100,7 +128,12 @@
     {
       "title": "DB pool",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "targets": [
         {
           "expr": "pgqn_pool_acquired_conns",
@@ -119,12 +152,76 @@
           "legendFormat": "max"
         }
       ]
+    },
+    {
+      "title": "Scheduler reliability",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(pgqn_scheduler_runs_total[5m])",
+          "legendFormat": "runs/s"
+        },
+        {
+          "expr": "rate(pgqn_scheduler_failures_total[5m])",
+          "legendFormat": "failures/s"
+        },
+        {
+          "expr": "increase(pgqn_schedule_dead_letters_total[30m])",
+          "legendFormat": "dead letters/30m"
+        },
+        {
+          "expr": "increase(pgqn_schedule_lease_recoveries_total[30m])",
+          "legendFormat": "lease recoveries/30m"
+        }
+      ]
+    },
+    {
+      "title": "Webhook reliability",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "rate(pgqn_webhook_deliveries_total[5m])",
+          "legendFormat": "deliveries/s"
+        },
+        {
+          "expr": "rate(pgqn_webhook_failures_total[5m])",
+          "legendFormat": "failures/s"
+        },
+        {
+          "expr": "increase(pgqn_webhook_dead_letters_total[30m])",
+          "legendFormat": "dead letters/30m"
+        },
+        {
+          "expr": "rate(pgqn_webhook_rejections_total[5m])",
+          "legendFormat": "policy rejections/s"
+        }
+      ]
     }
   ],
   "schemaVersion": 39,
-  "tags": ["pgquerynarrative", "production"],
-  "templating": { "list": [] },
-  "time": { "from": "now-6h", "to": "now" },
+  "tags": [
+    "pgquerynarrative",
+    "production"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timezone": "browser",
   "title": "PgQueryNarrative Overview",
   "uid": "pgqn-overview",

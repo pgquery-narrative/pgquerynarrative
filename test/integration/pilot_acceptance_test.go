@@ -20,7 +20,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
 )
 
-// TestPilot_CrossOrgIDOR verifies org B cannot read org A saved queries when RLS is active.
+// TestPilot_CrossOrgIDOR verifies org B cannot read org A metadata objects when RLS is active.
 func TestPilot_CrossOrgIDOR(t *testing.T) {
 	ctx := context.Background()
 	admin, connStr := pilotPostgres(t, ctx)
@@ -45,18 +45,87 @@ func TestPilot_CrossOrgIDOR(t *testing.T) {
 		t.Fatalf("seed saved query: %v", err)
 	}
 
+	var reportID string
+	err = admin.QueryRow(ctx, `
+		INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, organization_id)
+		VALUES ('SELECT 1', 'cross org report', '{}'::jsonb, '{}'::jsonb, 'test', 'test', $1::uuid)
+		RETURNING id::text
+	`, orgA).Scan(&reportID)
+	if err != nil {
+		t.Fatalf("seed report: %v", err)
+	}
+
+	var dashboardID string
+	err = admin.QueryRow(ctx, `
+		INSERT INTO app.dashboards (name, organization_id)
+		VALUES ('org-a-dashboard', $1::uuid)
+		RETURNING id::text
+	`, orgA).Scan(&dashboardID)
+	if err != nil {
+		t.Fatalf("seed dashboard: %v", err)
+	}
+
+	var askSessionID string
+	err = admin.QueryRow(ctx, `
+		INSERT INTO app.ask_sessions (connection_id, organization_id)
+		VALUES ('default', $1::uuid)
+		RETURNING id::text
+	`, orgA).Scan(&askSessionID)
+	if err != nil {
+		t.Fatalf("seed ask session: %v", err)
+	}
+
+	var scheduleID string
+	err = admin.QueryRow(ctx, `
+		INSERT INTO app.schedules (name, sql, connection_id, cron_expr, destination_type, destination_target, enabled, organization_id)
+		VALUES ('org-a-schedule', 'SELECT 1', 'default', '@every 1h', 'log', 'audit-log', true, $1::uuid)
+		RETURNING id::text
+	`, orgA).Scan(&scheduleID)
+	if err != nil {
+		t.Fatalf("seed schedule: %v", err)
+	}
+
+	var scheduleRunID string
+	err = admin.QueryRow(ctx, `
+		INSERT INTO app.schedule_runs (schedule_id, organization_id, scheduled_for, idempotency_key, status)
+		VALUES ($1::uuid, $2::uuid, NOW(), 'cross-org-run', 'pending')
+		RETURNING id::text
+	`, scheduleID, orgA).Scan(&scheduleRunID)
+	if err != nil {
+		t.Fatalf("seed schedule run: %v", err)
+	}
+
+	var webhookDeliveryID string
+	err = admin.QueryRow(ctx, `
+		INSERT INTO app.webhook_deliveries (organization_id, schedule_id, destination_url, idempotency_key, payload, status)
+		VALUES ($1::uuid, $2::uuid, 'https://hooks.example.com/a', 'cross-org-delivery', '{}'::jsonb, 'pending')
+		RETURNING id::text
+	`, orgA, scheduleID).Scan(&webhookDeliveryID)
+	if err != nil {
+		t.Fatalf("seed webhook delivery: %v", err)
+	}
+
 	orgBDB := db.NewOrgScoped(appPool)
 	orgBCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "user-b", OrgID: orgB, Role: auth.RoleAnalyst})
 
-	var name string
-	err = orgBDB.QueryRow(orgBCtx, `
-		SELECT name FROM app.saved_queries WHERE id = $1::uuid
-	`, queryID).Scan(&name)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "saved_queries", queryID)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "reports", reportID)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "dashboards", dashboardID)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "ask_sessions", askSessionID)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "schedules", scheduleID)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "schedule_runs", scheduleRunID)
+	assertOrgInvisible(t, orgBCtx, orgBDB, "webhook_deliveries", webhookDeliveryID)
+}
+
+func assertOrgInvisible(t *testing.T, ctx context.Context, database db.DB, table, id string) {
+	t.Helper()
+	var seen string
+	err := database.QueryRow(ctx, "SELECT id::text FROM app."+table+" WHERE id = $1::uuid", id).Scan(&seen)
 	if err == nil {
-		t.Fatalf("expected IDOR block, got row name=%q", name)
+		t.Fatalf("expected %s row %s to be hidden cross-org, got %s", table, id, seen)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("expected no rows for cross-org read, got: %v", err)
+		t.Fatalf("expected no rows for cross-org %s read, got: %v", table, err)
 	}
 }
 

@@ -18,8 +18,12 @@ USER="${DATABASE_USER:-postgres}"
 export PGPASSWORD="${DATABASE_PASSWORD:-postgres}"
 
 echo "Backing up ${DB}@${HOST}:${PORT} -> ${OUT}"
-pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" \
-  --no-owner --no-acl \
-  --schema=app --schema=demo --schema=opendata \
-  | gzip -c > "$OUT"
+{
+  pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" \
+    --no-owner --no-acl \
+    --schema=app --schema=demo --schema=opendata
+  pg_dump -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" \
+    --no-owner --no-acl \
+    --table=public.schema_migrations
+} | gzip -c > "$OUT"
 echo "Backup complete: ${OUT} ($(wc -c < "$OUT" | tr -d ' ') bytes compressed)"

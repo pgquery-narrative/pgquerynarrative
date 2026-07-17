@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -9,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -90,6 +93,13 @@ func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 	if s.ExpiresAt.IsZero() {
 		s.ExpiresAt = time.Now().UTC().Add(m.ttl)
 	}
+	if s.RefreshToken != "" {
+		sealed, err := sealSecret(m.secret, s.RefreshToken)
+		if err != nil {
+			return err
+		}
+		s.RefreshToken = sealed
+	}
 	payload, err := json.Marshal(s)
 	if err != nil {
 		return err
@@ -146,6 +156,19 @@ func (m *SessionManager) Read(r *http.Request) (*Session, error) {
 	if s.OrgID == "" {
 		s.OrgID = DefaultOrgID()
 	}
+	if s.RefreshToken != "" {
+		plain, err := openSecret(m.secret, s.RefreshToken)
+		if err != nil {
+			// Legacy cookies stored plaintext refresh tokens; keep readable until re-issue.
+			if !strings.HasPrefix(s.RefreshToken, "v1:") {
+				// leave as-is
+			} else {
+				return nil, errors.New("invalid refresh token envelope")
+			}
+		} else {
+			s.RefreshToken = plain
+		}
+	}
 	return &s, nil
 }
 
@@ -167,6 +190,8 @@ func (m *SessionManager) RefreshHandler(w http.ResponseWriter, r *http.Request) 
 		_, _ = w.Write([]byte(`{"refreshed":false}`))
 		return
 	}
+	// SessionManager refresh only extends a still-valid session; OIDC token renewal
+	// is handled by BrowserOIDC.RefreshHandler when browser OIDC is enabled.
 	s.ExpiresAt = time.Now().UTC().Add(m.ttl)
 	if err := m.Issue(w, *s); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -236,4 +261,50 @@ func verifySignedPayload(secret []byte, token string) ([]byte, error) {
 		return nil, errors.New("invalid session signature")
 	}
 	return payload, nil
+}
+
+func sealSecret(secret []byte, plaintext string) (string, error) {
+	key := sha256.Sum256(secret)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	out := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	return "v1:" + base64.RawURLEncoding.EncodeToString(out), nil
+}
+
+func openSecret(secret []byte, sealed string) (string, error) {
+	if !strings.HasPrefix(sealed, "v1:") {
+		return "", errors.New("unsupported envelope")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(sealed, "v1:"))
+	if err != nil {
+		return "", err
+	}
+	key := sha256.Sum256(secret)
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) < gcm.NonceSize() {
+		return "", errors.New("ciphertext too short")
+	}
+	nonce, ciphertext := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
 }

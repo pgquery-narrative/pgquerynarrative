@@ -6,8 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 )
 
 // Event types for audit_logs.event_type.
@@ -17,6 +21,8 @@ const (
 	EventAuthSuccess       = "AUTH_SUCCESS"
 	EventRateLimitExceeded = "RATE_LIMIT_EXCEEDED"
 	EventUnauthorized      = "UNAUTHORIZED_ACCESS"
+	EventRunQuery          = "RUN_QUERY"
+	EventGenerateReport    = "GENERATE_REPORT"
 )
 
 // Entry represents a single audit log row.
@@ -28,6 +34,7 @@ type Entry struct {
 	UserID     string
 	IP         string
 	UserAgent  string
+	OrgID      string
 }
 
 // Store writes audit entries to the database.
@@ -51,9 +58,32 @@ func (s *Store) Record(ctx context.Context, e Entry) {
 	if e.IP != "" {
 		ip = net.ParseIP(e.IP)
 	}
-	_, _ = s.pool.Exec(ctx,
-		`INSERT INTO app.audit_logs (event_type, entity_type, entity_id, details, user_id, ip_address, user_agent)
-		 VALUES ($1, $2, $3, $4, NULLIF($5,''), $6, NULLIF($7,''))`,
-		e.EventType, e.EntityType, e.EntityID, detailsJSON, e.UserID, ip, e.UserAgent,
+	orgID := strings.TrimSpace(e.OrgID)
+	if orgID == "" {
+		orgID = auth.OrgIDFromContext(ctx)
+	}
+	if orgID == "" {
+		orgID = auth.DefaultOrgID()
+	}
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		observability.IncAuditWriteFailure()
+		return
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, orgID); err != nil {
+		observability.IncAuditWriteFailure()
+		return
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT set_config('app.current_org_id', '', false)`)
+	}()
+	_, err = conn.Exec(ctx,
+		`INSERT INTO app.audit_logs (event_type, entity_type, entity_id, details, user_id, ip_address, user_agent, organization_id)
+		 VALUES ($1, $2, $3, $4, NULLIF($5,''), $6, NULLIF($7,''), $8::uuid)`,
+		e.EventType, e.EntityType, e.EntityID, detailsJSON, e.UserID, ip, e.UserAgent, orgID,
 	)
+	if err != nil {
+		observability.IncAuditWriteFailure()
+	}
 }

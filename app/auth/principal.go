@@ -47,8 +47,14 @@ func PrincipalFromContext(ctx context.Context) Principal {
 }
 
 // OrgIDFromContext returns the organization ID for the current request.
+// Missing org context fails closed (empty string) so RLS policies expose no rows.
 func OrgIDFromContext(ctx context.Context) string {
-	return PrincipalFromContext(ctx).OrgID
+	if v, ok := ctx.Value(OrgContextKey).(string); ok {
+		if id := strings.TrimSpace(v); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // WithPrincipal stores principal fields on the context.

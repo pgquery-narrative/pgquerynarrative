@@ -35,8 +35,16 @@ func StartScheduleRunner(ctx context.Context, rawPool *pgxpool.Pool, svc *Schedu
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := svc.RecoverExpiredScheduleLeases(ctx, rawPool, workerID); err != nil {
+				recovered, err := svc.RecoverExpiredScheduleLeases(ctx, rawPool, workerID)
+				if err != nil {
 					log.Printf("schedule lease recovery: %v", err)
+				}
+				for _, claim := range recovered {
+					observability.IncSchedulerRun()
+					if err := svc.executeClaimedRun(ctx, workerID, claim); err != nil {
+						observability.IncSchedulerFailure()
+						log.Printf("recovered schedule run %s failed: %v", claim.RunID, err)
+					}
 				}
 				if err := svc.RunDue(ctx, workerID); err != nil {
 					log.Printf("schedule runner: %v", err)
@@ -74,6 +82,7 @@ func (s *SchedulesService) RunDue(ctx context.Context, workerID string) error {
 	for _, claim := range claimed {
 		observability.IncSchedulerRun()
 		if err := s.executeClaimedRun(ctx, workerID, claim); err != nil {
+			observability.IncSchedulerFailure()
 			log.Printf("schedule run %s failed: %v", claim.RunID, err)
 		}
 	}
@@ -168,7 +177,9 @@ func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID strin
 	if s.reportsSvc == nil {
 		return s.finishScheduleRun(runCtx, claim.RunID, "", errors.New("reports service not configured"), "misconfigured")
 	}
-	_ = s.renewScheduleLease(runCtx, claim.RunID, workerID)
+	stopHeartbeat := s.startScheduleHeartbeat(runCtx, claim.RunID, claim.ScheduleID, workerID)
+	defer stopHeartbeat()
+
 	sc, err := s.getByIDForOrg(runCtx, claim.ScheduleID, claim.OrgID)
 	if err != nil {
 		return s.finishScheduleRun(runCtx, claim.RunID, "", err, "schedule_not_found")
@@ -189,13 +200,41 @@ func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID strin
 	return s.finishScheduleRun(runCtx, claim.RunID, reportID, runErr, "")
 }
 
-func (s *SchedulesService) renewScheduleLease(ctx context.Context, runID, workerID string) error {
+func (s *SchedulesService) startScheduleHeartbeat(ctx context.Context, runID, scheduleID, workerID string) func() {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(defaultScheduleLease / 3)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := s.renewScheduleLease(ctx, runID, scheduleID, workerID); err != nil {
+					log.Printf("schedule lease heartbeat %s: %v", runID, err)
+				}
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
+func (s *SchedulesService) renewScheduleLease(ctx context.Context, runID, scheduleID, workerID string) error {
 	leaseUntil := time.Now().UTC().Add(defaultScheduleLease)
-	_, err := s.appPool.Exec(ctx, `
+	if _, err := s.appPool.Exec(ctx, `
 		UPDATE app.schedule_runs
 		SET lease_until = $2, worker_id = $3
 		WHERE id = $1 AND status = 'running'
-	`, runID, leaseUntil, workerID)
+	`, runID, leaseUntil, workerID); err != nil {
+		return err
+	}
+	_, err := s.appPool.Exec(ctx, `
+		UPDATE app.schedules
+		SET locked_by = $2, locked_until = $3, updated_at = NOW()
+		WHERE id = $1
+	`, scheduleID, workerID, leaseUntil)
 	return err
 }
 

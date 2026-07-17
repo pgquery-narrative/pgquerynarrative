@@ -23,6 +23,11 @@ func AuthMiddleware(next http.Handler, authenticator *auth.Authenticator, sessio
 		needAuth := (strings.HasPrefix(path, "/api/") && !isPublicSharedAPI) ||
 			path == "/metrics" ||
 			((path == "/web/reports/export" || path == "/web/reports/export/pdf") && !isPublicSharedPDF)
+		// Public share routes must not inherit the default-org admin principal.
+		if isPublicSharedAPI || isPublicSharedPDF {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if isAuthRoute || authenticator == nil || !authenticator.AuthRequired() || !needAuth {
 			ctx := auth.WithPrincipal(r.Context(), auth.PrincipalFromContext(r.Context()))
 			next.ServeHTTP(w, r.WithContext(ctx))
