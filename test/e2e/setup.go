@@ -24,8 +24,10 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
@@ -145,6 +147,19 @@ type FullServerConfig struct {
 	MockLLMResponse string
 }
 
+// withTestPrincipal injects a default-org admin principal so org-scoped services
+// and RLS policies work without mounting full auth middleware in E2E.
+func withTestPrincipal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := auth.WithPrincipal(r.Context(), auth.Principal{
+			UserID: "e2e",
+			OrgID:  auth.DefaultOrganizationID,
+			Role:   auth.RoleAdmin,
+		})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // BuildFullServer builds an HTTP test server with all four API services mounted (queries, reports, schema, suggestions).
 // Uses a single pool for both read-only and app (testcontainers postgres). Reports use e2eLLM mock.
 func BuildFullServer(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cfg FullServerConfig) *httptest.Server {
@@ -152,14 +167,15 @@ func BuildFullServer(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cfg 
 
 	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
 	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
+	appDB := db.NewOrgScoped(pool)
 
-	queriesService := service.NewQueriesService(pool, pool, runner, config.MetricsConfig{})
+	queriesService := service.NewQueriesService(pool, appDB, runner, config.MetricsConfig{})
 	llmClient := &e2eLLM{response: cfg.MockLLMResponse}
-	reportsService := service.NewReportsService(pool, pool, runner, llmClient, config.MetricsConfig{})
+	reportsService := service.NewReportsService(pool, appDB, runner, llmClient, config.MetricsConfig{})
 	loader := catalog.NewLoader(pool, []string{"demo"})
 	schemaService := service.NewSchemaService(loader)
-	suggester := pkgsuggestions.NewSuggester(pool)
-	askService := service.NewAskService(pool, loader, llmClient, validator, reportsService)
+	suggester := pkgsuggestions.NewSuggester(appDB)
+	askService := service.NewAskService(appDB, loader, llmClient, validator, reportsService)
 	suggestionsService := &service.SuggestionsServiceWrapper{Suggester: suggester, AskSvc: askService}
 
 	queriesEndpoints := queries.NewEndpoints(queriesService)
@@ -195,7 +211,7 @@ func BuildFullServer(t *testing.T, ctx context.Context, pool *pgxpool.Pool, cfg 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
-	combined.Handle("/", mux)
+	combined.Handle("/", withTestPrincipal(mux))
 
 	srv := httptest.NewServer(combined)
 	t.Cleanup(srv.Close)

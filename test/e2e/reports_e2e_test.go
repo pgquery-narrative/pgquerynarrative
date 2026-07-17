@@ -14,6 +14,7 @@ import (
 	reportsServer "github.com/pgquerynarrative/pgquerynarrative/api/gen/http/reports/server"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
@@ -54,7 +55,8 @@ func TestReportsListAndGetE2E(t *testing.T) {
 
 	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
 	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
-	reportsService := service.NewReportsService(pool, pool, runner, &mockLLMReports{}, config.MetricsConfig{})
+	appDB := db.NewOrgScoped(pool)
+	reportsService := service.NewReportsService(pool, appDB, runner, &mockLLMReports{}, config.MetricsConfig{})
 	endpoints := reports.NewEndpoints(reportsService)
 
 	mux := goahttp.NewMuxer()
@@ -64,7 +66,7 @@ func TestReportsListAndGetE2E(t *testing.T) {
 		_ = goahttp.ErrorEncoder(enc, nil)(ctx, w, err)
 	}
 	reportsServer.Mount(mux, reportsServer.New(endpoints, mux, dec, enc, errHandler, nil))
-	testServer := httptest.NewServer(mux)
+	testServer := httptest.NewServer(withTestPrincipal(mux))
 	t.Cleanup(testServer.Close)
 	base := testServer.URL
 

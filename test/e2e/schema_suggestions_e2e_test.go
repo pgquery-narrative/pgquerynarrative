@@ -16,6 +16,7 @@ import (
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
 	pkgsuggestions "github.com/pgquerynarrative/pgquerynarrative/app/suggestions"
@@ -34,12 +35,13 @@ func TestSchemaAndSuggestionsE2E(t *testing.T) {
 
 	loader := catalog.NewLoader(pool, []string{"demo"})
 	schemaService := service.NewSchemaService(loader)
-	suggester := pkgsuggestions.NewSuggester(pool)
+	appDB := db.NewOrgScoped(pool)
+	suggester := pkgsuggestions.NewSuggester(appDB)
 	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
 	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
 	mockLLM := &e2eLLM{response: ""}
-	reportsService := service.NewReportsService(pool, pool, runner, mockLLM, config.MetricsConfig{})
-	askService := service.NewAskService(pool, loader, mockLLM, validator, reportsService)
+	reportsService := service.NewReportsService(pool, appDB, runner, mockLLM, config.MetricsConfig{})
+	askService := service.NewAskService(appDB, loader, mockLLM, validator, reportsService)
 	suggestionsService := &service.SuggestionsServiceWrapper{Suggester: suggester, AskSvc: askService}
 	schemaEndpoints := schema.NewEndpoints(schemaService)
 	suggestionsEndpoints := suggestions.NewEndpoints(suggestionsService)
@@ -52,7 +54,7 @@ func TestSchemaAndSuggestionsE2E(t *testing.T) {
 	}
 	schemaServer.Mount(mux, schemaServer.New(schemaEndpoints, mux, dec, enc, errHandler, nil))
 	suggestionsServer.Mount(mux, suggestionsServer.New(suggestionsEndpoints, mux, dec, enc, errHandler, nil))
-	testServer := httptest.NewServer(mux)
+	testServer := httptest.NewServer(withTestPrincipal(mux))
 	t.Cleanup(testServer.Close)
 	base := testServer.URL
 
