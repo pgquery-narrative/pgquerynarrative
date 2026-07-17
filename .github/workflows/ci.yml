@@ -77,7 +77,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Verify readonly role boundaries
-        run: make db-security-verify-docker
+        run: |
+          make postgres-up
+          make migrate-docker
+          make db-security-verify-docker
 
   race:
     name: Race detector

@@ -42,7 +42,16 @@ if [[ "$OIDC_MODE" == "1" ]]; then
   echo "Starting mock OIDC on ${MOCK_ADDR}..."
   go run ./cmd/mockoidc &
   MOCK_PID=$!
-  sleep 1
+  for _ in $(seq 1 30); do
+    if curl -sf "http://${MOCK_ADDR}/.well-known/openid-configuration" >/dev/null; then
+      break
+    fi
+    sleep 0.5
+  done
+  curl -sf "http://${MOCK_ADDR}/.well-known/openid-configuration" >/dev/null || {
+    echo "mock OIDC failed to start"
+    exit 1
+  }
   export SECURITY_AUTH_ENABLED=true
   export SECURITY_OIDC_ISSUER="http://${MOCK_ADDR}"
   export SECURITY_OIDC_CLIENT_ID="${MOCK_OIDC_CLIENT_ID}"

@@ -327,6 +327,17 @@ migrate-docker: postgres-up
 
 db-security-verify-docker: postgres-up
 	@echo "🔒 Verifying PostgreSQL security boundary..."
+	@ready=0; \
+	for i in $$(seq 1 30); do \
+		if docker compose exec -T postgres psql -U postgres -d pgquerynarrative -tAc "SELECT 1 FROM pg_roles WHERE rolname='pgquerynarrative_readonly'" 2>/dev/null | grep -q 1; then \
+			ready=1; break; \
+		fi; \
+		sleep 1; \
+	done; \
+	if [ "$$ready" != "1" ]; then \
+		echo "❌ Postgres roles not ready. Run: make postgres-up && make migrate-docker"; \
+		exit 1; \
+	fi
 	@docker run --rm -v "$(CURDIR):/workspace" --network pgquerynarrative_default postgres:16-alpine sh -c 'DB_URL="postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" READONLY_DB_URL="postgres://pgquerynarrative_readonly:pgquerynarrative_readonly@postgres:5432/pgquerynarrative?sslmode=disable" sh /workspace/tools/db/verify_security.sh'
 
 seed:

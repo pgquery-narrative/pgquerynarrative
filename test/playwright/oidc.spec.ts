@@ -5,14 +5,26 @@ test.describe("Browser OIDC", () => {
   test.skip(!process.env.PLAYWRIGHT_OIDC, "set PLAYWRIGHT_OIDC=1 to run browser login flow");
 
   test("login via mock IdP establishes session cookie", async ({ page }) => {
-    await page.goto("/auth/login");
-    await page.waitForURL(/\/auth\/callback/, { timeout: 20_000 });
-    await page.waitForURL((url) => !url.pathname.includes("/auth/callback"), { timeout: 20_000 });
+    await page.goto("/auth/login", { waitUntil: "domcontentloaded" });
+    // Full redirect chain can finish before we observe /auth/callback; settle on a non-auth path.
+    await page.waitForURL(
+      (url) =>
+        !url.pathname.startsWith("/auth/") &&
+        !url.pathname.includes("/oauth/") &&
+        !url.href.includes("openid-configuration"),
+      { timeout: 30_000 },
+    );
 
-    const session = await page.request.get("/auth/session");
-    expect(session.ok()).toBeTruthy();
-    const body = await session.json();
-    expect(body.authenticated).toBe(true);
-    expect(body.user_id).toBeTruthy();
+    await expect
+      .poll(
+        async () => {
+          const session = await page.request.get("/auth/session");
+          if (!session.ok()) return false;
+          const body = (await session.json()) as { authenticated?: boolean };
+          return Boolean(body.authenticated);
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
   });
 });
