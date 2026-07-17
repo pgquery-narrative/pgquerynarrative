@@ -155,7 +155,7 @@ jobs:
           format: spdx-json
           output-file: bin/sbom.spdx.json
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Sign release artifacts
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -214,7 +214,7 @@ jobs:
           sbom: true
           provenance: true
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Sign OCI image by digest
         env:
           COSIGN_EXPERIMENTAL: "1"
