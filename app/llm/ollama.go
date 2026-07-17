@@ -42,6 +42,14 @@ func (c *OllamaClient) Model() string {
 	return c.model
 }
 func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, error) {
+	result, err := c.GenerateWithUsage(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	return result.Text, nil
+}
+
+func (c *OllamaClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
 	url := fmt.Sprintf("%s/api/generate", c.baseURL)
 
 	payload := map[string]interface{}{
@@ -57,7 +65,7 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, err
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return GenerationResult{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	maxRetries := 3
@@ -67,7 +75,7 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, err
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 		if err != nil {
-			return "", fmt.Errorf("failed to create request: %w", err)
+			return GenerationResult{}, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -80,7 +88,7 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, err
 				retryDelay *= 2
 				continue
 			}
-			return "", lastErr
+			return GenerationResult{}, lastErr
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -92,22 +100,30 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, err
 				retryDelay *= 2
 				continue
 			}
-			return "", lastErr
+			return GenerationResult{}, lastErr
 		}
 
 		var result struct {
-			Response string `json:"response"`
-			Done     bool   `json:"done"`
+			Response        string `json:"response"`
+			Done            bool   `json:"done"`
+			PromptEvalCount int    `json:"prompt_eval_count"`
+			EvalCount       int    `json:"eval_count"`
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
-			return "", fmt.Errorf("failed to decode response: %w", err)
+			return GenerationResult{}, fmt.Errorf("failed to decode response: %w", err)
 		}
 		resp.Body.Close()
 
 		if result.Done && result.Response != "" {
-			return result.Response, nil
+			usage := Usage{PromptTokens: result.PromptEvalCount, CompletionTokens: result.EvalCount}
+			reported := usage.PromptTokens > 0 || usage.CompletionTokens > 0
+			return GenerationResult{
+				Text:          result.Response,
+				Usage:         usage,
+				UsageReported: reported,
+			}, nil
 		}
 
 		if result.Done && result.Response == "" && attempt < maxRetries-1 {
@@ -116,8 +132,8 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, err
 			continue
 		}
 
-		return result.Response, nil
+		return GenerationResult{Text: result.Response}, nil
 	}
 
-	return "", lastErr
+	return GenerationResult{}, lastErr
 }

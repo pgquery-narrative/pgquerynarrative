@@ -4,6 +4,7 @@
 package narrative
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
@@ -32,9 +33,23 @@ type Config struct {
 
 // SecurityConfig holds security settings for narrative client services.
 type SecurityConfig struct {
+	AuthEnabled           bool
+	RateLimitRPM          int
+	RateLimitBurst        int
+	RateLimitDistributed  bool
+	OIDCIssuer            string
+	OIDCAudience          string
+	OIDCClientID          string
+	OIDCClientSecret      string
+	OIDCRedirectURL       string
+	SessionSecret         string
+	SessionTTL            time.Duration
 	ShareLinkDefaultHours int
+	ShareLinksEnabled     bool
 	ExplainAnalyzeEnabled bool
 	StatStatementsEnabled bool
+	WebhookSigningSecret  string
+	WebhookAllowedHosts   []string
 }
 
 // EmbeddingConfig holds optional embedding model settings (e.g. Ollama nomic-embed-text).
@@ -51,10 +66,14 @@ type DatabaseConfig struct {
 	User             string
 	Password         string
 	MaxConnections   int
+	MinConnections   int
+	GlobalMaxConns   int
 	ReadOnlyUser     string
 	ReadOnlyPassword string
 	SSLMode          string
 	QueryTimeout     time.Duration
+	LockTimeout      time.Duration
+	IdleTxTimeout    time.Duration
 	DefaultID        string
 	Connections      []DataConnectionConfig
 }
@@ -70,19 +89,34 @@ type DataConnectionConfig struct {
 	ReadOnlyPassword string
 	SSLMode          string
 	QueryTimeout     time.Duration
+	LockTimeout      time.Duration
+	IdleTxTimeout    time.Duration
 	AllowedSchemas   []string
+	MaxResultBytes   int
+	MaxCellBytes     int
+	MaxColumns       int
 }
 
 // LLMConfig holds LLM provider settings.
 type LLMConfig struct {
-	Provider          string
-	Model             string
-	APIKey            string
-	BaseURL           string
-	MaxSampleRows     int
-	SendRowData       bool
-	AllowExternalData bool
-	RedactPII         bool
+	Provider                    string
+	Model                       string
+	APIKey                      string
+	BaseURL                     string
+	MaxSampleRows               int
+	SendRowData                 bool
+	AllowExternalData           bool
+	RedactPII                   bool
+	DailyTokenBudget            int
+	DailyCostBudgetUSD          float64
+	MonthlyTokenBudget          int
+	MonthlyCostBudgetUSD        float64
+	PerUserDailyTokenBudget     int
+	PerUserDailyCostBudgetUSD   float64
+	PerUserMonthlyTokenBudget   int
+	PerUserMonthlyCostBudgetUSD float64
+	USDPer1kTokens              float64
+	MaxCallsPerReport           int
 }
 
 // MetricsConfig holds metrics and period-comparison settings.
@@ -98,6 +132,7 @@ type MetricsConfig struct {
 	SmoothingBeta            float64 // Trend smoothing for Holt (default 0.1)
 	MaxSeasonalLag           int     // Max seasonal period to try (default 12)
 	MinPeriodsForSeasonality int     // Min series length for seasonality (default 12)
+	MaxTimeSeriesPeriods     int     // Max periods returned for time-series metrics (default 24)
 }
 
 // FromAppConfig converts app config into narrative config with default
@@ -112,22 +147,36 @@ func FromAppConfig(cfg config.Config) Config {
 			User:             cfg.Database.User,
 			Password:         cfg.Database.Password,
 			MaxConnections:   cfg.Database.MaxConnections,
+			MinConnections:   cfg.Database.MinConnections,
+			GlobalMaxConns:   cfg.Database.GlobalMaxConns,
 			ReadOnlyUser:     cfg.Database.ReadOnlyUser,
 			ReadOnlyPassword: cfg.Database.ReadOnlyPassword,
 			SSLMode:          cfg.Database.SSLMode,
 			QueryTimeout:     cfg.Database.QueryTimeout,
+			LockTimeout:      cfg.Database.LockTimeout,
+			IdleTxTimeout:    cfg.Database.IdleTxTimeout,
 			DefaultID:        cfg.Database.DefaultID,
 			Connections:      toNarrativeConnections(cfg.Database.Connections),
 		},
 		LLM: LLMConfig{
-			Provider:          cfg.LLM.Provider,
-			Model:             cfg.LLM.Model,
-			APIKey:            cfg.LLM.APIKey,
-			BaseURL:           cfg.LLM.BaseURL,
-			MaxSampleRows:     cfg.LLM.MaxSampleRows,
-			SendRowData:       cfg.LLM.SendRowData,
-			AllowExternalData: cfg.LLM.AllowExternalData,
-			RedactPII:         cfg.LLM.RedactPII,
+			Provider:                    cfg.LLM.Provider,
+			Model:                       cfg.LLM.Model,
+			APIKey:                      cfg.LLM.APIKey,
+			BaseURL:                     cfg.LLM.BaseURL,
+			MaxSampleRows:               cfg.LLM.MaxSampleRows,
+			SendRowData:                 cfg.LLM.SendRowData,
+			AllowExternalData:           cfg.LLM.AllowExternalData,
+			RedactPII:                   cfg.LLM.RedactPII,
+			DailyTokenBudget:            cfg.LLM.DailyTokenBudget,
+			DailyCostBudgetUSD:          cfg.LLM.DailyCostBudgetUSD,
+			MonthlyTokenBudget:          cfg.LLM.MonthlyTokenBudget,
+			MonthlyCostBudgetUSD:        cfg.LLM.MonthlyCostBudgetUSD,
+			PerUserDailyTokenBudget:     cfg.LLM.PerUserDailyTokenBudget,
+			PerUserDailyCostBudgetUSD:   cfg.LLM.PerUserDailyCostBudgetUSD,
+			PerUserMonthlyTokenBudget:   cfg.LLM.PerUserMonthlyTokenBudget,
+			PerUserMonthlyCostBudgetUSD: cfg.LLM.PerUserMonthlyCostBudgetUSD,
+			USDPer1kTokens:              cfg.LLM.USDPer1kTokens,
+			MaxCallsPerReport:           cfg.LLM.MaxCallsPerReport,
 		},
 		Metrics: MetricsConfig{
 			TrendThresholdPercent:    cfg.Metrics.TrendThresholdPercent,
@@ -141,6 +190,7 @@ func FromAppConfig(cfg config.Config) Config {
 			SmoothingBeta:            cfg.Metrics.SmoothingBeta,
 			MaxSeasonalLag:           cfg.Metrics.MaxSeasonalLag,
 			MinPeriodsForSeasonality: cfg.Metrics.MinPeriodsForSeasonality,
+			MaxTimeSeriesPeriods:     cfg.Metrics.MaxTimeSeriesPeriods,
 		},
 		Embedding: EmbeddingConfig{
 			BaseURL: cfg.Embedding.BaseURL,
@@ -150,9 +200,23 @@ func FromAppConfig(cfg config.Config) Config {
 		MaxQueryLength:  10000,
 		MaxRowsPerQuery: 1000,
 		Security: SecurityConfig{
+			AuthEnabled:           cfg.Security.AuthEnabled,
+			RateLimitRPM:          cfg.Security.RateLimitRPM,
+			RateLimitBurst:        cfg.Security.RateLimitBurst,
+			RateLimitDistributed:  cfg.Security.RateLimitDistributed,
+			OIDCIssuer:            cfg.Security.OIDCIssuer,
+			OIDCAudience:          cfg.Security.OIDCAudience,
+			OIDCClientID:          cfg.Security.OIDCClientID,
+			OIDCClientSecret:      cfg.Security.OIDCClientSecret,
+			OIDCRedirectURL:       cfg.Security.OIDCRedirectURL,
+			SessionSecret:         cfg.Security.SessionSecret,
+			SessionTTL:            cfg.Security.SessionTTL,
 			ShareLinkDefaultHours: cfg.Security.ShareLinkDefaultHours,
+			ShareLinksEnabled:     cfg.Security.ShareLinksEnabled,
 			ExplainAnalyzeEnabled: cfg.Security.ExplainAnalyzeEnabled,
 			StatStatementsEnabled: cfg.Security.StatStatementsEnabled,
+			WebhookSigningSecret:  cfg.Security.WebhookSigningSecret,
+			WebhookAllowedHosts:   append([]string(nil), cfg.Security.WebhookAllowedHosts...),
 		},
 	}
 }
@@ -177,7 +241,63 @@ func toNarrativeConnections(in []config.DataConnectionConfig) []DataConnectionCo
 			ReadOnlyPassword: c.ReadOnlyPassword,
 			SSLMode:          c.SSLMode,
 			QueryTimeout:     c.QueryTimeout,
+			LockTimeout:      c.LockTimeout,
+			IdleTxTimeout:    c.IdleTxTimeout,
 			AllowedSchemas:   append([]string(nil), c.AllowedSchemas...),
+			MaxResultBytes:   c.MaxResultBytes,
+			MaxCellBytes:     c.MaxCellBytes,
+			MaxColumns:       c.MaxColumns,
+		})
+	}
+	return out
+}
+
+// Validate applies cloud LLM and production safety checks for library consumers.
+func (c Config) Validate() error {
+	if config.IsCloudLLMProvider(c.LLM.Provider) && !c.LLM.AllowExternalData {
+		return fmt.Errorf("cloud LLM provider %q requires LLM_ALLOW_EXTERNAL_DATA=true", c.LLM.Provider)
+	}
+	if config.IsCloudLLMProvider(c.LLM.Provider) && c.LLM.SendRowData && c.LLM.MaxSampleRows > 3 {
+		return fmt.Errorf("LLM_MAX_SAMPLE_ROWS must be <= 3 for cloud providers when LLM_SEND_ROW_DATA=true")
+	}
+	if !config.StrictMode() {
+		return nil
+	}
+	ac := config.Config{
+		Database: config.DatabaseConfig{
+			SSLMode:          c.Database.SSLMode,
+			QueryTimeout:     c.Database.QueryTimeout,
+			LockTimeout:      c.Database.LockTimeout,
+			Password:         c.Database.Password,
+			ReadOnlyPassword: c.Database.ReadOnlyPassword,
+			Connections:      toAppConnectionsFromNarrative(c.Database.Connections),
+		},
+		Security: config.SecurityConfig{
+			AuthEnabled:           c.Security.AuthEnabled,
+			RateLimitRPM:          c.Security.RateLimitRPM,
+			RateLimitBurst:        c.Security.RateLimitBurst,
+			RateLimitDistributed:  c.Security.RateLimitDistributed,
+			ExplainAnalyzeEnabled: c.Security.ExplainAnalyzeEnabled,
+			ShareLinksEnabled:     c.Security.ShareLinksEnabled,
+			ScheduleDurableLeases: true,
+		},
+		LLM: config.LLMConfig{
+			Provider:          c.LLM.Provider,
+			SendRowData:       c.LLM.SendRowData,
+			AllowExternalData: c.LLM.AllowExternalData,
+			MaxSampleRows:     c.LLM.MaxSampleRows,
+			RedactPII:         c.LLM.RedactPII,
+		},
+	}
+	return ac.Validate()
+}
+
+func toAppConnectionsFromNarrative(in []DataConnectionConfig) []config.DataConnectionConfig {
+	out := make([]config.DataConnectionConfig, 0, len(in))
+	for _, c := range in {
+		out = append(out, config.DataConnectionConfig{
+			ID:               c.ID,
+			ReadOnlyPassword: c.ReadOnlyPassword,
 		})
 	}
 	return out

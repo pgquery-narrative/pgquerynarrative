@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 )
 
 // EmbeddingVectorDimension is the size used for pgvector (e.g. nomic-embed-text).
@@ -39,11 +40,11 @@ type scoredQuery struct {
 
 // Store persists and retrieves query embeddings for similar-query search and RAG.
 type Store struct {
-	appPool *pgxpool.Pool
+	appPool db.DB
 }
 
-// NewStore creates a store that uses the app pool (writes to app.query_embeddings).
-func NewStore(appPool *pgxpool.Pool) *Store {
+// NewStore creates a store that uses the org-scoped app DB (writes to app.query_embeddings).
+func NewStore(appPool db.DB) *Store {
 	return &Store{appPool: appPool}
 }
 

@@ -5,9 +5,9 @@ import (
 )
 
 func TestStatStatementsOrderColumns(t *testing.T) {
-	for _, orderBy := range []string{"total_time", "mean_time", "calls", "TOTAL_TIME"} {
-		if _, ok := statStatementsOrderColumns[orderBy]; orderBy != "TOTAL_TIME" && !ok {
-			// lowercase path is validated in StatStatements via ToLower
+	for _, orderBy := range []string{"total_time", "mean_time", "calls"} {
+		if _, ok := statStatementsOrderColumns[orderBy]; !ok {
+			t.Fatalf("expected column mapping for %q", orderBy)
 		}
 	}
 	if _, ok := statStatementsOrderColumns["total_time"]; !ok {

@@ -8,7 +8,7 @@ import (
 )
 
 // RequiredMigrationVersion is the minimum schema_migrations.version required at startup.
-const RequiredMigrationVersion uint = 25
+const RequiredMigrationVersion uint = 32
 
 // CheckMigrationVersion ensures golang-migrate has applied all required schema changes.
 func CheckMigrationVersion(ctx context.Context, pool *pgxpool.Pool) error {

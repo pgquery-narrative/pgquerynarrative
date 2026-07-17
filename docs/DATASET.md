@@ -43,6 +43,49 @@ Fast dev seed (8,000 rows) is unchanged: `make seed`.
 
 ---
 
+## Real open data: NYC Yellow Taxi (`opendata.yellow_trips`)
+
+Public TLC trip records (not synthetic). Source:
+[NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
+Files are downloaded from the TLC CDN as Parquet and loaded into Postgres.
+
+| Item | Value |
+|------|--------|
+| Schema / table | `opendata.yellow_trips` (range-partitioned by `tpep_pickup_datetime`) |
+| Default months | `2024-01`, `2024-02`, `2024-03` (~8–10M trips) |
+| Migration | `000026_opendata_nyc_taxi` |
+| Loader | [`tools/db/load_nyc_taxi.py`](../tools/db/load_nyc_taxi.py) |
+| Showcase SQL | [`tools/db/opendata-showcase.sql`](../tools/db/opendata-showcase.sql) |
+| Allowlist | `DATABASE_ALLOWED_SCHEMAS=demo,opendata` (Compose default) |
+
+```bash
+# After Postgres is up and migrations applied:
+make migrate-docker
+make seed-nyc-docker                 # default 3 months
+make seed-nyc-docker MONTHS=2024-01  # faster first pass (~3M rows)
+
+# Host Postgres (port 5432):
+make seed-nyc MONTHS=2024-01,2024-02,2024-03
+```
+
+The loader creates `tools/db/.venv-nyc` (gitignored) and caches Parquet under
+`tools/db/.cache/nyc-taxi/`. Re-runs truncate `opendata.yellow_trips` unless
+you pass `--no-truncate`.
+
+Example API checks after the app is running:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/queries/run \
+  -H 'Content-Type: application/json' \
+  -d '{"sql":"SELECT date_trunc('\''month'\'', tpep_pickup_datetime) AS month, COUNT(*) AS trips, ROUND(SUM(total_amount)::numeric,2) AS revenue FROM opendata.yellow_trips GROUP BY 1 ORDER BY 1","limit":10}'
+
+curl -sS -X POST http://localhost:8080/api/v1/queries/explain \
+  -H 'Content-Type: application/json' \
+  -d '{"sql":"SELECT pulocation_id, COUNT(*), SUM(total_amount) FROM opendata.yellow_trips WHERE tpep_pickup_datetime >= TIMESTAMP '\''2024-01-01'\'' AND tpep_pickup_datetime < TIMESTAMP '\''2024-02-01'\'' GROUP BY 1"}'
+```
+
+---
+
 ## Schema & partitioning
 
 `demo.sales` is a `PARTITION BY RANGE (date)` table (migration

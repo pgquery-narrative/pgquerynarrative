@@ -47,10 +47,18 @@ const groqMaxRetries = 3
 const groqRetryDelay = 6 * time.Second
 
 // Generate sends the prompt to Groq Chat Completions and returns the generated text.
-// On 429 (rate limit) it retries up to groqMaxRetries with backoff.
 func (c *GroqClient) Generate(ctx context.Context, prompt string) (string, error) {
+	result, err := c.GenerateWithUsage(ctx, prompt)
+	if err != nil {
+		return "", err
+	}
+	return result.Text, nil
+}
+
+// GenerateWithUsage returns generated text and provider-reported token usage when available.
+func (c *GroqClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
 	if c.apiKey == "" {
-		return "", fmt.Errorf("groq: LLM_API_KEY is required")
+		return GenerationResult{}, fmt.Errorf("groq: LLM_API_KEY is required")
 	}
 
 	url := groqBaseURL + "/chat/completions"
@@ -64,21 +72,21 @@ func (c *GroqClient) Generate(ctx context.Context, prompt string) (string, error
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("groq: marshal request: %w", err)
+		return GenerationResult{}, fmt.Errorf("groq: marshal request: %w", err)
 	}
 
 	var lastErr error
 	for attempt := 0; attempt < groqMaxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 		if err != nil {
-			return "", fmt.Errorf("groq: create request: %w", err)
+			return GenerationResult{}, fmt.Errorf("groq: create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return "", fmt.Errorf("groq: request: %w", err)
+			return GenerationResult{}, fmt.Errorf("groq: request: %w", err)
 		}
 
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
@@ -91,14 +99,24 @@ func (c *GroqClient) Generate(ctx context.Context, prompt string) (string, error
 						Content string `json:"content"`
 					} `json:"message"`
 				} `json:"choices"`
+				Usage struct {
+					PromptTokens     int `json:"prompt_tokens"`
+					CompletionTokens int `json:"completion_tokens"`
+				} `json:"usage"`
 			}
 			if err := json.Unmarshal(body, &result); err != nil {
-				return "", fmt.Errorf("groq: decode response: %w", err)
+				return GenerationResult{}, fmt.Errorf("groq: decode response: %w", err)
 			}
 			if len(result.Choices) == 0 || result.Choices[0].Message.Content == "" {
-				return "", fmt.Errorf("groq: empty response")
+				return GenerationResult{}, fmt.Errorf("groq: empty response")
 			}
-			return result.Choices[0].Message.Content, nil
+			usage := Usage{PromptTokens: result.Usage.PromptTokens, CompletionTokens: result.Usage.CompletionTokens}
+			reported := usage.PromptTokens > 0 || usage.CompletionTokens > 0
+			return GenerationResult{
+				Text:          result.Choices[0].Message.Content,
+				Usage:         usage,
+				UsageReported: reported,
+			}, nil
 		}
 
 		lastErr = fmt.Errorf("groq API error: %d - %s", resp.StatusCode, string(body))
@@ -106,14 +124,14 @@ func (c *GroqClient) Generate(ctx context.Context, prompt string) (string, error
 		if resp.StatusCode == 429 && attempt < groqMaxRetries-1 {
 			select {
 			case <-ctx.Done():
-				return "", ctx.Err()
+				return GenerationResult{}, ctx.Err()
 			case <-time.After(groqRetryDelay):
 				// retry
 			}
 			continue
 		}
 
-		return "", lastErr
+		return GenerationResult{}, lastErr
 	}
-	return "", lastErr
+	return GenerationResult{}, lastErr
 }

@@ -226,8 +226,14 @@ type PlanFindingResponseBody struct {
 	EstimatedCost *float64 `form:"estimated_cost,omitempty" json:"estimated_cost,omitempty" xml:"estimated_cost,omitempty"`
 	// True when the node is a sequential scan
 	IsSeqScan bool `form:"is_seq_scan" json:"is_seq_scan" xml:"is_seq_scan"`
+	// Finding category (e.g. seq_scan, cardinality_misestimate, sort_spill)
+	Category *string `form:"category,omitempty" json:"category,omitempty" xml:"category,omitempty"`
+	// Triage confidence: low, medium, or high
+	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
 	// Human-readable summary and optional index hint
 	Message string `form:"message" json:"message" xml:"message"`
+	// Raw plan metrics backing this finding (e.g. Plan Rows=8000)
+	Evidence []string `form:"evidence,omitempty" json:"evidence,omitempty" xml:"evidence,omitempty"`
 }
 
 // SavedQueryResponseBody is used to define fields on response body types.

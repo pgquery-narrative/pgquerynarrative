@@ -1,0 +1,25 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Sort",
+      "Total Cost": 90000.0,
+      "Plan Rows": 500000,
+      "Actual Rows": 500000,
+      "Sort Key": ["sales.sold_at"],
+      "Sort Method": "external merge",
+      "Sort Space Used": 45120,
+      "Sort Space Type": "Disk",
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "sales",
+          "Schema": "demo",
+          "Total Cost": 25000.0,
+          "Plan Rows": 500000,
+          "Actual Rows": 500000
+        }
+      ]
+    },
+    "Execution Time": 2210.7
+  }
+]

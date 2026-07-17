@@ -23,6 +23,13 @@ data:
   SECURITY_SHARE_LINK_DEFAULT_HOURS: "168"
   SECURITY_EXPLAIN_ANALYZE_ENABLED: "false"
   SECURITY_STAT_STATEMENTS_ENABLED: "true"
+  SECURITY_OIDC_ISSUER: ""          # e.g. https://your-idp.example.com
+  SECURITY_OIDC_AUDIENCE: "pgquerynarrative"
+  SECURITY_OIDC_CLIENT_ID: ""
+  SECURITY_OIDC_REDIRECT_URL: ""    # e.g. https://pgquerynarrative.example.com/auth/callback
+  SECURITY_SESSION_TTL: "8h"
+  SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG: "true"
+  SECURITY_WEBHOOK_ALLOWED_HOSTS: ""  # comma-separated hostnames
   LLM_REDACT_PII: "true"
   SCHEDULE_RUNNER_ENABLED: "true"
   SCHEDULE_RUNNER_INTERVAL: "1m"

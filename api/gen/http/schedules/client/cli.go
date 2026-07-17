@@ -24,7 +24,7 @@ func BuildCreatePayload(schedulesCreateBody string) (*schedules.ScheduleInput, e
 	{
 		err = json.Unmarshal([]byte(schedulesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Et autem.\",\n      \"cron_expr\": \"Eveniet illo.\",\n      \"destination_target\": \"Itaque impedit dicta asperiores ea quia ea.\",\n      \"destination_type\": \"Blanditiis nobis eum quo recusandae.\",\n      \"enabled\": false,\n      \"name\": \"qf9\",\n      \"saved_query_id\": \"f178ea6e-cc19-488f-879b-6688128f2734\",\n      \"sql\": \"sfq\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Quo quas vitae facilis.\",\n      \"cron_expr\": \"Repellat aut qui nisi ratione.\",\n      \"destination_target\": \"Dolorem ut ut distinctio velit et consequatur.\",\n      \"destination_type\": \"Nulla ea dolor architecto recusandae quibusdam.\",\n      \"enabled\": false,\n      \"name\": \"sx2\",\n      \"saved_query_id\": \"48cd70e3-9cb1-47b5-935d-ab1c6120b882\",\n      \"sql\": \"qbx\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))
@@ -66,7 +66,7 @@ func BuildUpdatePayload(schedulesUpdateBody string, schedulesUpdateID string) (*
 	{
 		err = json.Unmarshal([]byte(schedulesUpdateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Sapiente ipsam est est temporibus.\",\n      \"cron_expr\": \"Quo perferendis.\",\n      \"destination_target\": \"Nobis similique nihil et.\",\n      \"destination_type\": \"Est sed harum quas iusto magni.\",\n      \"enabled\": false,\n      \"name\": \"5\",\n      \"saved_query_id\": \"ae2a88d6-61cf-4ec2-9541-1a4d9ae94604\",\n      \"sql\": \"kw6\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Sit nulla explicabo.\",\n      \"cron_expr\": \"Et libero libero dolores enim voluptatum.\",\n      \"destination_target\": \"Explicabo minus aut consequuntur nam recusandae tenetur.\",\n      \"destination_type\": \"Est reprehenderit iure.\",\n      \"enabled\": true,\n      \"name\": \"t\",\n      \"saved_query_id\": \"23768b7f-2399-49b7-9bca-0b0e0aca9a36\",\n      \"sql\": \"pem\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))
@@ -141,6 +141,42 @@ func BuildRunNowPayload(schedulesRunNowID string) (*schedules.RunNowPayload, err
 	}
 	v := &schedules.RunNowPayload{}
 	v.ID = id
+
+	return v, nil
+}
+
+// BuildListRunsPayload builds the payload for the schedules list_runs endpoint
+// from CLI flags.
+func BuildListRunsPayload(schedulesListRunsID string) (*schedules.ListRunsPayload, error) {
+	var err error
+	var id string
+	{
+		id = schedulesListRunsID
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &schedules.ListRunsPayload{}
+	v.ID = id
+
+	return v, nil
+}
+
+// BuildRetryRunPayload builds the payload for the schedules retry_run endpoint
+// from CLI flags.
+func BuildRetryRunPayload(schedulesRetryRunRunID string) (*schedules.RetryRunPayload, error) {
+	var err error
+	var runID string
+	{
+		runID = schedulesRetryRunRunID
+		err = goa.MergeErrors(err, goa.ValidateFormat("run_id", runID, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &schedules.RetryRunPayload{}
+	v.RunID = runID
 
 	return v, nil
 }

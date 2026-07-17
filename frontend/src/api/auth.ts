@@ -26,3 +26,22 @@ export function authHeaders(): Record<string, string> {
   if (!key) return {};
   return { Authorization: `Bearer ${key}` };
 }
+
+/** Fetch init that sends session cookies and optional API key. */
+export function authFetchInit(init?: RequestInit): RequestInit {
+  return {
+    credentials: "include",
+    ...init,
+    headers: { ...authHeaders(), ...(init?.headers as Record<string, string> | undefined) },
+  };
+}
+
+export async function fetchSessionStatus(): Promise<{ authenticated: boolean; user_id?: string }> {
+  try {
+    const res = await fetch("/auth/session", { credentials: "include" });
+    if (!res.ok) return { authenticated: false };
+    return res.json();
+  } catch {
+    return { authenticated: false };
+  }
+}

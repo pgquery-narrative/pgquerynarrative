@@ -14,6 +14,7 @@ type RunErrorKind int
 const (
 	RunErrorValidation RunErrorKind = iota
 	RunErrorTimeout
+	RunErrorTooLarge
 )
 
 // ClassifyRunError inspects err from queryrunner.Run and returns the kind and a user-facing message.
@@ -23,6 +24,9 @@ func ClassifyRunError(err error) (RunErrorKind, string) {
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, apperrors.ErrQueryTimeout) {
 		return RunErrorTimeout, "Query timed out. Try a simpler query or reduce the amount of data."
+	}
+	if errors.Is(err, apperrors.ErrQueryResultTooLarge) {
+		return RunErrorTooLarge, "Query result is too large. Reduce selected columns, rows, or value sizes."
 	}
 	for _, sentinel := range []error{
 		apperrors.ErrQueryTooLong,

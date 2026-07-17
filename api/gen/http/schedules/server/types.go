@@ -100,6 +100,33 @@ type RunNowResponseBody struct {
 	Delivered bool                  `form:"delivered" json:"delivered" xml:"delivered"`
 }
 
+// ListRunsResponseBody is the type of the "schedules" service "list_runs"
+// endpoint HTTP response body.
+type ListRunsResponseBody struct {
+	Items []*ScheduleRunRecordResponseBody `form:"items" json:"items" xml:"items"`
+}
+
+// RetryRunResponseBody is the type of the "schedules" service "retry_run"
+// endpoint HTTP response body.
+type RetryRunResponseBody struct {
+	ID             string  `form:"id" json:"id" xml:"id"`
+	ScheduleID     string  `form:"schedule_id" json:"schedule_id" xml:"schedule_id"`
+	Status         string  `form:"status" json:"status" xml:"status"`
+	AttemptCount   int     `form:"attempt_count" json:"attempt_count" xml:"attempt_count"`
+	ScheduledFor   string  `form:"scheduled_for" json:"scheduled_for" xml:"scheduled_for"`
+	StartedAt      *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	CompletedAt    *string `form:"completed_at,omitempty" json:"completed_at,omitempty" xml:"completed_at,omitempty"`
+	ReportID       *string `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	FailureCode    *string `form:"failure_code,omitempty" json:"failure_code,omitempty" xml:"failure_code,omitempty"`
+	FailureMessage *string `form:"failure_message,omitempty" json:"failure_message,omitempty" xml:"failure_message,omitempty"`
+}
+
+// ListDeliveriesResponseBody is the type of the "schedules" service
+// "list_deliveries" endpoint HTTP response body.
+type ListDeliveriesResponseBody struct {
+	Items []*WebhookDeliveryRecordResponseBody `form:"items" json:"items" xml:"items"`
+}
+
 // CreateValidationErrorResponseBody is the type of the "schedules" service
 // "create" endpoint HTTP response body for the "validation_error" error.
 type CreateValidationErrorResponseBody struct {
@@ -132,6 +159,30 @@ type RunNowNotFoundResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// ListRunsNotFoundResponseBody is the type of the "schedules" service
+// "list_runs" endpoint HTTP response body for the "not_found" error.
+type ListRunsNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RetryRunNotFoundResponseBody is the type of the "schedules" service
+// "retry_run" endpoint HTTP response body for the "not_found" error.
+type RetryRunNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RetryRunValidationErrorResponseBody is the type of the "schedules" service
+// "retry_run" endpoint HTTP response body for the "validation_error" error.
+type RetryRunValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // ScheduleResponseBody is used to define fields on response body types.
 type ScheduleResponseBody struct {
 	ID                string  `form:"id" json:"id" xml:"id"`
@@ -149,6 +200,35 @@ type ScheduleResponseBody struct {
 	NextRunAt         *string `form:"next_run_at,omitempty" json:"next_run_at,omitempty" xml:"next_run_at,omitempty"`
 	CreatedAt         string  `form:"created_at" json:"created_at" xml:"created_at"`
 	UpdatedAt         string  `form:"updated_at" json:"updated_at" xml:"updated_at"`
+}
+
+// ScheduleRunRecordResponseBody is used to define fields on response body
+// types.
+type ScheduleRunRecordResponseBody struct {
+	ID             string  `form:"id" json:"id" xml:"id"`
+	ScheduleID     string  `form:"schedule_id" json:"schedule_id" xml:"schedule_id"`
+	Status         string  `form:"status" json:"status" xml:"status"`
+	AttemptCount   int     `form:"attempt_count" json:"attempt_count" xml:"attempt_count"`
+	ScheduledFor   string  `form:"scheduled_for" json:"scheduled_for" xml:"scheduled_for"`
+	StartedAt      *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	CompletedAt    *string `form:"completed_at,omitempty" json:"completed_at,omitempty" xml:"completed_at,omitempty"`
+	ReportID       *string `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	FailureCode    *string `form:"failure_code,omitempty" json:"failure_code,omitempty" xml:"failure_code,omitempty"`
+	FailureMessage *string `form:"failure_message,omitempty" json:"failure_message,omitempty" xml:"failure_message,omitempty"`
+}
+
+// WebhookDeliveryRecordResponseBody is used to define fields on response body
+// types.
+type WebhookDeliveryRecordResponseBody struct {
+	ID             string  `form:"id" json:"id" xml:"id"`
+	ScheduleID     *string `form:"schedule_id,omitempty" json:"schedule_id,omitempty" xml:"schedule_id,omitempty"`
+	DestinationURL string  `form:"destination_url" json:"destination_url" xml:"destination_url"`
+	Status         string  `form:"status" json:"status" xml:"status"`
+	AttemptCount   int     `form:"attempt_count" json:"attempt_count" xml:"attempt_count"`
+	HTTPStatus     *int    `form:"http_status,omitempty" json:"http_status,omitempty" xml:"http_status,omitempty"`
+	ErrorMessage   *string `form:"error_message,omitempty" json:"error_message,omitempty" xml:"error_message,omitempty"`
+	CreatedAt      string  `form:"created_at" json:"created_at" xml:"created_at"`
+	CompletedAt    *string `form:"completed_at,omitempty" json:"completed_at,omitempty" xml:"completed_at,omitempty"`
 }
 
 // NewListResponseBody builds the HTTP response body from the result of the
@@ -229,6 +309,62 @@ func NewRunNowResponseBody(res *schedules.ScheduleRunResult) *RunNowResponseBody
 	return body
 }
 
+// NewListRunsResponseBody builds the HTTP response body from the result of the
+// "list_runs" endpoint of the "schedules" service.
+func NewListRunsResponseBody(res *schedules.ScheduleRunListResult) *ListRunsResponseBody {
+	body := &ListRunsResponseBody{}
+	if res.Items != nil {
+		body.Items = make([]*ScheduleRunRecordResponseBody, len(res.Items))
+		for i, val := range res.Items {
+			if val == nil {
+				body.Items[i] = nil
+				continue
+			}
+			body.Items[i] = marshalSchedulesScheduleRunRecordToScheduleRunRecordResponseBody(val)
+		}
+	} else {
+		body.Items = []*ScheduleRunRecordResponseBody{}
+	}
+	return body
+}
+
+// NewRetryRunResponseBody builds the HTTP response body from the result of the
+// "retry_run" endpoint of the "schedules" service.
+func NewRetryRunResponseBody(res *schedules.ScheduleRunRecord) *RetryRunResponseBody {
+	body := &RetryRunResponseBody{
+		ID:             res.ID,
+		ScheduleID:     res.ScheduleID,
+		Status:         res.Status,
+		AttemptCount:   res.AttemptCount,
+		ScheduledFor:   res.ScheduledFor,
+		StartedAt:      res.StartedAt,
+		CompletedAt:    res.CompletedAt,
+		ReportID:       res.ReportID,
+		FailureCode:    res.FailureCode,
+		FailureMessage: res.FailureMessage,
+	}
+	return body
+}
+
+// NewListDeliveriesResponseBody builds the HTTP response body from the result
+// of the "list_deliveries" endpoint of the "schedules" service.
+func NewListDeliveriesResponseBody(res *schedules.WebhookDeliveryListResult) *ListDeliveriesResponseBody {
+	body := &ListDeliveriesResponseBody{}
+	if res.Items != nil {
+		body.Items = make([]*WebhookDeliveryRecordResponseBody, len(res.Items))
+		for i, val := range res.Items {
+			if val == nil {
+				body.Items[i] = nil
+				continue
+			}
+			body.Items[i] = marshalSchedulesWebhookDeliveryRecordToWebhookDeliveryRecordResponseBody(val)
+		}
+	} else {
+		body.Items = []*WebhookDeliveryRecordResponseBody{}
+	}
+	return body
+}
+
 // NewCreateValidationErrorResponseBody builds the HTTP response body from the
 // result of the "create" endpoint of the "schedules" service.
 func NewCreateValidationErrorResponseBody(res *schedules.ValidationError) *CreateValidationErrorResponseBody {
@@ -266,6 +402,39 @@ func NewUpdateValidationErrorResponseBody(res *schedules.ValidationError) *Updat
 // of the "run_now" endpoint of the "schedules" service.
 func NewRunNowNotFoundResponseBody(res *schedules.NotFoundError) *RunNowNotFoundResponseBody {
 	body := &RunNowNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewListRunsNotFoundResponseBody builds the HTTP response body from the
+// result of the "list_runs" endpoint of the "schedules" service.
+func NewListRunsNotFoundResponseBody(res *schedules.NotFoundError) *ListRunsNotFoundResponseBody {
+	body := &ListRunsNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewRetryRunNotFoundResponseBody builds the HTTP response body from the
+// result of the "retry_run" endpoint of the "schedules" service.
+func NewRetryRunNotFoundResponseBody(res *schedules.NotFoundError) *RetryRunNotFoundResponseBody {
+	body := &RetryRunNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewRetryRunValidationErrorResponseBody builds the HTTP response body from
+// the result of the "retry_run" endpoint of the "schedules" service.
+func NewRetryRunValidationErrorResponseBody(res *schedules.ValidationError) *RetryRunValidationErrorResponseBody {
+	body := &RetryRunValidationErrorResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,
@@ -318,6 +487,22 @@ func NewDeletePayload(id string) *schedules.DeletePayload {
 func NewRunNowPayload(id string) *schedules.RunNowPayload {
 	v := &schedules.RunNowPayload{}
 	v.ID = id
+
+	return v
+}
+
+// NewListRunsPayload builds a schedules service list_runs endpoint payload.
+func NewListRunsPayload(id string) *schedules.ListRunsPayload {
+	v := &schedules.ListRunsPayload{}
+	v.ID = id
+
+	return v
+}
+
+// NewRetryRunPayload builds a schedules service retry_run endpoint payload.
+func NewRetryRunPayload(runID string) *schedules.RetryRunPayload {
+	v := &schedules.RetryRunPayload{}
+	v.RunID = runID
 
 	return v
 }

@@ -286,6 +286,155 @@ func EncodeRunNowError(encoder func(context.Context, http.ResponseWriter) goahtt
 	}
 }
 
+// EncodeListRunsResponse returns an encoder for responses returned by the
+// schedules list_runs endpoint.
+func EncodeListRunsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*schedules.ScheduleRunListResult)
+		enc := encoder(ctx, w)
+		body := NewListRunsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeListRunsRequest returns a decoder for requests sent to the schedules
+// list_runs endpoint.
+func DecodeListRunsRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*schedules.ListRunsPayload, error) {
+	return func(r *http.Request) (*schedules.ListRunsPayload, error) {
+		var (
+			id  string
+			err error
+
+			params = mux.Vars(r)
+		)
+		id = params["id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewListRunsPayload(id)
+
+		return payload, nil
+	}
+}
+
+// EncodeListRunsError returns an encoder for errors returned by the list_runs
+// schedules endpoint.
+func EncodeListRunsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *schedules.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListRunsNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeRetryRunResponse returns an encoder for responses returned by the
+// schedules retry_run endpoint.
+func EncodeRetryRunResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*schedules.ScheduleRunRecord)
+		enc := encoder(ctx, w)
+		body := NewRetryRunResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeRetryRunRequest returns a decoder for requests sent to the schedules
+// retry_run endpoint.
+func DecodeRetryRunRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*schedules.RetryRunPayload, error) {
+	return func(r *http.Request) (*schedules.RetryRunPayload, error) {
+		var (
+			runID string
+			err   error
+
+			params = mux.Vars(r)
+		)
+		runID = params["run_id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("run_id", runID, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewRetryRunPayload(runID)
+
+		return payload, nil
+	}
+}
+
+// EncodeRetryRunError returns an encoder for errors returned by the retry_run
+// schedules endpoint.
+func EncodeRetryRunError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *schedules.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRetryRunNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "validation_error":
+			var res *schedules.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRetryRunValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeListDeliveriesResponse returns an encoder for responses returned by
+// the schedules list_deliveries endpoint.
+func EncodeListDeliveriesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*schedules.WebhookDeliveryListResult)
+		enc := encoder(ctx, w)
+		body := NewListDeliveriesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
 // marshalSchedulesScheduleToScheduleResponseBody builds a value of type
 // *ScheduleResponseBody from a value of type *schedules.Schedule.
 func marshalSchedulesScheduleToScheduleResponseBody(v *schedules.Schedule) *ScheduleResponseBody {
@@ -305,6 +454,45 @@ func marshalSchedulesScheduleToScheduleResponseBody(v *schedules.Schedule) *Sche
 		NextRunAt:         v.NextRunAt,
 		CreatedAt:         v.CreatedAt,
 		UpdatedAt:         v.UpdatedAt,
+	}
+
+	return res
+}
+
+// marshalSchedulesScheduleRunRecordToScheduleRunRecordResponseBody builds a
+// value of type *ScheduleRunRecordResponseBody from a value of type
+// *schedules.ScheduleRunRecord.
+func marshalSchedulesScheduleRunRecordToScheduleRunRecordResponseBody(v *schedules.ScheduleRunRecord) *ScheduleRunRecordResponseBody {
+	res := &ScheduleRunRecordResponseBody{
+		ID:             v.ID,
+		ScheduleID:     v.ScheduleID,
+		Status:         v.Status,
+		AttemptCount:   v.AttemptCount,
+		ScheduledFor:   v.ScheduledFor,
+		StartedAt:      v.StartedAt,
+		CompletedAt:    v.CompletedAt,
+		ReportID:       v.ReportID,
+		FailureCode:    v.FailureCode,
+		FailureMessage: v.FailureMessage,
+	}
+
+	return res
+}
+
+// marshalSchedulesWebhookDeliveryRecordToWebhookDeliveryRecordResponseBody
+// builds a value of type *WebhookDeliveryRecordResponseBody from a value of
+// type *schedules.WebhookDeliveryRecord.
+func marshalSchedulesWebhookDeliveryRecordToWebhookDeliveryRecordResponseBody(v *schedules.WebhookDeliveryRecord) *WebhookDeliveryRecordResponseBody {
+	res := &WebhookDeliveryRecordResponseBody{
+		ID:             v.ID,
+		ScheduleID:     v.ScheduleID,
+		DestinationURL: v.DestinationURL,
+		Status:         v.Status,
+		AttemptCount:   v.AttemptCount,
+		HTTPStatus:     v.HTTPStatus,
+		ErrorMessage:   v.ErrorMessage,
+		CreatedAt:      v.CreatedAt,
+		CompletedAt:    v.CompletedAt,
 	}
 
 	return res

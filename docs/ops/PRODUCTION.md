@@ -10,6 +10,70 @@ those artifacts — adapt hostnames, credentials, and retention to your environm
 
 ---
 
+## 0. Supported production scope
+
+The first supported production target is an **internal company deployment** run by
+one trusted engineering, analytics, or database team against a PostgreSQL read
+replica or analytics replica. Use a dedicated read-only database role and expose
+only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
+
+### Feature maturity
+
+| Capability | Production maturity | Notes |
+|---|---|---|
+| Browser OIDC + session cookies | Preview | PKCE login at `/auth/login`; HttpOnly session cookie; API keys still supported for automation. |
+| Organisation scoping / IDOR | Preview | App-layer `organization_id` filters on saved queries, reports, schedules, dashboards, ask sessions; Postgres RLS when `app.current_org_id` is set. |
+| Read-only query runner | Stable for trusted internal teams | Requires DB grants plus app validation and configured query limits. |
+| Release artifacts | Stable | Release archives include binaries, `frontend/dist`, migrations, example config, checksums, SBOM, and archive smoke checks; OCI images publish for linux/amd64 and linux/arm64. |
+| Connection health | Stable | `/ready` checks core app DB only; `/ready/connections` reports each analytical pool independently; Prometheus pool metrics include `pool` and `role` labels. |
+| EXPLAIN plan findings | Preview | Catalog row estimates, index context, and confidence levels; triage signals only. |
+| Reports and deterministic metrics | Preview | Safe when result-size limits and query timeouts are configured. |
+| LLM governance and audit | Preview | Policy checks plus `app.llm_audit_events`; cloud providers require `LLM_ALLOW_EXTERNAL_DATA=true`. |
+| Local Ollama narratives | Preview | Keep `LLM_SEND_ROW_DATA=false` unless row samples are approved. |
+| Cloud LLM providers | Disabled until explicit approval | Requires `LLM_ALLOW_EXTERNAL_DATA=true`; audited when enabled. |
+| Durable scheduling | Preview | Lease/idempotency via `app.schedule_runs`; enable with `SCHEDULE_RUNNER_ENABLED=true` and `SCHEDULE_DURABLE_LEASES=true`. |
+| Webhooks | Preview | SSRF-hardened dial, HMAC signatures, delivery audit; validate destinations in staging first. |
+| Public share links | Preview/internal only | Disabled by default (`SECURITY_SHARE_LINKS_ENABLED=false`). |
+| Observability | Preview | Prometheus counters + Grafana dashboard (`deploy/grafana/`) + alert rules (`deploy/prometheus/alerts.yml`). |
+| Incident response | Preview | Formal runbooks in `docs/ops/INCIDENT_RUNBOOKS.md`. |
+| CI quality gates | Preview | Unit/integration tests, race detector, gosec (blocking), govulncheck, frontend typecheck/lint, CodeQL Go+JS, SBOM on release. |
+| Multi-organisation SaaS | Preview (internal) | Membership table + OIDC mapping + fail-closed RLS; not a public multi-tenant SaaS yet. |
+
+### Production non-goals for this release
+
+- Do not connect directly to a high-write transactional primary when a replica is available.
+- Do not market the system as a full BI platform or autonomous query optimizer.
+- Do not enable cloud AI for confidential data without a documented data-classification decision.
+- Prefer a small number of scheduler replicas; durable leases + idempotency keys prevent double delivery, but keep webhook destinations allowlisted.
+- Do not use this as a public multi-tenant SaaS without reviewing membership provisioning and IdP org claim mapping.
+
+### Required hardening knobs
+
+Set these before connecting to company data:
+
+```bash
+APP_ENV=production
+SECURITY_AUTH_ENABLED=true
+SECURITY_RATE_LIMIT_RPM=120
+SECURITY_RATE_LIMIT_DISTRIBUTED=true
+DATABASE_SSL_MODE=require
+DATABASE_ALLOWED_SCHEMAS=analytics
+DATABASE_MIN_CONNECTIONS=0
+DATABASE_GLOBAL_MAX_CONNECTIONS=40
+QUERY_TIMEOUT=30s
+QUERY_LOCK_TIMEOUT=2s
+QUERY_IDLE_IN_TX_TIMEOUT=10s
+QUERY_MAX_RESULT_BYTES=10485760
+QUERY_MAX_CELL_BYTES=1048576
+QUERY_MAX_COLUMNS=100
+LLM_SEND_ROW_DATA=false
+LLM_ALLOW_EXTERNAL_DATA=false
+SCHEDULE_RUNNER_ENABLED=false
+SECURITY_EXPLAIN_ANALYZE_ENABLED=false
+```
+
+---
+
 ## 1. Backup and restore
 
 ### What to protect
@@ -544,6 +608,88 @@ Defense in depth: validator → role separation → RLS (rep demo) or permissive
 
 ---
 
+## Internal pilot acceptance checklist
+
+Use this checklist before promoting a deployment from staging to a measured production pilot:
+
+1. **Auth:** Browser OIDC login works (`/auth/login` → `/auth/callback`); `/auth/session` returns authenticated user; API key automation still works for CI.
+2. **Isolation:** Saved query/report/dashboard from org A is not readable by org B principal (IDOR spot-check).
+3. **Query safety:** `QUERY_MAX_RESULT_BYTES`, timeouts, and readonly role verified against a large-table query.
+4. **LLM:** `app.llm_audit_events` records narrative and NL→SQL calls; cloud provider blocked without `LLM_ALLOW_EXTERNAL_DATA=true`.
+5. **Scheduler:** Duplicate replicas do not double-deliver; inspect `GET /api/v1/schedules/{id}/runs`; retry dead letters with `POST /api/v1/schedule-runs/{run_id}/retry`.
+6. **Webhooks:** Private IP destinations rejected; optional allowlist via `SECURITY_WEBHOOK_ALLOWED_HOSTS`; inspect `GET /api/v1/webhook-deliveries`.
+7. **Observability:** `/metrics?format=prometheus` scraped; alert on `pgqn_auth_failures_total` and `pgqn_http_errors_total`.
+8. **Backups:** Restore drill completed for app metadata tables and readonly data source.
+
+Run automated checks (Docker required):
+
+```bash
+make pilot-acceptance
+```
+
+This executes `tools/ops/pilot_acceptance.sh`: Postgres migrate, readonly write block, DB security verify, pilot integration tests, unit tests, build, `/ready` + `/metrics` smoke, mock OIDC flow, and an **automated backup→restore drill** into an isolated database. Optional manual step: browser login against your corporate IdP when `SECURITY_OIDC_ISSUER` is set.
+
+### Pilot success metrics (record per environment)
+
+| Metric | Target (internal pilot) | How to measure |
+|---|---|---|
+| Auth success rate | ≥ 99% over 7 days | IdP / app logs; `pgqn_auth_failures_total` |
+| Query p95 latency | < `QUERY_TIMEOUT` for standard dashboards | Prometheus `pgqn_http_request_duration_seconds` |
+| LLM budget denials | Near zero unless intentional caps | `pgqn_llm_budget_denials_total` |
+| Scheduler duplicate deliveries | 0 observed | `app.schedule_runs` idempotency + ops review |
+| Backup restore drill | Pass automated drill | `make pilot-acceptance` → `backup-restore-drill` |
+| Cross-org IDOR | 0 findings | `TestPilot_CrossOrgIDOR` + manual spot-check |
+
+### Corporate OIDC staging (one-time before GA)
+
+```bash
+export SECURITY_OIDC_ISSUER=https://your-idp.example.com
+export SECURITY_OIDC_CLIENT_ID=...
+export SECURITY_OIDC_CLIENT_SECRET=...
+export SECURITY_OIDC_REDIRECT_URL=https://staging.example.com/auth/callback
+export SECURITY_OIDC_AUDIENCE=pgquerynarrative
+export SECURITY_SESSION_SECRET=...
+bash tools/ops/oidc_staging_validate.sh
+# Then verify browser login: /auth/login → callback → /auth/session
+```
+
+Latest automated run (local):
+
+```bash
+make pilot-acceptance
+# Passed: 10+  Failed: 0  Skipped: 0-1 (optional manual OIDC browser)
+make test-playwright-oidc   # browser OIDC against mock IdP (Playwright)
+make pilot-report           # GA sign-off report template
+```
+
+### GA sign-off checklist (architecture + security)
+
+Complete this after a successful internal pilot and before general availability:
+
+1. **Automated evidence**
+   - [ ] `make pilot-acceptance` — all gates pass (includes backup→restore drill)
+   - [ ] `make test` — unit + integration green
+   - [ ] `make test-playwright` and `make test-playwright-oidc` — browser UI + mock IdP login
+   - [ ] `make test-load-smoke` — health/ready sustained under light load
+   - [ ] CI green on `main` (lint, tests, db-security, Playwright, load smoke)
+2. **Manual staging**
+   - [ ] Corporate IdP browser login on staging (`/auth/login` → callback → `/auth/session`)
+   - [ ] Cross-org IDOR spot-check (org A cannot read org B saved queries/reports)
+   - [ ] Webhook allowlist + SSRF checks against intended destinations
+3. **Organizational**
+   - [ ] Architecture review sign-off
+   - [ ] Security review sign-off (auth, RLS, LLM governance, secrets handling)
+   - [ ] On-call runbooks acknowledged (`docs/ops/INCIDENT_RUNBOOKS.md`)
+   - [ ] Credential rotation procedure scheduled or exercised
+
+Generate a fill-in report template:
+
+```bash
+make pilot-report > pilot-signoff-$(date +%Y%m%d).md
+```
+
+---
+
 ## Quick reference (this repo)
 
 ```bash
@@ -551,6 +697,7 @@ Defense in depth: validator → role separation → RLS (rep demo) or permissive
 make postgres-up          # postgres:16-alpine, 2G limit, volume pgquerynarrative_data
 make postgres-recreate    # after shared_preload_libraries change (pg_stat_statements)
 make migrate-docker       # golang-migrate, migrations 000001–000021+
+make db-security-verify-docker  # verify readonly role and blocked writes/DDL/catalog secrets
 make seed-large-docker    # ~10M rows into demo.sales
 
 # Roles (docker-compose.yml defaults)
@@ -564,4 +711,5 @@ docker compose exec -T postgres psql -U pgquerynarrative_readonly -d pgquerynarr
 
 # Verify app health
 curl -s http://localhost:8080/ready
+curl -s http://localhost:8080/ready/connections
 ```

@@ -44,6 +44,9 @@ var (
 	// ErrQueryExecutionFailed indicates the query execution failed for reasons other than timeout.
 	// This is a generic error for database execution failures.
 	ErrQueryExecutionFailed = errors.New("query execution failed")
+
+	// ErrQueryResultTooLarge indicates the query result exceeded configured memory/response limits.
+	ErrQueryResultTooLarge = errors.New("query result too large")
 )
 
 // Database connection errors
@@ -98,6 +101,15 @@ var (
 
 	// ErrExplainAnalyzeDisabled indicates EXPLAIN ANALYZE was requested but is disabled by policy.
 	ErrExplainAnalyzeDisabled = errors.New("EXPLAIN ANALYZE is disabled")
+
+	// ErrExplainOptionsNotAllowed indicates the submitted EXPLAIN statement carries
+	// options the server does not accept (e.g. ANALYZE, BUFFERS, or non-JSON formats).
+	// EXPLAIN options are controlled server-side via the explain endpoint parameters.
+	ErrExplainOptionsNotAllowed = errors.New("EXPLAIN options are controlled by the server; submit the plain query and use the explain endpoint parameters")
+
+	// ErrExplainNotRunnable indicates an EXPLAIN statement was submitted to the
+	// regular query execution endpoint, which only executes plain SELECT queries.
+	ErrExplainNotRunnable = errors.New("EXPLAIN statements cannot be executed here; use the explain endpoint")
 )
 
 // Helper functions for wrapping errors with context. Use %w so callers can use errors.Is/As.

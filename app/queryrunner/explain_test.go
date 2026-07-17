@@ -80,48 +80,16 @@ func TestParseExplainJSON_invalid(t *testing.T) {
 	}
 }
 
-func TestInnerQuerySQL(t *testing.T) {
-	tests := []struct {
-		name string
-		sql  string
-		want string
-	}{
-		{
-			name: "bare select",
-			sql:  "SELECT 1 FROM demo.sales",
-			want: "SELECT 1 FROM demo.sales",
-		},
-		{
-			name: "explain wrapper",
-			sql:  "EXPLAIN (FORMAT JSON) SELECT 1 FROM demo.sales",
-			want: "SELECT 1 FROM demo.sales",
-		},
-		{
-			name: "with cte",
-			sql:  "WITH cte AS (SELECT 1) SELECT * FROM cte",
-			want: "WITH cte AS (SELECT 1) SELECT * FROM cte",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := innerQuerySQL(tt.sql)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("got %q want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestBuildExplainSQL(t *testing.T) {
-	got := buildExplainSQL("SELECT 1", false)
+	got := buildExplainSQL("SELECT 1", ExplainOptions{})
 	if got != "EXPLAIN (FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}
-	got = buildExplainSQL("SELECT 1", true)
+	got = buildExplainSQL("SELECT 1", ExplainOptions{Analyze: true, Buffers: true})
+	if got != "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT 1" {
+		t.Fatalf("got %q", got)
+	}
+	got = buildExplainSQL("SELECT 1", ExplainOptions{Analyze: true})
 	if got != "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}

@@ -29,8 +29,11 @@ Mount narrative endpoints on your router. Package: [pkg/narrative/middleware](ht
 | Framework | Mount call |
 |-----------|------------|
 | **Chi** | `narrativemw.MountChi(r, client, "/api")` |
+| **Chi (with auth)** | `narrativemw.MountChiSecured(r, client, "/api", sec)` |
 | **Gin** | `narrativemw.MountGin(r, client, "/api")` |
 | **Echo** | `narrativemw.MountEcho(e, client, "/api")` |
+
+For auth and rate-limit parity with the standalone server, build `narrativemw.SecurityConfig` from your `auth.Authenticator`, session manager, audit store, and rate limiter, then call `MountChiSecured` or wrap handlers with `WrapSecured`.
 
 Mounted routes (with prefix `/api`):
 

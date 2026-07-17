@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
 )
 
 func TestAuthMiddleware_ProtectsMetricsWhenEnabled(t *testing.T) {
@@ -14,8 +15,8 @@ func TestAuthMiddleware_ProtectsMetricsWhenEnabled(t *testing.T) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
-	authn := auth.NewAuthenticator(true, "test-api-key-secret", "", nil)
-	handler := authMiddleware(inner, authn, nil, nil)
+	authn := auth.NewAuthenticator(true, "test-api-key-secret", "", "", nil)
+	handler := httpmw.AuthMiddleware(inner, authn, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rec := httptest.NewRecorder()
@@ -37,10 +38,10 @@ func TestAuthMiddleware_ProtectsMetricsWhenEnabled(t *testing.T) {
 }
 
 func TestAuthMiddleware_HealthAlwaysOpen(t *testing.T) {
-	authn := auth.NewAuthenticator(true, "secret-key-at-least-16", "", nil)
-	handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	authn := auth.NewAuthenticator(true, "secret-key-at-least-16", "", "", nil)
+	handler := httpmw.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}), authn, nil, nil)
+	}), authn, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()

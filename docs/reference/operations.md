@@ -39,6 +39,8 @@ All responses include `X-Request-ID` when request ID middleware is used. **Limit
 
 ## Runbooks
 
+Formal incident playbooks: [Incident runbooks](../ops/INCIDENT_RUNBOOKS.md) (5xx, auth, timeouts, scheduler, webhooks, LLM budget, pool saturation, credential rotation).
+
 ### Deploy (standard)
 
 1. Build and push: `docker build -f deploy/docker/Dockerfile -t your-registry/pgquerynarrative:<tag> .` then `docker push ...`.

@@ -1,0 +1,132 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "HTTP requests",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(pgqn_http_requests_total[5m])",
+          "legendFormat": "requests/s"
+        },
+        {
+          "expr": "rate(pgqn_http_errors_total[5m])",
+          "legendFormat": "errors/s"
+        }
+      ]
+    },
+    {
+      "title": "Auth failures / denials",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(pgqn_auth_failures_total[5m])",
+          "legendFormat": "auth failures/s"
+        },
+        {
+          "expr": "rate(pgqn_authz_denials_total[5m])",
+          "legendFormat": "authz denials/s"
+        }
+      ]
+    },
+    {
+      "title": "Query runs / timeouts",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(pgqn_query_runs_total[5m])",
+          "legendFormat": "runs/s"
+        },
+        {
+          "expr": "rate(pgqn_query_timeouts_total[5m])",
+          "legendFormat": "timeouts/s"
+        }
+      ]
+    },
+    {
+      "title": "LLM calls / budget denials / tokens",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(pgqn_llm_calls_total[5m])",
+          "legendFormat": "calls/s"
+        },
+        {
+          "expr": "rate(pgqn_llm_budget_denials_total[5m])",
+          "legendFormat": "budget denials/s"
+        },
+        {
+          "expr": "rate(pgqn_llm_tokens_total[5m])",
+          "legendFormat": "tokens/s"
+        }
+      ]
+    },
+    {
+      "title": "Scheduler / webhooks",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "rate(pgqn_scheduler_runs_total[5m])",
+          "legendFormat": "schedule runs/s"
+        },
+        {
+          "expr": "rate(pgqn_webhook_deliveries_total[5m])",
+          "legendFormat": "webhook deliveries/s"
+        }
+      ]
+    },
+    {
+      "title": "DB pool",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "pgqn_pool_acquired_conns",
+          "legendFormat": "acquired"
+        },
+        {
+          "expr": "pgqn_pool_idle_conns",
+          "legendFormat": "idle"
+        },
+        {
+          "expr": "pgqn_pool_total_conns",
+          "legendFormat": "total"
+        },
+        {
+          "expr": "pgqn_pool_max_conns",
+          "legendFormat": "max"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["pgquerynarrative", "production"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "PgQueryNarrative Overview",
+  "uid": "pgqn-overview",
+  "version": 1
+}

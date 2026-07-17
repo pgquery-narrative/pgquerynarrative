@@ -32,6 +32,18 @@ type Client struct {
 	// RunNow Doer is the HTTP client used to make requests to the run_now endpoint.
 	RunNowDoer goahttp.Doer
 
+	// ListRuns Doer is the HTTP client used to make requests to the list_runs
+	// endpoint.
+	ListRunsDoer goahttp.Doer
+
+	// RetryRun Doer is the HTTP client used to make requests to the retry_run
+	// endpoint.
+	RetryRunDoer goahttp.Doer
+
+	// ListDeliveries Doer is the HTTP client used to make requests to the
+	// list_deliveries endpoint.
+	ListDeliveriesDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -57,6 +69,9 @@ func NewClient(
 		UpdateDoer:          doer,
 		DeleteDoer:          doer,
 		RunNowDoer:          doer,
+		ListRunsDoer:        doer,
+		RetryRunDoer:        doer,
+		ListDeliveriesDoer:  doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
 		host:                host,
@@ -165,6 +180,63 @@ func (c *Client) RunNow() goa.Endpoint {
 		resp, err := c.RunNowDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("schedules", "run_now", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ListRuns returns an endpoint that makes HTTP requests to the schedules
+// service list_runs server.
+func (c *Client) ListRuns() goa.Endpoint {
+	var (
+		decodeResponse = DecodeListRunsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildListRunsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ListRunsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("schedules", "list_runs", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// RetryRun returns an endpoint that makes HTTP requests to the schedules
+// service retry_run server.
+func (c *Client) RetryRun() goa.Endpoint {
+	var (
+		decodeResponse = DecodeRetryRunResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildRetryRunRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.RetryRunDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("schedules", "retry_run", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ListDeliveries returns an endpoint that makes HTTP requests to the schedules
+// service list_deliveries server.
+func (c *Client) ListDeliveries() goa.Endpoint {
+	var (
+		decodeResponse = DecodeListDeliveriesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildListDeliveriesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ListDeliveriesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("schedules", "list_deliveries", err)
 		}
 		return decodeResponse(resp)
 	}

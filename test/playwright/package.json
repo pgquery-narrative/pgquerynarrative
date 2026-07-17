@@ -1,0 +1,13 @@
+{
+  "name": "pgquerynarrative-playwright",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test smoke.spec.ts",
+    "test:oidc": "playwright test oidc.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0"
+  }
+}

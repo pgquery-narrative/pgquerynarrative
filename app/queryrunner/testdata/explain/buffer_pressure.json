@@ -1,0 +1,15 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Relation Name": "trips",
+      "Schema": "demo",
+      "Total Cost": 88000.0,
+      "Plan Rows": 3600000,
+      "Actual Rows": 3600000,
+      "Shared Hit Blocks": 1200,
+      "Shared Read Blocks": 51000
+    },
+    "Execution Time": 4820.9
+  }
+]

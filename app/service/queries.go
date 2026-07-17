@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -15,20 +17,23 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/app/apilog"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/charts"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 	"github.com/pgquerynarrative/pgquerynarrative/app/format"
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
+	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
 // QueriesService handles query execution and saved query management.
 type QueriesService struct {
 	readOnlyPool   *pgxpool.Pool       // Pool for executing queries (read-only)
-	appPool        *pgxpool.Pool       // Pool for saving queries (full access)
+	appPool        db.DB               // Pool for saving queries (full access)
 	runner         *queryrunner.Runner // Query execution engine
 	metricsOpts    *metrics.Options    // Metrics and time-series options (windows, thresholds)
 	embedder       embedding.Embedder  // Optional: for storing query embeddings on save
@@ -47,7 +52,7 @@ var strPtr = format.StrPtr
 
 // NewQueriesService creates a new queries service with the specified dependencies.
 // metricsCfg supplies trend threshold, anomaly sigma, trend periods, and moving-average window; nil uses defaults.
-func NewQueriesService(readOnlyPool, appPool *pgxpool.Pool, runner *queryrunner.Runner, metricsCfg config.MetricsConfig) *QueriesService {
+func NewQueriesService(readOnlyPool *pgxpool.Pool, appPool db.DB, runner *queryrunner.Runner, metricsCfg config.MetricsConfig) *QueriesService {
 	defaultRunners := map[string]*queryrunner.Runner{"default": runner}
 	defaultLoaders := map[string]*catalog.Loader{}
 	opts := metricsOptionsFromConfig(metricsCfg)
@@ -72,7 +77,7 @@ func (s *QueriesService) ValidateQuery(connectionID *string, sql string) error {
 // NewQueriesServiceWithEmbedding is like NewQueriesService but enables storing embeddings
 // when saved queries are created, for similar-query retrieval and RAG. embeddingModel
 // is the name of the embedding model (e.g. nomic-embed-text).
-func NewQueriesServiceWithEmbedding(readOnlyPool, appPool *pgxpool.Pool, runner *queryrunner.Runner, metricsCfg config.MetricsConfig, embedder embedding.Embedder, embeddingStore *embedding.Store, embeddingModel string) *QueriesService {
+func NewQueriesServiceWithEmbedding(readOnlyPool *pgxpool.Pool, appPool db.DB, runner *queryrunner.Runner, metricsCfg config.MetricsConfig, embedder embedding.Embedder, embeddingStore *embedding.Store, embeddingModel string) *QueriesService {
 	defaultRunners := map[string]*queryrunner.Runner{"default": runner}
 	defaultLoaders := map[string]*catalog.Loader{}
 	opts := metricsOptionsFromConfig(metricsCfg)
@@ -89,7 +94,7 @@ func NewQueriesServiceWithEmbedding(readOnlyPool, appPool *pgxpool.Pool, runner 
 }
 
 // NewQueriesServiceMultiConnection creates a queries service with one runner per connection.
-func NewQueriesServiceMultiConnection(appPool *pgxpool.Pool, runners map[string]*queryrunner.Runner, defaultConnectionID string, metricsCfg config.MetricsConfig, embedder embedding.Embedder, embeddingStore *embedding.Store, embeddingModel string, readonlyUsers map[string]string) *QueriesService {
+func NewQueriesServiceMultiConnection(appPool db.DB, runners map[string]*queryrunner.Runner, defaultConnectionID string, metricsCfg config.MetricsConfig, embedder embedding.Embedder, embeddingStore *embedding.Store, embeddingModel string, readonlyUsers map[string]string) *QueriesService {
 	var defaultRunner *queryrunner.Runner
 	if r, ok := runners[defaultConnectionID]; ok {
 		defaultRunner = r
@@ -134,6 +139,10 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 			apilog.ValidationError("run", "timeout_error", err.Error())
 			return nil, &queries.ValidationError{Name: "timeout_error", Message: userMsg, Code: strPtr("TIMEOUT_ERROR")}
 		}
+		if kind == RunErrorTooLarge {
+			apilog.ValidationError("run", "query_result_too_large", err.Error())
+			return nil, &queries.ValidationError{Name: "query_result_too_large", Message: userMsg, Code: strPtr("QUERY_RESULT_TOO_LARGE")}
+		}
 		apilog.ValidationError("run", "validation_error", err.Error())
 		return nil, &queries.ValidationError{Name: "validation_error", Message: userMsg, Code: strPtr("VALIDATION_ERROR")}
 	}
@@ -151,7 +160,10 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 	}
 
 	chartSuggestions := suggestToQueries(charts.Suggest(colNames, colTypes, result.Rows))
-	periodComparison, currentLabel, previousLabel := s.periodComparison(ctx, runner, payload.SQL, colNames, result.Rows)
+	// The result is complete when it was not truncated by the row cap; in that
+	// case period comparison can be computed in memory without re-running the query.
+	resultComplete := result.RowCount < result.RowLimitApplied
+	periodComparison, currentLabel, previousLabel := s.periodComparison(ctx, runner, payload.SQL, colNames, result.Rows, resultComplete)
 
 	var rowCount32 int32 = math.MaxInt32
 	if result.RowCount < math.MaxInt32 {
@@ -172,6 +184,7 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 	if previousLabel != "" {
 		res.PeriodPreviousLabel = &previousLabel
 	}
+	observability.IncQueryRun()
 	return res, nil
 }
 
@@ -184,6 +197,10 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 		if kind == RunErrorTimeout {
 			apilog.ValidationError("explain_plan", "timeout_error", err.Error())
 			return nil, &queries.ValidationError{Name: "timeout_error", Message: userMsg, Code: strPtr("TIMEOUT_ERROR")}
+		}
+		if kind == RunErrorTooLarge {
+			apilog.ValidationError("explain_plan", "query_result_too_large", err.Error())
+			return nil, &queries.ValidationError{Name: "query_result_too_large", Message: userMsg, Code: strPtr("QUERY_RESULT_TOO_LARGE")}
 		}
 		apilog.ValidationError("explain_plan", "validation_error", err.Error())
 		return nil, &queries.ValidationError{Name: "validation_error", Message: userMsg, Code: strPtr("VALIDATION_ERROR")}
@@ -204,6 +221,15 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 		if f.Relation != "" {
 			pf.Relation = &f.Relation
 		}
+		if f.Category != "" {
+			pf.Category = &f.Category
+		}
+		if f.Confidence != "" {
+			pf.Confidence = &f.Confidence
+		}
+		if len(f.Evidence) > 0 {
+			pf.Evidence = f.Evidence
+		}
 		findings = append(findings, pf)
 	}
 
@@ -211,6 +237,8 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 	if len(result.Plan) > 0 {
 		_ = json.Unmarshal(result.Plan, &plan)
 	}
+
+	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, result)
 
 	return &queries.ExplainQueryResult{
 		SQL:             result.SQL,
@@ -305,10 +333,20 @@ func metricsOptionsFromConfig(c config.MetricsConfig) *metrics.Options {
 	return o
 }
 
-// periodComparison prefers SQL window functions (LAG); falls back to in-memory Go metrics.
-func (s *QueriesService) periodComparison(ctx context.Context, runner *queryrunner.Runner, sql string, columnNames []string, rows [][]interface{}) ([]*queries.PeriodComparisonItem, string, string) {
+// periodComparison computes period-over-period changes for time-series results.
+// When the full result set is already in memory (resultComplete), it is computed
+// in-process to avoid re-executing a potentially expensive query. The SQL window
+// function (LAG) path re-runs the query and is reserved for truncated results,
+// where in-memory rows may not represent all periods.
+func (s *QueriesService) periodComparison(ctx context.Context, runner *queryrunner.Runner, sql string, columnNames []string, rows [][]interface{}, resultComplete bool) ([]*queries.PeriodComparisonItem, string, string) {
 	if len(rows) < 2 {
 		return nil, "", ""
+	}
+
+	if resultComplete {
+		if items, cur, prev := timeSeriesToPeriodComparisonFallback(columnNames, rows, s.metricsOpts); len(items) > 0 {
+			return items, cur, prev
+		}
 	}
 
 	profiles := metrics.ProfileColumns(columnNames, rows)
@@ -389,10 +427,10 @@ func timeSeriesToPeriodComparisonFallback(columnNames []string, rows [][]interfa
 func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPayload) (*queries.SavedQuery, error) {
 	connectionID := s.normalizedConnectionID(payload.ConnectionID)
 	row := s.appPool.QueryRow(ctx, `
-		INSERT INTO app.saved_queries (name, sql, description, tags, connection_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO app.saved_queries (name, sql, description, tags, connection_id, organization_id, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, name, sql, description, tags, connection_id, created_at, updated_at
-	`, payload.Name, payload.SQL, payload.Description, payload.Tags, connectionID)
+	`, payload.Name, payload.SQL, payload.Description, payload.Tags, connectionID, orgID(ctx), auth.PrincipalFromContext(ctx).UserID)
 
 	var item queries.SavedQuery
 	var createdAt time.Time
@@ -433,6 +471,7 @@ func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPay
 func (s *QueriesService) ListSaved(ctx context.Context, payload *queries.ListSavedPayload) (*queries.SavedQueryList, error) {
 	limit := int(payload.Limit)
 	offset := int(payload.Offset)
+	oid := orgID(ctx)
 
 	var rows pgx.Rows
 	var err error
@@ -441,35 +480,36 @@ func (s *QueriesService) ListSaved(ctx context.Context, payload *queries.ListSav
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE tags && $1 AND connection_id = $2
+			WHERE tags && $1 AND connection_id = $2 AND organization_id = $3
 			ORDER BY created_at DESC
-			LIMIT $3 OFFSET $4
-		`, payload.Tags, *payload.ConnectionID, limit, offset)
+			LIMIT $4 OFFSET $5
+		`, payload.Tags, *payload.ConnectionID, oid, limit, offset)
 		} else {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE tags && $1
+			WHERE tags && $1 AND organization_id = $2
 			ORDER BY created_at DESC
-			LIMIT $2 OFFSET $3
-		`, payload.Tags, limit, offset)
+			LIMIT $3 OFFSET $4
+		`, payload.Tags, oid, limit, offset)
 		}
 	} else {
 		if payload.ConnectionID != nil && strings.TrimSpace(*payload.ConnectionID) != "" {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE connection_id = $1
+			WHERE connection_id = $1 AND organization_id = $2
 			ORDER BY created_at DESC
-			LIMIT $2 OFFSET $3
-		`, *payload.ConnectionID, limit, offset)
+			LIMIT $3 OFFSET $4
+		`, *payload.ConnectionID, oid, limit, offset)
 		} else {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
+			WHERE organization_id = $1
 			ORDER BY created_at DESC
-			LIMIT $1 OFFSET $2
-		`, limit, offset)
+			LIMIT $2 OFFSET $3
+		`, oid, limit, offset)
 		}
 	}
 	if err != nil {
@@ -514,8 +554,8 @@ func (s *QueriesService) GetSaved(ctx context.Context, payload *queries.GetSaved
 	row := s.appPool.QueryRow(ctx, `
 		SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 		FROM app.saved_queries
-		WHERE id = $1
-	`, payload.ID)
+		WHERE id = $1 AND organization_id = $2
+	`, payload.ID, orgID(ctx))
 
 	var item queries.SavedQuery
 	var createdAt time.Time
@@ -546,7 +586,7 @@ func (s *QueriesService) GetSaved(ctx context.Context, payload *queries.GetSaved
 //   - NotFoundError if query doesn't exist
 //   - Error if database operation fails
 func (s *QueriesService) DeleteSaved(ctx context.Context, payload *queries.DeleteSavedPayload) error {
-	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.saved_queries WHERE id = $1`, payload.ID)
+	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.saved_queries WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
 	if err != nil {
 		return err
 	}
@@ -558,4 +598,24 @@ func (s *QueriesService) DeleteSaved(ctx context.Context, payload *queries.Delet
 		}
 	}
 	return nil
+}
+
+func (s *QueriesService) persistExplainSnapshot(ctx context.Context, connectionID string, analyze bool, result *queryrunner.ExplainResult) {
+	if s == nil || s.appPool == nil || result == nil {
+		return
+	}
+	p := auth.PrincipalFromContext(ctx)
+	findingsJSON, _ := json.Marshal(result.Findings)
+	hash := sha256.Sum256([]byte(result.SQL))
+	connID := strings.TrimSpace(connectionID)
+	if connID == "" {
+		connID = "default"
+	}
+	_, _ = s.appPool.Exec(ctx, `
+		INSERT INTO app.explain_snapshots (
+			organization_id, user_id, connection_id, sql_hash, sql_text, used_analyze,
+			total_cost, findings, explain_plan, execution_time_ms
+		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, p.OrgID, p.UserID, connID, hex.EncodeToString(hash[:]), result.SQL, analyze,
+		result.TotalCost, findingsJSON, result.Plan, result.ExecutionTimeMs)
 }

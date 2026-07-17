@@ -6,9 +6,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
 )
 
@@ -41,20 +40,20 @@ var curatedQueries = []*suggestions.QuerySuggestion{
 // Suggester returns suggested SQL (curated + saved-query matches by intent,
 // and optional embedding-based similar queries).
 type Suggester struct {
-	appPool  *pgxpool.Pool
+	appPool  db.DB
 	embedder embedding.Embedder
 	store    *embedding.Store
 }
 
 // NewSuggester creates a suggester that uses the app pool to list saved queries
 // for intent matching. Similar() will return no results when embeddings are not configured.
-func NewSuggester(appPool *pgxpool.Pool) *Suggester {
+func NewSuggester(appPool db.DB) *Suggester {
 	return &Suggester{appPool: appPool}
 }
 
 // NewSuggesterWithEmbedding creates a suggester with optional embedding-based similar-query
 // retrieval. embedder and store may be nil to disable Similar().
-func NewSuggesterWithEmbedding(appPool *pgxpool.Pool, embedder embedding.Embedder, store *embedding.Store) *Suggester {
+func NewSuggesterWithEmbedding(appPool db.DB, embedder embedding.Embedder, store *embedding.Store) *Suggester {
 	return &Suggester{appPool: appPool, embedder: embedder, store: store}
 }
 

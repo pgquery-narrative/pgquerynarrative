@@ -62,6 +62,7 @@ services:
       DATABASE_READONLY_PASSWORD: ${DATABASE_READONLY_PASSWORD:-pgquerynarrative_readonly}
       DATABASE_SSL_MODE: disable
       DATABASE_MAX_CONNECTIONS: 5
+      DATABASE_ALLOWED_SCHEMAS: ${DATABASE_ALLOWED_SCHEMAS:-demo,opendata}
       # LLM: repo-root .env (see .env.example). Free + strong: Groq llama-3.3-70b-versatile or Gemini gemini-2.0-flash + LLM_API_KEY.
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}

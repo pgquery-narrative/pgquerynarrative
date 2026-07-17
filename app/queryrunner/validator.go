@@ -154,6 +154,10 @@ func extractReadOnlyQuery(rootStmt map[string]interface{}) (interface{}, error) 
 		return nil, errors.ErrOnlySelectAllowed
 	}
 
+	if err := validateExplainOptionNodes(explainMap["options"]); err != nil {
+		return nil, err
+	}
+
 	query, ok := explainMap["query"].(map[string]interface{})
 	if !ok || len(query) == 0 {
 		return nil, errors.ErrOnlySelectAllowed
@@ -165,6 +169,51 @@ func extractReadOnlyQuery(rootStmt map[string]interface{}) (interface{}, error) 
 	}
 
 	return rootSelect, nil
+}
+
+// validateExplainOptionNodes rejects user-supplied EXPLAIN options in the JSON
+// parse tree. Only FORMAT JSON is tolerated; ANALYZE, BUFFERS, VERBOSE and
+// non-JSON formats must be requested through the explain endpoint so server
+// policy (e.g. SECURITY_EXPLAIN_ANALYZE_ENABLED) cannot be bypassed.
+func validateExplainOptionNodes(options interface{}) error {
+	if options == nil {
+		return nil
+	}
+	list, ok := options.([]interface{})
+	if !ok {
+		return errors.ErrExplainOptionsNotAllowed
+	}
+	for _, item := range list {
+		wrapper, ok := item.(map[string]interface{})
+		if !ok {
+			return errors.ErrExplainOptionsNotAllowed
+		}
+		def, ok := wrapper["DefElem"].(map[string]interface{})
+		if !ok {
+			return errors.ErrExplainOptionsNotAllowed
+		}
+		name, _ := def["defname"].(string)
+		if !strings.EqualFold(name, "format") {
+			return errors.ErrExplainOptionsNotAllowed
+		}
+		if !strings.EqualFold(defElemJSONStringValue(def), "json") {
+			return errors.ErrExplainOptionsNotAllowed
+		}
+	}
+	return nil
+}
+
+func defElemJSONStringValue(def map[string]interface{}) string {
+	arg, ok := def["arg"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	str, ok := arg["String"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	val, _ := str["sval"].(string)
+	return val
 }
 
 func containsDisallowedNodes(node interface{}) bool {

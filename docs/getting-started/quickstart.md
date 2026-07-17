@@ -5,7 +5,7 @@ Minimal steps to run PgQueryNarrative.
 ## Prerequisites
 
 - **Docker:** Docker and Docker Compose, or  
-- **Local:** PostgreSQL 16+ and Go 1.24+ (see [Installation](installation.md) for full prerequisites).
+- **Local:** PostgreSQL 16+ and Go 1.25+ (see [Installation](installation.md) for full prerequisites).
 
 ## Docker
 

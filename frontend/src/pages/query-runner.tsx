@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type RunQueryResult, type Report, type ConnectionInfo, type ChatTurn, ApiError } from "@/api/client";
-import { Play, FileText, AlertCircle, Clock, Rows3, Download, BarChart3, PieChart as PieChartIcon, LineChart as LineChartIcon, Table2, Sparkles, History, Lightbulb, BookmarkPlus } from "lucide-react";
+import { api, type RunQueryResult, type ExplainQueryResult, type Report, type ConnectionInfo, type ChatTurn, ApiError } from "@/api/client";
+import { Play, FileText, AlertCircle, Clock, Rows3, Download, BarChart3, PieChart as PieChartIcon, LineChart as LineChartIcon, Table2, Sparkles, History, Lightbulb, BookmarkPlus, Binary } from "lucide-react";
 import { SchemaBrowser } from "@/components/schema-browser";
 import { useAnnounce } from "@/contexts/announce-context";
 import { cn, formatFloat } from "@/lib/utils";
@@ -39,8 +39,12 @@ export default function QueryRunner() {
   const [question, setQuestion] = useState("");
   const [limit, setLimit] = useState("100");
   const [result, setResult] = useState<RunQueryResult | null>(null);
+  const [explainResult, setExplainResult] = useState<ExplainQueryResult | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
+  const [explainLoading, setExplainLoading] = useState(false);
+  const [explainAnalyze, setExplainAnalyze] = useState(false);
+  const [showPlanJson, setShowPlanJson] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [askLoading, setAskLoading] = useState(false);
   const [error, setError] = useState("");
@@ -94,10 +98,10 @@ export default function QueryRunner() {
   }, []);
 
   useEffect(() => {
-    if (result && !loading) {
+    if ((result && !loading) || (explainResult && !explainLoading)) {
       resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [result, loading]);
+  }, [result, loading, explainResult, explainLoading]);
 
   const runQuery = useCallback(async (sqlOverride?: string) => {
     const toRun = (sqlOverride ?? sql).trim();
@@ -108,6 +112,7 @@ export default function QueryRunner() {
     setError("");
     setLoading(true);
     setResult(null);
+    setExplainResult(null);
     setReport(null);
     setChartType(null);
     if (sqlOverride) setSql(toRun);
@@ -127,6 +132,37 @@ export default function QueryRunner() {
       setLoading(false);
     }
   }, [sql, limit, announce, connectionId]);
+
+  const explainQuery = useCallback(async () => {
+    const toExplain = sql.trim();
+    if (!toExplain) {
+      setError("SQL query cannot be empty.");
+      return;
+    }
+    setError("");
+    setExplainLoading(true);
+    setExplainResult(null);
+    setShowPlanJson(false);
+    try {
+      const r = await api.explainQuery(toExplain, explainAnalyze, connectionId || undefined);
+      setExplainResult(r);
+      setHistory((prev) => {
+        const rest = prev.filter((h) => h.trim() !== toExplain);
+        return [toExplain, ...rest];
+      });
+      const n = r.findings?.length ?? 0;
+      announce(
+        `Explain completed. Total cost ${formatFloat(r.total_cost)}. ${n} finding${n === 1 ? "" : "s"}.`,
+        "polite"
+      );
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Explain failed";
+      setError(msg);
+      announce(`Error: ${msg}`, "assertive");
+    } finally {
+      setExplainLoading(false);
+    }
+  }, [sql, explainAnalyze, announce, connectionId]);
 
   const generateReport = useCallback(async () => {
     if (!sql.trim()) return;
@@ -186,6 +222,7 @@ export default function QueryRunner() {
     setError("");
     setAskLoading(true);
     setResult(null);
+    setExplainResult(null);
     setReport(null);
     setChartType(null);
     try {
@@ -356,15 +393,28 @@ export default function QueryRunner() {
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) runQuery(); }}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <Button onClick={() => runQuery()} disabled={loading}>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={() => runQuery()} disabled={loading || explainLoading}>
                 {loading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Play className="h-4 w-4" />}
                 Run Query
+              </Button>
+              <Button variant="outline" onClick={() => { void explainQuery(); }} disabled={explainLoading || loading || !sql.trim()}>
+                {explainLoading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Binary className="h-4 w-4" />}
+                Explain
               </Button>
               <Button variant="secondary" onClick={generateReport} disabled={genLoading || !sql.trim()}>
                 {genLoading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <FileText className="h-4 w-4" />}
                 Generate Report
               </Button>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-input"
+                  checked={explainAnalyze}
+                  onChange={(e) => setExplainAnalyze(e.target.checked)}
+                />
+                ANALYZE
+              </label>
             </div>
             <div className="flex items-center gap-2">
               <label className="text-xs text-muted-foreground whitespace-nowrap">Limit</label>
@@ -394,7 +444,7 @@ export default function QueryRunner() {
           </div>
           {saveSuccess && <p className="text-xs text-emerald-600">{saveSuccess}</p>}
           <p className="text-[11px] text-muted-foreground">Tip: Save stable, business-friendly queries so teammates can reuse them from Saved Queries.</p>
-          <p className="text-[11px] text-muted-foreground">Ctrl+Enter run. Ctrl+E focus editor. Click schema items to insert. Only SELECT/WITH on allowed schemas.</p>
+          <p className="text-[11px] text-muted-foreground">Ctrl+Enter run. Ctrl+E focus editor. Explain shows the Postgres plan (check ANALYZE to execute). Click schema items to insert. Only SELECT/WITH on allowed schemas.</p>
         </CardContent>
       </Card>
 
@@ -439,7 +489,7 @@ export default function QueryRunner() {
       )}
 
       {/* Loading skeleton with accent */}
-      {loading && (
+      {(loading || explainLoading) && (
         <Card className="panel-accent-top">
           <CardContent className="p-6 space-y-3">
             <Skeleton className="h-6 w-48" />
@@ -448,9 +498,71 @@ export default function QueryRunner() {
         </Card>
       )}
 
+      {/* EXPLAIN plan findings + query results share one scroll target */}
+      {((explainResult && !explainLoading) || (result && !loading)) && (
+        <div ref={resultsRef} className="space-y-6">
+      {explainResult && !explainLoading && (
+          <Card className="panel-accent-top panel-corner-accent border-primary/20">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">Query plan</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1 font-mono truncate max-w-[48rem]" title={explainResult.sql}>
+                  {explainResult.sql}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-foreground/85">
+                <span>Total cost {formatFloat(explainResult.total_cost)}</span>
+                <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{explainResult.execution_time_ms}ms</span>
+                <span>{explainResult.findings?.length ?? 0} findings</span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {(explainResult.findings ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No seq-scan or high-cost findings. Plan looks fine for the heuristics we check.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {(explainResult.findings ?? []).map((f, i) => (
+                    <li
+                      key={i}
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-sm",
+                        f.is_seq_scan ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-secondary/40"
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                        <span>{f.node_type}</span>
+                        {f.is_seq_scan && <span className="text-amber-600 dark:text-amber-400">Seq Scan</span>}
+                        {(f.schema || f.relation) && (
+                          <span className="font-mono normal-case tracking-normal text-foreground/80">
+                            {[f.schema, f.relation].filter(Boolean).join(".")}
+                          </span>
+                        )}
+                        {f.estimated_cost != null && (
+                          <span className="normal-case tracking-normal font-normal">cost {formatFloat(f.estimated_cost)}</span>
+                        )}
+                      </div>
+                      <p className="text-sm leading-relaxed text-foreground/95">{f.message}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div>
+                <Button variant="ghost" size="sm" onClick={() => setShowPlanJson((v) => !v)}>
+                  {showPlanJson ? "Hide raw plan JSON" : "Show raw plan JSON"}
+                </Button>
+                {showPlanJson && (
+                  <pre className="mt-2 max-h-[360px] overflow-auto rounded-md border border-border bg-background/60 p-3 text-[11px] font-mono leading-relaxed">
+                    {JSON.stringify(explainResult.plan, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+      )}
+
       {/* Results: chart view or table */}
       {result && !loading && (
-        <div ref={resultsRef} className="space-y-6">
+        <div className="space-y-6">
           {/* Suggested charts: click to visualize */}
           {result.chart_suggestions && result.chart_suggestions.length > 0 && (
             <Card>
@@ -557,6 +669,8 @@ export default function QueryRunner() {
               )}
             </CardContent>
           </Card>
+        </div>
+      )}
         </div>
       )}
 

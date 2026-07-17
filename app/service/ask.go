@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
@@ -23,13 +23,32 @@ type AskService struct {
 	llmClient     llm.Client
 	validator     *queryrunner.Validator
 	reportsSvc    *ReportsService
-	appPool       *pgxpool.Pool
+	appPool       db.DB
+	llmAudit      *llm.AuditStore
+	llmBudget     *llm.BudgetStore
+	llmAllowCloud bool
 	connectionResolver
+}
+
+// SetLLMGovernance wires audit logging, budgets, and external-data policy for Ask LLM calls.
+func (s *AskService) SetLLMGovernance(audit *llm.AuditStore, budget *llm.BudgetStore, allowCloud bool) {
+	s.llmAudit = audit
+	s.llmBudget = budget
+	s.llmAllowCloud = allowCloud
+}
+
+func (s *AskService) invokeLLM(ctx context.Context, operation, prompt, sourceText string) (string, error) {
+	opts := llm.DefaultPromptOptions()
+	if s.reportsSvc != nil {
+		opts = s.reportsSvc.PromptOptions()
+	}
+	gov := llm.GovernanceFromPrompt(opts, s.llmAllowCloud, s.llmClient.Name(), false, false, sourceText)
+	return llm.InvokeWithBudget(ctx, s.llmClient, llm.InvokeOptions{Audit: s.llmAudit, Budget: s.llmBudget}, operation, gov, prompt)
 }
 
 // NewAskService creates an AskService with the given dependencies.
 func NewAskService(
-	appPool *pgxpool.Pool,
+	appPool db.DB,
 	catalogLoader *catalog.Loader,
 	llmClient llm.Client,
 	validator *queryrunner.Validator,
@@ -51,7 +70,7 @@ func NewAskService(
 
 // NewAskServiceMultiConnection creates AskService with connection-aware schema loading and report generation.
 func NewAskServiceMultiConnection(
-	appPool *pgxpool.Pool,
+	appPool db.DB,
 	loaders map[string]*catalog.Loader,
 	llmClient llm.Client,
 	validator *queryrunner.Validator,
@@ -91,7 +110,7 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 	schemaText := llm.FormatSchemaForPrompt(schemaResult)
 	prompt := llm.BuildNL2SQLPrompt(question, schemaText)
 
-	response, err := s.llmClient.Generate(ctx, prompt)
+	response, err := s.invokeLLM(ctx, "nl2sql", prompt, question)
 	if err != nil {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("LLM_ERROR")}
 	}
@@ -143,7 +162,7 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	if historyCtx != "" {
 		prompt += "\n\nConversation context:\n" + historyCtx + "\nUse this context to refine the next SQL."
 	}
-	response, err := s.llmClient.Generate(ctx, prompt)
+	response, err := s.invokeLLM(ctx, "nl2sql", prompt, question)
 	if err != nil {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("LLM_ERROR")}
 	}
@@ -187,7 +206,11 @@ func (s *AskService) ensureSessionAndHistory(ctx context.Context, sessionID *str
 		return "", "", sql.ErrConnDone
 	}
 	if sessionID != nil && strings.TrimSpace(*sessionID) != "" {
-		history, err := s.loadChatHistory(ctx, strings.TrimSpace(*sessionID), 6)
+		sid := strings.TrimSpace(*sessionID)
+		if err := s.assertSessionOrg(ctx, sid); err != nil {
+			return "", "", err
+		}
+		history, err := s.loadChatHistory(ctx, sid, 6)
 		if err != nil {
 			return "", "", err
 		}
@@ -203,11 +226,25 @@ func (s *AskService) ensureSessionAndHistory(ctx context.Context, sessionID *str
 func (s *AskService) createChatSession(ctx context.Context, connectionID string) (string, error) {
 	var id string
 	err := s.appPool.QueryRow(ctx, `
-		INSERT INTO app.ask_sessions (connection_id)
-		VALUES ($1)
+		INSERT INTO app.ask_sessions (connection_id, organization_id)
+		VALUES ($1, $2)
 		RETURNING id
-	`, connectionID).Scan(&id)
+	`, connectionID, orgID(ctx)).Scan(&id)
 	return id, err
+}
+
+func (s *AskService) assertSessionOrg(ctx context.Context, sessionID string) error {
+	var exists bool
+	err := s.appPool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM app.ask_sessions WHERE id = $1 AND organization_id = $2)
+	`, sessionID, orgID(ctx)).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return orgNotFound()
+	}
+	return nil
 }
 
 func (s *AskService) appendChatMessage(ctx context.Context, sessionID, question, sqlText, reportID string) error {
@@ -218,7 +255,10 @@ func (s *AskService) appendChatMessage(ctx context.Context, sessionID, question,
 	if err != nil {
 		return err
 	}
-	_, err = s.appPool.Exec(ctx, `UPDATE app.ask_sessions SET updated_at = NOW() WHERE id = $1`, sessionID)
+	_, err = s.appPool.Exec(ctx, `
+		UPDATE app.ask_sessions SET updated_at = NOW()
+		WHERE id = $1 AND organization_id = $2
+	`, sessionID, orgID(ctx))
 	return err
 }
 
@@ -286,7 +326,7 @@ func (s *AskService) buildFollowUps(ctx context.Context, history []*suggestions.
 	b.WriteString("Return one question per line, no numbering.\n\n")
 	b.WriteString("Conversation:\n")
 	b.WriteString(summarizeChatHistory(history))
-	raw, err := s.llmClient.Generate(ctx, b.String())
+	raw, err := s.invokeLLM(ctx, "follow_up_questions", b.String(), latestQuestion)
 	if err != nil {
 		return defaultFollowUps(latestQuestion)
 	}
@@ -332,7 +372,7 @@ func (s *AskService) Explain(ctx context.Context, payload *suggestions.ExplainPa
 		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
 	prompt := llm.BuildExplainPrompt(sql)
-	response, err := s.llmClient.Generate(ctx, prompt)
+	response, err := s.invokeLLM(ctx, "nl2sql", prompt, sql)
 	if err != nil {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("LLM_ERROR")}
 	}
@@ -355,7 +395,7 @@ func (s *AskService) Questions(ctx context.Context, payload *suggestions.Questio
 		limit = 8
 	}
 	prompt := buildQuestionDiscoveryPrompt(schemaText, limit)
-	raw, err := s.llmClient.Generate(ctx, prompt)
+	raw, err := s.invokeLLM(ctx, "question_discovery", prompt, "")
 	if err != nil {
 		qs := defaultQuestions()
 		if len(qs) > limit {

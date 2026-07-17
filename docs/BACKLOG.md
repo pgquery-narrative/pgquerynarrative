@@ -60,7 +60,7 @@ Status: ☐ todo · ◐ in progress · ☑ done
 - **Verify:** `make postgres-up` (+ app on :8080). Seq-scan query:
   `curl -s -X POST http://localhost:8080/api/v1/queries/explain -H "Content-Type: application/json" -d '{"sql":"SELECT product_category, SUM(total_amount) FROM demo.sales WHERE region = '\''North'\'' GROUP BY product_category"}' | jq '.findings[] | select(.is_seq_scan) | .message'`
   — expect ≥1 message containing `Sequential scan` and `btree index`. `"analyze": true` path returns same finding shape (executes query). `make test` green (`explain_test.go`, integration).
-- **Doc:** Core of case study #1 (before/after plans). Verified example + expected JSON in `docs/api/examples.md`. Dockerfile pins `goa@v3.24.1` so `make start-docker` builds on Go 1.24.
+- **Doc:** Core of case study #1 (before/after plans). Verified example + expected JSON in `docs/api/examples.md`. Dockerfile pins `goa@v3.24.1` so `make start-docker` builds on Go 1.25.
 
 ### B9 ☑ `pg_stat_statements` dashboard
 - **Acceptance:** Extension enabled (`shared_preload_libraries` in Docker); read-only endpoint + minimal UI for top queries by total/mean time, calls, rows.

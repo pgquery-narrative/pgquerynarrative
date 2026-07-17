@@ -20,7 +20,6 @@ type GeminiClient struct {
 }
 
 // NewGeminiClient returns a client for the Gemini API.
-// apiKey is the Google AI API key (from LLM_API_KEY). model is the model name (e.g. gemini-2.0-flash, gemini-1.5-flash).
 func NewGeminiClient(apiKey, model string) *GeminiClient {
 	if model == "" {
 		model = "gemini-2.0-flash"
@@ -28,69 +27,56 @@ func NewGeminiClient(apiKey, model string) *GeminiClient {
 	return &GeminiClient{
 		apiKey: apiKey,
 		model:  model,
-		client: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
-// Name returns the provider name.
-func (c *GeminiClient) Name() string {
-	return "gemini"
-}
-
-func (c *GeminiClient) Model() string {
-	return c.model
-}
+func (c *GeminiClient) Name() string  { return "gemini" }
+func (c *GeminiClient) Model() string { return c.model }
 
 const geminiMaxRetries = 3
 const geminiRetryDelay = 6 * time.Second
 
-// Generate sends the prompt to Gemini and returns the generated text.
-// On 429 (rate limit) it retries up to geminiMaxRetries with backoff.
 func (c *GeminiClient) Generate(ctx context.Context, prompt string) (string, error) {
-	if c.apiKey == "" {
-		return "", fmt.Errorf("gemini: LLM_API_KEY is required")
+	result, err := c.GenerateWithUsage(ctx, prompt)
+	if err != nil {
+		return "", err
 	}
+	return result.Text, nil
+}
 
+func (c *GeminiClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
+	if c.apiKey == "" {
+		return GenerationResult{}, fmt.Errorf("gemini: LLM_API_KEY is required")
+	}
 	url := fmt.Sprintf("%s/models/%s:generateContent", geminiBaseURL, c.model)
-
 	payload := map[string]interface{}{
 		"contents": []map[string]interface{}{
-			{
-				"parts": []map[string]interface{}{
-					{"text": prompt},
-				},
-			},
+			{"parts": []map[string]interface{}{{"text": prompt}}},
 		},
 		"generationConfig": map[string]interface{}{
 			"temperature":     0.7,
 			"maxOutputTokens": 2048,
 		},
 	}
-
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("gemini: marshal request: %w", err)
+		return GenerationResult{}, fmt.Errorf("gemini: marshal request: %w", err)
 	}
-
 	var lastErr error
 	for attempt := 0; attempt < geminiMaxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 		if err != nil {
-			return "", fmt.Errorf("gemini: create request: %w", err)
+			return GenerationResult{}, fmt.Errorf("gemini: create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("x-goog-api-key", c.apiKey)
-
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return "", fmt.Errorf("gemini: request: %w", err)
+			return GenerationResult{}, fmt.Errorf("gemini: request: %w", err)
 		}
-
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 		resp.Body.Close()
-
 		if resp.StatusCode == http.StatusOK {
 			var result struct {
 				Candidates []struct {
@@ -100,29 +86,35 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt string) (string, err
 						} `json:"parts"`
 					} `json:"content"`
 				} `json:"candidates"`
+				UsageMetadata struct {
+					PromptTokenCount     int `json:"promptTokenCount"`
+					CandidatesTokenCount int `json:"candidatesTokenCount"`
+				} `json:"usageMetadata"`
 			}
 			if err := json.Unmarshal(body, &result); err != nil {
-				return "", fmt.Errorf("gemini: decode response: %w", err)
+				return GenerationResult{}, fmt.Errorf("gemini: decode response: %w", err)
 			}
 			if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
-				return "", fmt.Errorf("gemini: empty response")
+				return GenerationResult{}, fmt.Errorf("gemini: empty response")
 			}
-			return result.Candidates[0].Content.Parts[0].Text, nil
+			text := result.Candidates[0].Content.Parts[0].Text
+			usage := Usage{
+				PromptTokens:     result.UsageMetadata.PromptTokenCount,
+				CompletionTokens: result.UsageMetadata.CandidatesTokenCount,
+			}
+			reported := usage.PromptTokens > 0 || usage.CompletionTokens > 0
+			return GenerationResult{Text: text, Usage: usage, UsageReported: reported}, nil
 		}
-
 		lastErr = fmt.Errorf("gemini API error: %d - %s", resp.StatusCode, string(body))
-
 		if resp.StatusCode == 429 && attempt < geminiMaxRetries-1 {
 			select {
 			case <-ctx.Done():
-				return "", ctx.Err()
+				return GenerationResult{}, ctx.Err()
 			case <-time.After(geminiRetryDelay):
-				// retry
 			}
 			continue
 		}
-
-		return "", lastErr
+		return GenerationResult{}, lastErr
 	}
-	return "", lastErr
+	return GenerationResult{}, lastErr
 }

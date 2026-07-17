@@ -26,6 +26,20 @@ secret:
   databasePassword: changeme
   databaseReadonlyPassword: changeme
   apiKey: changeme-replace-with-long-random-api-key-at-least-32-chars
+  sessionSecret: changeme-replace-with-long-random-session-secret
+  oidcClientSecret: ""
+  webhookSigningSecret: ""
+
+oidc:
+  issuer: ""
+  audience: pgquerynarrative
+  clientID: ""
+  redirectURL: ""
+  sessionTTL: 8h
+  autoJoinDefaultOrg: true
+
+webhook:
+  allowedHosts: ""
 
 security:
   authEnabled: true

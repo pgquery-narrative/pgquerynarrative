@@ -57,6 +57,42 @@ func ValidateWebhookURL(raw string) error {
 	return nil
 }
 
+// ValidateWebhookHostAllowlist ensures the destination host matches an optional allowlist.
+func ValidateWebhookHostAllowlist(raw string, allowed []string) error {
+	if len(allowed) == 0 {
+		return nil
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid webhook URL: %w", err)
+	}
+	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
+	for _, pattern := range allowed {
+		pattern = strings.ToLower(strings.TrimSpace(pattern))
+		if pattern == "" {
+			continue
+		}
+		if host == pattern || strings.HasSuffix(host, "."+pattern) {
+			return nil
+		}
+	}
+	return fmt.Errorf("webhook host %q is not in the allowlist", host)
+}
+
+func normalizeAllowedHosts(hosts []string) []string {
+	if len(hosts) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 func isPrivateOrReservedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return true

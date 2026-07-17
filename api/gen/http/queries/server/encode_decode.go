@@ -553,7 +553,15 @@ func marshalQueriesPlanFindingToPlanFindingResponseBody(v *queries.PlanFinding) 
 		Relation:      v.Relation,
 		EstimatedCost: v.EstimatedCost,
 		IsSeqScan:     v.IsSeqScan,
+		Category:      v.Category,
+		Confidence:    v.Confidence,
 		Message:       v.Message,
+	}
+	if v.Evidence != nil {
+		res.Evidence = make([]string, len(v.Evidence))
+		for i, val := range v.Evidence {
+			res.Evidence[i] = val
+		}
 	}
 
 	return res

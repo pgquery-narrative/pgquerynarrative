@@ -27,6 +27,9 @@ jobs:
           - runner: ubuntu-latest
             goos: linux
             goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
           - runner: macos-latest
             goos: darwin
             goarch: arm64
@@ -91,13 +94,24 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Download build artifacts
         uses: actions/download-artifact@65a9edc588144a91c09efa18addce5f7ff05fc9b
         with:
           path: artifacts
           merge-multiple: true
+      - name: Build frontend assets
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
       - name: Set version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -108,10 +122,48 @@ jobs:
           echo "VERSION=${VER#v}" >> $GITHUB_ENV
       - name: Package release assets
         run: |
-          mkdir -p bin
+          mkdir -p bin packages
           mv artifacts/pgquerynarrative-* bin/
-          (cd bin && sha256sum pgquerynarrative-* > checksums.txt)
+          for server in bin/pgquerynarrative-server-*; do
+            target="${server#bin/pgquerynarrative-server-}"
+            mcp="bin/pgquerynarrative-mcp-${target}"
+            pkg="packages/pgquerynarrative-${VERSION}-${target}"
+            mkdir -p "$pkg/bin" "$pkg/frontend" "$pkg/app/db" "$pkg/config"
+            cp "$server" "$pkg/bin/pgquerynarrative-server"
+            cp "$mcp" "$pkg/bin/pgquerynarrative-mcp"
+            cp -R frontend/dist "$pkg/frontend/dist"
+            cp -R app/db/migrations "$pkg/app/db/migrations"
+            cp .env.example "$pkg/config/pgquerynarrative.env.example"
+            cp tools/docker/entrypoint.sh "$pkg/bin/entrypoint.sh"
+            chmod +x "$pkg/bin/pgquerynarrative-server" "$pkg/bin/pgquerynarrative-mcp" "$pkg/bin/entrypoint.sh"
+            tar -C packages -czf "bin/pgquerynarrative-${VERSION}-${target}.tar.gz" "pgquerynarrative-${VERSION}-${target}"
+          done
+          (cd bin && sha256sum *.tar.gz > checksums.txt)
           ls -la bin
+      - name: Smoke test release archive
+        run: |
+          mkdir -p /tmp/pgqn-release-smoke
+          tar -xzf bin/pgquerynarrative-${VERSION}-linux-amd64.tar.gz -C /tmp/pgqn-release-smoke
+          test -x /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/bin/pgquerynarrative-server
+          test -f /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/frontend/dist/index.html
+          test -d /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/app/db/migrations
+          test -f /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/config/pgquerynarrative.env.example
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: bin/
+          format: spdx-json
+          output-file: bin/sbom.spdx.json
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.7.0
+      - name: Sign release artifacts
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          for artifact in bin/*.tar.gz bin/checksums.txt bin/sbom.spdx.json; do
+            cosign sign-blob --yes "$artifact" --output-signature "${artifact}.sig" --output-certificate "${artifact}.cert"
+          done
+          ls -la bin/*.sig bin/*.cert || true
       - name: Create Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
         with:
@@ -121,3 +173,42 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  image:
+    name: Publish OCI image
+    needs: build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Set version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${{ github.ref_name }}"
+          fi
+          echo "VERSION=${VER#v}" >> $GITHUB_ENV
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - name: Login to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}:latest
+          sbom: true
+          provenance: true

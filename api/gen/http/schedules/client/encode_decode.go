@@ -408,6 +408,240 @@ func DecodeRunNowResponse(decoder func(*http.Response) goahttp.Decoder, restoreB
 	}
 }
 
+// BuildListRunsRequest instantiates a HTTP request object with method and path
+// set to call the "schedules" service "list_runs" endpoint
+func (c *Client) BuildListRunsRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		id string
+	)
+	{
+		p, ok := v.(*schedules.ListRunsPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("schedules", "list_runs", "*schedules.ListRunsPayload", v)
+		}
+		id = p.ID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListRunsSchedulesPath(id)}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("schedules", "list_runs", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeListRunsResponse returns a decoder for responses returned by the
+// schedules list_runs endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeListRunsResponse may return the following errors:
+//   - "not_found" (type *schedules.NotFoundError): http.StatusNotFound
+//   - error: internal error
+func DecodeListRunsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ListRunsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "list_runs", err)
+			}
+			err = ValidateListRunsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "list_runs", err)
+			}
+			res := NewListRunsScheduleRunListResultOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ListRunsNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "list_runs", err)
+			}
+			err = ValidateListRunsNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "list_runs", err)
+			}
+			return nil, NewListRunsNotFound(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("schedules", "list_runs", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildRetryRunRequest instantiates a HTTP request object with method and path
+// set to call the "schedules" service "retry_run" endpoint
+func (c *Client) BuildRetryRunRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		runID string
+	)
+	{
+		p, ok := v.(*schedules.RetryRunPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("schedules", "retry_run", "*schedules.RetryRunPayload", v)
+		}
+		runID = p.RunID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: RetryRunSchedulesPath(runID)}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("schedules", "retry_run", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeRetryRunResponse returns a decoder for responses returned by the
+// schedules retry_run endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeRetryRunResponse may return the following errors:
+//   - "not_found" (type *schedules.NotFoundError): http.StatusNotFound
+//   - "validation_error" (type *schedules.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeRetryRunResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body RetryRunResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "retry_run", err)
+			}
+			err = ValidateRetryRunResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "retry_run", err)
+			}
+			res := NewRetryRunScheduleRunRecordOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body RetryRunNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "retry_run", err)
+			}
+			err = ValidateRetryRunNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "retry_run", err)
+			}
+			return nil, NewRetryRunNotFound(&body)
+		case http.StatusBadRequest:
+			var (
+				body RetryRunValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "retry_run", err)
+			}
+			err = ValidateRetryRunValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "retry_run", err)
+			}
+			return nil, NewRetryRunValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("schedules", "retry_run", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildListDeliveriesRequest instantiates a HTTP request object with method
+// and path set to call the "schedules" service "list_deliveries" endpoint
+func (c *Client) BuildListDeliveriesRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListDeliveriesSchedulesPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("schedules", "list_deliveries", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeListDeliveriesResponse returns a decoder for responses returned by the
+// schedules list_deliveries endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+func DecodeListDeliveriesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ListDeliveriesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "list_deliveries", err)
+			}
+			err = ValidateListDeliveriesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "list_deliveries", err)
+			}
+			res := NewListDeliveriesWebhookDeliveryListResultOK(&body)
+			return res, nil
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("schedules", "list_deliveries", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // unmarshalScheduleResponseBodyToSchedulesSchedule builds a value of type
 // *schedules.Schedule from a value of type *ScheduleResponseBody.
 func unmarshalScheduleResponseBodyToSchedulesSchedule(v *ScheduleResponseBody) *schedules.Schedule {
@@ -427,6 +661,45 @@ func unmarshalScheduleResponseBodyToSchedulesSchedule(v *ScheduleResponseBody) *
 		NextRunAt:         v.NextRunAt,
 		CreatedAt:         *v.CreatedAt,
 		UpdatedAt:         *v.UpdatedAt,
+	}
+
+	return res
+}
+
+// unmarshalScheduleRunRecordResponseBodyToSchedulesScheduleRunRecord builds a
+// value of type *schedules.ScheduleRunRecord from a value of type
+// *ScheduleRunRecordResponseBody.
+func unmarshalScheduleRunRecordResponseBodyToSchedulesScheduleRunRecord(v *ScheduleRunRecordResponseBody) *schedules.ScheduleRunRecord {
+	res := &schedules.ScheduleRunRecord{
+		ID:             *v.ID,
+		ScheduleID:     *v.ScheduleID,
+		Status:         *v.Status,
+		AttemptCount:   *v.AttemptCount,
+		ScheduledFor:   *v.ScheduledFor,
+		StartedAt:      v.StartedAt,
+		CompletedAt:    v.CompletedAt,
+		ReportID:       v.ReportID,
+		FailureCode:    v.FailureCode,
+		FailureMessage: v.FailureMessage,
+	}
+
+	return res
+}
+
+// unmarshalWebhookDeliveryRecordResponseBodyToSchedulesWebhookDeliveryRecord
+// builds a value of type *schedules.WebhookDeliveryRecord from a value of type
+// *WebhookDeliveryRecordResponseBody.
+func unmarshalWebhookDeliveryRecordResponseBodyToSchedulesWebhookDeliveryRecord(v *WebhookDeliveryRecordResponseBody) *schedules.WebhookDeliveryRecord {
+	res := &schedules.WebhookDeliveryRecord{
+		ID:             *v.ID,
+		ScheduleID:     v.ScheduleID,
+		DestinationURL: *v.DestinationURL,
+		Status:         *v.Status,
+		AttemptCount:   *v.AttemptCount,
+		HTTPStatus:     v.HTTPStatus,
+		ErrorMessage:   v.ErrorMessage,
+		CreatedAt:      *v.CreatedAt,
+		CompletedAt:    v.CompletedAt,
 	}
 
 	return res

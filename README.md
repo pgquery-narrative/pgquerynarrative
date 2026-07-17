@@ -78,7 +78,7 @@ Report generation is **optional**. When configured, PgQueryNarrative can turn qu
 
 ## Requirements
 
-- **Docker** (for `make start-docker` and the Docker-first workflow above), or **PostgreSQL 16+** and **Go 1.24+** (for `make start-local` and building).
+- **Docker** (for `make start-docker` and the Docker-first workflow above), or **PostgreSQL 16+** and **Go 1.25+** (for `make start-local` and building).
 - For the full web UI from source: **Node.js** and **npm** (to build the [frontend](frontend/)).
 
 ## Commands

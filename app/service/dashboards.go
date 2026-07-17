@@ -7,25 +7,26 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	queriesapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	reportsapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
 )
 
 type DashboardsService struct {
-	appPool    *pgxpool.Pool
+	appPool    db.DB
 	reportsSvc *ReportsService
 	queriesSvc *QueriesService
 }
 
-func NewDashboardsService(appPool *pgxpool.Pool, reportsSvc *ReportsService, queriesSvc *QueriesService) *DashboardsService {
+func NewDashboardsService(appPool db.DB, reportsSvc *ReportsService, queriesSvc *QueriesService) *DashboardsService {
 	return &DashboardsService{appPool: appPool, reportsSvc: reportsSvc, queriesSvc: queriesSvc}
 }
 
 func (s *DashboardsService) List(ctx context.Context) (*dashboards.DashboardListResult, error) {
-	rows, err := s.appPool.Query(ctx, `SELECT id FROM app.dashboards ORDER BY updated_at DESC`)
+	rows, err := s.appPool.Query(ctx, `SELECT id FROM app.dashboards WHERE organization_id = $1 ORDER BY updated_at DESC`, orgID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -46,15 +47,24 @@ func (s *DashboardsService) List(ctx context.Context) (*dashboards.DashboardList
 }
 
 func (s *DashboardsService) Create(ctx context.Context, payload *dashboards.CreatePayload) (*dashboards.Dashboard, error) {
+	p := auth.PrincipalFromContext(ctx)
 	var id string
-	if err := s.appPool.QueryRow(ctx, `INSERT INTO app.dashboards (name) VALUES ($1) RETURNING id`, payload.Name).Scan(&id); err != nil {
+	if err := s.appPool.QueryRow(ctx, `
+		INSERT INTO app.dashboards (name, organization_id)
+		VALUES ($1, $2)
+		RETURNING id
+	`, payload.Name, p.OrgID).Scan(&id); err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, &dashboards.GetPayload{ID: id})
 }
 
 func (s *DashboardsService) Get(ctx context.Context, payload *dashboards.GetPayload) (*dashboards.Dashboard, error) {
-	row := s.appPool.QueryRow(ctx, `SELECT id, name, created_at, updated_at FROM app.dashboards WHERE id = $1`, payload.ID)
+	row := s.appPool.QueryRow(ctx, `
+		SELECT id, name, created_at, updated_at
+		FROM app.dashboards
+		WHERE id = $1 AND organization_id = $2
+	`, payload.ID, orgID(ctx))
 	var d dashboards.Dashboard
 	var createdAt, updatedAt time.Time
 	if err := row.Scan(&d.ID, &d.Name, &createdAt, &updatedAt); err != nil {
@@ -74,7 +84,10 @@ func (s *DashboardsService) Get(ctx context.Context, payload *dashboards.GetPayl
 }
 
 func (s *DashboardsService) Update(ctx context.Context, payload *dashboards.UpdatePayload) (*dashboards.Dashboard, error) {
-	tag, err := s.appPool.Exec(ctx, `UPDATE app.dashboards SET name = $2, updated_at = NOW() WHERE id = $1`, payload.ID, payload.Name)
+	tag, err := s.appPool.Exec(ctx, `
+		UPDATE app.dashboards SET name = $2, updated_at = NOW()
+		WHERE id = $1 AND organization_id = $3
+	`, payload.ID, payload.Name, orgID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +123,7 @@ func (s *DashboardsService) Update(ctx context.Context, payload *dashboards.Upda
 }
 
 func (s *DashboardsService) Delete(ctx context.Context, payload *dashboards.DeletePayload) error {
-	_, err := s.appPool.Exec(ctx, `DELETE FROM app.dashboards WHERE id = $1`, payload.ID)
+	_, err := s.appPool.Exec(ctx, `DELETE FROM app.dashboards WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
 	return err
 }
 

@@ -35,3 +35,18 @@ func DeleteSchedulesPath(id string) string {
 func RunNowSchedulesPath(id string) string {
 	return fmt.Sprintf("/api/v1/schedules/%v/run", id)
 }
+
+// ListRunsSchedulesPath returns the URL path to the schedules service list_runs HTTP endpoint.
+func ListRunsSchedulesPath(id string) string {
+	return fmt.Sprintf("/api/v1/schedules/%v/runs", id)
+}
+
+// RetryRunSchedulesPath returns the URL path to the schedules service retry_run HTTP endpoint.
+func RetryRunSchedulesPath(runID string) string {
+	return fmt.Sprintf("/api/v1/schedule-runs/%v/retry", runID)
+}
+
+// ListDeliveriesSchedulesPath returns the URL path to the schedules service list_deliveries HTTP endpoint.
+func ListDeliveriesSchedulesPath() string {
+	return "/api/v1/webhook-deliveries"
+}

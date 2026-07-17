@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -28,12 +29,21 @@ type Result struct {
 	OriginalRowLimit int
 }
 
+type poolResolver interface {
+	ReadOnly(connectionID string) *pgxpool.Pool
+}
+
 type Runner struct {
 	pool                *pgxpool.Pool
+	poolResolver        poolResolver
+	connectionID        string
 	validator           *Validator
 	maxRows             int
 	queryLimit          time.Duration
 	allowExplainAnalyze bool
+	maxResultBytes      int
+	maxCellBytes        int
+	maxColumns          int
 }
 
 // RunnerOption configures optional Runner behavior.
@@ -46,12 +56,24 @@ func WithExplainAnalyze(enabled bool) RunnerOption {
 	}
 }
 
+// WithResultLimits bounds result materialization before responses reach clients.
+func WithResultLimits(maxResultBytes, maxCellBytes, maxColumns int) RunnerOption {
+	return func(r *Runner) {
+		r.maxResultBytes = capPositive(maxResultBytes, DefaultMaxResultBytes)
+		r.maxCellBytes = capPositive(maxCellBytes, DefaultMaxCellBytes)
+		r.maxColumns = capPositive(maxColumns, DefaultMaxColumns)
+	}
+}
+
 func NewRunner(pool *pgxpool.Pool, validator *Validator, maxRows int, timeout time.Duration, opts ...RunnerOption) *Runner {
 	r := &Runner{
-		pool:       pool,
-		validator:  validator,
-		maxRows:    capRowCount(maxRows),
-		queryLimit: timeout,
+		pool:           pool,
+		validator:      validator,
+		maxRows:        capRowCount(maxRows),
+		queryLimit:     timeout,
+		maxResultBytes: DefaultMaxResultBytes,
+		maxCellBytes:   DefaultMaxCellBytes,
+		maxColumns:     DefaultMaxColumns,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -59,14 +81,46 @@ func NewRunner(pool *pgxpool.Pool, validator *Validator, maxRows int, timeout ti
 	return r
 }
 
+// NewRunnerForConnection resolves the read-only pool lazily on each query.
+func NewRunnerForConnection(resolver poolResolver, connectionID string, validator *Validator, maxRows int, timeout time.Duration, opts ...RunnerOption) *Runner {
+	r := &Runner{
+		poolResolver:   resolver,
+		connectionID:   connectionID,
+		validator:      validator,
+		maxRows:        capRowCount(maxRows),
+		queryLimit:     timeout,
+		maxResultBytes: DefaultMaxResultBytes,
+		maxCellBytes:   DefaultMaxCellBytes,
+		maxColumns:     DefaultMaxColumns,
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+func (r *Runner) activePool() *pgxpool.Pool {
+	if r.pool != nil {
+		return r.pool
+	}
+	if r.poolResolver != nil {
+		return r.poolResolver.ReadOnly(r.connectionID)
+	}
+	return nil
+}
+
 func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error) {
 	if err := r.ValidateQuery(sql); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
 
-	cleanedSQL := strings.TrimSpace(sql)
-	cleanedSQL = strings.TrimSuffix(cleanedSQL, ";")
-	cleanedSQL = strings.TrimSpace(cleanedSQL)
+	cleanedSQL, wasExplain, err := ExtractReadOnlySQL(sql)
+	if err != nil {
+		return nil, fmt.Errorf("query validation failed: %w", err)
+	}
+	if wasExplain {
+		return nil, fmt.Errorf("query validation failed: %w", apperrors.ErrExplainNotRunnable)
+	}
 
 	if limit <= 0 || limit > r.maxRows {
 		limit = r.maxRows
@@ -79,7 +133,11 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	wrappedSQL := fmt.Sprintf("SELECT * FROM (%s) AS pgqn_sub LIMIT $1", cleanedSQL)
 
 	start := time.Now()
-	rows, err := r.pool.Query(queryCtx, wrappedSQL, rowCap)
+	pool := r.activePool()
+	if pool == nil {
+		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
+	}
+	rows, err := pool.Query(queryCtx, wrappedSQL, rowCap)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s: query exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
@@ -92,6 +150,9 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	defer rows.Close()
 
 	fieldDescs := rows.FieldDescriptions()
+	if r.maxColumns > 0 && len(fieldDescs) > r.maxColumns {
+		return nil, fmt.Errorf("%w: result has %d columns, max is %d", apperrors.ErrQueryResultTooLarge, len(fieldDescs), r.maxColumns)
+	}
 	typeMap := pgtype.NewMap()
 	columns := make([]ColumnInfo, len(fieldDescs))
 	for i, field := range fieldDescs {
@@ -106,10 +167,23 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	}
 
 	resultRows := make([][]interface{}, 0, rowCap)
+	totalBytes := 0
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read row values: %w", err)
+		}
+		rowBytes := 0
+		for _, value := range values {
+			cellBytes := approximateCellBytes(value)
+			if r.maxCellBytes > 0 && cellBytes > r.maxCellBytes {
+				return nil, fmt.Errorf("%w: cell size %d exceeds max %d bytes", apperrors.ErrQueryResultTooLarge, cellBytes, r.maxCellBytes)
+			}
+			rowBytes += cellBytes
+		}
+		totalBytes += rowBytes
+		if r.maxResultBytes > 0 && totalBytes > r.maxResultBytes {
+			return nil, fmt.Errorf("%w: result size %d exceeds max %d bytes", apperrors.ErrQueryResultTooLarge, totalBytes, r.maxResultBytes)
 		}
 		resultRows = append(resultRows, values)
 	}
@@ -139,4 +213,28 @@ func (r *Runner) ValidateQuery(sql string) error {
 // QueryTimeout returns the per-query execution timeout configured for this runner.
 func (r *Runner) QueryTimeout() time.Duration {
 	return r.queryLimit
+}
+
+func approximateCellBytes(value interface{}) int {
+	if value == nil {
+		return 0
+	}
+	switch v := value.(type) {
+	case string:
+		return len(v)
+	case []byte:
+		return len(v)
+	case fmt.Stringer:
+		return len(v.String())
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Array, reflect.Slice, reflect.Map:
+		if rv.Len() > 0 {
+			return len(fmt.Sprint(value))
+		}
+		return 0
+	default:
+		return len(fmt.Sprint(value))
+	}
 }

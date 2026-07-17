@@ -1,0 +1,16 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Relation Name": "trips",
+      "Schema": "demo",
+      "Total Cost": 95000.0,
+      "Plan Rows": 120,
+      "Actual Rows": 100,
+      "Actual Loops": 1,
+      "Filter": "(passenger_count = 8)",
+      "Rows Removed by Filter": 3499900
+    },
+    "Execution Time": 950.2
+  }
+]

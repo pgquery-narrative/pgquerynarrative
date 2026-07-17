@@ -21,6 +21,13 @@ jobs:
         run: go mod download
       - name: Generate code
         run: make generate
+      - name: Check generated code is committed
+        run: |
+          git diff --exit-code api/gen/ gen/ || (
+            echo "Generated code is out of date. Run 'make generate' and commit api/gen/ and gen/."
+            git diff --stat api/gen/ gen/
+            exit 1
+          )
       - name: Run lint
         run: make lint
       - name: Check formatting
@@ -52,6 +59,74 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: "true"
           CGO_ENABLED: "1"
         run: make test
+      - name: Collect coverage
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go test -coverprofile=coverage.out -covermode=atomic \
+            ./app/queryrunner/... ./app/config/... ./app/auth/... ./app/llm/... \
+            ./app/security/... ./pkg/narrative/... ./cmd/server/... ./test/unit/...
+          go tool cover -func=coverage.out | tail -1
+          total="$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')"
+          echo "Core package coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { if (t+0 < 15) { print "Coverage below 15% floor on core packages: " t "%"; exit 1 } }'
+
+  db-security:
+    name: DB security verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Verify readonly role boundaries
+        run: make db-security-verify-docker
+
+  race:
+    name: Race detector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-go-cgo
+      - name: Install dependencies
+        run: go mod download
+      - name: Generate code
+        run: make generate
+      - name: Run race detector on core packages
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./app/... ./pkg/narrative/... ./cmd/server/...
+
+  govulncheck:
+    name: Go vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-go-cgo
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  frontend:
+    name: Frontend lint and typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck --if-present || npx tsc --noEmit
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint --if-present
+      - name: Unit tests (Vitest)
+        working-directory: frontend
+        run: npm test
 
   # Build verification
   build:
@@ -87,9 +162,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - uses: ./.github/actions/setup-go-cgo
       - name: Install dependencies
         run: go mod download
+      - name: Build frontend assets
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
       - name: Generate code
         run: make generate
       - name: Build release binaries (linux/amd64)
@@ -101,3 +186,79 @@ jobs:
           go build -ldflags "-X main.Version=smoke" -o pgquerynarrative-server-linux-amd64 ./cmd/server
           CGO_ENABLED=0 go build -ldflags "-X main.Version=smoke" -o pgquerynarrative-mcp-linux-amd64 ./cmd/mcp-server
           ls -la pgquerynarrative-*
+      - name: Package and smoke release archive
+        run: |
+          VERSION=smoke
+          target=linux-amd64
+          pkg="pgquerynarrative-${VERSION}-${target}"
+          mkdir -p "packages/${pkg}/bin" "packages/${pkg}/frontend" "packages/${pkg}/app/db" "packages/${pkg}/config"
+          cp pgquerynarrative-server-linux-amd64 "packages/${pkg}/bin/pgquerynarrative-server"
+          cp pgquerynarrative-mcp-linux-amd64 "packages/${pkg}/bin/pgquerynarrative-mcp"
+          cp -R frontend/dist "packages/${pkg}/frontend/dist"
+          cp -R app/db/migrations "packages/${pkg}/app/db/migrations"
+          cp .env.example "packages/${pkg}/config/pgquerynarrative.env.example"
+          tar -C packages -czf "${pkg}.tar.gz" "${pkg}"
+          mkdir -p /tmp/pgqn-smoke
+          tar -xzf "${pkg}.tar.gz" -C /tmp/pgqn-smoke
+          test -x "/tmp/pgqn-smoke/${pkg}/bin/pgquerynarrative-server"
+          test -f "/tmp/pgqn-smoke/${pkg}/frontend/dist/index.html"
+          test -d "/tmp/pgqn-smoke/${pkg}/app/db/migrations"
+          test -f "/tmp/pgqn-smoke/${pkg}/config/pgquerynarrative.env.example"
+
+  playwright:
+    name: Browser E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: ./.github/actions/setup-go-cgo
+      - name: Start Postgres and migrate
+        run: |
+          make postgres-up
+          make migrate-docker
+      - name: Playwright smoke (UI + health)
+        run: make test-playwright
+      - name: Playwright OIDC browser login
+        run: make test-playwright-oidc
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: failure()
+        with:
+          name: playwright-report
+          path: test/playwright/playwright-report/
+          retention-days: 7
+
+  load-smoke:
+    name: Load smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-go-cgo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Start Postgres and migrate
+        run: |
+          make postgres-up
+          make migrate-docker
+      - name: Build and start server
+        run: |
+          cd frontend && npm ci && npm run build
+          CGO_ENABLED=1 go build -o bin/server ./cmd/server
+          export DATABASE_HOST=localhost DATABASE_PORT=5432
+          export DATABASE_USER=pgquerynarrative_app DATABASE_PASSWORD=pgquerynarrative_app
+          export DATABASE_NAME=pgquerynarrative
+          export DATABASE_READONLY_USER=pgquerynarrative_readonly DATABASE_READONLY_PASSWORD=pgquerynarrative_readonly
+          export SECURITY_AUTH_ENABLED=false PGQUERYNARRATIVE_PORT=8080
+          ./bin/server &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/health && break; sleep 1; done
+      - name: Run load smoke
+        run: |
+          chmod +x test/load/smoke.sh
+          LOAD_BASE_URL=http://127.0.0.1:8080 LOAD_REQUESTS=30 ./test/load/smoke.sh

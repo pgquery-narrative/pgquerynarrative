@@ -10,3 +10,12 @@ changelog
 coverage.out
 bin/
 gen/
+frontend/node_modules
+frontend/dist
+tools/db/.cache
+tools/db/.venv-nyc
+.gomodcache
+pgquerynarrative_data
+.env
+.env.*
+

@@ -137,8 +137,14 @@ type PlanFinding struct {
 	EstimatedCost *float64
 	// True when the node is a sequential scan
 	IsSeqScan bool
+	// Finding category (e.g. seq_scan, cardinality_misestimate, sort_spill)
+	Category *string
+	// Triage confidence: low, medium, or high
+	Confidence *string
 	// Human-readable summary and optional index hint
 	Message string
+	// Raw plan metrics backing this finding (e.g. Plan Rows=8000)
+	Evidence []string
 }
 
 // RunQueryPayload is the payload type of the queries service run method.

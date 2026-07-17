@@ -1,0 +1,32 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Nested Loop",
+      "Total Cost": 250000.0,
+      "Plan Rows": 4000,
+      "Actual Rows": 3900000,
+      "Actual Loops": 1,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Relation Name": "zones",
+          "Schema": "demo",
+          "Total Cost": 500.0,
+          "Plan Rows": 260,
+          "Actual Rows": 260,
+          "Actual Loops": 1
+        },
+        {
+          "Node Type": "Index Scan",
+          "Relation Name": "trips",
+          "Schema": "demo",
+          "Index Name": "idx_trips_zone",
+          "Total Cost": 950.0,
+          "Plan Rows": 15,
+          "Actual Rows": 15000,
+          "Actual Loops": 150000
+        }
+      ]
+    }
+  }
+]

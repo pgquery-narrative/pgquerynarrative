@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: ['go']
+        language: ['go', 'javascript-typescript']
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Initialize CodeQL
@@ -75,7 +75,7 @@ jobs:
       - name: Run gosec
         uses: securego/gosec@6641fcf966593bf52ed426aa262839b340d56375
         with:
-          args: '-no-fail -fmt json -out gosec-report.json ./...'
+          args: '-fmt json -out gosec-report.json ./...'
       - name: Upload gosec results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

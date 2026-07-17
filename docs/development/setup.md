@@ -6,7 +6,7 @@ Build, test, and contribute to PgQueryNarrative. See also [Testing](testing.md) 
 
 | Requirement | Purpose |
 |-------------|---------|
-| Go 1.24+ | Build server and run tests |
+| Go 1.25+ | Build server and run tests |
 | PostgreSQL 16+ or Docker | Database (query execution, migrations, seed) |
 | Git, Make | Clone and run targets |
 | Node.js and npm | Build React SPA in `frontend/` for full web UI |

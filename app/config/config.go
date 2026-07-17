@@ -84,11 +84,18 @@ type DatabaseConfig struct {
 	User             string        // Application user (full access)
 	Password         string        // Application user password
 	MaxConnections   int           // Maximum connection pool size
+	MinConnections   int           // Minimum idle connections per pool
+	GlobalMaxConns   int           // Maximum total DB connections across app + read-only pools
 	ReadOnlyUser     string        // Read-only user (for queries)
 	ReadOnlyPassword string        // Read-only user password
 	SSLMode          string        // SSL mode (disable, require, etc.)
 	QueryTimeout     time.Duration // Maximum query execution time
+	LockTimeout      time.Duration // Database-side lock timeout for query connections
+	IdleTxTimeout    time.Duration // Database-side idle-in-transaction timeout
 	AllowedSchemas   []string      // Schemas queries may access (e.g. demo, public). Default: public,demo.
+	MaxResultBytes   int           // Approximate max materialized result bytes
+	MaxCellBytes     int           // Approximate max bytes for an individual cell
+	MaxColumns       int           // Max columns returned by a query
 	Connections      []DataConnectionConfig
 	DefaultID        string
 }
@@ -104,18 +111,25 @@ type DataConnectionConfig struct {
 	ReadOnlyPassword string
 	SSLMode          string
 	QueryTimeout     time.Duration
+	LockTimeout      time.Duration
+	IdleTxTimeout    time.Duration
 	AllowedSchemas   []string
+	MaxResultBytes   int
+	MaxCellBytes     int
+	MaxColumns       int
 }
 
 // SecurityConfig contains security-related settings.
 type SecurityConfig struct {
 	AuthEnabled            bool     // When true, API and web export require Bearer token (SECURITY_API_KEY).
 	APIKey                 string   // Bearer token for API auth; required when AuthEnabled is true.
+	APIKeyHash             string   // SHA-256 hex digest of SECURITY_API_KEY (preferred in production).
 	RateLimitRPM           int      // Max requests per minute per client (0 = disabled). Applied when > 0.
 	RateLimitBurst         int      // Burst size for rate limiter (allow short spikes). Default 2 * RateLimitRPM when 0.
 	TrustedProxies         []string // IPs/CIDRs that may set X-Forwarded-For / X-Real-IP (empty = use RemoteAddr only).
 	MaxRequestBodyBytes    int64    // Max HTTP request body size (0 = default 5 MiB).
 	ShareLinkDefaultHours  int      // Default share-link TTL when expires_in_hours is omitted (default 168).
+	ShareLinksEnabled      bool     // Allow unauthenticated shared report links. Default false.
 	ExplainAnalyzeEnabled  bool     // Allow EXPLAIN ANALYZE (executes query). Default false.
 	StatStatementsEnabled  bool     // Expose pg_stat_statements API. Default true.
 	APIKeysJSON            string   // Optional JSON array of {key,id,role} for multi-key RBAC.
@@ -123,20 +137,39 @@ type SecurityConfig struct {
 	OIDCIssuer             string   // Optional OIDC issuer URL for JWT Bearer auth.
 	OIDCAudience           string   // Expected JWT aud claim.
 	OIDCJWKSURL            string   // Optional JWKS URL (defaults to issuer/.well-known/jwks.json).
-	ScheduleRunnerEnabled  bool     // Background schedule execution. Default true.
+	ScheduleRunnerEnabled  bool     // Background schedule execution. Default false.
 	ScheduleRunnerInterval time.Duration
+	ScheduleDurableLeases  bool   // Require durable schedule_runs claiming. Default true.
+	WebhookSigningSecret   string // HMAC secret for outbound webhook signatures.
+	OIDCClientID           string
+	OIDCClientSecret       string
+	OIDCRedirectURL        string
+	SessionSecret          string
+	SessionTTL             time.Duration
+	OIDCAutoJoinDefaultOrg bool     // Auto-provision default-org membership on first OIDC login. Default true.
+	WebhookAllowedHosts    []string // Optional hostname allowlist for webhook destinations.
 }
 
 // LLMConfig contains settings for the LLM provider used for narrative generation.
 type LLMConfig struct {
-	Provider          string // Provider name: "ollama", "gemini", "claude", "openai", "groq"
-	Model             string // Model name (e.g., "llama3.2", "gpt-4o-mini")
-	APIKey            string // API key (for cloud providers)
-	BaseURL           string // Base URL (for local providers like Ollama)
-	MaxSampleRows     int    // Max result rows included in narrative prompts (default 5)
-	SendRowData       bool   // When false, prompts omit row values (columns + metrics only)
-	AllowExternalData bool   // Explicit opt-in to send data to non-local LLM providers
-	RedactPII         bool   // Mask sensitive columns and PII patterns in LLM prompts
+	Provider                    string  // Provider name: "ollama", "gemini", "claude", "openai", "groq"
+	Model                       string  // Model name (e.g., "llama3.2", "gpt-4o-mini")
+	APIKey                      string  // API key (for cloud providers)
+	BaseURL                     string  // Base URL (for local providers like Ollama)
+	MaxSampleRows               int     // Max result rows included in narrative prompts (default 5)
+	SendRowData                 bool    // When false, prompts omit row values (columns + metrics only)
+	AllowExternalData           bool    // Explicit opt-in to send data to non-local LLM providers
+	RedactPII                   bool    // Mask sensitive columns and PII patterns in LLM prompts
+	DailyTokenBudget            int     // Per-org daily token budget (0 = unlimited)
+	DailyCostBudgetUSD          float64 // Per-org daily USD budget (0 = unlimited)
+	MonthlyTokenBudget          int     // Per-org monthly token budget (0 = unlimited)
+	MonthlyCostBudgetUSD        float64 // Per-org monthly USD budget (0 = unlimited)
+	PerUserDailyTokenBudget     int     // Per-user daily token budget (0 = unlimited)
+	PerUserDailyCostBudgetUSD   float64 // Per-user daily USD budget (0 = unlimited)
+	PerUserMonthlyTokenBudget   int     // Per-user monthly token budget (0 = unlimited)
+	PerUserMonthlyCostBudgetUSD float64 // Per-user monthly USD budget (0 = unlimited)
+	USDPer1kTokens              float64 // Estimated cost rate for budget accounting
+	MaxCallsPerReport           int     // Cap auxiliary LLM calls per report (0 = default 12)
 }
 
 // Load reads configuration from environment variables and returns a Config struct.
@@ -159,20 +192,29 @@ func Load() Config {
 			User:             getEnv("DATABASE_USER", "pgquerynarrative_app"),
 			Password:         getEnv("DATABASE_PASSWORD", "pgquerynarrative_app"),
 			MaxConnections:   getEnvInt("DATABASE_MAX_CONNECTIONS", 10),
+			MinConnections:   getEnvInt("DATABASE_MIN_CONNECTIONS", 0),
+			GlobalMaxConns:   getEnvInt("DATABASE_GLOBAL_MAX_CONNECTIONS", 0),
 			ReadOnlyUser:     getEnv("DATABASE_READONLY_USER", "pgquerynarrative_readonly"),
 			ReadOnlyPassword: getEnv("DATABASE_READONLY_PASSWORD", "pgquerynarrative_readonly"),
 			SSLMode:          getEnv("DATABASE_SSL_MODE", "disable"),
 			QueryTimeout:     getEnvDuration("QUERY_TIMEOUT", 30*time.Second),
-			AllowedSchemas:   getEnvAllowedSchemas("DATABASE_ALLOWED_SCHEMAS", "demo"),
+			LockTimeout:      getEnvDuration("QUERY_LOCK_TIMEOUT", 2*time.Second),
+			IdleTxTimeout:    getEnvDuration("QUERY_IDLE_IN_TX_TIMEOUT", 10*time.Second),
+			AllowedSchemas:   getEnvAllowedSchemas("DATABASE_ALLOWED_SCHEMAS", "demo,opendata"),
+			MaxResultBytes:   getEnvInt("QUERY_MAX_RESULT_BYTES", 10*1024*1024),
+			MaxCellBytes:     getEnvInt("QUERY_MAX_CELL_BYTES", 1024*1024),
+			MaxColumns:       getEnvInt("QUERY_MAX_COLUMNS", 100),
 		},
 		Security: SecurityConfig{
 			AuthEnabled:            getEnvBool("SECURITY_AUTH_ENABLED", false),
 			APIKey:                 getEnv("SECURITY_API_KEY", ""),
+			APIKeyHash:             getEnv("SECURITY_API_KEY_HASH", ""),
 			RateLimitRPM:           getEnvInt("SECURITY_RATE_LIMIT_RPM", 0),
 			RateLimitBurst:         getEnvInt("SECURITY_RATE_LIMIT_BURST", 0),
 			TrustedProxies:         getEnvSlice("SECURITY_TRUSTED_PROXIES", ","),
 			MaxRequestBodyBytes:    getEnvInt64("SECURITY_MAX_REQUEST_BODY_BYTES", 5*1024*1024),
 			ShareLinkDefaultHours:  getEnvInt("SECURITY_SHARE_LINK_DEFAULT_HOURS", 168),
+			ShareLinksEnabled:      getEnvBool("SECURITY_SHARE_LINKS_ENABLED", false),
 			ExplainAnalyzeEnabled:  getEnvBool("SECURITY_EXPLAIN_ANALYZE_ENABLED", false),
 			StatStatementsEnabled:  getEnvBool("SECURITY_STAT_STATEMENTS_ENABLED", true),
 			APIKeysJSON:            auth.LoadAPIKeysJSON(getEnv("SECURITY_API_KEYS_JSON", "")),
@@ -180,18 +222,37 @@ func Load() Config {
 			OIDCIssuer:             getEnv("SECURITY_OIDC_ISSUER", ""),
 			OIDCAudience:           getEnv("SECURITY_OIDC_AUDIENCE", ""),
 			OIDCJWKSURL:            getEnv("SECURITY_OIDC_JWKS_URL", ""),
-			ScheduleRunnerEnabled:  getEnvBool("SCHEDULE_RUNNER_ENABLED", true),
+			ScheduleRunnerEnabled:  getEnvBool("SCHEDULE_RUNNER_ENABLED", false),
 			ScheduleRunnerInterval: getEnvDuration("SCHEDULE_RUNNER_INTERVAL", time.Minute),
+			ScheduleDurableLeases:  getEnvBool("SCHEDULE_DURABLE_LEASES", true),
+			WebhookSigningSecret:   getEnv("SECURITY_WEBHOOK_SIGNING_SECRET", ""),
+			OIDCClientID:           getEnv("SECURITY_OIDC_CLIENT_ID", ""),
+			OIDCClientSecret:       getEnv("SECURITY_OIDC_CLIENT_SECRET", ""),
+			OIDCRedirectURL:        getEnv("SECURITY_OIDC_REDIRECT_URL", "http://localhost:8080/auth/callback"),
+			SessionSecret:          getEnv("SECURITY_SESSION_SECRET", ""),
+			SessionTTL:             getEnvDuration("SECURITY_SESSION_TTL", 8*time.Hour),
+			OIDCAutoJoinDefaultOrg: getEnvBool("SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG", true),
+			WebhookAllowedHosts:    getEnvSlice("SECURITY_WEBHOOK_ALLOWED_HOSTS", ","),
 		},
 		LLM: LLMConfig{
-			Provider:          getEnv("LLM_PROVIDER", "ollama"),
-			Model:             getEnv("LLM_MODEL", "llama3.2"),
-			APIKey:            getEnv("LLM_API_KEY", ""),
-			BaseURL:           getEnv("LLM_BASE_URL", "http://localhost:11434"),
-			MaxSampleRows:     clampInt(getEnvInt("LLM_MAX_SAMPLE_ROWS", 5), 0, 10),
-			SendRowData:       getEnvBool("LLM_SEND_ROW_DATA", true),
-			AllowExternalData: getEnvBool("LLM_ALLOW_EXTERNAL_DATA", false),
-			RedactPII:         getEnvBool("LLM_REDACT_PII", true),
+			Provider:                    getEnv("LLM_PROVIDER", "ollama"),
+			Model:                       getEnv("LLM_MODEL", "llama3.2"),
+			APIKey:                      getEnv("LLM_API_KEY", ""),
+			BaseURL:                     getEnv("LLM_BASE_URL", "http://localhost:11434"),
+			MaxSampleRows:               clampInt(getEnvInt("LLM_MAX_SAMPLE_ROWS", 5), 0, 10),
+			SendRowData:                 getEnvBool("LLM_SEND_ROW_DATA", false),
+			AllowExternalData:           getEnvBool("LLM_ALLOW_EXTERNAL_DATA", false),
+			RedactPII:                   getEnvBool("LLM_REDACT_PII", true),
+			DailyTokenBudget:            getEnvInt("LLM_DAILY_TOKEN_BUDGET", 0),
+			DailyCostBudgetUSD:          getEnvFloat("LLM_DAILY_COST_BUDGET_USD", 0),
+			MonthlyTokenBudget:          getEnvInt("LLM_MONTHLY_TOKEN_BUDGET", 0),
+			MonthlyCostBudgetUSD:        getEnvFloat("LLM_MONTHLY_COST_BUDGET_USD", 0),
+			PerUserDailyTokenBudget:     getEnvInt("LLM_PER_USER_DAILY_TOKEN_BUDGET", 0),
+			PerUserDailyCostBudgetUSD:   getEnvFloat("LLM_PER_USER_DAILY_COST_BUDGET_USD", 0),
+			PerUserMonthlyTokenBudget:   getEnvInt("LLM_PER_USER_MONTHLY_TOKEN_BUDGET", 0),
+			PerUserMonthlyCostBudgetUSD: getEnvFloat("LLM_PER_USER_MONTHLY_COST_BUDGET_USD", 0),
+			USDPer1kTokens:              getEnvFloat("LLM_USD_PER_1K_TOKENS", 0.002),
+			MaxCallsPerReport:           getEnvInt("LLM_MAX_CALLS_PER_REPORT", 12),
 		},
 		Metrics: validateMetricsConfig(MetricsConfig{
 			TrendThresholdPercent:    getEnvFloat("PERIOD_TREND_THRESHOLD_PERCENT", 0.5),
@@ -407,7 +468,12 @@ func defaultDataConnection(db DatabaseConfig) DataConnectionConfig {
 		ReadOnlyPassword: db.ReadOnlyPassword,
 		SSLMode:          db.SSLMode,
 		QueryTimeout:     db.QueryTimeout,
+		LockTimeout:      db.LockTimeout,
+		IdleTxTimeout:    db.IdleTxTimeout,
 		AllowedSchemas:   append([]string(nil), db.AllowedSchemas...),
+		MaxResultBytes:   db.MaxResultBytes,
+		MaxCellBytes:     db.MaxCellBytes,
+		MaxColumns:       db.MaxColumns,
 	}
 }
 
@@ -441,8 +507,23 @@ func loadDataConnections(db DatabaseConfig) []DataConnectionConfig {
 		if c.QueryTimeout <= 0 {
 			c.QueryTimeout = db.QueryTimeout
 		}
+		if c.LockTimeout <= 0 {
+			c.LockTimeout = db.LockTimeout
+		}
+		if c.IdleTxTimeout <= 0 {
+			c.IdleTxTimeout = db.IdleTxTimeout
+		}
 		if len(c.AllowedSchemas) == 0 {
 			c.AllowedSchemas = append([]string(nil), db.AllowedSchemas...)
+		}
+		if c.MaxResultBytes <= 0 {
+			c.MaxResultBytes = db.MaxResultBytes
+		}
+		if c.MaxCellBytes <= 0 {
+			c.MaxCellBytes = db.MaxCellBytes
+		}
+		if c.MaxColumns <= 0 {
+			c.MaxColumns = db.MaxColumns
 		}
 		out = append(out, c)
 	}

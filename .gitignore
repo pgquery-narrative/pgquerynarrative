@@ -47,6 +47,8 @@ coverage.html
 # Cache
 .gomodcache/
 pgquerynarrative_data/
+tools/db/.cache/
+tools/db/.venv-nyc/
 
 # Documentation sites
 docs-site/

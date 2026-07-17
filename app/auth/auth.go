@@ -8,7 +8,7 @@ import (
 // ValidateRequest is a legacy helper for single API key auth. Prefer Authenticator.
 func ValidateRequest(r *http.Request, expectedAPIKey string) (identity string, ok bool) {
 	enabled := strings.TrimSpace(expectedAPIKey) != ""
-	a := NewAuthenticator(enabled, expectedAPIKey, "", nil)
+	a := NewAuthenticator(enabled, expectedAPIKey, "", "", nil)
 	id, _, ok := a.ValidateRequest(r)
 	return id, ok
 }

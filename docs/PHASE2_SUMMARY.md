@@ -22,7 +22,7 @@ See `docs/BACKLOG.md` for acceptance detail.
 **Verify:**
 
 ```bash
-docker run --rm -v "$(pwd)":/app -w /app golang:1.24.4-bookworm \
+docker run --rm -v "$(pwd)":/app -w /app golang:1.25-bookworm \
   sh -c "apt-get update -qq && apt-get install -qq -y gcc libc6-dev >/dev/null && \
   go test ./test/unit/app/queryrunner/... -v -run TestValidator"
 ```

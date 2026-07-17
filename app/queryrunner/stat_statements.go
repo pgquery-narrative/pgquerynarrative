@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 )
@@ -34,9 +34,14 @@ var statStatementsOrderColumns = map[string]string{
 	"calls":      "calls",
 }
 
+// statsQuerier is satisfied by *pgxpool.Pool and db.OrgScoped.
+type statsQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
 // StatStatements queries pg_stat_statements using the app pool (pg_read_all_stats) and
 // filters to statements executed by filterRole when non-empty.
-func StatStatements(ctx context.Context, statsPool *pgxpool.Pool, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {
+func StatStatements(ctx context.Context, statsPool statsQuerier, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {
 	if statsPool == nil {
 		return nil, fmt.Errorf("%w: stats pool not configured", apperrors.ErrStatStatementsUnavailable)
 	}
@@ -105,5 +110,5 @@ LIMIT $1`, roleFilter, col)
 
 // StatStatements on Runner delegates to StatStatements using the runner pool (legacy/tests).
 func (r *Runner) StatStatements(ctx context.Context, orderBy string, limit int) (*StatStatementsResult, error) {
-	return StatStatements(ctx, r.pool, "", orderBy, limit, r.queryLimit)
+	return StatStatements(ctx, r.activePool(), "", orderBy, limit, r.queryLimit)
 }

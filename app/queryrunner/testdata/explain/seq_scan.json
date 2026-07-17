@@ -1,0 +1,25 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Plain",
+      "Startup Cost": 188.25,
+      "Total Cost": 188.27,
+      "Plan Rows": 1,
+      "Plans": [
+        {
+          "Node Type": "Seq Scan",
+          "Parent Relationship": "Outer",
+          "Relation Name": "sales",
+          "Schema": "demo",
+          "Alias": "sales",
+          "Startup Cost": 0.0,
+          "Total Cost": 180.0,
+          "Plan Rows": 8000,
+          "Filter": "(region = 'North'::text)"
+        }
+      ]
+    },
+    "Planning Time": 0.123
+  }
+]

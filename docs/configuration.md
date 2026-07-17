@@ -49,10 +49,16 @@ PgQueryNarrative is configured via **environment variables** only. Sensible defa
 | `DATABASE_READONLY_PASSWORD` | `pgquerynarrative_readonly` | Read-only password. |
 | `DATABASE_SSL_MODE` | `disable` | SSL mode: `disable` \| `require` \| `verify-full`. |
 | `DATABASE_MAX_CONNECTIONS` | `10` | Max connection pool size. |
+| `DATABASE_MIN_CONNECTIONS` | `0` | Minimum idle connections per pool. Keep `0` for many analytical sources. |
 | `QUERY_TIMEOUT` | `30s` | Query execution timeout. |
-| `DATABASE_ALLOWED_SCHEMAS` | `public,demo` | Comma-separated schemas queries may access. Use your own schemas here (e.g. `public` or `public,analytics`). |
+| `QUERY_LOCK_TIMEOUT` | `2s` | Database-side lock timeout for read-only query sessions. |
+| `QUERY_IDLE_IN_TX_TIMEOUT` | `10s` | Database-side idle-in-transaction timeout for query sessions. |
+| `QUERY_MAX_RESULT_BYTES` | `10485760` | Approximate maximum materialized result size before returning `QUERY_RESULT_TOO_LARGE`. |
+| `QUERY_MAX_CELL_BYTES` | `1048576` | Approximate maximum size for one returned cell. |
+| `QUERY_MAX_COLUMNS` | `100` | Maximum number of columns returned by a query. |
+| `DATABASE_ALLOWED_SCHEMAS` | `demo,opendata` | Comma-separated schemas queries may access (e.g. `demo,opendata` or `public,analytics`). |
 | `DATABASE_DEFAULT_CONNECTION_ID` | `default` | Default data connection ID used when `connection_id` is omitted in API/UI/MCP requests. |
-| `DATABASE_CONNECTIONS_JSON` | (empty) | Optional JSON array of additional read-only data connections. Each item supports: `id`, `name`, `host`, `port`, `database`, `readOnlyUser`, `readOnlyPassword`, `sslMode`, `queryTimeout`, `allowedSchemas`. |
+| `DATABASE_CONNECTIONS_JSON` | (empty) | Optional JSON array of additional read-only data connections. Each item supports: `id`, `name`, `host`, `port`, `database`, `readOnlyUser`, `readOnlyPassword`, `sslMode`, `queryTimeout`, `lockTimeout`, `idleTxTimeout`, `allowedSchemas`, `maxResultBytes`, `maxCellBytes`, `maxColumns`. |
 
 ### Multiple database connections {#multiple-database-connections}
 
@@ -106,6 +112,11 @@ Required for [report generation](api/README.md#reports). See [LLM setup](getting
 | `LLM_MODEL` | `llama3.2` | Model name. |
 | `LLM_BASE_URL` | `http://localhost:11434` | LLM API base URL. Docker with Ollama on host: `http://host.docker.internal:11434`. |
 | `LLM_API_KEY` | (empty) | API key (required for cloud providers). |
+| `LLM_SEND_ROW_DATA` | `false` | When false, prompts include SQL, columns, and computed metrics but omit raw row values. |
+| `LLM_ALLOW_EXTERNAL_DATA` | `false` | Must be true before using cloud LLM providers. Local Ollama does not require this. |
+| `LLM_REDACT_PII` | `true` | Redact common PII patterns and SQL string literals before prompt construction. |
+| `LLM_MAX_CALLS_PER_REPORT` | `12` | Maximum auxiliary LLM calls per report (trend/chart explanations); narrative generation counts toward the cap. |
+| `LLM_MAX_SAMPLE_ROWS` | `5` | Maximum row samples included when `LLM_SEND_ROW_DATA=true` (cloud providers are capped more strictly). |
 
 ---
 
@@ -179,6 +190,7 @@ When a query returns **time-series data** (one date/time column plus one or more
 | `METRICS_CORRELATION_MIN_ROWS` | `10` | Minimum rows to compute Pearson/Spearman between numeric measures (2–1000). |
 | `METRICS_SMOOTHING_ALPHA` | `0.3` | Level smoothing factor for exponential smoothing (0–1). |
 | `METRICS_SMOOTHING_BETA` | `0.1` | Trend smoothing factor for Holt (0–1). |
+| `METRICS_MAX_TIMESERIES_PERIODS` | `24` | Maximum periods returned for time-series metrics in reports. |
 
 ### Cohort analysis {#cohort-analysis}
 
@@ -200,6 +212,21 @@ Example query shape: `SELECT cohort_month, period_index, SUM(revenue) AS revenue
 | `SECURITY_API_KEY` | (empty) | Bearer token for API auth. Required when `SECURITY_AUTH_ENABLED` is true. |
 | `SECURITY_RATE_LIMIT_RPM` | `0` | Max requests per minute per client IP (0 = disabled). |
 | `SECURITY_RATE_LIMIT_BURST` | `0` | Burst size for rate limiter (0 = 2× RPM). |
+| `SECURITY_EXPLAIN_ANALYZE_ENABLED` | `false` | Allows EXPLAIN ANALYZE, which executes the query. Keep false in production unless explicitly approved. |
+| `SECURITY_SHARE_LINKS_ENABLED` | `false` | Allows creation of unauthenticated shared-report tokens. Keep false for production until sharing is approved. |
+| `SECURITY_SHARE_LINK_DEFAULT_HOURS` | `168` | Default share-link expiry when sharing is enabled. |
+| `SECURITY_OIDC_ISSUER` | (empty) | Corporate IdP issuer URL for browser OIDC login (PKCE). |
+| `SECURITY_OIDC_AUDIENCE` | (empty) | Expected JWT audience / client identifier at the IdP. |
+| `SECURITY_OIDC_CLIENT_ID` | (empty) | OAuth2/OIDC client ID registered with your IdP. |
+| `SECURITY_OIDC_CLIENT_SECRET` | (empty) | OIDC client secret (omit for public clients). |
+| `SECURITY_OIDC_REDIRECT_URL` | (empty) | Callback URL registered at the IdP (e.g. `https://host/auth/callback`). |
+| `SECURITY_SESSION_SECRET` | (empty) | HMAC secret for HttpOnly session cookies (required when OIDC is enabled). |
+| `SECURITY_SESSION_TTL` | `8h` | Browser session lifetime. |
+| `SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG` | `true` | Auto-provision default-org membership on first OIDC login. |
+| `SECURITY_WEBHOOK_SIGNING_SECRET` | (empty) | HMAC secret for outbound schedule webhook signatures. |
+| `SECURITY_WEBHOOK_ALLOWED_HOSTS` | (empty) | Comma-separated hostname allowlist for webhook destinations (SSRF protection). |
+| `SCHEDULE_RUNNER_ENABLED` | `false` | Enables background schedule execution. Keep false until durable schedule leases are deployed. |
+| `SCHEDULE_RUNNER_INTERVAL` | `1m` | Poll interval when the schedule runner is enabled. |
 
 ---
 

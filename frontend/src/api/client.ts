@@ -1,12 +1,12 @@
 const BASE = "/api/v1";
 
-import { authHeaders } from "./auth";
+import { authFetchInit } from "./auth";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
+  const res = await fetch(BASE + path, authFetchInit({
+    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
-  });
+  }));
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as Record<string, unknown>;
     const message =
@@ -35,6 +35,26 @@ export interface RunQueryResult {
   execution_time_ms: number;
   limit: number;
   chart_suggestions?: ChartSuggestion[];
+}
+
+/** Notable node from POST /queries/explain. */
+export interface PlanFinding {
+  node_type: string;
+  schema?: string;
+  relation?: string;
+  estimated_cost?: number;
+  is_seq_scan: boolean;
+  confidence?: string;
+  message: string;
+}
+
+/** Result of POST /queries/explain (EXPLAIN FORMAT JSON). */
+export interface ExplainQueryResult {
+  sql: string;
+  total_cost: number;
+  plan: unknown;
+  findings: PlanFinding[];
+  execution_time_ms: number;
 }
 
 export interface SavedQuery {
@@ -223,6 +243,18 @@ export const api = {
     request<RunQueryResult>("/queries/run", {
       method: "POST",
       body: JSON.stringify({ sql: normalizeSql(sql), limit, connection_id: connectionId }),
+    }),
+
+  explainQuery: (sql: string, analyze = false, connectionId?: string) =>
+    request<ExplainQueryResult>("/queries/explain", {
+      method: "POST",
+      body: JSON.stringify({
+        sql: normalizeSql(sql),
+        analyze,
+        connection_id: connectionId,
+      }),
+      // ANALYZE can run as long as the query itself; keep headroom for large scans.
+      signal: AbortSignal.timeout(analyze ? 120_000 : 60_000),
     }),
 
   listSaved: (limit = 50, offset = 0, connectionId?: string) =>

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/sync/singleflight"
 )
 
 // OIDCConfig holds optional OIDC JWT validation settings.
@@ -30,6 +31,7 @@ type OIDCValidator struct {
 	mu         sync.RWMutex
 	keys       map[string]*rsa.PublicKey
 	fetched    time.Time
+	jwksSF     singleflight.Group
 }
 
 // NewOIDCValidator returns a validator when issuer is configured.
@@ -155,6 +157,13 @@ func (v *OIDCValidator) publicKey(ctx context.Context, kid string) (*rsa.PublicK
 }
 
 func (v *OIDCValidator) refreshJWKS(ctx context.Context) error {
+	_, err, _ := v.jwksSF.Do("jwks", func() (interface{}, error) {
+		return nil, v.fetchJWKS(ctx)
+	})
+	return err
+}
+
+func (v *OIDCValidator) fetchJWKS(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.cfg.JWKSURL, nil)
 	if err != nil {
 		return err

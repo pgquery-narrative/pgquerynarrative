@@ -1,0 +1,27 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Gather Merge",
+      "Total Cost": 130000.0,
+      "Plan Rows": 2400000,
+      "Workers Planned": 2,
+      "Workers Launched": 0,
+      "Plans": [
+        {
+          "Node Type": "Sort",
+          "Total Cost": 110000.0,
+          "Plan Rows": 1200000,
+          "Plans": [
+            {
+              "Node Type": "Parallel Seq Scan",
+              "Relation Name": "trips",
+              "Schema": "demo",
+              "Total Cost": 80000.0,
+              "Plan Rows": 1200000
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

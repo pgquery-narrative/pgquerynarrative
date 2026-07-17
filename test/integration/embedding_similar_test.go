@@ -12,6 +12,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
 	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
 )
@@ -87,10 +89,10 @@ func TestFindSimilarQueriesPgvectorIntegration(t *testing.T) {
 	}
 
 	_, err = pool.Exec(ctx, `
-		INSERT INTO app.saved_queries (id, name, sql, connection_id)
+		INSERT INTO app.saved_queries (id, name, sql, connection_id, organization_id)
 		VALUES
-		  ('11111111-1111-1111-1111-111111111101', 'By region', 'SELECT region, SUM(total_amount) FROM demo.sales GROUP BY region', 'default'),
-		  ('11111111-1111-1111-1111-111111111102', 'By category', 'SELECT product_category, COUNT(*) FROM demo.sales GROUP BY product_category', 'default')
+		  ('11111111-1111-1111-1111-111111111101', 'By region', 'SELECT region, SUM(total_amount) FROM demo.sales GROUP BY region', 'default', '00000000-0000-0000-0000-000000000001'),
+		  ('11111111-1111-1111-1111-111111111102', 'By category', 'SELECT product_category, COUNT(*) FROM demo.sales GROUP BY product_category', 'default', '00000000-0000-0000-0000-000000000001')
 		ON CONFLICT (id) DO NOTHING
 	`)
 	if err != nil {
@@ -98,7 +100,8 @@ func TestFindSimilarQueriesPgvectorIntegration(t *testing.T) {
 	}
 
 	emb := mockEmbedder{}
-	store := embedding.NewStore(pool)
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: "test", OrgID: auth.DefaultOrgID(), Role: auth.RoleAnalyst})
+	store := embedding.NewStore(db.NewOrgScoped(pool))
 	for _, sq := range []struct {
 		id, text string
 	}{

@@ -13,7 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
@@ -77,10 +79,10 @@ func TestReportsServiceListAndGet(t *testing.T) {
 
 	var reportID string
 	err = pool.QueryRow(ctx, `
-		INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, organization_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, "SELECT region FROM demo.sales", "Integration test", narrativeJSON, metricsJSON, "test", "integration").Scan(&reportID)
+	`, "SELECT region FROM demo.sales", "Integration test", narrativeJSON, metricsJSON, "test", "integration", auth.DefaultOrganizationID).Scan(&reportID)
 	if err != nil {
 		t.Fatalf("failed to insert report: %v", err)
 	}
@@ -88,10 +90,13 @@ func TestReportsServiceListAndGet(t *testing.T) {
 	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
 	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
 	var client llm.Client = noopLLM{}
-	reportsSvc := service.NewReportsService(pool, pool, runner, client, config.MetricsConfig{})
+	appDB := db.NewOrgScoped(pool)
+	reportsSvc := service.NewReportsService(pool, appDB, runner, client, config.MetricsConfig{})
+
+	reqCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "test", OrgID: auth.DefaultOrganizationID, Role: auth.RoleAdmin})
 
 	// List
-	listRes, err := reportsSvc.List(ctx, &reports.ListPayload{Limit: 10, Offset: 0})
+	listRes, err := reportsSvc.List(reqCtx, &reports.ListPayload{Limit: 10, Offset: 0})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -103,7 +108,7 @@ func TestReportsServiceListAndGet(t *testing.T) {
 	}
 
 	// Get
-	getRes, err := reportsSvc.Get(ctx, &reports.GetPayload{ID: reportID})
+	getRes, err := reportsSvc.Get(reqCtx, &reports.GetPayload{ID: reportID})
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -118,7 +123,7 @@ func TestReportsServiceListAndGet(t *testing.T) {
 	}
 
 	// Get non-existent -> not found
-	_, err = reportsSvc.Get(ctx, &reports.GetPayload{ID: "00000000-0000-0000-0000-000000000000"})
+	_, err = reportsSvc.Get(reqCtx, &reports.GetPayload{ID: "00000000-0000-0000-0000-000000000000"})
 	if err == nil {
 		t.Fatal("expected error for missing report")
 	}

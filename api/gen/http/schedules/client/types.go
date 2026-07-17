@@ -98,6 +98,33 @@ type RunNowResponseBody struct {
 	Delivered *bool                 `form:"delivered,omitempty" json:"delivered,omitempty" xml:"delivered,omitempty"`
 }
 
+// ListRunsResponseBody is the type of the "schedules" service "list_runs"
+// endpoint HTTP response body.
+type ListRunsResponseBody struct {
+	Items []*ScheduleRunRecordResponseBody `form:"items,omitempty" json:"items,omitempty" xml:"items,omitempty"`
+}
+
+// RetryRunResponseBody is the type of the "schedules" service "retry_run"
+// endpoint HTTP response body.
+type RetryRunResponseBody struct {
+	ID             *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	ScheduleID     *string `form:"schedule_id,omitempty" json:"schedule_id,omitempty" xml:"schedule_id,omitempty"`
+	Status         *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	AttemptCount   *int    `form:"attempt_count,omitempty" json:"attempt_count,omitempty" xml:"attempt_count,omitempty"`
+	ScheduledFor   *string `form:"scheduled_for,omitempty" json:"scheduled_for,omitempty" xml:"scheduled_for,omitempty"`
+	StartedAt      *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	CompletedAt    *string `form:"completed_at,omitempty" json:"completed_at,omitempty" xml:"completed_at,omitempty"`
+	ReportID       *string `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	FailureCode    *string `form:"failure_code,omitempty" json:"failure_code,omitempty" xml:"failure_code,omitempty"`
+	FailureMessage *string `form:"failure_message,omitempty" json:"failure_message,omitempty" xml:"failure_message,omitempty"`
+}
+
+// ListDeliveriesResponseBody is the type of the "schedules" service
+// "list_deliveries" endpoint HTTP response body.
+type ListDeliveriesResponseBody struct {
+	Items []*WebhookDeliveryRecordResponseBody `form:"items,omitempty" json:"items,omitempty" xml:"items,omitempty"`
+}
+
 // CreateValidationErrorResponseBody is the type of the "schedules" service
 // "create" endpoint HTTP response body for the "validation_error" error.
 type CreateValidationErrorResponseBody struct {
@@ -130,6 +157,30 @@ type RunNowNotFoundResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// ListRunsNotFoundResponseBody is the type of the "schedules" service
+// "list_runs" endpoint HTTP response body for the "not_found" error.
+type ListRunsNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RetryRunNotFoundResponseBody is the type of the "schedules" service
+// "retry_run" endpoint HTTP response body for the "not_found" error.
+type RetryRunNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RetryRunValidationErrorResponseBody is the type of the "schedules" service
+// "retry_run" endpoint HTTP response body for the "validation_error" error.
+type RetryRunValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // ScheduleResponseBody is used to define fields on response body types.
 type ScheduleResponseBody struct {
 	ID                *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
@@ -147,6 +198,35 @@ type ScheduleResponseBody struct {
 	NextRunAt         *string `form:"next_run_at,omitempty" json:"next_run_at,omitempty" xml:"next_run_at,omitempty"`
 	CreatedAt         *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	UpdatedAt         *string `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+}
+
+// ScheduleRunRecordResponseBody is used to define fields on response body
+// types.
+type ScheduleRunRecordResponseBody struct {
+	ID             *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	ScheduleID     *string `form:"schedule_id,omitempty" json:"schedule_id,omitempty" xml:"schedule_id,omitempty"`
+	Status         *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	AttemptCount   *int    `form:"attempt_count,omitempty" json:"attempt_count,omitempty" xml:"attempt_count,omitempty"`
+	ScheduledFor   *string `form:"scheduled_for,omitempty" json:"scheduled_for,omitempty" xml:"scheduled_for,omitempty"`
+	StartedAt      *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	CompletedAt    *string `form:"completed_at,omitempty" json:"completed_at,omitempty" xml:"completed_at,omitempty"`
+	ReportID       *string `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	FailureCode    *string `form:"failure_code,omitempty" json:"failure_code,omitempty" xml:"failure_code,omitempty"`
+	FailureMessage *string `form:"failure_message,omitempty" json:"failure_message,omitempty" xml:"failure_message,omitempty"`
+}
+
+// WebhookDeliveryRecordResponseBody is used to define fields on response body
+// types.
+type WebhookDeliveryRecordResponseBody struct {
+	ID             *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	ScheduleID     *string `form:"schedule_id,omitempty" json:"schedule_id,omitempty" xml:"schedule_id,omitempty"`
+	DestinationURL *string `form:"destination_url,omitempty" json:"destination_url,omitempty" xml:"destination_url,omitempty"`
+	Status         *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	AttemptCount   *int    `form:"attempt_count,omitempty" json:"attempt_count,omitempty" xml:"attempt_count,omitempty"`
+	HTTPStatus     *int    `form:"http_status,omitempty" json:"http_status,omitempty" xml:"http_status,omitempty"`
+	ErrorMessage   *string `form:"error_message,omitempty" json:"error_message,omitempty" xml:"error_message,omitempty"`
+	CreatedAt      *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	CompletedAt    *string `form:"completed_at,omitempty" json:"completed_at,omitempty" xml:"completed_at,omitempty"`
 }
 
 // NewCreateRequestBody builds the HTTP request body from the payload of the
@@ -304,6 +384,93 @@ func NewRunNowNotFound(body *RunNowNotFoundResponseBody) *schedules.NotFoundErro
 	return v
 }
 
+// NewListRunsScheduleRunListResultOK builds a "schedules" service "list_runs"
+// endpoint result from a HTTP "OK" response.
+func NewListRunsScheduleRunListResultOK(body *ListRunsResponseBody) *schedules.ScheduleRunListResult {
+	v := &schedules.ScheduleRunListResult{}
+	v.Items = make([]*schedules.ScheduleRunRecord, len(body.Items))
+	for i, val := range body.Items {
+		if val == nil {
+			v.Items[i] = nil
+			continue
+		}
+		v.Items[i] = unmarshalScheduleRunRecordResponseBodyToSchedulesScheduleRunRecord(val)
+	}
+
+	return v
+}
+
+// NewListRunsNotFound builds a schedules service list_runs endpoint not_found
+// error.
+func NewListRunsNotFound(body *ListRunsNotFoundResponseBody) *schedules.NotFoundError {
+	v := &schedules.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewRetryRunScheduleRunRecordOK builds a "schedules" service "retry_run"
+// endpoint result from a HTTP "OK" response.
+func NewRetryRunScheduleRunRecordOK(body *RetryRunResponseBody) *schedules.ScheduleRunRecord {
+	v := &schedules.ScheduleRunRecord{
+		ID:             *body.ID,
+		ScheduleID:     *body.ScheduleID,
+		Status:         *body.Status,
+		AttemptCount:   *body.AttemptCount,
+		ScheduledFor:   *body.ScheduledFor,
+		StartedAt:      body.StartedAt,
+		CompletedAt:    body.CompletedAt,
+		ReportID:       body.ReportID,
+		FailureCode:    body.FailureCode,
+		FailureMessage: body.FailureMessage,
+	}
+
+	return v
+}
+
+// NewRetryRunNotFound builds a schedules service retry_run endpoint not_found
+// error.
+func NewRetryRunNotFound(body *RetryRunNotFoundResponseBody) *schedules.NotFoundError {
+	v := &schedules.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewRetryRunValidationError builds a schedules service retry_run endpoint
+// validation_error error.
+func NewRetryRunValidationError(body *RetryRunValidationErrorResponseBody) *schedules.ValidationError {
+	v := &schedules.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewListDeliveriesWebhookDeliveryListResultOK builds a "schedules" service
+// "list_deliveries" endpoint result from a HTTP "OK" response.
+func NewListDeliveriesWebhookDeliveryListResultOK(body *ListDeliveriesResponseBody) *schedules.WebhookDeliveryListResult {
+	v := &schedules.WebhookDeliveryListResult{}
+	v.Items = make([]*schedules.WebhookDeliveryRecord, len(body.Items))
+	for i, val := range body.Items {
+		if val == nil {
+			v.Items[i] = nil
+			continue
+		}
+		v.Items[i] = unmarshalWebhookDeliveryRecordResponseBodyToSchedulesWebhookDeliveryRecord(val)
+	}
+
+	return v
+}
+
 // ValidateListResponseBody runs the validations defined on ListResponseBody
 func ValidateListResponseBody(body *ListResponseBody) (err error) {
 	if body.Items == nil {
@@ -439,6 +606,77 @@ func ValidateRunNowResponseBody(body *RunNowResponseBody) (err error) {
 	return
 }
 
+// ValidateListRunsResponseBody runs the validations defined on
+// list_runs_response_body
+func ValidateListRunsResponseBody(body *ListRunsResponseBody) (err error) {
+	if body.Items == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("items", "body"))
+	}
+	for _, e := range body.Items {
+		if e != nil {
+			if err2 := ValidateScheduleRunRecordResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateRetryRunResponseBody runs the validations defined on
+// retry_run_response_body
+func ValidateRetryRunResponseBody(body *RetryRunResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.ScheduleID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("schedule_id", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.AttemptCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attempt_count", "body"))
+	}
+	if body.ScheduledFor == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scheduled_for", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.ScheduleID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.schedule_id", *body.ScheduleID, goa.FormatUUID))
+	}
+	if body.ScheduledFor != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.scheduled_for", *body.ScheduledFor, goa.FormatDateTime))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	if body.CompletedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.completed_at", *body.CompletedAt, goa.FormatDateTime))
+	}
+	if body.ReportID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.report_id", *body.ReportID, goa.FormatUUID))
+	}
+	return
+}
+
+// ValidateListDeliveriesResponseBody runs the validations defined on
+// list_deliveries_response_body
+func ValidateListDeliveriesResponseBody(body *ListDeliveriesResponseBody) (err error) {
+	if body.Items == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("items", "body"))
+	}
+	for _, e := range body.Items {
+		if e != nil {
+			if err2 := ValidateWebhookDeliveryRecordResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateCreateValidationErrorResponseBody runs the validations defined on
 // create_validation_error_response_body
 func ValidateCreateValidationErrorResponseBody(body *CreateValidationErrorResponseBody) (err error) {
@@ -478,6 +716,42 @@ func ValidateUpdateValidationErrorResponseBody(body *UpdateValidationErrorRespon
 // ValidateRunNowNotFoundResponseBody runs the validations defined on
 // run_now_not_found_response_body
 func ValidateRunNowNotFoundResponseBody(body *RunNowNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateListRunsNotFoundResponseBody runs the validations defined on
+// list_runs_not_found_response_body
+func ValidateListRunsNotFoundResponseBody(body *ListRunsNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateRetryRunNotFoundResponseBody runs the validations defined on
+// retry_run_not_found_response_body
+func ValidateRetryRunNotFoundResponseBody(body *RetryRunNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateRetryRunValidationErrorResponseBody runs the validations defined on
+// retry_run_validation_error_response_body
+func ValidateRetryRunValidationErrorResponseBody(body *RetryRunValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -534,6 +808,78 @@ func ValidateScheduleResponseBody(body *ScheduleResponseBody) (err error) {
 	}
 	if body.UpdatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.updated_at", *body.UpdatedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateScheduleRunRecordResponseBody runs the validations defined on
+// ScheduleRunRecordResponseBody
+func ValidateScheduleRunRecordResponseBody(body *ScheduleRunRecordResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.ScheduleID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("schedule_id", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.AttemptCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attempt_count", "body"))
+	}
+	if body.ScheduledFor == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scheduled_for", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.ScheduleID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.schedule_id", *body.ScheduleID, goa.FormatUUID))
+	}
+	if body.ScheduledFor != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.scheduled_for", *body.ScheduledFor, goa.FormatDateTime))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	if body.CompletedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.completed_at", *body.CompletedAt, goa.FormatDateTime))
+	}
+	if body.ReportID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.report_id", *body.ReportID, goa.FormatUUID))
+	}
+	return
+}
+
+// ValidateWebhookDeliveryRecordResponseBody runs the validations defined on
+// WebhookDeliveryRecordResponseBody
+func ValidateWebhookDeliveryRecordResponseBody(body *WebhookDeliveryRecordResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.DestinationURL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("destination_url", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.AttemptCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attempt_count", "body"))
+	}
+	if body.CreatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("created_at", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.ScheduleID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.schedule_id", *body.ScheduleID, goa.FormatUUID))
+	}
+	if body.CreatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
+	}
+	if body.CompletedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.completed_at", *body.CompletedAt, goa.FormatDateTime))
 	}
 	return
 }

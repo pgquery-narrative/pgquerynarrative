@@ -23,8 +23,8 @@ func StrictMode() bool {
 // Validate checks configuration for production safety. Always validates auth/key pairing;
 // when StrictMode is enabled, also requires TLS, non-default passwords, rate limits, and auth.
 func (c Config) Validate() error {
-	if c.Security.AuthEnabled && strings.TrimSpace(c.Security.APIKey) == "" && strings.TrimSpace(c.Security.APIKeysJSON) == "" && strings.TrimSpace(c.Security.OIDCIssuer) == "" {
-		return fmt.Errorf("SECURITY_API_KEY, SECURITY_API_KEYS_JSON, or SECURITY_OIDC_ISSUER is required when SECURITY_AUTH_ENABLED=true")
+	if c.Security.AuthEnabled && strings.TrimSpace(c.Security.APIKey) == "" && strings.TrimSpace(c.Security.APIKeyHash) == "" && strings.TrimSpace(c.Security.APIKeysJSON) == "" && strings.TrimSpace(c.Security.OIDCIssuer) == "" {
+		return fmt.Errorf("SECURITY_API_KEY, SECURITY_API_KEY_HASH, SECURITY_API_KEYS_JSON, or SECURITY_OIDC_ISSUER is required when SECURITY_AUTH_ENABLED=true")
 	}
 	if len(c.Security.APIKey) > 0 && len(c.Security.APIKey) < 16 {
 		return fmt.Errorf("SECURITY_API_KEY must be at least 16 characters")
@@ -44,6 +44,21 @@ func (c Config) Validate() error {
 	if c.Security.RateLimitRPM <= 0 {
 		return fmt.Errorf("SECURITY_RATE_LIMIT_RPM must be > 0 in production")
 	}
+	if c.Database.QueryTimeout <= 0 {
+		return fmt.Errorf("QUERY_TIMEOUT must be > 0 in production")
+	}
+	if c.Database.LockTimeout <= 0 {
+		return fmt.Errorf("QUERY_LOCK_TIMEOUT must be > 0 in production")
+	}
+	if c.Database.MaxResultBytes <= 0 {
+		return fmt.Errorf("QUERY_MAX_RESULT_BYTES must be > 0 in production")
+	}
+	if c.Database.MaxCellBytes <= 0 {
+		return fmt.Errorf("QUERY_MAX_CELL_BYTES must be > 0 in production")
+	}
+	if c.Database.MaxColumns <= 0 {
+		return fmt.Errorf("QUERY_MAX_COLUMNS must be > 0 in production")
+	}
 	if strings.EqualFold(c.Database.SSLMode, "disable") {
 		return fmt.Errorf("DATABASE_SSL_MODE must not be disable in production")
 	}
@@ -60,6 +75,12 @@ func (c Config) Validate() error {
 	}
 	if c.Security.ExplainAnalyzeEnabled {
 		return fmt.Errorf("SECURITY_EXPLAIN_ANALYZE_ENABLED must be false in production")
+	}
+	if c.Security.ScheduleRunnerEnabled && !c.Security.ScheduleDurableLeases {
+		return fmt.Errorf("SCHEDULE_DURABLE_LEASES must be true when SCHEDULE_RUNNER_ENABLED=true in production")
+	}
+	if c.Security.ShareLinksEnabled {
+		return fmt.Errorf("SECURITY_SHARE_LINKS_ENABLED must be false in production until public sharing is hardened")
 	}
 	if !c.Security.RateLimitDistributed && c.Security.RateLimitRPM > 0 {
 		return fmt.Errorf("SECURITY_RATE_LIMIT_DISTRIBUTED must be true in production when rate limiting is enabled")

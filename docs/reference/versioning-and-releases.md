@@ -43,3 +43,19 @@ Pushing a tag `v*.*.*` (e.g. `v1.0.0`) triggers the Release workflow. It runs `m
 3. Tag: `git tag -s v1.0.0 -m "Release v1.0.0"`.
 4. Push branch and tag: `git push origin main && git push origin v1.0.0`.
 5. CI creates the GitHub Release; optionally build and push Docker image with the same tag.
+
+## `pkg/narrative` API stability
+
+The embeddable client (`pkg/narrative`) follows SemVer for **documented public APIs**:
+
+| Surface | Stability | Notes |
+|---------|-----------|--------|
+| `narrative.Config`, `NewClient`, `Client.RunQuery`, `GenerateReport`, `GetSchema`, `Close` | **Stable** | Safe for downstream imports; breaking changes only in major releases. |
+| `narrative.SecurityConfig` fields | **Stable** | Propagates security settings; new optional fields may appear in minor releases. |
+| `pkg/narrative/middleware` mount helpers | **Stable** | `MountChi`, `MountGin`, `MountEcho`; use `MountChiSecured` / `WrapSecured` when auth parity with the standalone server is required. |
+| Goa-generated service types under `api/gen/` | **Unstable** | Regenerated from `api/design/`; embedders should depend on `pkg/narrative` client methods rather than raw Goa types when possible. |
+| `app/*` packages | **Internal** | Not covered by SemVer guarantees for external consumers; may change without a major `pkg/narrative` bump. |
+
+Minor releases may add config fields or middleware options without breaking existing callers. Patch releases are bugfix-only.
+
+See also [Embedded integration](../getting-started/embedded.md).

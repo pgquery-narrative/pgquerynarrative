@@ -1,0 +1,3 @@
+# Dependencies for tools/db/load_nyc_taxi.py
+pyarrow>=14.0.0
+psycopg[binary]>=3.1.0

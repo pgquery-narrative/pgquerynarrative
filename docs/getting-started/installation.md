@@ -7,7 +7,7 @@ Prerequisites and run methods for PgQueryNarrative: Docker (recommended) or loca
 | Context | Requirements |
 |---------|--------------|
 | **Docker run** | Docker and Docker Compose. No Go or PostgreSQL on host. |
-| **Local build & run** | Go 1.24+, PostgreSQL 16+ (or Docker for DB only). |
+| **Local build & run** | Go 1.25+, PostgreSQL 16+ (or Docker for DB only). |
 | **Full web UI from source** | Node.js and npm (to build the [React SPA](../development/setup.md)). |
 
 Report generation requires an LLM. See [LLM setup](llm-setup.md) and [Configuration – LLM](../configuration.md#llm).

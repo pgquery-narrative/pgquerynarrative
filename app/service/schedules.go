@@ -1,12 +1,10 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"strings"
 	"time"
 
@@ -15,24 +13,50 @@ import (
 
 	queriesapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	reportsapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 	"github.com/pgquerynarrative/pgquerynarrative/app/security"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
 )
 
 type SchedulesService struct {
-	appPool    *pgxpool.Pool
-	queriesSvc *QueriesService
-	reportsSvc *ReportsService
-	httpClient *http.Client
+	appPool       db.DB
+	rawPool       *pgxpool.Pool
+	queriesSvc    *QueriesService
+	reportsSvc    *ReportsService
+	webhookClient *security.WebhookClient
+	webhookSecret string
+	allowedHosts  []string
 }
 
-func NewSchedulesService(appPool *pgxpool.Pool, queriesSvc *QueriesService, reportsSvc *ReportsService) *SchedulesService {
+func NewSchedulesService(appPool db.DB, queriesSvc *QueriesService, reportsSvc *ReportsService) *SchedulesService {
 	return &SchedulesService{
 		appPool:    appPool,
 		queriesSvc: queriesSvc,
 		reportsSvc: reportsSvc,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// SetRawPool sets the underlying pool for cross-org scheduler claims and retries.
+func (s *SchedulesService) SetRawPool(pool *pgxpool.Pool) {
+	if s != nil {
+		s.rawPool = pool
+	}
+}
+
+// SetWebhookSigningSecret configures signed outbound webhook delivery.
+func (s *SchedulesService) SetWebhookSigningSecret(secret string, allowedHosts ...string) {
+	s.webhookSecret = strings.TrimSpace(secret)
+	s.allowedHosts = allowedHosts
+	s.webhookClient = security.NewWebhookClient(s.webhookSecret, 10*time.Second, allowedHosts...)
+}
+
+func (s *SchedulesService) webhookAllowedHosts() []string {
+	if s == nil {
+		return nil
+	}
+	return s.allowedHosts
 }
 
 func (s *SchedulesService) List(ctx context.Context) (*schedules.ScheduleListResult, error) {
@@ -40,8 +64,9 @@ func (s *SchedulesService) List(ctx context.Context) (*schedules.ScheduleListRes
 		SELECT id, name, saved_query_id, sql, connection_id, cron_expr, destination_type, destination_target, enabled,
 		       last_run_at, last_status, last_error, next_run_at, created_at, updated_at
 		FROM app.schedules
+		WHERE organization_id = $1
 		ORDER BY created_at DESC
-	`)
+	`, orgID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +83,7 @@ func (s *SchedulesService) List(ctx context.Context) (*schedules.ScheduleListRes
 }
 
 func (s *SchedulesService) Create(ctx context.Context, payload *schedules.ScheduleInput) (*schedules.Schedule, error) {
-	if err := validateScheduleInput(payload); err != nil {
+	if err := validateScheduleInput(payload, s.webhookAllowedHosts()); err != nil {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
 	if err := s.validateScheduleSQL(ctx, payload); err != nil {
@@ -69,11 +94,12 @@ func (s *SchedulesService) Create(ctx context.Context, payload *schedules.Schedu
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
 	var id string
+	p := auth.PrincipalFromContext(ctx)
 	err = s.appPool.QueryRow(ctx, `
-		INSERT INTO app.schedules (name, saved_query_id, sql, connection_id, cron_expr, destination_type, destination_target, enabled, next_run_at)
-		VALUES ($1, $2, NULLIF($3, ''), COALESCE(NULLIF($4, ''), 'default'), $5, $6, $7, COALESCE($8, true), $9)
+		INSERT INTO app.schedules (name, saved_query_id, sql, connection_id, cron_expr, destination_type, destination_target, enabled, next_run_at, organization_id, created_by)
+		VALUES ($1, $2, NULLIF($3, ''), COALESCE(NULLIF($4, ''), 'default'), $5, $6, $7, COALESCE($8, true), $9, $10, $11)
 		RETURNING id
-	`, payload.Name, payload.SavedQueryID, strings.TrimSpace(ptrString(payload.SQL)), payload.ConnectionID, payload.CronExpr, payload.DestinationType, payload.DestinationTarget, payload.Enabled, nextRunAt).Scan(&id)
+	`, payload.Name, payload.SavedQueryID, strings.TrimSpace(ptrString(payload.SQL)), payload.ConnectionID, payload.CronExpr, payload.DestinationType, payload.DestinationTarget, payload.Enabled, nextRunAt, p.OrgID, p.UserID).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +121,7 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 		DestinationTarget: firstNonBlank(payload.DestinationTarget, current.DestinationTarget),
 		Enabled:           coalesceBoolPtr(payload.Enabled, current.Enabled),
 	}
-	if err := validateScheduleInput(in); err != nil {
+	if err := validateScheduleInput(in, s.webhookAllowedHosts()); err != nil {
 		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
 	}
 	if err := s.validateScheduleSQL(ctx, in); err != nil {
@@ -110,8 +136,8 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 		SET name = $2, saved_query_id = $3, sql = NULLIF($4, ''), connection_id = COALESCE(NULLIF($5, ''), 'default'),
 		    cron_expr = $6, destination_type = $7, destination_target = $8, enabled = COALESCE($9, enabled),
 		    next_run_at = $10, updated_at = NOW()
-		WHERE id = $1
-	`, payload.ID, in.Name, in.SavedQueryID, in.SQL, in.ConnectionID, in.CronExpr, in.DestinationType, in.DestinationTarget, in.Enabled, nextRunAt)
+		WHERE id = $1 AND organization_id = $11
+	`, payload.ID, in.Name, in.SavedQueryID, in.SQL, in.ConnectionID, in.CronExpr, in.DestinationType, in.DestinationTarget, in.Enabled, nextRunAt, orgID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +145,14 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 }
 
 func (s *SchedulesService) Delete(ctx context.Context, payload *schedules.DeletePayload) error {
-	_, err := s.appPool.Exec(ctx, `DELETE FROM app.schedules WHERE id = $1`, payload.ID)
-	return err
+	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.schedules WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
+	}
+	return nil
 }
 
 func (s *SchedulesService) RunNow(ctx context.Context, payload *schedules.RunNowPayload) (*schedules.ScheduleRunResult, error) {
@@ -173,26 +205,49 @@ func (s *SchedulesService) deliverReport(ctx context.Context, sc *schedules.Sche
 		if strings.TrimSpace(sc.DestinationTarget) == "" {
 			return false, errors.New("webhook target is required")
 		}
-		if err := security.ValidateWebhookURL(sc.DestinationTarget); err != nil {
-			return false, err
+		client := s.webhookClient
+		if client == nil {
+			client = security.NewWebhookClient("", 10*time.Second, s.allowedHosts...)
 		}
-		body := map[string]any{
+		deliveryID := sc.ID + ":" + reportID
+		payload := map[string]any{
 			"schedule_id": sc.ID,
 			"report_id":   reportID,
 		}
-		b, _ := json.Marshal(body)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, sc.DestinationTarget, bytes.NewReader(b))
+		observability.IncWebhookDelivery()
+		result, err := client.PostJSON(ctx, sc.DestinationTarget, deliveryID, payload)
+		status := "delivered"
+		errMsg := ""
+		httpStatus := 0
+		respBytes := 0
 		if err != nil {
-			return false, err
+			status = "failed"
+			errMsg = err.Error()
+		} else {
+			httpStatus = result.StatusCode
+			respBytes = result.ResponseBytes
+			if result.StatusCode >= 300 {
+				status = "failed"
+				errMsg = "webhook delivery failed"
+			}
 		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return false, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			return false, errors.New("webhook delivery failed")
+		idempotencyKey := deliveryID
+		payloadJSON, _ := json.Marshal(payload)
+		_, _ = s.appPool.Exec(ctx, `
+			INSERT INTO app.webhook_deliveries (
+				organization_id, schedule_id, destination_url, idempotency_key, payload, status,
+				attempt_count, http_status, response_bytes, error_message, completed_at
+			) VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,NULLIF($9,''),NOW())
+			ON CONFLICT (idempotency_key) DO UPDATE SET
+				status = EXCLUDED.status,
+				attempt_count = app.webhook_deliveries.attempt_count + 1,
+				http_status = EXCLUDED.http_status,
+				response_bytes = EXCLUDED.response_bytes,
+				error_message = EXCLUDED.error_message,
+				completed_at = NOW()
+		`, orgID(ctx), sc.ID, sc.DestinationTarget, idempotencyKey, payloadJSON, status, nullInt(httpStatus), respBytes, errMsg)
+		if status == "failed" {
+			return false, errors.New(errMsg)
 		}
 		return true, nil
 	default:
@@ -201,12 +256,16 @@ func (s *SchedulesService) deliverReport(ctx context.Context, sc *schedules.Sche
 }
 
 func (s *SchedulesService) getByID(ctx context.Context, id string) (*schedules.Schedule, error) {
+	return s.getByIDForOrg(ctx, id, orgID(ctx))
+}
+
+func (s *SchedulesService) getByIDForOrg(ctx context.Context, id, organizationID string) (*schedules.Schedule, error) {
 	row := s.appPool.QueryRow(ctx, `
 		SELECT id, name, saved_query_id, sql, connection_id, cron_expr, destination_type, destination_target, enabled,
 		       last_run_at, last_status, last_error, next_run_at, created_at, updated_at
 		FROM app.schedules
-		WHERE id = $1
-	`, id)
+		WHERE id = $1 AND organization_id = $2
+	`, id, organizationID)
 	item, err := scanSchedule(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -258,7 +317,7 @@ func scanSchedule(r scanner) (*schedules.Schedule, error) {
 	return &s, nil
 }
 
-func validateScheduleInput(in *schedules.ScheduleInput) error {
+func validateScheduleInput(in *schedules.ScheduleInput, allowedHosts []string) error {
 	if strings.TrimSpace(in.Name) == "" {
 		return errors.New("name is required")
 	}
@@ -277,6 +336,9 @@ func validateScheduleInput(in *schedules.ScheduleInput) error {
 	}
 	if dt == "webhook" {
 		if err := security.ValidateWebhookURL(in.DestinationTarget); err != nil {
+			return err
+		}
+		if err := security.ValidateWebhookHostAllowlist(in.DestinationTarget, allowedHosts); err != nil {
 			return err
 		}
 	}
@@ -346,6 +408,13 @@ func coalesceBoolPtr(v *bool, fallback bool) *bool {
 		return v
 	}
 	return &fallback
+}
+
+func nullInt(v int) any {
+	if v == 0 {
+		return nil
+	}
+	return v
 }
 
 func ptrString(v *string) string {

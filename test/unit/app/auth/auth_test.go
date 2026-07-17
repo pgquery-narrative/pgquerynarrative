@@ -15,8 +15,8 @@ func TestValidateRequest(t *testing.T) {
 		wantOK         bool
 		wantIdentity   string
 	}{
-		{"empty key allows all", "", "", true, ""},
-		{"empty key allows with header", "", "Bearer anything", true, ""},
+		{"empty key allows all", "", "", true, "system"},
+		{"empty key allows with header", "", "Bearer anything", true, "system"},
 		{"no header when key set", "secret", "", false, ""},
 		{"wrong prefix", "secret", "Basic dXNlcjpwYXNz", false, ""},
 		{"Bearer but empty token", "secret", "Bearer ", false, ""},

@@ -29,6 +29,8 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
 	"github.com/pgquerynarrative/pgquerynarrative/app/logger"
 	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 	"github.com/pgquerynarrative/pgquerynarrative/app/ratelimit"
@@ -83,8 +85,12 @@ func main() {
 	suggestionsEndpoints := suggestions.NewEndpoints(client.SuggestionsService())
 
 	if cfg.Security.ScheduleRunnerEnabled {
+		client.SchedulesRunner().SetWebhookSigningSecret(cfg.Security.WebhookSigningSecret)
 		service.StartScheduleRunner(ctx, client.AppPool(), client.SchedulesRunner(), cfg.Security.ScheduleRunnerInterval)
+		service.StartWebhookRetryWorker(ctx, client.AppPool(), client.SchedulesRunner(), cfg.Security.ScheduleRunnerInterval)
 		appLogger.Info("schedule runner started", "interval", cfg.Security.ScheduleRunnerInterval.String())
+	} else {
+		client.SchedulesRunner().SetWebhookSigningSecret(cfg.Security.WebhookSigningSecret)
 	}
 
 	// Configure HTTP server
@@ -157,12 +163,44 @@ func setupHTTPServer(
 
 	webHandlers := web.NewHandlers(queriesEndpoints, reportsEndpoints)
 
+	oidc := auth.NewOIDCValidator(auth.OIDCConfig{
+		Issuer:   cfg.Security.OIDCIssuer,
+		Audience: cfg.Security.OIDCAudience,
+		JWKSURL:  cfg.Security.OIDCJWKSURL,
+	})
+	sessions := auth.NewSessionManager(cfg.Security.SessionSecret, cfg.Security.SessionTTL, config.StrictMode())
+	membership := auth.NewMembershipStore(client.AppPool(), cfg.Security.OIDCAutoJoinDefaultOrg)
+
 	combinedMux := http.NewServeMux()
 	combinedMux.HandleFunc("/health", healthHandler)
 	combinedMux.HandleFunc("/ready", readyHandler(client))
+	combinedMux.HandleFunc("/ready/connections", connectionHealthHandler(client))
 	combinedMux.HandleFunc("/version", versionHandler())
 	combinedMux.HandleFunc("/metrics", metricsHandler(client))
 	combinedMux.HandleFunc("/api/v1/settings", settingsHandler(cfg))
+	var browserOIDC *auth.BrowserOIDC
+	if browser := auth.NewBrowserOIDC(auth.BrowserOIDCConfig{
+		Issuer:       cfg.Security.OIDCIssuer,
+		ClientID:     cfg.Security.OIDCClientID,
+		ClientSecret: cfg.Security.OIDCClientSecret,
+		RedirectURL:  cfg.Security.OIDCRedirectURL,
+		Audience:     cfg.Security.OIDCAudience,
+	}, oidc, sessions); browser != nil && browser.Enabled() {
+		browserOIDC = browser
+		browser.SetMembershipStore(membership)
+		browser.SetPKCEStore(auth.NewPKCEStore(client.AppPool()))
+		combinedMux.HandleFunc("/auth/login", browser.LoginHandler)
+		combinedMux.HandleFunc("/auth/callback", browser.CallbackHandler)
+		combinedMux.HandleFunc("/auth/logout", browser.LogoutHandler)
+		combinedMux.HandleFunc("/auth/refresh", browser.RefreshHandler)
+	}
+	if sessions != nil && sessions.Enabled() {
+		combinedMux.HandleFunc("/auth/session", sessions.StatusHandler)
+		if browserOIDC == nil {
+			combinedMux.HandleFunc("/auth/refresh", sessions.RefreshHandler)
+		}
+	}
+	combinedMux.HandleFunc("/api/v1/diagnostics/db-privileges", dbPrivilegesHandler(cfg, client))
 	combinedMux.Handle("/api/", mux)
 	combinedMux.HandleFunc("/web/reports/export", webHandlers.ExportReport)
 	combinedMux.HandleFunc("/web/reports/export/pdf", webHandlers.ExportReportPDF)
@@ -173,24 +211,21 @@ func setupHTTPServer(
 	if pool := client.AppPool(); pool != nil {
 		auditStore = audit.NewStore(pool)
 	}
-	oidc := auth.NewOIDCValidator(auth.OIDCConfig{
-		Issuer:   cfg.Security.OIDCIssuer,
-		Audience: cfg.Security.OIDCAudience,
-		JWKSURL:  cfg.Security.OIDCJWKSURL,
-	})
 	authenticator := auth.NewAuthenticator(
 		cfg.Security.AuthEnabled,
 		cfg.Security.APIKey,
+		cfg.Security.APIKeyHash,
 		cfg.Security.APIKeysJSON,
 		oidc,
 	)
+	authenticator.SetMembershipStore(membership)
 	rl := ratelimit.NewLimiterFromConfig(client.AppPool(), cfg.Security.RateLimitRPM, cfg.Security.RateLimitBurst, cfg.Security.RateLimitDistributed)
 	trusted := newTrustedProxyMatcher(cfg.Security.TrustedProxies)
 
-	handler := requestIDMiddleware(requestLoggingMiddleware(combinedMux, appLogger, auditStore, trusted))
+	handler := observabilityMiddleware(requestIDMiddleware(requestLoggingMiddleware(combinedMux, appLogger, auditStore, trusted)))
 	handler = maxBodyMiddleware(handler, cfg.Security.MaxRequestBodyBytes)
-	handler = authMiddleware(handler, authenticator, auditStore, trusted)
-	handler = rateLimitMiddleware(handler, rl, auditStore, trusted)
+	handler = httpmw.AuthMiddleware(handler, authenticator, sessions, auditStore, trusted)
+	handler = httpmw.RateLimitMiddleware(handler, rl, auditStore, trusted)
 	handler = securityHeadersMiddleware(handler)
 	if len(cfg.Server.CORSOrigins) > 0 {
 		handler = corsMiddleware(handler, cfg.Server.CORSOrigins)
@@ -213,6 +248,24 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 
 func readyHandler(client *narrative.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "json") {
+			statuses := client.HealthReport(r.Context())
+			ready := true
+			for _, st := range statuses {
+				if !st.Ready {
+					ready = false
+					break
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if !ready {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			} else {
+				w.WriteHeader(http.StatusOK)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"ready": ready, "pools": statuses})
+			return
+		}
 		if err := client.Ready(r.Context()); err != nil {
 			appLogger := logger.DefaultLogger()
 			appLogger.Err("ready check failed", "error", err.Error())
@@ -222,6 +275,15 @@ func readyHandler(client *narrative.Client) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
+	}
+}
+
+func connectionHealthHandler(client *narrative.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		statuses := client.HealthReport(r.Context())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"pools": statuses})
 	}
 }
 
@@ -245,7 +307,7 @@ func metricsHandler(client *narrative.Client) http.HandlerFunc {
 		if format == "prometheus" || format == "openmetrics" {
 			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(observability.PrometheusPoolMetrics(Version, client.AppPool())))
+			_, _ = w.Write([]byte(observability.PrometheusAllPoolMetrics(Version, client.NamedPools())))
 			return
 		}
 		out := map[string]interface{}{"version": Version}
@@ -304,6 +366,27 @@ func settingsHandler(cfg config.Config) http.HandlerFunc {
 	}
 }
 
+func dbPrivilegesHandler(cfg config.Config, client *narrative.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if auth.RoleFromContext(r.Context()) != auth.RoleAdmin {
+			auth.WriteForbidden(w)
+			return
+		}
+		report := db.AuditSecurityBoundary(r.Context(), client.AppPool(), cfg.Database)
+		w.Header().Set("Content-Type", "application/json")
+		if !report.OK {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+		_ = json.NewEncoder(w).Encode(report)
+	}
+}
+
 // requestIDMiddleware generates a request ID, sets it in context and X-Request-ID header.
 func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -322,73 +405,25 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// authMiddleware requires Bearer token for /api/* and /web/reports/export* when enabled.
-// Sets auth identity and role in context for audit and RBAC. Health and ready are never protected.
-func authMiddleware(next http.Handler, authenticator *auth.Authenticator, auditStore *audit.Store, trusted *trustedProxyMatcher) http.Handler {
+func observabilityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		if path == "" {
-			path = "/"
+		observability.IncRequest()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		if rec.status >= 500 {
+			observability.IncRequestError()
 		}
-		isPublicSharedAPI := strings.HasPrefix(path, "/api/v1/reports/shared/")
-		isPublicSharedPDF := path == "/web/reports/export/shared/pdf"
-		needAuth := (strings.HasPrefix(path, "/api/") && !isPublicSharedAPI) ||
-			path == "/metrics" ||
-			((path == "/web/reports/export" || path == "/web/reports/export/pdf") && !isPublicSharedPDF)
-		if authenticator == nil || !authenticator.AuthRequired() || !needAuth {
-			next.ServeHTTP(w, r)
-			return
-		}
-		identity, role, ok := authenticator.ValidateRequest(r)
-		if !ok {
-			clientIP := clientIPFromRequest(r, trusted)
-			if auditStore != nil {
-				auditStore.Record(r.Context(), audit.Entry{
-					EventType: audit.EventAuthFailure,
-					Details:   map[string]interface{}{"path": path},
-					IP:        clientIP,
-					UserAgent: r.UserAgent(),
-				})
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"name":"unauthorized","message":"missing or invalid Authorization","code":"UNAUTHORIZED"}`))
-			return
-		}
-		if !auth.AllowsMethod(role, r.Method, path) {
-			auth.WriteForbidden(w)
-			return
-		}
-		ctx := context.WithValue(r.Context(), auth.IdentityContextKey, identity)
-		ctx = context.WithValue(ctx, auth.RoleContextKey, role)
-		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// rateLimitMiddleware limits requests per client IP when limiter is non-nil. Returns 429 when exceeded.
-func rateLimitMiddleware(next http.Handler, limiter ratelimit.AllowFunc, auditStore *audit.Store, trusted *trustedProxyMatcher) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if limiter == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		key := clientIPFromRequest(r, trusted)
-		if !limiter.Allow(key) {
-			if auditStore != nil {
-				auditStore.Record(r.Context(), audit.Entry{
-					EventType: audit.EventRateLimitExceeded,
-					Details:   map[string]interface{}{"path": r.URL.Path, "client": key},
-					IP:        key,
-					UserAgent: r.UserAgent(),
-				})
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"name":"rate_limit_exceeded","message":"too many requests","code":"RATE_LIMIT_EXCEEDED"}`))
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
 }
 
 func securityHeadersMiddleware(next http.Handler) http.Handler {

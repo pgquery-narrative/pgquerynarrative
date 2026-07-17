@@ -35,11 +35,11 @@ func BuildNarrativePrompt(sql string, columns []string, rows [][]interface{}, me
 	}
 
 	sb.WriteString("SQL QUERY:\n")
-	sb.WriteString(sql)
+	sb.WriteString(PrepareSQLForPrompt(sql, opts.RedactPII))
 	sb.WriteString("\n\n")
 	if similarQueriesContext != "" {
 		sb.WriteString("SIMILAR PAST QUERIES (for context only; do not invent data from these):\n")
-		sb.WriteString(similarQueriesContext)
+		sb.WriteString(SanitizeRAGContext(similarQueriesContext))
 		sb.WriteString("\n\n")
 	}
 	sb.WriteString("QUERY RESULTS:\n")

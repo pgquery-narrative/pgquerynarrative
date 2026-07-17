@@ -118,7 +118,7 @@ File-level tasks:
 
 ## Current state (Phase 0 audit snapshot)
 
-- **Stack:** Go 1.24, Goa v3 (`api/design` → `api/gen` + `gen`), pgx v5, golang-migrate, Docker Compose (Postgres **16-alpine** default; override `POSTGRES_IMAGE`), optional LLM providers (Ollama/Gemini/Claude/OpenAI/Groq).
+- **Stack:** Go 1.25, Goa v3 (`api/design` → `api/gen` + `gen`), pgx v5, golang-migrate, Docker Compose (Postgres **16-alpine** default; override `POSTGRES_IMAGE`), optional LLM providers (Ollama/Gemini/Claude/OpenAI/Groq).
 - **Security base is decent:** two roles (`pgquerynarrative_app`, `pgquerynarrative_readonly`); queries run on the read-only pool; results wrapped in `SELECT * FROM (<sql>) LIMIT $1`; per-query context timeout (30s default).
 - **Validator:** `pg_query_go` parse-tree walk in `app/queryrunner/validator.go` (B1/B7) — single statement, SELECT/WITH/EXPLAIN-of-SELECT, schema allowlist, nested write/DDL rejection via `disallowedASTNodes`.
 - **EXPLAIN:** allowed via `extractReadOnlyQuery` unwrap (B1/B8); `POST /api/v1/queries/explain` ships plan analysis.

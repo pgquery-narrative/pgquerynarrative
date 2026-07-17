@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e lint fmt migrate migrate-docker seed seed-large seed-large-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -12,6 +12,12 @@ DB_URL ?= postgres://pgquerynarrative_app:pgquerynarrative_app@localhost:5432/pg
 
 # Row count for `make seed-large` / `make seed-large-docker`. Override: ROWS=5000000
 ROWS ?= 10000000
+
+# NYC TLC months for `make seed-nyc` / `make seed-nyc-docker`. Override: MONTHS=2024-01
+MONTHS ?= 2024-01,2024-02,2024-03
+NYC_VENV ?= ./tools/db/.venv-nyc
+# Superuser URL for COPY into opendata (Docker publishes 5432).
+NYC_DB_URL ?= postgres://postgres:postgres@localhost:5432/pgquerynarrative?sslmode=disable
 
 # Docker-internal URL for migrate-docker (golang container on the compose network).
 DOCKER_MIGRATE_DB_URL ?= postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable
@@ -224,6 +230,26 @@ test-e2e:
 	@echo "🧪 Running E2E tests..."
 	DOCKER_API_VERSION=1.44 $(GO) test ./test/e2e/... -v
 
+test-playwright:
+	@chmod +x ./tools/e2e/run-playwright.sh
+	@PLAYWRIGHT_OIDC=0 ./tools/e2e/run-playwright.sh
+
+test-playwright-oidc:
+	@chmod +x ./tools/e2e/run-playwright.sh
+	@PLAYWRIGHT_OIDC=1 ./tools/e2e/run-playwright.sh
+
+test-load-smoke:
+	@chmod +x ./test/load/smoke.sh
+	@./test/load/smoke.sh
+
+test-frontend:
+	@echo "🧪 Running frontend unit tests..."
+	cd frontend && npm ci && npm test
+
+pilot-report:
+	@chmod +x ./tools/ops/pilot_report.sh
+	@./tools/ops/pilot_report.sh
+
 # ============================================================================
 # Code quality
 # ============================================================================
@@ -239,6 +265,11 @@ fmt:
 	@echo "🎨 Formatting code..."
 	$(GO) fmt ./...
 	@echo "✅ Code formatted"
+
+# Internal pilot acceptance: migrations, readonly checks, integration suite, build + HTTP smoke.
+pilot-acceptance:
+	@chmod +x ./tools/ops/pilot_acceptance.sh
+	@DOCKER_API_VERSION=1.44 ./tools/ops/pilot_acceptance.sh
 
 # ============================================================================
 # Database operations
@@ -294,6 +325,10 @@ migrate-docker: postgres-up
 		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
 	@echo "✅ Migrations applied"
 
+db-security-verify-docker: postgres-up
+	@echo "🔒 Verifying PostgreSQL security boundary..."
+	@docker run --rm -v "$(CURDIR):/workspace" --network pgquerynarrative_default postgres:16-alpine sh -c 'DB_URL="postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" READONLY_DB_URL="postgres://pgquerynarrative_readonly:pgquerynarrative_readonly@postgres:5432/pgquerynarrative?sslmode=disable" sh /workspace/tools/db/verify_security.sh'
+
 seed:
 	@DB_URL="$${DB_URL:-$${DATABASE_URL:-$(LOCAL_DB_URL)}}"; \
 	if [ -z "$$DB_URL" ]; then \
@@ -321,6 +356,28 @@ seed-large-docker: postgres-up
 	@docker compose cp tools/db/seed-large.sql postgres:/tmp/seed-large.sql
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative \
 		-v rows=$(ROWS) -f /tmp/seed-large.sql
+
+# Ensure Python venv with pyarrow + psycopg for NYC TLC loader.
+$(NYC_VENV)/bin/python:
+	@echo "📦 Creating NYC loader venv at $(NYC_VENV)…"
+	@python3 -m venv $(NYC_VENV)
+	@$(NYC_VENV)/bin/pip install -q -r tools/db/requirements-nyc.txt
+
+# Load real NYC Yellow Taxi open data into opendata.yellow_trips.
+# Requires: migrations through 000026, reachable Postgres on NYC_DB_URL.
+# Override months: make seed-nyc MONTHS=2024-01
+seed-nyc: $(NYC_VENV)/bin/python
+	@echo "🚕 Loading NYC TLC Yellow Taxi ($(MONTHS)) into opendata.yellow_trips…"
+	@DB_URL="$${DB_URL:-$${DATABASE_URL:-$(NYC_DB_URL)}}"; \
+	MONTHS="$(MONTHS)" $(NYC_VENV)/bin/python tools/db/load_nyc_taxi.py --db-url "$$DB_URL" --months "$(MONTHS)"
+
+# Same as seed-nyc, but ensures Docker Postgres is up first (port 5432 published).
+seed-nyc-docker: postgres-up $(NYC_VENV)/bin/python
+	@echo "🚕 Loading NYC TLC Yellow Taxi ($(MONTHS)) via Docker Postgres…"
+	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
+		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
+	@MONTHS="$(MONTHS)" $(NYC_VENV)/bin/python tools/db/load_nyc_taxi.py \
+		--db-url "$(NYC_DB_URL)" --months "$(MONTHS)"
 
 db-init:
 	@echo "🗄️  Initializing database..."

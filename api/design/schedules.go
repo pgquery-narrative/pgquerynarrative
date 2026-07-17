@@ -68,6 +68,44 @@ var _ = Service("schedules", func() {
 			Response(StatusNotFound, "not_found")
 		})
 	})
+
+	Method("list_runs", func() {
+		Payload(func() {
+			Attribute("id", String, func() { Format(FormatUUID) })
+			Required("id")
+		})
+		Result(ScheduleRunListResult)
+		Error("not_found", NotFoundError)
+		HTTP(func() {
+			GET("/api/v1/schedules/{id}/runs")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+		})
+	})
+
+	Method("retry_run", func() {
+		Payload(func() {
+			Attribute("run_id", String, func() { Format(FormatUUID) })
+			Required("run_id")
+		})
+		Result(ScheduleRunRecord)
+		Error("not_found", NotFoundError)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/schedule-runs/{run_id}/retry")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
+	Method("list_deliveries", func() {
+		Result(WebhookDeliveryListResult)
+		HTTP(func() {
+			GET("/api/v1/webhook-deliveries")
+			Response(StatusOK)
+		})
+	})
 })
 
 var ScheduleInput = Type("ScheduleInput", func() {
@@ -111,4 +149,41 @@ var ScheduleRunResult = Type("ScheduleRunResult", func() {
 	Attribute("report_id", String, func() { Format(FormatUUID) })
 	Attribute("delivered", Boolean)
 	Required("schedule", "delivered")
+})
+
+var ScheduleRunRecord = Type("ScheduleRunRecord", func() {
+	Attribute("id", String, func() { Format(FormatUUID) })
+	Attribute("schedule_id", String, func() { Format(FormatUUID) })
+	Attribute("status", String)
+	Attribute("attempt_count", Int)
+	Attribute("scheduled_for", String, func() { Format(FormatDateTime) })
+	Attribute("started_at", String, func() { Format(FormatDateTime) })
+	Attribute("completed_at", String, func() { Format(FormatDateTime) })
+	Attribute("report_id", String, func() { Format(FormatUUID) })
+	Attribute("failure_code", String)
+	Attribute("failure_message", String)
+	Required("id", "schedule_id", "status", "attempt_count", "scheduled_for")
+})
+
+var ScheduleRunListResult = Type("ScheduleRunListResult", func() {
+	Attribute("items", ArrayOf(ScheduleRunRecord))
+	Required("items")
+})
+
+var WebhookDeliveryRecord = Type("WebhookDeliveryRecord", func() {
+	Attribute("id", String, func() { Format(FormatUUID) })
+	Attribute("schedule_id", String, func() { Format(FormatUUID) })
+	Attribute("destination_url", String)
+	Attribute("status", String)
+	Attribute("attempt_count", Int)
+	Attribute("http_status", Int)
+	Attribute("error_message", String)
+	Attribute("created_at", String, func() { Format(FormatDateTime) })
+	Attribute("completed_at", String, func() { Format(FormatDateTime) })
+	Required("id", "destination_url", "status", "attempt_count", "created_at")
+})
+
+var WebhookDeliveryListResult = Type("WebhookDeliveryListResult", func() {
+	Attribute("items", ArrayOf(WebhookDeliveryRecord))
+	Required("items")
 })

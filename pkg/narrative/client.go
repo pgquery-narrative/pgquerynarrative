@@ -42,6 +42,9 @@ type Client struct {
 // database pools, query runner, LLM client, and all services. The returned
 // client must be closed to release resources.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	dbCfg := appconfig.DatabaseConfig{
 		Host:             cfg.Database.Host,
 		Port:             cfg.Database.Port,
@@ -49,10 +52,14 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		User:             cfg.Database.User,
 		Password:         cfg.Database.Password,
 		MaxConnections:   cfg.Database.MaxConnections,
+		MinConnections:   cfg.Database.MinConnections,
+		GlobalMaxConns:   cfg.Database.GlobalMaxConns,
 		ReadOnlyUser:     cfg.Database.ReadOnlyUser,
 		ReadOnlyPassword: cfg.Database.ReadOnlyPassword,
 		SSLMode:          cfg.Database.SSLMode,
 		QueryTimeout:     cfg.Database.QueryTimeout,
+		LockTimeout:      cfg.Database.LockTimeout,
+		IdleTxTimeout:    cfg.Database.IdleTxTimeout,
 		DefaultID:        cfg.Database.DefaultID,
 		Connections:      toAppConnections(cfg.Database.Connections),
 	}
@@ -83,7 +90,6 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	readonlyUsers := make(map[string]string, len(dbCfg.Connections))
 	connectionItems := make([]*connections.ConnectionInfo, 0, len(dbCfg.Connections))
 	for _, conn := range dbCfg.Connections {
-		roPool := pools.ReadOnly(conn.ID)
 		connSchemas := conn.AllowedSchemas
 		if len(connSchemas) == 0 {
 			connSchemas = allowedSchemas
@@ -93,8 +99,16 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		if timeout <= 0 {
 			timeout = cfg.Database.QueryTimeout
 		}
-		runners[conn.ID] = queryrunner.NewRunner(roPool, connValidator, maxRows, timeout, queryrunner.WithExplainAnalyze(cfg.Security.ExplainAnalyzeEnabled))
-		loaders[conn.ID] = catalog.NewLoader(roPool, connSchemas)
+		runners[conn.ID] = queryrunner.NewRunnerForConnection(
+			pools,
+			conn.ID,
+			connValidator,
+			maxRows,
+			timeout,
+			queryrunner.WithExplainAnalyze(cfg.Security.ExplainAnalyzeEnabled),
+			queryrunner.WithResultLimits(conn.MaxResultBytes, conn.MaxCellBytes, conn.MaxColumns),
+		)
+		loaders[conn.ID] = catalog.NewLoaderForConnection(pools, conn.ID, connSchemas)
 		readonlyUsers[conn.ID] = conn.ReadOnlyUser
 		connectionItems = append(connectionItems, &connections.ConnectionInfo{ID: conn.ID, Name: conn.Name})
 	}
@@ -105,10 +119,24 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		RedactPII:     cfg.LLM.RedactPII,
 	}
 
+	appDB := db.NewOrgScoped(pools.App)
+	auditStore := llm.NewAuditStore(pools.App)
+	budgetStore := llm.NewBudgetStore(pools.App, llm.BudgetConfig{
+		DailyTokenLimit:          cfg.LLM.DailyTokenBudget,
+		DailyCostUSD:             cfg.LLM.DailyCostBudgetUSD,
+		MonthlyTokenLimit:        cfg.LLM.MonthlyTokenBudget,
+		MonthlyCostUSD:           cfg.LLM.MonthlyCostBudgetUSD,
+		PerUserDailyTokenLimit:   cfg.LLM.PerUserDailyTokenBudget,
+		PerUserDailyCostUSD:      cfg.LLM.PerUserDailyCostBudgetUSD,
+		PerUserMonthlyTokenLimit: cfg.LLM.PerUserMonthlyTokenBudget,
+		PerUserMonthlyCostUSD:    cfg.LLM.PerUserMonthlyCostBudgetUSD,
+		USDPer1kTokens:           cfg.LLM.USDPer1kTokens,
+	})
+
 	var queriesService *service.QueriesService
 	var reportsService *service.ReportsService
 	var suggester *pkgsuggestions.Suggester
-	embeddingStore := embedding.NewStore(pools.App)
+	embeddingStore := embedding.NewStore(appDB)
 
 	metricsCfg := appconfig.MetricsConfig{
 		TrendThresholdPercent:    cfg.Metrics.TrendThresholdPercent,
@@ -122,29 +150,39 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		SmoothingBeta:            cfg.Metrics.SmoothingBeta,
 		MaxSeasonalLag:           cfg.Metrics.MaxSeasonalLag,
 		MinPeriodsForSeasonality: cfg.Metrics.MinPeriodsForSeasonality,
+		MaxTimeSeriesPeriods:     cfg.Metrics.MaxTimeSeriesPeriods,
 	}
 	if cfg.Embedding.BaseURL != "" && cfg.Embedding.Model != "" {
 		emb := embedding.NewOllamaEmbedder(cfg.Embedding.BaseURL, cfg.Embedding.Model)
-		queriesService = service.NewQueriesServiceMultiConnection(pools.App, runners, defaultConnectionID, metricsCfg, emb, embeddingStore, cfg.Embedding.Model, readonlyUsers)
+		queriesService = service.NewQueriesServiceMultiConnection(appDB, runners, defaultConnectionID, metricsCfg, emb, embeddingStore, cfg.Embedding.Model, readonlyUsers)
 		queriesService.SetStatStatementsEnabled(cfg.Security.StatStatementsEnabled)
-		reportsService = service.NewReportsServiceMultiConnection(pools.App, runners, defaultConnectionID, llmClient, metricsCfg, emb, embeddingStore)
+		reportsService = service.NewReportsServiceMultiConnection(appDB, runners, defaultConnectionID, llmClient, metricsCfg, emb, embeddingStore)
 		reportsService.SetShareLinkDefaultHours(cfg.Security.ShareLinkDefaultHours)
+		reportsService.SetShareLinksEnabled(cfg.Security.ShareLinksEnabled)
 		reportsService.SetPromptOptions(promptOpts)
-		suggester = pkgsuggestions.NewSuggesterWithEmbedding(pools.App, emb, embeddingStore)
+		reportsService.SetLLMGovernance(auditStore, budgetStore, cfg.LLM.AllowExternalData)
+		reportsService.SetMaxLLMCallsPerReport(cfg.LLM.MaxCallsPerReport)
+		suggester = pkgsuggestions.NewSuggesterWithEmbedding(appDB, emb, embeddingStore)
 	} else {
-		queriesService = service.NewQueriesServiceMultiConnection(pools.App, runners, defaultConnectionID, metricsCfg, nil, nil, "", readonlyUsers)
+		queriesService = service.NewQueriesServiceMultiConnection(appDB, runners, defaultConnectionID, metricsCfg, nil, nil, "", readonlyUsers)
 		queriesService.SetStatStatementsEnabled(cfg.Security.StatStatementsEnabled)
-		reportsService = service.NewReportsServiceMultiConnection(pools.App, runners, defaultConnectionID, llmClient, metricsCfg, nil, nil)
+		reportsService = service.NewReportsServiceMultiConnection(appDB, runners, defaultConnectionID, llmClient, metricsCfg, nil, nil)
 		reportsService.SetShareLinkDefaultHours(cfg.Security.ShareLinkDefaultHours)
+		reportsService.SetShareLinksEnabled(cfg.Security.ShareLinksEnabled)
 		reportsService.SetPromptOptions(promptOpts)
-		suggester = pkgsuggestions.NewSuggester(pools.App)
+		reportsService.SetLLMGovernance(auditStore, budgetStore, cfg.LLM.AllowExternalData)
+		reportsService.SetMaxLLMCallsPerReport(cfg.LLM.MaxCallsPerReport)
+		suggester = pkgsuggestions.NewSuggester(appDB)
 	}
 	schemaService := service.NewSchemaServiceMultiConnection(loaders, defaultConnectionID)
-	askService := service.NewAskServiceMultiConnection(pools.App, loaders, llmClient, validator, reportsService, defaultConnectionID)
+	askService := service.NewAskServiceMultiConnection(appDB, loaders, llmClient, validator, reportsService, defaultConnectionID)
+	askService.SetLLMGovernance(auditStore, budgetStore, cfg.LLM.AllowExternalData)
 	suggestionsService := &service.SuggestionsServiceWrapper{Suggester: suggester, AskSvc: askService}
 	connectionsService := service.NewConnectionsService(connectionItems)
-	dashboardsService := service.NewDashboardsService(pools.App, reportsService, queriesService)
-	schedulesService := service.NewSchedulesService(pools.App, queriesService, reportsService)
+	dashboardsService := service.NewDashboardsService(appDB, reportsService, queriesService)
+	schedulesService := service.NewSchedulesService(appDB, queriesService, reportsService)
+	schedulesService.SetRawPool(pools.App)
+	schedulesService.SetWebhookSigningSecret(cfg.Security.WebhookSigningSecret, cfg.Security.WebhookAllowedHosts...)
 
 	return &Client{
 		pools:              pools,
@@ -205,6 +243,22 @@ func (c *Client) Ready(ctx context.Context) error {
 	return c.pools.Health(ctx)
 }
 
+// HealthReport returns per-pool readiness for diagnostics and readiness JSON.
+func (c *Client) HealthReport(ctx context.Context) []db.HealthStatus {
+	if c == nil || c.pools == nil {
+		return []db.HealthStatus{{Name: "client", Role: "client", Ready: false, Error: "not initialized"}}
+	}
+	return c.pools.HealthReport(ctx)
+}
+
+// NamedPools returns all configured pools with stable names for metrics.
+func (c *Client) NamedPools() []db.NamedPool {
+	if c == nil || c.pools == nil {
+		return nil
+	}
+	return c.pools.NamedPools()
+}
+
 // QueriesService returns the queries service for use with Goa endpoints or direct calls.
 func (c *Client) QueriesService() queries.Service {
 	return c.queriesService
@@ -252,7 +306,12 @@ func toAppConnections(in []DataConnectionConfig) []appconfig.DataConnectionConfi
 			ReadOnlyPassword: c.ReadOnlyPassword,
 			SSLMode:          c.SSLMode,
 			QueryTimeout:     c.QueryTimeout,
+			LockTimeout:      c.LockTimeout,
+			IdleTxTimeout:    c.IdleTxTimeout,
 			AllowedSchemas:   append([]string(nil), c.AllowedSchemas...),
+			MaxResultBytes:   c.MaxResultBytes,
+			MaxCellBytes:     c.MaxCellBytes,
+			MaxColumns:       c.MaxColumns,
 		})
 	}
 	return out

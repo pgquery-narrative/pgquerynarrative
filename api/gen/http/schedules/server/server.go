@@ -18,12 +18,15 @@ import (
 
 // Server lists the schedules service endpoint HTTP handlers.
 type Server struct {
-	Mounts []*MountPoint
-	List   http.Handler
-	Create http.Handler
-	Update http.Handler
-	Delete http.Handler
-	RunNow http.Handler
+	Mounts         []*MountPoint
+	List           http.Handler
+	Create         http.Handler
+	Update         http.Handler
+	Delete         http.Handler
+	RunNow         http.Handler
+	ListRuns       http.Handler
+	RetryRun       http.Handler
+	ListDeliveries http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -58,12 +61,18 @@ func New(
 			{"Update", "PUT", "/api/v1/schedules/{id}"},
 			{"Delete", "DELETE", "/api/v1/schedules/{id}"},
 			{"RunNow", "POST", "/api/v1/schedules/{id}/run"},
+			{"ListRuns", "GET", "/api/v1/schedules/{id}/runs"},
+			{"RetryRun", "POST", "/api/v1/schedule-runs/{run_id}/retry"},
+			{"ListDeliveries", "GET", "/api/v1/webhook-deliveries"},
 		},
-		List:   NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
-		Create: NewCreateHandler(e.Create, mux, decoder, encoder, errhandler, formatter),
-		Update: NewUpdateHandler(e.Update, mux, decoder, encoder, errhandler, formatter),
-		Delete: NewDeleteHandler(e.Delete, mux, decoder, encoder, errhandler, formatter),
-		RunNow: NewRunNowHandler(e.RunNow, mux, decoder, encoder, errhandler, formatter),
+		List:           NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
+		Create:         NewCreateHandler(e.Create, mux, decoder, encoder, errhandler, formatter),
+		Update:         NewUpdateHandler(e.Update, mux, decoder, encoder, errhandler, formatter),
+		Delete:         NewDeleteHandler(e.Delete, mux, decoder, encoder, errhandler, formatter),
+		RunNow:         NewRunNowHandler(e.RunNow, mux, decoder, encoder, errhandler, formatter),
+		ListRuns:       NewListRunsHandler(e.ListRuns, mux, decoder, encoder, errhandler, formatter),
+		RetryRun:       NewRetryRunHandler(e.RetryRun, mux, decoder, encoder, errhandler, formatter),
+		ListDeliveries: NewListDeliveriesHandler(e.ListDeliveries, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -77,6 +86,9 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Update = m(s.Update)
 	s.Delete = m(s.Delete)
 	s.RunNow = m(s.RunNow)
+	s.ListRuns = m(s.ListRuns)
+	s.RetryRun = m(s.RetryRun)
+	s.ListDeliveries = m(s.ListDeliveries)
 }
 
 // MethodNames returns the methods served.
@@ -89,6 +101,9 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountUpdateHandler(mux, h.Update)
 	MountDeleteHandler(mux, h.Delete)
 	MountRunNowHandler(mux, h.RunNow)
+	MountListRunsHandler(mux, h.ListRuns)
+	MountRetryRunHandler(mux, h.RetryRun)
+	MountListDeliveriesHandler(mux, h.ListDeliveries)
 }
 
 // Mount configures the mux to serve the schedules endpoints.
@@ -340,6 +355,158 @@ func NewRunNowHandler(
 			return
 		}
 		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountListRunsHandler configures the mux to serve the "schedules" service
+// "list_runs" endpoint.
+func MountListRunsHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/api/v1/schedules/{id}/runs", f)
+}
+
+// NewListRunsHandler creates a HTTP handler which loads the HTTP request and
+// calls the "schedules" service "list_runs" endpoint.
+func NewListRunsHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeListRunsRequest(mux, decoder)
+		encodeResponse = EncodeListRunsResponse(encoder)
+		encodeError    = EncodeListRunsError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_runs")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "schedules")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountRetryRunHandler configures the mux to serve the "schedules" service
+// "retry_run" endpoint.
+func MountRetryRunHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/api/v1/schedule-runs/{run_id}/retry", f)
+}
+
+// NewRetryRunHandler creates a HTTP handler which loads the HTTP request and
+// calls the "schedules" service "retry_run" endpoint.
+func NewRetryRunHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeRetryRunRequest(mux, decoder)
+		encodeResponse = EncodeRetryRunResponse(encoder)
+		encodeError    = EncodeRetryRunError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "retry_run")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "schedules")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountListDeliveriesHandler configures the mux to serve the "schedules"
+// service "list_deliveries" endpoint.
+func MountListDeliveriesHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/api/v1/webhook-deliveries", f)
+}
+
+// NewListDeliveriesHandler creates a HTTP handler which loads the HTTP request
+// and calls the "schedules" service "list_deliveries" endpoint.
+func NewListDeliveriesHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeListDeliveriesResponse(encoder)
+		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_deliveries")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "schedules")
+		var err error
+		res, err := endpoint(ctx, nil)
 		if err != nil {
 			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
 				errhandler(ctx, w, err)

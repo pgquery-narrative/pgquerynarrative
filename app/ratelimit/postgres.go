@@ -36,7 +36,7 @@ func (l *PostgresLimiter) Allow(key string) bool {
 	if err != nil {
 		return true
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var tokens float64
 	var lastRefill time.Time

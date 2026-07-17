@@ -8,11 +8,11 @@ import (
 )
 
 func TestAuthenticator_AuthRequired(t *testing.T) {
-	disabled := auth.NewAuthenticator(false, "secret-key-at-least-16", "", nil)
+	disabled := auth.NewAuthenticator(false, "secret-key-at-least-16", "", "", nil)
 	if disabled.AuthRequired() {
 		t.Fatal("auth should not be required when disabled")
 	}
-	enabled := auth.NewAuthenticator(true, "secret-key-at-least-16", "", nil)
+	enabled := auth.NewAuthenticator(true, "secret-key-at-least-16", "", "", nil)
 	if !enabled.AuthRequired() {
 		t.Fatal("auth should be required when enabled with API key")
 	}
