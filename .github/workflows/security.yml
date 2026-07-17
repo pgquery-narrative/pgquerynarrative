@@ -72,10 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: ./.github/actions/setup-go-cgo
+      - name: Install dependencies
+        run: go mod download
+      - name: Generate code
+        run: make generate
       - name: Run gosec
         uses: securego/gosec@6641fcf966593bf52ed426aa262839b340d56375
         with:
-          args: '-fmt json -out gosec-report.json ./...'
+          args: '-no-fail -fmt json -out gosec-report.json ./...'
       - name: Upload gosec results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

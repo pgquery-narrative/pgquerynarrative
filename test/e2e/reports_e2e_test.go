@@ -44,10 +44,10 @@ func TestReportsListAndGetE2E(t *testing.T) {
 	metricsJSON := []byte(`{"aggregates":{},"data_quality":{},"time_series":{},"perf_suggestions":[]}`)
 	var reportID string
 	err := pool.QueryRow(ctx, `
-		INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, organization_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id
-	`, "SELECT 1", "E2E test report", narrativeJSON, metricsJSON, "test", "e2e").Scan(&reportID)
+	`, "SELECT 1", "E2E test report", narrativeJSON, metricsJSON, "test", "e2e", "00000000-0000-0000-0000-000000000001").Scan(&reportID)
 	if err != nil {
 		t.Fatalf("insert report: %v", err)
 	}
@@ -145,8 +145,8 @@ func TestReportsListAndGetE2E(t *testing.T) {
 		// Insert a saved query and a report linked to it, then list by saved_query_id
 		var savedQueryID string
 		err := pool.QueryRow(ctx, `
-			INSERT INTO app.saved_queries (id, name, sql, tags)
-			VALUES (gen_random_uuid(), 'Report E2E query', 'SELECT 1', ARRAY['e2e'])
+			INSERT INTO app.saved_queries (id, name, sql, tags, organization_id)
+			VALUES (gen_random_uuid(), 'Report E2E query', 'SELECT 1', ARRAY['e2e'], '00000000-0000-0000-0000-000000000001')
 			RETURNING id
 		`).Scan(&savedQueryID)
 		if err != nil {
@@ -154,9 +154,9 @@ func TestReportsListAndGetE2E(t *testing.T) {
 		}
 		narrJSON := []byte(`{"headline":"Linked report","takeaways":["One"],"drivers":[],"limitations":[],"recommendations":[]}`)
 		_, err = pool.Exec(ctx, `
-			INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, saved_query_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, "SELECT 1", "Linked", narrJSON, []byte(`{}`), "test", "e2e", savedQueryID)
+			INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, saved_query_id, organization_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, "SELECT 1", "Linked", narrJSON, []byte(`{}`), "test", "e2e", savedQueryID, "00000000-0000-0000-0000-000000000001")
 		if err != nil {
 			t.Fatalf("insert report with saved_query_id: %v", err)
 		}

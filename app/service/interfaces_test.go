@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	_ QueryExecutor      = (*queryrunner.Runner)(nil)
-	_ LLMAuditSink       = (*llm.AuditStore)(nil)
-	_ WebhookDeliverer   = (*security.WebhookClient)(nil)
+	_ QueryExecutor    = (*queryrunner.Runner)(nil)
+	_ LLMAuditSink     = (*llm.AuditStore)(nil)
+	_ WebhookDeliverer = (*security.WebhookClient)(nil)
 )

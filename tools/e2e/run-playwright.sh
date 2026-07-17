@@ -19,6 +19,9 @@ trap cleanup EXIT
 echo "Building frontend..."
 (cd frontend && npm ci && npm run build)
 
+echo "Generating API code..."
+make generate
+
 echo "Building server..."
 CGO_ENABLED=1 go build -o bin/playwright-server ./cmd/server
 

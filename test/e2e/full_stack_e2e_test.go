@@ -287,17 +287,17 @@ func TestFullStackE2E(t *testing.T) {
 		// Create saved query and report via DB, then list by saved_query_id
 		var savedQueryID string
 		err := pool.QueryRow(ctx, `
-			INSERT INTO app.saved_queries (id, name, sql, tags)
-			VALUES (gen_random_uuid(), 'FS report query', 'SELECT 1', ARRAY['fs'])
+			INSERT INTO app.saved_queries (id, name, sql, tags, organization_id)
+			VALUES (gen_random_uuid(), 'FS report query', 'SELECT 1', ARRAY['fs'], '00000000-0000-0000-0000-000000000001')
 			RETURNING id
 		`).Scan(&savedQueryID)
 		if err != nil {
 			t.Fatalf("insert saved query: %v", err)
 		}
 		_, err = pool.Exec(ctx, `
-			INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, saved_query_id)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, "SELECT 1", "FS Linked", []byte(`{"headline":"FS","takeaways":["One"],"drivers":[],"limitations":[],"recommendations":[]}`), []byte(`{}`), "test", "e2e", savedQueryID)
+			INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, saved_query_id, organization_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, "SELECT 1", "FS Linked", []byte(`{"headline":"FS","takeaways":["One"],"drivers":[],"limitations":[],"recommendations":[]}`), []byte(`{}`), "test", "e2e", savedQueryID, "00000000-0000-0000-0000-000000000001")
 		if err != nil {
 			t.Fatalf("insert report: %v", err)
 		}
