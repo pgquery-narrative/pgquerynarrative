@@ -71,7 +71,10 @@ func OIDCEndpoints(ctx context.Context, issuer string, client *http.Client) (aut
 		return "", "", fmt.Errorf("discovered issuer %q does not match configured issuer %q", doc.Issuer, issuer)
 	}
 	if doc.JWKSURI != "" && !strings.HasPrefix(strings.ToLower(doc.JWKSURI), "https://") {
-		return "", "", fmt.Errorf("discovered jwks_uri must use https")
+		// Allow http JWKS only when the configured issuer is itself http (local mock IdP / dev).
+		if !strings.HasPrefix(strings.ToLower(issuer), "http://") {
+			return "", "", fmt.Errorf("discovered jwks_uri must use https")
+		}
 	}
 	globalDiscovery.mu.Lock()
 	globalDiscovery.endpoints = doc

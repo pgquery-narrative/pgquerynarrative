@@ -77,7 +77,7 @@ func TestPilot_CrossOrgIDOR(t *testing.T) {
 
 	var scheduleID string
 	err = admin.QueryRow(ctx, `
-		INSERT INTO app.schedules (name, sql, connection_id, cron_expr, destination_type, destination_target, enabled, organization_id)
+		INSERT INTO app.schedules (name, sql, connection_id, interval_expr, destination_type, destination_target, enabled, organization_id)
 		VALUES ('org-a-schedule', 'SELECT 1', 'default', '@every 1h', 'log', 'audit-log', true, $1::uuid)
 		RETURNING id::text
 	`, orgA).Scan(&scheduleID)

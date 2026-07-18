@@ -157,7 +157,12 @@ func (a *Authenticator) ValidateRequest(r *http.Request) (identity, role string,
 
 // ValidatePrincipal validates bearer credentials and returns the authenticated principal.
 func (a *Authenticator) ValidatePrincipal(r *http.Request) (Principal, bool) {
-	if !a.enabled || (len(a.keys) == 0 && (a.oidc == nil || !a.oidc.Enabled())) {
+	if !a.enabled {
+		return Principal{UserID: "system", OrgID: DefaultOrgID(), Role: RoleAdmin}, true
+	}
+	// Auth is enabled but no credential sources are configured: treat as open/dev (system).
+	// Managed keys count as a credential source so CLI/MCP keys work without env API keys.
+	if len(a.keys) == 0 && (a.oidc == nil || !a.oidc.Enabled()) && a.managed == nil {
 		return Principal{UserID: "system", OrgID: DefaultOrgID(), Role: RoleAdmin}, true
 	}
 	token := bearerToken(r)

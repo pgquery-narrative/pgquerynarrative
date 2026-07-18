@@ -73,18 +73,18 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
-	var claimColExists bool
+	var managedKeysExists bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns
-			WHERE table_schema = 'app' AND table_name = 'webhook_deliveries' AND column_name = 'claimed_by'
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'app' AND table_name = 'managed_api_keys'
 		)
-	`).Scan(&claimColExists)
+	`).Scan(&managedKeysExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimColExists {
-		t.Fatal("webhook_deliveries.claimed_by still exists after rolling back migration 33")
+	if managedKeysExists {
+		t.Fatal("app.managed_api_keys still exists after rolling back migration 42")
 	}
 
 	if err := m.Steps(1); err != nil {
@@ -103,14 +103,14 @@ func TestMigrationsRoundTrip(t *testing.T) {
 
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns
-			WHERE table_schema = 'app' AND table_name = 'webhook_deliveries' AND column_name = 'claimed_by'
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'app' AND table_name = 'managed_api_keys'
 		)
-	`).Scan(&claimColExists)
+	`).Scan(&managedKeysExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !claimColExists {
-		t.Fatal("webhook_deliveries.claimed_by missing after re-applying migration 33")
+	if !managedKeysExists {
+		t.Fatal("app.managed_api_keys missing after re-applying migration 42")
 	}
 }

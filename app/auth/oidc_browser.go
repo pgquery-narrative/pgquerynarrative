@@ -109,7 +109,11 @@ func (b *BrowserOIDC) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	q.Set("state", state)
 	q.Set("code_challenge", challenge)
 	q.Set("code_challenge_method", "S256")
-	authorizeURL, _, _ := OIDCEndpoints(r.Context(), b.cfg.Issuer, b.client)
+	authorizeURL, _, err := OIDCEndpoints(r.Context(), b.cfg.Issuer, b.client)
+	if err != nil || strings.TrimSpace(authorizeURL) == "" {
+		http.Error(w, "OIDC discovery failed", http.StatusBadGateway)
+		return
+	}
 	authURL := authorizeURL + "?" + q.Encode()
 	http.Redirect(w, r, authURL, http.StatusFound)
 }

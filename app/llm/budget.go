@@ -197,6 +197,9 @@ func (b *BudgetStore) committedUsage(ctx context.Context, q rowScanner, scope, o
 		return 0, 0, nil
 	}
 	if err := row.Scan(&tokens, &cost); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, nil
+		}
 		return 0, 0, err
 	}
 	return tokens, cost, nil
@@ -222,6 +225,9 @@ func (b *BudgetStore) activeReservations(ctx context.Context, q rowScanner, orgI
 		`, orgID, userID)
 	}
 	if err := row.Scan(&tokens, &cost); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, 0, nil
+		}
 		return 0, 0, err
 	}
 	return tokens, cost, nil
