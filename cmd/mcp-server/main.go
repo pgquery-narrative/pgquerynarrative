@@ -20,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,7 +44,11 @@ func main() {
 		baseURL = defaultBaseURL
 	}
 	apiKey := os.Getenv("PGQUERYNARRATIVE_API_KEY")
-	client := &apiClient{baseURL: baseURL, apiKey: apiKey, http: &http.Client{Timeout: httpClientTimeout}}
+	client, err := newAPIClient(baseURL, apiKey)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid PGQUERYNARRATIVE_URL: %v\n", err)
+		os.Exit(1)
+	}
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "pgquerynarrative",
@@ -90,7 +95,7 @@ func main() {
 		Name:        "get_report",
 		Description: "Get a report by its ID (UUID).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input GetReportInput) (*mcp.CallToolResult, any, error) {
-		body, err := client.get(ctx, apiPrefix+"/reports/"+input.ID)
+		body, err := client.get(ctx, apiPrefix+"/reports/"+url.PathEscape(input.ID))
 		return toolResult(body, err)
 	})
 
@@ -260,9 +265,31 @@ type ExplainSQLInput struct {
 }
 
 type apiClient struct {
-	baseURL string
-	apiKey  string
-	http    *http.Client
+	base   *url.URL
+	apiKey string
+	http   *http.Client
+}
+
+func newAPIClient(baseURL, apiKey string) (*apiClient, error) {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("scheme must be http or https")
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("host is required")
+	}
+	// Normalize so ResolveReference joins paths predictably.
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	return &apiClient{
+		base:   u,
+		apiKey: apiKey,
+		http:   &http.Client{Timeout: httpClientTimeout},
+	}, nil
 }
 
 func (c *apiClient) setAuth(req *http.Request) {
@@ -271,12 +298,47 @@ func (c *apiClient) setAuth(req *http.Request) {
 	}
 }
 
+// resolveAPIURL joins path (and optional query) onto the configured base URL and
+// refuses any result that would change scheme or host (SSRF guard).
+func (c *apiClient) resolveAPIURL(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("empty API path")
+	}
+	ref, err := url.Parse(path)
+	if err != nil {
+		return "", err
+	}
+	if ref.IsAbs() || ref.Host != "" || ref.Scheme != "" || strings.HasPrefix(path, "//") {
+		return "", fmt.Errorf("absolute URLs are not allowed as API paths")
+	}
+	u := c.base.ResolveReference(ref)
+	if u.Scheme != c.base.Scheme || u.Host != c.base.Host {
+		return "", fmt.Errorf("refused to leave configured API host")
+	}
+	// Rebuild from the trusted base host so the returned string is scheme+host locked.
+	safe := url.URL{
+		Scheme:   c.base.Scheme,
+		Host:     c.base.Host,
+		Path:     u.Path,
+		RawPath:  u.RawPath,
+		RawQuery: u.RawQuery,
+		Fragment: u.Fragment,
+	}
+	return safe.String(), nil
+}
+
 func (c *apiClient) post(ctx context.Context, path string, body map[string]any) (string, error) {
 	enc, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+path, bytes.NewReader(enc))
+	abs, err := c.resolveAPIURL(path)
+	if err != nil {
+		return "", err
+	}
+	// abs is host-locked via resolveAPIURL (configured PGQUERYNARRATIVE_URL only).
+	req, err := http.NewRequestWithContext(ctx, "POST", abs, bytes.NewReader(enc)) // #nosec G704
 	if err != nil {
 		return "", err
 	}
@@ -286,7 +348,12 @@ func (c *apiClient) post(ctx context.Context, path string, body map[string]any) 
 }
 
 func (c *apiClient) get(ctx context.Context, path string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
+	abs, err := c.resolveAPIURL(path)
+	if err != nil {
+		return "", err
+	}
+	// abs is host-locked via resolveAPIURL (configured PGQUERYNARRATIVE_URL only).
+	req, err := http.NewRequestWithContext(ctx, "GET", abs, nil) // #nosec G704
 	if err != nil {
 		return "", err
 	}
@@ -295,7 +362,7 @@ func (c *apiClient) get(ctx context.Context, path string) (string, error) {
 }
 
 func (c *apiClient) do(req *http.Request) (string, error) {
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) // #nosec G704 -- host locked to configured PGQUERYNARRATIVE_URL
 	if err != nil {
 		return "", err
 	}
