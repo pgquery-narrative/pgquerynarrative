@@ -1,6 +1,18 @@
 DROP SCHEMA IF EXISTS demo CASCADE;
 DROP SCHEMA IF EXISTS app CASCADE;
 
+-- Transfer DB ownership away from app roles before DROP ROLE (migrate cycle uses
+-- the app role as database owner after db-init / role grants in some environments).
+DO $$
+BEGIN
+  EXECUTE format('ALTER DATABASE %I OWNER TO CURRENT_USER', current_database());
+EXCEPTION
+  WHEN insufficient_privilege THEN
+    NULL;
+  WHEN undefined_object THEN
+    NULL;
+END $$;
+
 -- Clear default privileges and other dependencies so DROP ROLE can succeed after a full
 -- migrate down (e.g. ALTER DEFAULT PRIVILEGES ... GRANT SELECT TO pgquerynarrative_readonly).
 DO $$

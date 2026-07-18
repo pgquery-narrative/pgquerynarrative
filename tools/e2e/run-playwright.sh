@@ -58,6 +58,8 @@ if [[ "$OIDC_MODE" == "1" ]]; then
   export SECURITY_OIDC_CLIENT_SECRET="${MOCK_OIDC_CLIENT_SECRET:-e2e-secret}"
   export SECURITY_OIDC_REDIRECT_URL="${BASE_URL}/auth/callback"
   export SECURITY_OIDC_AUDIENCE="${MOCK_OIDC_AUDIENCE}"
+  # Local mock IdP has no IdP-group→org mapping; allow first login to join the default org.
+  export SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG=true
 else
   export SECURITY_AUTH_ENABLED=false
 fi

@@ -99,7 +99,20 @@ func (b *BudgetStore) Check(ctx context.Context, orgID, userID string, upcomingT
 	orgID = normalizeOrgID(orgID)
 	userID = normalizeUserID(userID)
 	upcomingCost := b.EstimateCostUSD(upcomingTokens)
-	return b.checkAllScopes(ctx, b.pool, orgID, userID, upcomingTokens, upcomingCost)
+
+	conn, err := b.pool.Acquire(ctx)
+	if err != nil {
+		return b.ledgerError(err)
+	}
+	defer conn.Release()
+	// RLS on budget ledgers requires app.current_org_id (same as Reserve/RecordUsage).
+	if _, err := conn.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, orgID); err != nil {
+		return b.ledgerError(err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT set_config('app.current_org_id', '', false)`)
+	}()
+	return b.checkAllScopes(ctx, conn, orgID, userID, upcomingTokens, upcomingCost)
 }
 
 // checkAllScopes runs the four budget scope checks (org daily/monthly, user
