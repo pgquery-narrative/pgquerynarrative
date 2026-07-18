@@ -101,6 +101,27 @@ export interface ReportShareLink {
   url: string;
   expires_at?: string;
 }
+export interface ReportShareInfo {
+  id: string;
+  created_at: string;
+  expires_at?: string;
+  revoked_at?: string;
+  access_count: number;
+  last_accessed_at?: string;
+}
+export interface ManagedAPIKey {
+  id: string;
+  prefix: string;
+  role: string;
+  scopes?: string[];
+  expires_at?: string;
+  revoked_at?: string;
+  created_by?: string;
+  created_at: string;
+}
+export interface ManagedAPIKeyIssued extends ManagedAPIKey {
+  secret: string;
+}
 export interface DashboardWidgetInput {
   widget_type: "report" | "saved_query";
   title?: string;
@@ -141,7 +162,7 @@ export interface Schedule {
   saved_query_id?: string;
   sql?: string;
   connection_id: string;
-  cron_expr: string;
+  interval_expr: string;
   destination_type: string;
   destination_target: string;
   enabled: boolean;
@@ -290,11 +311,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ report_id: reportId, expires_in_hours: expiresInHours }),
     }),
+  listShares: (reportId: string) =>
+    request<{ items: ReportShareInfo[] }>(`/reports/${encodeURIComponent(reportId)}/shares`),
+  revokeShare: (shareId: string) =>
+    request<void>(`/reports/shares/${encodeURIComponent(shareId)}/revoke`, { method: "POST" }),
   rewriteReport: (reportId: string, instruction: string) =>
     request<NarrativeContent>("/reports/rewrite", {
       method: "POST",
       body: JSON.stringify({ report_id: reportId, instruction: instruction.trim() }),
     }),
+
+  listManagedKeys: () =>
+    request<{ items: ManagedAPIKey[] }>("/admin/api-keys"),
+  createManagedKey: (body: { role?: string; scopes?: string[]; expires_at?: string }) =>
+    request<ManagedAPIKeyIssued>("/admin/api-keys", { method: "POST", body: JSON.stringify(body) }),
+  revokeManagedKey: (id: string) =>
+    request<void>(`/admin/api-keys/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
 
   getSchema: (connectionId?: string) => request<{ schemas: SchemaInfo[] }>(`/schema${connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : ""}`),
   listConnections: () => request<{ items: ConnectionInfo[] }>("/connections"),

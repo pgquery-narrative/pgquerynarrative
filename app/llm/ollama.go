@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -50,6 +51,25 @@ func (c *OllamaClient) Generate(ctx context.Context, prompt string) (string, err
 }
 
 func (c *OllamaClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
+	return c.GenerateMessages(ctx, PromptToChatMessages(prompt))
+}
+
+// GenerateMessages flattens role-tagged messages into Ollama's single prompt field.
+func (c *OllamaClient) GenerateMessages(ctx context.Context, messages []ChatMessage) (GenerationResult, error) {
+	var b strings.Builder
+	for i, m := range messages {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		role := strings.TrimSpace(m.Role)
+		if role == "" {
+			role = "user"
+		}
+		b.WriteString(strings.ToUpper(role))
+		b.WriteString(":\n")
+		b.WriteString(m.Content)
+	}
+	prompt := b.String()
 	url := fmt.Sprintf("%s/api/generate", c.baseURL)
 
 	payload := map[string]interface{}{
@@ -92,8 +112,8 @@ func (c *OllamaClient) GenerateWithUsage(ctx context.Context, prompt string) (Ge
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			resp.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096)) // #nosec G104 -- best-effort error-body read; empty body on failure just yields a less detailed error message.
+			resp.Body.Close()                                      // #nosec G104 -- close error on a body we're discarding is not actionable.
 			lastErr = fmt.Errorf("ollama API error: %d - %s", resp.StatusCode, string(body))
 			if resp.StatusCode >= 500 && attempt < maxRetries-1 {
 				time.Sleep(retryDelay)
@@ -111,10 +131,10 @@ func (c *OllamaClient) GenerateWithUsage(ctx context.Context, prompt string) (Ge
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			resp.Body.Close()
+			resp.Body.Close() // #nosec G104 -- close error on a body we're discarding is not actionable.
 			return GenerationResult{}, fmt.Errorf("failed to decode response: %w", err)
 		}
-		resp.Body.Close()
+		resp.Body.Close() // #nosec G104 -- close error on a body we're discarding is not actionable.
 
 		if result.Done && result.Response != "" {
 			usage := Usage{PromptTokens: result.PromptEvalCount, CompletionTokens: result.EvalCount}

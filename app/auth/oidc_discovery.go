@@ -12,8 +12,10 @@ import (
 )
 
 type oidcDiscovery struct {
+	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
+	JWKSURI               string `json:"jwks_uri"`
 }
 
 type discoveryCache struct {
@@ -52,7 +54,7 @@ func OIDCEndpoints(ctx context.Context, issuer string, client *http.Client) (aut
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode >= 300 {
 		if resp != nil {
-			resp.Body.Close()
+			resp.Body.Close() // #nosec G104 -- close error on a body we're discarding is not actionable.
 		}
 		return issuer + "/oauth2/v1/authorize", issuer + "/oauth2/v1/token", nil
 	}
@@ -65,9 +67,26 @@ func OIDCEndpoints(ctx context.Context, issuer string, client *http.Client) (aut
 	if err := json.Unmarshal(body, &doc); err != nil || doc.AuthorizationEndpoint == "" {
 		return issuer + "/oauth2/v1/authorize", issuer + "/oauth2/v1/token", nil
 	}
+	if doc.Issuer != "" && strings.TrimRight(doc.Issuer, "/") != issuer {
+		return "", "", fmt.Errorf("discovered issuer %q does not match configured issuer %q", doc.Issuer, issuer)
+	}
+	if doc.JWKSURI != "" && !strings.HasPrefix(strings.ToLower(doc.JWKSURI), "https://") {
+		return "", "", fmt.Errorf("discovered jwks_uri must use https")
+	}
 	globalDiscovery.mu.Lock()
 	globalDiscovery.endpoints = doc
 	globalDiscovery.fetched = time.Now()
 	globalDiscovery.mu.Unlock()
 	return doc.AuthorizationEndpoint, doc.TokenEndpoint, nil
+}
+
+// DiscoverJWKSURI returns the JWKS URI from OIDC discovery when available.
+func DiscoverJWKSURI(ctx context.Context, issuer string, client *http.Client) (string, error) {
+	_, _, err := OIDCEndpoints(ctx, issuer, client)
+	if err != nil {
+		return "", err
+	}
+	globalDiscovery.mu.RLock()
+	defer globalDiscovery.mu.RUnlock()
+	return globalDiscovery.endpoints.JWKSURI, nil
 }

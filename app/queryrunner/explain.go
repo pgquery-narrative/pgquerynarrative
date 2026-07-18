@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -22,6 +23,15 @@ type PlanFinding struct {
 	Confidence    string
 	Message       string
 	Evidence      []string
+	// RelatedColumns lists the filter/sort/join-condition columns implicated by
+	// this plan node (normalized, unqualified names), used to relate the finding
+	// to existing index definitions during catalog enrichment. Empty when the
+	// node carries no analyzable predicate/sort/join condition.
+	RelatedColumns []string
+	// IndexAdvice carries structured index-recommendation evidence for this
+	// finding, populated during catalog enrichment when the relation's index
+	// definitions are available. Nil until enriched.
+	IndexAdvice *IndexAdvice
 }
 
 // Plan finding categories.
@@ -37,7 +47,59 @@ const (
 	CategoryPartitionPruning = "partition_pruning"
 	CategoryBufferPressure   = "buffer_pressure"
 	CategoryStaleStats       = "stale_statistics"
+	// CategoryIndexCandidate flags a finding where no existing index covers the
+	// implicated columns and a new index is a plausible remedy.
+	CategoryIndexCandidate = "index_candidate"
+	// CategoryIndexHealth flags a problem with an *existing* index: invalid,
+	// unused, a redundant prefix of another index, or overlapping coverage.
+	CategoryIndexHealth = "index_health"
 )
+
+// IndexDefinition describes one index retrieved from the catalog: its column
+// composition (key and INCLUDE columns, in position order), partial-index
+// predicate, uniqueness/validity, on-disk size, and live usage counters from
+// pg_stat_user_indexes. It is read-only evidence — never a mutation target.
+type IndexDefinition struct {
+	Name           string
+	Definition     string
+	KeyColumns     []string
+	IncludeColumns []string
+	Predicate      string
+	IsUnique       bool
+	IsPrimary      bool
+	IsValid        bool
+	SizeBytes      int64
+	IndexScans     int64
+	TuplesRead     int64
+	TuplesFetched  int64
+}
+
+// IndexAdvice carries structured, evidence-backed index-recommendation detail
+// for a finding: which existing indexes were considered, what issue (if any)
+// was detected, the estimated potential benefit, and the write/storage cost of
+// acting on the advice.
+//
+// CandidateDDL is a possible DDL statement FOR EXPERT REVIEW ONLY. Nothing in
+// this package — or anywhere else in this codebase — executes it. A human must
+// evaluate lock contention, replication lag, and disk headroom before running
+// it themselves.
+type IndexAdvice struct {
+	// RelatedColumns echoes the finding's implicated columns for convenience.
+	RelatedColumns []string
+	// RelatedIndexes are the existing indexes this advice was evaluated against.
+	RelatedIndexes []IndexDefinition
+	// Issues classifies the advice, e.g. "no_covering_index", "already_covered",
+	// "partial_coverage", "invalid", "low_use", "duplicate_prefix", "overlapping".
+	Issues []string
+	// PotentialBenefit describes, in plain language, what improves if the advice is followed.
+	PotentialBenefit string
+	// WriteCost describes the write-amplification cost of the recommended change.
+	WriteCost string
+	// StorageCost describes the on-disk storage cost (added or freed) of the recommended change.
+	StorageCost string
+	// CandidateDDL is a draft statement for expert review only; never auto-applied.
+	CandidateDDL string
+}
 
 // ExplainOptions controls which EXPLAIN options the server emits.
 type ExplainOptions struct {
@@ -182,6 +244,7 @@ func walkPlanNode(node map[string]interface{}, rootCost float64, isRoot bool, fi
 					fmt.Sprintf("Actual Rows=%.0f", actualRows),
 					fmt.Sprintf("ratio=%.1fx", ratio),
 				},
+				RelatedColumns: relatedColumnsForNode(node),
 			})
 		}
 	}
@@ -193,15 +256,16 @@ func walkPlanNode(node map[string]interface{}, rootCost float64, isRoot bool, fi
 			category = CategorySeqScan
 		}
 		*findings = append(*findings, PlanFinding{
-			NodeType:      nodeType,
-			Schema:        schema,
-			Relation:      relation,
-			EstimatedCost: totalCost,
-			IsSeqScan:     isSeqScan,
-			Category:      category,
-			Confidence:    confidence,
-			Message:       msg,
-			Evidence:      seqScanEvidence(node, filter),
+			NodeType:       nodeType,
+			Schema:         schema,
+			Relation:       relation,
+			EstimatedCost:  totalCost,
+			IsSeqScan:      isSeqScan,
+			Category:       category,
+			Confidence:     confidence,
+			Message:        msg,
+			Evidence:       seqScanEvidence(node, filter),
+			RelatedColumns: relatedColumnsForNode(node),
 		})
 	}
 
@@ -272,4 +336,228 @@ func asFloat64(v interface{}) (float64, bool) {
 
 func bytesTrimSpace(b []byte) []byte {
 	return []byte(strings.TrimSpace(string(b)))
+}
+
+var (
+	// typeCastRe strips PostgreSQL "::type" casts (e.g. "'North'::text") so the
+	// column regex below isn't confused by the cast suffix.
+	typeCastRe = regexp.MustCompile(`::[a-zA-Z_][a-zA-Z0-9_]*(?:\([0-9,\s]+\))?`)
+	// filterColumnRe captures identifiers (optionally alias-qualified) adjacent
+	// to a comparison operator in a flattened filter expression (parentheses
+	// already replaced with spaces): group 1 is the left operand of a symbol
+	// operator, group 2 its optional right operand (present for join
+	// conditions like "a.id = b.a_id", absent when the right side is a
+	// literal), and group 3 the operand of a word operator (IS/LIKE/IN/...)
+	// which conventionally has no meaningful right-hand column.
+	filterColumnRe = regexp.MustCompile(
+		`(?i)\b([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\s*(?:=|<>|!=|<=|>=|<|>|~~\*?|!~~\*?)\s*([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)?` +
+			`|\b([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\s*(?:IS\b|LIKE\b|ILIKE\b|IN\b|BETWEEN\b)`,
+	)
+)
+
+// sqlFilterStopwords excludes SQL keywords/literals that can be mistaken for
+// column names by filterColumnRe (e.g. "true = false" or chained "IS NOT NULL").
+var sqlFilterStopwords = map[string]bool{
+	"and": true, "or": true, "not": true, "null": true, "true": true, "false": true,
+	"any": true, "all": true, "some": true, "is": true, "in": true, "like": true,
+	"ilike": true, "between": true, "exists": true,
+}
+
+// extractFilterColumns pulls candidate column names out of a PostgreSQL EXPLAIN
+// "Filter"/"Index Cond"/"Recheck Cond"/join-condition expression, e.g.
+// "(region = 'North'::text)" -> ["region"]. It is a best-effort heuristic over
+// the textual plan representation (Postgres does not emit structured filter
+// ASTs in EXPLAIN JSON), so it favors precision over completeness: unmatched
+// or ambiguous expressions simply yield no columns rather than a bad guess.
+func extractFilterColumns(filter string) []string {
+	if strings.TrimSpace(filter) == "" {
+		return nil
+	}
+	cleaned := typeCastRe.ReplaceAllString(filter, "")
+	cleaned = strings.NewReplacer("(", " ", ")", " ").Replace(cleaned)
+
+	var out []string
+	seen := map[string]bool{}
+	add := func(raw string) {
+		name := normalizeColumnName(raw)
+		if name == "" || sqlFilterStopwords[name] {
+			return
+		}
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, m := range filterColumnRe.FindAllStringSubmatch(cleaned, -1) {
+		add(m[1])
+		add(m[2])
+		add(m[3])
+	}
+	return out
+}
+
+// extractSortColumns reads the "Sort Key" array EXPLAIN JSON emits for Sort
+// and incremental-sort nodes, normalizing each entry (stripping ASC/DESC/NULLS
+// FIRST/LAST and table qualifiers).
+func extractSortColumns(node map[string]interface{}) []string {
+	raw, _ := node["Sort Key"].([]interface{})
+	var out []string
+	for _, v := range raw {
+		s, _ := v.(string)
+		if name := normalizeColumnName(s); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// extractJoinColumns pulls column names out of a join node's condition fields
+// ("Hash Cond", "Merge Cond", "Join Filter"), which use the same textual form
+// as "Filter" (e.g. "(a.id = b.a_id)").
+func extractJoinColumns(node map[string]interface{}) []string {
+	var out []string
+	for _, key := range []string{"Hash Cond", "Merge Cond", "Join Filter"} {
+		if v, ok := node[key].(string); ok && v != "" {
+			out = append(out, extractFilterColumns(v)...)
+		}
+	}
+	return out
+}
+
+// relatedColumnsForNode combines filter, index/recheck condition, sort, and
+// join columns for a single plan node into one de-duplicated, normalized list.
+// This is the set of columns a candidate index for this node would need to cover.
+func relatedColumnsForNode(node map[string]interface{}) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(cols []string) {
+		for _, c := range cols {
+			if c != "" && !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+			}
+		}
+	}
+	if f, ok := node["Filter"].(string); ok {
+		add(extractFilterColumns(f))
+	}
+	if f, ok := node["Index Cond"].(string); ok {
+		add(extractFilterColumns(f))
+	}
+	if f, ok := node["Recheck Cond"].(string); ok {
+		add(extractFilterColumns(f))
+	}
+	add(extractSortColumns(node))
+	add(extractJoinColumns(node))
+	return out
+}
+
+// normalizeColumnName canonicalizes a column reference extracted from plan
+// text: trims whitespace/quotes, strips ASC/DESC/NULLS FIRST/LAST sort
+// modifiers, drops a leading table/alias qualifier, and lower-cases the result
+// so it can be compared against catalog column names.
+func normalizeColumnName(c string) string {
+	c = strings.TrimSpace(c)
+	for _, suffix := range []string{" NULLS FIRST", " NULLS LAST", " nulls first", " nulls last"} {
+		c = strings.TrimSuffix(c, suffix)
+	}
+	c = strings.TrimSpace(c)
+	for _, suffix := range []string{" DESC", " ASC", " desc", " asc"} {
+		c = strings.TrimSuffix(c, suffix)
+	}
+	c = strings.TrimSpace(c)
+	c = strings.Trim(c, `"`)
+	if idx := strings.LastIndex(c, "."); idx >= 0 && idx < len(c)-1 {
+		c = c[idx+1:]
+	}
+	c = strings.Trim(c, `"`)
+	c = strings.ToLower(strings.TrimSpace(c))
+	if c == "" {
+		return ""
+	}
+	for _, r := range c {
+		if !(r == '_' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
+			return ""
+		}
+	}
+	return c
+}
+
+// isColumnPrefix reports whether cols matches (as a set, order-insensitive —
+// equality predicates can appear in any order within the same leftmost prefix)
+// the leading len(cols) entries of keyColumns. Used both to check whether an
+// existing index covers a finding's implicated columns, and to detect one
+// index being a redundant leftmost prefix of another.
+func isColumnPrefix(cols, keyColumns []string) bool {
+	if len(cols) == 0 || len(cols) > len(keyColumns) {
+		return false
+	}
+	want := make(map[string]bool, len(cols))
+	for _, c := range cols {
+		want[c] = true
+	}
+	got := make(map[string]bool, len(cols))
+	for _, c := range keyColumns[:len(cols)] {
+		got[c] = true
+	}
+	if len(want) != len(got) {
+		return false
+	}
+	for k := range want {
+		if !got[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// sameColumnSet reports whether a and b contain exactly the same columns,
+// regardless of order.
+func sameColumnSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]bool, len(a))
+	for _, c := range a {
+		set[c] = true
+	}
+	for _, c := range b {
+		if !set[c] {
+			return false
+		}
+	}
+	return true
+}
+
+// inferSingleTableRelation finds the schema/relation of the sole underlying
+// table scan beneath a node that carries no "Relation Name" of its own (e.g.
+// a Sort or Gather Merge directly above a scan). Returns ("", "") when the
+// subtree touches zero or more than one base table, since a filter/sort
+// finding can only be attributed to a table when there is exactly one.
+func inferSingleTableRelation(node map[string]interface{}) (schema, relation string) {
+	type relKey struct{ schema, relation string }
+	seen := map[relKey]bool{}
+	var order []relKey
+	var walk func(n map[string]interface{})
+	walk = func(n map[string]interface{}) {
+		if r, _ := n["Relation Name"].(string); r != "" {
+			s, _ := n["Schema"].(string)
+			k := relKey{s, r}
+			if !seen[k] {
+				seen[k] = true
+				order = append(order, k)
+			}
+		}
+		children, _ := n["Plans"].([]interface{})
+		for _, c := range children {
+			if cm, ok := c.(map[string]interface{}); ok {
+				walk(cm)
+			}
+		}
+	}
+	walk(node)
+	if len(order) != 1 {
+		return "", ""
+	}
+	return order[0].schema, order[0].relation
 }

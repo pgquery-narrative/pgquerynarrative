@@ -45,3 +45,13 @@ func CreateShareReportsPath() string {
 func GetSharedReportsPath(token string) string {
 	return fmt.Sprintf("/api/v1/reports/shared/%v", token)
 }
+
+// ListSharesReportsPath returns the URL path to the reports service list_shares HTTP endpoint.
+func ListSharesReportsPath(reportID string) string {
+	return fmt.Sprintf("/api/v1/reports/%v/shares", reportID)
+}
+
+// RevokeShareReportsPath returns the URL path to the reports service revoke_share HTTP endpoint.
+func RevokeShareReportsPath(id string) string {
+	return fmt.Sprintf("/api/v1/reports/shares/%v/revoke", id)
+}

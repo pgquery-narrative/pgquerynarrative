@@ -57,15 +57,23 @@ func (c *GroqClient) Generate(ctx context.Context, prompt string) (string, error
 
 // GenerateWithUsage returns generated text and provider-reported token usage when available.
 func (c *GroqClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
+	return c.GenerateMessages(ctx, PromptToChatMessages(prompt))
+}
+
+// GenerateMessages sends structured system/user messages to Groq Chat Completions.
+func (c *GroqClient) GenerateMessages(ctx context.Context, messages []ChatMessage) (GenerationResult, error) {
 	if c.apiKey == "" {
 		return GenerationResult{}, fmt.Errorf("groq: LLM_API_KEY is required")
+	}
+	if len(messages) == 0 {
+		return GenerationResult{}, fmt.Errorf("groq: empty messages")
 	}
 
 	url := groqBaseURL + "/chat/completions"
 
 	payload := map[string]interface{}{
 		"model":       c.model,
-		"messages":    []map[string]interface{}{{"role": "user", "content": prompt}},
+		"messages":    chatMessagesPayload(messages),
 		"max_tokens":  2048,
 		"temperature": 0.7,
 	}
@@ -89,8 +97,8 @@ func (c *GroqClient) GenerateWithUsage(ctx context.Context, prompt string) (Gene
 			return GenerationResult{}, fmt.Errorf("groq: request: %w", err)
 		}
 
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-		resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // #nosec G104 -- best-effort error-body read; empty body on failure just yields a less detailed error message.
+		resp.Body.Close()                                           // #nosec G104 -- close error on a body we're discarding is not actionable.
 
 		if resp.StatusCode == http.StatusOK {
 			var result struct {

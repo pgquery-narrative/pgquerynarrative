@@ -1,8 +1,12 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/app/ratelimit"
 )
 
 var defaultPasswords = map[string]struct{}{
@@ -34,6 +38,12 @@ func (c Config) Validate() error {
 	}
 	if IsCloudLLMProvider(c.LLM.Provider) && c.LLM.SendRowData && c.LLM.MaxSampleRows > 3 {
 		return fmt.Errorf("LLM_MAX_SAMPLE_ROWS must be <= 3 for cloud providers when LLM_SEND_ROW_DATA=true")
+	}
+	if !ratelimit.ValidFailureMode(c.Security.RateLimitFailureMode) {
+		return fmt.Errorf("SECURITY_RATE_LIMIT_FAILURE_MODE must be one of: open, closed, local_fallback")
+	}
+	if !audit.ValidMode(c.Security.AuditMode) {
+		return fmt.Errorf("SECURITY_AUDIT_MODE must be one of: best_effort, required, buffered")
 	}
 	if !StrictMode() {
 		return nil
@@ -93,5 +103,49 @@ func (c Config) Validate() error {
 	if !c.LLM.RedactPII && c.LLM.SendRowData && IsCloudLLMProvider(c.LLM.Provider) {
 		return fmt.Errorf("LLM_REDACT_PII must be true in production when sending row data to cloud LLM providers")
 	}
+	if c.Security.OIDCAutoJoinDefaultOrg {
+		return fmt.Errorf("SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG must be false in production; provision memberships explicitly")
+	}
+	if strings.TrimSpace(c.Security.OIDCIssuer) != "" && strings.TrimSpace(c.Security.OIDCAudience) == "" {
+		return fmt.Errorf("SECURITY_OIDC_AUDIENCE is required when OIDC is configured in production")
+	}
+	if ratelimit.ParseFailureMode(c.Security.RateLimitFailureMode) == ratelimit.FailOpen {
+		return fmt.Errorf("SECURITY_RATE_LIMIT_FAILURE_MODE must not be 'open' in production; use 'closed' or 'local_fallback'")
+	}
+	if audit.ParseMode(c.Security.AuditMode) == audit.ModeBestEffort {
+		return fmt.Errorf("SECURITY_AUDIT_MODE must not be 'best_effort' in production; use 'required' or 'buffered'")
+	}
+	if IsCloudLLMProvider(c.LLM.Provider) && !c.LLM.BudgetFailClosed {
+		return fmt.Errorf("LLM_BUDGET_FAIL_CLOSED must be true for cloud LLM providers in production")
+	}
+	if strings.TrimSpace(c.Security.APIKey) != "" {
+		return fmt.Errorf("SECURITY_API_KEY plaintext is not allowed in production; set SECURITY_API_KEY_HASH instead")
+	}
+	if apiKeysJSONContainsPlaintext(c.Security.APIKeysJSON) {
+		return fmt.Errorf("SECURITY_API_KEYS_JSON must use key_hash (not plaintext key) in production")
+	}
+	if strings.TrimSpace(c.Security.DataEncryptionKey) == "" && strings.TrimSpace(c.Security.SessionSecret) == "" {
+		return fmt.Errorf("SECURITY_DATA_ENCRYPTION_KEY (or SECURITY_SESSION_SECRET as fallback) is required in production for EXPLAIN snapshot encryption")
+	}
 	return nil
+}
+
+func apiKeysJSONContainsPlaintext(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	var parsed []struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		// Unparseable JSON is rejected elsewhere at load time; treat as unsafe.
+		return strings.Contains(raw, `"key"`)
+	}
+	for _, e := range parsed {
+		if strings.TrimSpace(e.Key) != "" {
+			return true
+		}
+	}
+	return false
 }

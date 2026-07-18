@@ -69,7 +69,50 @@ jobs:
           go tool cover -func=coverage.out | tail -1
           total="$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')"
           echo "Core package coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { if (t+0 < 15) { print "Coverage below 15% floor on core packages: " t "%"; exit 1 } }'
+          awk -v t="$total" 'BEGIN { if (t+0 < 18) { print "Coverage below 18% floor on core packages: " t "%"; exit 1 } }'
+      - name: Enforce per-package coverage floors (auth, queryrunner, security)
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          set -e
+          # Coverage is measured against the package's own code (-coverpkg) while running both
+          # its in-package tests and the corresponding black-box suite under test/unit/app/<pkg>,
+          # since most of these packages are tested externally from test/unit.
+          check_pkg_coverage() {
+            pkg="$1"; floor="$2"
+            name="$(basename "$pkg")"
+            profile="cov_${name}.out"
+            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg/..." "$pkg/..." "./test/unit/app/$name/..."
+            pct="$(go tool cover -func="$profile" | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
+            echo "$pkg coverage: ${pct}% (floor ${floor}%)"
+            awk -v t="$pct" -v f="$floor" -v p="$pkg" 'BEGIN { if (t+0 < f+0) { print "Coverage below floor for " p ": " t "% < " f "%"; exit 1 } }'
+          }
+          check_pkg_coverage ./app/auth 35
+          check_pkg_coverage ./app/queryrunner 40
+          check_pkg_coverage ./app/security 40
+          # llm has rich unit suite under test/unit/app/llm
+          check_pkg_coverage ./app/llm 30
+          # audit package tests are primarily in-package
+          go test -coverprofile=cov_audit.out -covermode=atomic -coverpkg=./app/audit/... ./app/audit/...
+          pct="$(go tool cover -func=cov_audit.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
+          echo "./app/audit coverage: ${pct}% (floor 20%)"
+          awk -v t="$pct" 'BEGIN { if (t+0 < 20) { print "Coverage below floor for ./app/audit: " t "% < 20%"; exit 1 } }'
+
+  schedule-multireplica:
+    name: Schedule multi-replica
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-go-cgo
+        with:
+          go-version: '1.25'
+      - name: Two-replica schedule claim + lease recovery
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          CGO_ENABLED: "1"
+          DOCKER_API_VERSION: "1.44"
+        run: |
+          go test ./test/integration/ -run 'TestScheduleClaim_MultiReplicaIdempotent|TestScheduleLeaseRecovery_TwoReplicaCrashRecovery' -v -count=1
 
   db-security:
     name: DB security verify
@@ -81,6 +124,14 @@ jobs:
           make postgres-up
           make migrate-docker
           make db-security-verify-docker
+
+  migration-cycle:
+    name: Migration up/down/up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Verify migrations are reversible (up -> down -> up)
+        run: make migrate-cycle-docker
 
   race:
     name: Race detector
@@ -127,10 +178,10 @@ jobs:
         run: npm ci
       - name: Typecheck
         working-directory: frontend
-        run: npm run typecheck --if-present || npx tsc --noEmit
+        run: npm run typecheck
       - name: Lint
         working-directory: frontend
-        run: npm run lint --if-present
+        run: npm run lint
       - name: Unit tests (Vitest)
         working-directory: frontend
         run: npm test
@@ -192,6 +243,8 @@ jobs:
         run: |
           go build -ldflags "-X main.Version=smoke" -o pgquerynarrative-server-linux-amd64 ./cmd/server
           CGO_ENABLED=0 go build -ldflags "-X main.Version=smoke" -o pgquerynarrative-mcp-linux-amd64 ./cmd/mcp-server
+          CGO_ENABLED=0 go build -tags postgres -ldflags "-X main.Version=smoke" -o pgquerynarrative-migrate-linux-amd64 \
+            github.com/golang-migrate/migrate/v4/cmd/migrate
           ls -la pgquerynarrative-*
       - name: Package and smoke release archive
         run: |
@@ -201,16 +254,21 @@ jobs:
           mkdir -p "packages/${pkg}/bin" "packages/${pkg}/frontend" "packages/${pkg}/app/db" "packages/${pkg}/config"
           cp pgquerynarrative-server-linux-amd64 "packages/${pkg}/bin/pgquerynarrative-server"
           cp pgquerynarrative-mcp-linux-amd64 "packages/${pkg}/bin/pgquerynarrative-mcp"
+          cp pgquerynarrative-migrate-linux-amd64 "packages/${pkg}/bin/migrate"
           cp -R frontend/dist "packages/${pkg}/frontend/dist"
           cp -R app/db/migrations "packages/${pkg}/app/db/migrations"
           cp .env.example "packages/${pkg}/config/pgquerynarrative.env.example"
+          chmod +x "packages/${pkg}/bin/pgquerynarrative-server" "packages/${pkg}/bin/pgquerynarrative-mcp" "packages/${pkg}/bin/migrate"
           tar -C packages -czf "${pkg}.tar.gz" "${pkg}"
           mkdir -p /tmp/pgqn-smoke
           tar -xzf "${pkg}.tar.gz" -C /tmp/pgqn-smoke
           test -x "/tmp/pgqn-smoke/${pkg}/bin/pgquerynarrative-server"
+          test -x "/tmp/pgqn-smoke/${pkg}/bin/pgquerynarrative-mcp"
+          test -x "/tmp/pgqn-smoke/${pkg}/bin/migrate"
           test -f "/tmp/pgqn-smoke/${pkg}/frontend/dist/index.html"
           test -d "/tmp/pgqn-smoke/${pkg}/app/db/migrations"
           test -f "/tmp/pgqn-smoke/${pkg}/config/pgquerynarrative.env.example"
+          "/tmp/pgqn-smoke/${pkg}/bin/migrate" --help
 
   playwright:
     name: Browser E2E (Playwright)

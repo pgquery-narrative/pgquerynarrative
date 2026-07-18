@@ -70,21 +70,26 @@ func TestAuditStoreRecord(t *testing.T) {
 	}
 	defer pool.Close()
 
-	store := audit.NewStore(pool)
+	store := audit.NewStore(pool, audit.ModeBestEffort)
+	t.Cleanup(store.Close)
 
-	store.Record(ctx, audit.Entry{
+	if err := store.Record(ctx, audit.Entry{
 		EventType: audit.EventAPIRequest,
 		Details:   map[string]interface{}{"path": "/api/v1/queries/saved", "status_code": 200},
 		UserID:    "api-key",
 		IP:        "127.0.0.1",
 		UserAgent: "integration-test",
-	})
-	store.Record(ctx, audit.Entry{
+	}); err != nil {
+		t.Fatalf("record API_REQUEST: %v", err)
+	}
+	if err := store.Record(ctx, audit.Entry{
 		EventType: audit.EventAuthFailure,
 		Details:   map[string]interface{}{"path": "/api/v1/reports"},
 		IP:        "10.0.0.1",
 		UserAgent: "curl",
-	})
+	}); err != nil {
+		t.Fatalf("record AUTH_FAILURE: %v", err)
+	}
 
 	var count int
 	err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM app.audit_logs WHERE event_type = $1`, audit.EventAPIRequest).Scan(&count)

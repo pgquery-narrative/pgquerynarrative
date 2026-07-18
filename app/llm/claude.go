@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -47,15 +48,47 @@ func (c *ClaudeClient) Generate(ctx context.Context, prompt string) (string, err
 }
 
 func (c *ClaudeClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
+	return c.GenerateMessages(ctx, PromptToChatMessages(prompt))
+}
+
+// GenerateMessages sends structured messages to Anthropic. System content is
+// lifted into the top-level system field; remaining turns go in messages.
+func (c *ClaudeClient) GenerateMessages(ctx context.Context, messages []ChatMessage) (GenerationResult, error) {
 	if c.apiKey == "" {
 		return GenerationResult{}, fmt.Errorf("claude: LLM_API_KEY is required")
+	}
+	if len(messages) == 0 {
+		return GenerationResult{}, fmt.Errorf("claude: empty messages")
+	}
+	var system string
+	var turns []map[string]string
+	for _, m := range messages {
+		role := strings.TrimSpace(m.Role)
+		switch role {
+		case "system":
+			if system != "" {
+				system += "\n\n"
+			}
+			system += m.Content
+		case "assistant":
+			turns = append(turns, map[string]string{"role": "assistant", "content": m.Content})
+		default:
+			turns = append(turns, map[string]string{"role": "user", "content": m.Content})
+		}
+	}
+	if len(turns) == 0 {
+		turns = []map[string]string{{"role": "user", "content": system}}
+		system = ""
 	}
 	url := claudeBaseURL + "/messages"
 	payload := map[string]interface{}{
 		"model":       c.model,
 		"max_tokens":  2048,
-		"messages":    []map[string]interface{}{{"role": "user", "content": prompt}},
+		"messages":    turns,
 		"temperature": 0.7,
+	}
+	if system != "" {
+		payload["system"] = system
 	}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -74,8 +107,8 @@ func (c *ClaudeClient) GenerateWithUsage(ctx context.Context, prompt string) (Ge
 		if err != nil {
 			return GenerationResult{}, fmt.Errorf("claude: request: %w", err)
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-		resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // #nosec G104 -- best-effort error-body read; empty body on failure just yields a less detailed error message.
+		resp.Body.Close()                                           // #nosec G104 -- close error on a body we're discarding is not actionable.
 		if resp.StatusCode == http.StatusOK {
 			var result struct {
 				Content []struct {

@@ -534,6 +534,127 @@ func EncodeGetSharedError(encoder func(context.Context, http.ResponseWriter) goa
 	}
 }
 
+// EncodeListSharesResponse returns an encoder for responses returned by the
+// reports list_shares endpoint.
+func EncodeListSharesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*reports.ReportShareList)
+		enc := encoder(ctx, w)
+		body := NewListSharesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeListSharesRequest returns a decoder for requests sent to the reports
+// list_shares endpoint.
+func DecodeListSharesRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*reports.ListSharesPayload, error) {
+	return func(r *http.Request) (*reports.ListSharesPayload, error) {
+		var (
+			reportID string
+			err      error
+
+			params = mux.Vars(r)
+		)
+		reportID = params["report_id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("report_id", reportID, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewListSharesPayload(reportID)
+
+		return payload, nil
+	}
+}
+
+// EncodeListSharesError returns an encoder for errors returned by the
+// list_shares reports endpoint.
+func EncodeListSharesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *reports.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListSharesNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeRevokeShareResponse returns an encoder for responses returned by the
+// reports revoke_share endpoint.
+func EncodeRevokeShareResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		w.WriteHeader(http.StatusOK)
+		return nil
+	}
+}
+
+// DecodeRevokeShareRequest returns a decoder for requests sent to the reports
+// revoke_share endpoint.
+func DecodeRevokeShareRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*reports.RevokeSharePayload, error) {
+	return func(r *http.Request) (*reports.RevokeSharePayload, error) {
+		var (
+			id  string
+			err error
+
+			params = mux.Vars(r)
+		)
+		id = params["id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewRevokeSharePayload(id)
+
+		return payload, nil
+	}
+}
+
+// EncodeRevokeShareError returns an encoder for errors returned by the
+// revoke_share reports endpoint.
+func EncodeRevokeShareError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *reports.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRevokeShareNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // marshalReportsNarrativeContentToNarrativeContentResponseBody builds a value
 // of type *NarrativeContentResponseBody from a value of type
 // *reports.NarrativeContent.
@@ -923,6 +1044,22 @@ func marshalReportsSimilarReportItemToSimilarReportItemResponseBody(v *reports.S
 		ConnectionID: v.ConnectionID,
 		CreatedAt:    v.CreatedAt,
 		Similarity:   v.Similarity,
+	}
+
+	return res
+}
+
+// marshalReportsReportShareInfoToReportShareInfoResponseBody builds a value of
+// type *ReportShareInfoResponseBody from a value of type
+// *reports.ReportShareInfo.
+func marshalReportsReportShareInfoToReportShareInfoResponseBody(v *reports.ReportShareInfo) *ReportShareInfoResponseBody {
+	res := &ReportShareInfoResponseBody{
+		ID:             v.ID,
+		CreatedAt:      v.CreatedAt,
+		ExpiresAt:      v.ExpiresAt,
+		RevokedAt:      v.RevokedAt,
+		AccessCount:    v.AccessCount,
+		LastAccessedAt: v.LastAccessedAt,
 	}
 
 	return res

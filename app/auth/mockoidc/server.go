@@ -128,6 +128,9 @@ func (m *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	vals.Set("code", code)
 	vals.Set("state", state)
 	u.RawQuery = vals.Encode()
+	// #nosec G710 -- test-only mock IdP (E2E/manual staging drills, never deployed in
+	// production); redirect_uri is supplied by the local test harness itself, not an
+	// untrusted end user.
 	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 

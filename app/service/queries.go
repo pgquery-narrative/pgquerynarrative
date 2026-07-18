@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"math"
+	"fmt"
 	"strings"
 	"time"
 
@@ -25,9 +25,11 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 	"github.com/pgquerynarrative/pgquerynarrative/app/format"
+	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
 	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/app/security"
 )
 
 // QueriesService handles query execution and saved query management.
@@ -41,11 +43,30 @@ type QueriesService struct {
 	embeddingModel string              // Model name to store with embedding (e.g. nomic-embed-text)
 	connectionResolver
 	statStatementsEnabled bool
+	authz                 ConnectionAuthorizer
+	dataEncKey            []byte
 }
 
 // SetStatStatementsEnabled toggles the pg_stat_statements API.
 func (s *QueriesService) SetStatStatementsEnabled(enabled bool) {
 	s.statStatementsEnabled = enabled
+}
+
+// SetDataEncryptionKey configures AES-GCM sealing for EXPLAIN snapshots at rest.
+// Intended to be called only once from narrative.NewClient.
+func (s *QueriesService) SetDataEncryptionKey(key []byte) {
+	if s != nil && len(key) > 0 {
+		s.dataEncKey = append([]byte(nil), key...)
+	}
+}
+
+// SetAuthorizer wires connection-level authorization (C5). Nil is permissive.
+// Intended to be called only once, from narrative.NewClient, before the
+// service is handed to any HTTP handler or background worker.
+func (s *QueriesService) SetAuthorizer(authz ConnectionAuthorizer) {
+	if s != nil {
+		s.authz = authz
+	}
 }
 
 var strPtr = format.StrPtr
@@ -71,7 +92,11 @@ func (s *QueriesService) ValidateQuery(connectionID *string, sql string) error {
 	if sql == "" {
 		return nil
 	}
-	return s.connectionResolver.runnerFor(connectionID).ValidateQuery(sql)
+	runner, err := s.connectionResolver.runnerFor(connectionID)
+	if err != nil {
+		return err
+	}
+	return runner.ValidateQuery(sql)
 }
 
 // NewQueriesServiceWithEmbedding is like NewQueriesService but enables storing embeddings
@@ -131,7 +156,17 @@ func NewQueriesServiceMultiConnection(appPool db.DB, runners map[string]*queryru
 //   - RunQueryResult with columns, rows, and metadata
 //   - ValidationError if query is invalid or times out
 func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPayload) (*queries.RunQueryResult, error) {
-	runner := s.connectionResolver.runnerFor(payload.ConnectionID)
+	connID, err := s.connectionResolver.resolveConnectionID(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionQuery); err != nil {
+		return nil, connectionForbiddenQueriesError(err)
+	}
+	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
 	result, err := runner.Run(ctx, payload.SQL, int(payload.Limit))
 	if err != nil {
 		kind, userMsg := ClassifyRunError(err)
@@ -165,16 +200,12 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 	resultComplete := result.RowCount < result.RowLimitApplied
 	periodComparison, currentLabel, previousLabel := s.periodComparison(ctx, runner, payload.SQL, colNames, result.Rows, resultComplete)
 
-	var rowCount32 int32 = math.MaxInt32
-	if result.RowCount < math.MaxInt32 {
-		rowCount32 = int32(result.RowCount)
-	}
 	res := &queries.RunQueryResult{
 		Columns:          cols,
 		Rows:             result.Rows,
-		RowCount:         rowCount32,
+		RowCount:         clampInt32(result.RowCount),
 		ExecutionTimeMs:  result.ExecutionTimeMs,
-		Limit:            int32(result.RowLimitApplied),
+		Limit:            clampInt32(result.RowLimitApplied),
 		ChartSuggestions: chartSuggestions,
 		PeriodComparison: periodComparison,
 	}
@@ -190,7 +221,21 @@ func (s *QueriesService) Run(ctx context.Context, payload *queries.RunQueryPaylo
 
 // ExplainPlan runs EXPLAIN (FORMAT JSON) on a read-only query and returns plan analysis.
 func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.ExplainQueryPayload) (*queries.ExplainQueryResult, error) {
-	runner := s.connectionResolver.runnerFor(payload.ConnectionID)
+	connID, err := s.connectionResolver.resolveConnectionID(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
+	explainAction := auth.ActionExplain
+	if payload.Analyze {
+		explainAction = auth.ActionAnalyze
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, explainAction); err != nil {
+		return nil, connectionForbiddenQueriesError(err)
+	}
+	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
 	result, err := runner.Explain(ctx, payload.SQL, payload.Analyze)
 	if err != nil {
 		kind, userMsg := ClassifyRunError(err)
@@ -252,9 +297,23 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 // StatStatements returns top queries from pg_stat_statements for observability.
 func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.StatStatementsPayload) (*queries.StatStatementsResult, error) {
 	if !s.statStatementsEnabled {
-		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("STAT_STATEMENTS_UNAVAILABLE")}
 	}
-	runner := s.connectionResolver.runnerFor(payload.ConnectionID)
+	connID, err := s.connectionResolver.resolveConnectionID(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionStats); err != nil {
+		return nil, connectionForbiddenQueriesError(err)
+	}
+	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
+	filterRole, err := s.connectionResolver.readOnlyUserFor(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
 	orderBy := payload.OrderBy
 	if orderBy == "" {
 		orderBy = "total_time"
@@ -268,11 +327,19 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 	if runner != nil {
 		timeout = runner.QueryTimeout()
 	}
-	result, err := queryrunner.StatStatements(ctx, s.appPool, s.connectionResolver.readOnlyUserFor(payload.ConnectionID), orderBy, limit, timeout)
+	statsPool := runner.StatsPool()
+	if statsPool == nil {
+		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("STAT_STATEMENTS_UNAVAILABLE")}
+	}
+	result, err := queryrunner.StatStatements(ctx, statsPool, filterRole, orderBy, limit, timeout)
 	if err != nil {
 		apilog.ValidationError("stat_statements", "validation_error", err.Error())
 		msg := SanitizeClientMessage(err)
-		return nil, &queries.ValidationError{Name: "validation_error", Message: msg, Code: strPtr("VALIDATION_ERROR")}
+		code := "VALIDATION_ERROR"
+		if errors.Is(err, apperrors.ErrStatStatementsUnavailable) {
+			code = "STAT_STATEMENTS_UNAVAILABLE"
+		}
+		return nil, &queries.ValidationError{Name: "validation_error", Message: msg, Code: strPtr(code)}
 	}
 
 	items := make([]*queries.StatStatementRow, 0, len(result.Items))
@@ -293,7 +360,7 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 	return &queries.StatStatementsResult{
 		Items:   items,
 		OrderBy: result.OrderBy,
-		Limit:   int32(result.Limit),
+		Limit:   clampInt32(result.Limit),
 	}, nil
 }
 
@@ -415,6 +482,30 @@ func timeSeriesToPeriodComparisonFallback(columnNames []string, rows [][]interfa
 	return out, m.CurrentPeriodLabel, m.PreviousPeriodLabel
 }
 
+func connectionNotFoundQueriesError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &queries.ValidationError{
+		Name:    "validation_error",
+		Message: err.Error(),
+		Code:    strPtr("CONNECTION_NOT_FOUND"),
+	}
+}
+
+// connectionForbiddenQueriesError converts a connection-authorization denial
+// (app/auth.ConnectionAuthorizer) into the queries API error type.
+func connectionForbiddenQueriesError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &queries.ValidationError{
+		Name:    "validation_error",
+		Message: err.Error(),
+		Code:    strPtr("CONNECTION_FORBIDDEN"),
+	}
+}
+
 // Save stores a query for later reuse.
 //
 // Parameters:
@@ -425,12 +516,18 @@ func timeSeriesToPeriodComparisonFallback(columnNames []string, rows [][]interfa
 //   - SavedQuery with generated ID and timestamps
 //   - Error if database operation fails
 func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPayload) (*queries.SavedQuery, error) {
-	connectionID := s.normalizedConnectionID(payload.ConnectionID)
+	connectionID, err := s.resolveConnectionID(payload.ConnectionID)
+	if err != nil {
+		return nil, connectionNotFoundQueriesError(err)
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connectionID, auth.ActionQuery); err != nil {
+		return nil, connectionForbiddenQueriesError(err)
+	}
 	row := s.appPool.QueryRow(ctx, `
 		INSERT INTO app.saved_queries (name, sql, description, tags, connection_id, organization_id, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, name, sql, description, tags, connection_id, created_at, updated_at
-	`, payload.Name, payload.SQL, payload.Description, payload.Tags, connectionID, orgID(ctx), auth.PrincipalFromContext(ctx).UserID)
+	`, payload.Name, sealProductSQL(s.dataEncKey, payload.SQL), payload.Description, payload.Tags, connectionID, orgID(ctx), auth.PrincipalFromContext(ctx).UserID)
 
 	var item queries.SavedQuery
 	var createdAt time.Time
@@ -438,6 +535,7 @@ func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPay
 	if err := row.Scan(&item.ID, &item.Name, &item.SQL, &item.Description, &item.Tags, &item.ConnectionID, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
+	item.SQL = openProductSQL(s.dataEncKey, item.SQL)
 	item.CreatedAt = createdAt.Format(time.RFC3339)
 	item.UpdatedAt = updatedAt.Format(time.RFC3339)
 
@@ -448,7 +546,7 @@ func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPay
 			text = text + " " + *item.Description
 		}
 		text = text + " " + item.SQL
-		vec, err := s.embedder.Embed(ctx, text)
+		vec, err := s.embedder.Embed(embedding.WithOperation(ctx, "embed_query_save"), text)
 		if err == nil {
 			_ = s.embeddingStore.Upsert(ctx, item.ID, vec, s.embeddingModel)
 		}
@@ -525,6 +623,7 @@ func (s *QueriesService) ListSaved(ctx context.Context, payload *queries.ListSav
 		if err := rows.Scan(&item.ID, &item.Name, &item.SQL, &item.Description, &item.Tags, &item.ConnectionID, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		item.SQL = openProductSQL(s.dataEncKey, item.SQL)
 		item.CreatedAt = createdAt.Format(time.RFC3339)
 		item.UpdatedAt = updatedAt.Format(time.RFC3339)
 		items = append(items, &item)
@@ -570,6 +669,7 @@ func (s *QueriesService) GetSaved(ctx context.Context, payload *queries.GetSaved
 		}
 		return nil, err
 	}
+	item.SQL = openProductSQL(s.dataEncKey, item.SQL)
 	item.CreatedAt = createdAt.Format(time.RFC3339)
 	item.UpdatedAt = updatedAt.Format(time.RFC3339)
 	return &item, nil
@@ -606,16 +706,101 @@ func (s *QueriesService) persistExplainSnapshot(ctx context.Context, connectionI
 	}
 	p := auth.PrincipalFromContext(ctx)
 	findingsJSON, _ := json.Marshal(result.Findings)
+	// sql_hash is computed from the original (unredacted) SQL so identical queries still
+	// dedupe/correlate; only the persisted sql_text is redacted, since snapshots are
+	// retained for later review/export and should not carry literal values (potential PII
+	// or secrets embedded in query predicates) at rest. Constants are redacted via the
+	// real PostgreSQL parser (AST-based) so numeric, boolean, and string literals are all
+	// replaced with $n placeholders; if the statement cannot be parsed for any reason we
+	// fall back to the coarser regex-based string-literal redaction rather than persisting
+	// raw SQL.
 	hash := sha256.Sum256([]byte(result.SQL))
+	redactedSQL, ok := queryrunner.RedactConstants(result.SQL)
+	if !ok {
+		redactedSQL = llm.RedactSQL(result.SQL)
+	}
 	connID := strings.TrimSpace(connectionID)
 	if connID == "" {
 		connID = "default"
 	}
+	var planJSON json.RawMessage
+	storageClass := SQLClassRedacted
+	sqlText := redactedSQL
+	if result.Plan != nil {
+		if raw, err := json.Marshal(result.Plan); err == nil {
+			var parsed interface{}
+			if json.Unmarshal(raw, &parsed) == nil {
+				planJSON = redactExplainPlanJSON(parsed)
+			}
+		}
+	}
+	if len(s.dataEncKey) > 0 {
+		sealedSQL, serr := security.Seal(s.dataEncKey, redactedSQL)
+		if serr == nil {
+			sqlText = sealedSQL
+			storageClass = SQLClassEncrypted
+		}
+		if len(planJSON) > 0 {
+			if sealedPlan, perr := security.Seal(s.dataEncKey, string(planJSON)); perr == nil {
+				encPayload, _ := json.Marshal(map[string]string{"ciphertext": sealedPlan})
+				planJSON = encPayload
+			}
+		}
+	}
 	_, _ = s.appPool.Exec(ctx, `
 		INSERT INTO app.explain_snapshots (
 			organization_id, user_id, connection_id, sql_hash, sql_text, used_analyze,
-			total_cost, findings, explain_plan, execution_time_ms
-		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, p.OrgID, p.UserID, connID, hex.EncodeToString(hash[:]), result.SQL, analyze,
-		result.TotalCost, findingsJSON, result.Plan, result.ExecutionTimeMs)
+			total_cost, findings, explain_plan, execution_time_ms, sql_storage_class
+		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`, p.OrgID, p.UserID, connID, hex.EncodeToString(hash[:]), sqlText, analyze,
+		result.TotalCost, findingsJSON, planJSON, result.ExecutionTimeMs, string(storageClass))
+}
+
+// CleanupExplainSnapshots deletes stored EXPLAIN snapshots older than olderThan across all
+// organizations, bounding how long redacted SQL/plan history is retained at rest. Runs in a
+// scheduler-bypass transaction (see db.BeginSchedulerTx) since this is a cross-org background
+// job, not a request scoped to a single organization. Returns the number of rows removed.
+func CleanupExplainSnapshots(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) (int64, error) {
+	if pool == nil || olderThan <= 0 {
+		return 0, nil
+	}
+	tx, err := db.BeginSchedulerTx(ctx, pool)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM app.explain_snapshots WHERE created_at < NOW() - $1::interval
+	`, fmt.Sprintf("%d seconds", int64(olderThan.Seconds())))
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// StartExplainSnapshotCleanupLoop runs CleanupExplainSnapshots on interval until ctx is done.
+// Safe to call at most once per process; retentionDays <= 0 disables the loop (snapshots are
+// kept forever).
+func StartExplainSnapshotCleanupLoop(ctx context.Context, pool *pgxpool.Pool, interval time.Duration, retentionDays int) {
+	if pool == nil || interval <= 0 || retentionDays <= 0 {
+		return
+	}
+	retention := time.Duration(retentionDays) * 24 * time.Hour
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := CleanupExplainSnapshots(ctx, pool, retention); err != nil {
+					apilog.ValidationError("explain_snapshot_cleanup", "cleanup_error", err.Error())
+				}
+			}
+		}
+	}()
 }

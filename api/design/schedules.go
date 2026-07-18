@@ -113,11 +113,12 @@ var ScheduleInput = Type("ScheduleInput", func() {
 	Attribute("saved_query_id", String, func() { Format(FormatUUID) })
 	Attribute("sql", String, func() { MaxLength(10000) })
 	Attribute("connection_id", String)
-	Attribute("cron_expr", String, "Use @every <duration> format (e.g. @every 6h)")
+	Attribute("interval_expr", String, "Use @every <duration> format (e.g. @every 6h). Formerly named cron_expr.")
+	Attribute("timezone", String, "IANA time zone for scheduling (default UTC)")
 	Attribute("destination_type", String, "webhook|log")
-	Attribute("destination_target", String, "Webhook URL or log channel name")
+	Attribute("destination_target", String, "Webhook URL (required for webhook); optional for log")
 	Attribute("enabled", Boolean)
-	Required("name", "cron_expr", "destination_type", "destination_target")
+	Required("name", "interval_expr", "destination_type")
 })
 
 var Schedule = Type("Schedule", func() {
@@ -126,7 +127,8 @@ var Schedule = Type("Schedule", func() {
 	Attribute("saved_query_id", String, func() { Format(FormatUUID) })
 	Attribute("sql", String)
 	Attribute("connection_id", String)
-	Attribute("cron_expr", String)
+	Attribute("interval_expr", String)
+	Attribute("timezone", String)
 	Attribute("destination_type", String)
 	Attribute("destination_target", String)
 	Attribute("enabled", Boolean)
@@ -136,7 +138,7 @@ var Schedule = Type("Schedule", func() {
 	Attribute("next_run_at", String, func() { Format(FormatDateTime) })
 	Attribute("created_at", String, func() { Format(FormatDateTime) })
 	Attribute("updated_at", String, func() { Format(FormatDateTime) })
-	Required("id", "name", "connection_id", "cron_expr", "destination_type", "destination_target", "enabled", "created_at", "updated_at")
+	Required("id", "name", "connection_id", "interval_expr", "destination_type", "enabled", "created_at", "updated_at")
 })
 
 var ScheduleListResult = Type("ScheduleListResult", func() {

@@ -9,6 +9,12 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 )
 
+// defaultMaxOutputTokenEstimate mirrors the max_tokens/maxOutputTokens cap
+// providers are configured with (see claude.go, gemini.go, groq.go, openai.go).
+// Reservations use prompt tokens plus this allowance so budgets account for
+// worst-case completion size before the response is known.
+const defaultMaxOutputTokenEstimate = 2048
+
 // InvokeOptions configures an LLM invocation beyond governance input.
 type InvokeOptions struct {
 	Audit  *AuditStore
@@ -20,7 +26,12 @@ func Invoke(ctx context.Context, client Client, audit *AuditStore, operation str
 	return InvokeWithBudget(ctx, client, InvokeOptions{Audit: audit}, operation, in, prompt)
 }
 
-// InvokeWithBudget is like Invoke but enforces optional daily token/cost budgets.
+// InvokeWithBudget is like Invoke but enforces optional daily/monthly token
+// and cost budgets. Budget enforcement is atomic: tokens are reserved
+// (prompt estimate + max output allowance) before the provider call via
+// BudgetStore.Reserve, reconciled to actual usage on success, and released
+// on failure, so concurrent requests near a limit cannot all pass a
+// stale check.
 func InvokeWithBudget(ctx context.Context, client Client, opts InvokeOptions, operation string, in GovernanceInput, prompt string) (string, error) {
 	if client == nil {
 		return "", fmt.Errorf("llm client is not configured")
@@ -58,17 +69,28 @@ func InvokeWithBudget(ctx context.Context, client Client, opts InvokeOptions, op
 		recordAudit(gov.Decision, gov.DataClasses, 0, 0, 0)
 		return "", fmt.Errorf("%s", gov.ErrorMessage)
 	}
+
+	var reservationID string
 	if opts.Budget != nil {
-		if err := opts.Budget.Check(ctx, principal.OrgID, principal.UserID, promptTokens); err != nil {
+		estimatedTokens := promptTokens + defaultMaxOutputTokenEstimate
+		id, err := opts.Budget.Reserve(ctx, principal.OrgID, principal.UserID, estimatedTokens)
+		if err != nil {
 			recordAudit(PolicyDenyBudget, gov.DataClasses, 0, 0, 0)
 			observability.IncLLMBudgetDenied()
 			return "", err
+		}
+		reservationID = id
+	}
+	releaseOnFailure := func() {
+		if opts.Budget != nil && reservationID != "" {
+			opts.Budget.ReleaseReservation(context.Background(), reservationID, principal.OrgID)
 		}
 	}
 
 	start := time.Now()
 	if err := defaultBreaker.Allow(); err != nil {
 		recordAudit(gov.Decision, gov.DataClasses, 0, 0, 0)
+		releaseOnFailure()
 		return "", err
 	}
 	gen, err := GenerateWithUsage(ctx, client, prompt)
@@ -76,6 +98,7 @@ func InvokeWithBudget(ctx context.Context, client Client, opts InvokeOptions, op
 	if err != nil {
 		defaultBreaker.RecordFailure()
 		recordAudit(gov.Decision, gov.DataClasses, latency, 0, 0)
+		releaseOnFailure()
 		return "", err
 	}
 	defaultBreaker.RecordSuccess()
@@ -90,7 +113,11 @@ func InvokeWithBudget(ctx context.Context, client Client, opts InvokeOptions, op
 	cost := 0.0
 	if opts.Budget != nil {
 		cost = opts.Budget.EstimateCostUSD(promptTokens + completionTokens)
-		opts.Budget.RecordUsage(ctx, principal.OrgID, principal.UserID, promptTokens, completionTokens)
+		if reservationID != "" {
+			opts.Budget.ReconcileUsage(context.Background(), reservationID, principal.OrgID, principal.UserID, promptTokens, completionTokens)
+		} else {
+			opts.Budget.RecordUsage(ctx, principal.OrgID, principal.UserID, promptTokens, completionTokens)
+		}
 	}
 	observability.IncLLMCall()
 	observability.AddLLMTokens(int64(promptTokens + completionTokens))

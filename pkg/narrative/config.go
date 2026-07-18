@@ -33,23 +33,27 @@ type Config struct {
 
 // SecurityConfig holds security settings for narrative client services.
 type SecurityConfig struct {
-	AuthEnabled           bool
-	RateLimitRPM          int
-	RateLimitBurst        int
-	RateLimitDistributed  bool
-	OIDCIssuer            string
-	OIDCAudience          string
-	OIDCClientID          string
-	OIDCClientSecret      string
-	OIDCRedirectURL       string
-	SessionSecret         string
-	SessionTTL            time.Duration
-	ShareLinkDefaultHours int
-	ShareLinksEnabled     bool
-	ExplainAnalyzeEnabled bool
-	StatStatementsEnabled bool
-	WebhookSigningSecret  string
-	WebhookAllowedHosts   []string
+	AuthEnabled                  bool
+	RateLimitRPM                 int
+	RateLimitBurst               int
+	RateLimitDistributed         bool
+	OIDCIssuer                   string
+	OIDCAudience                 string
+	OIDCClientID                 string
+	OIDCClientSecret             string
+	OIDCRedirectURL              string
+	SessionSecret                string
+	SessionTTL                   time.Duration
+	ShareLinkDefaultHours        int
+	ShareLinksEnabled            bool
+	ShareLinkExposeSQL           bool
+	ExplainAnalyzeEnabled        bool
+	StatStatementsEnabled        bool
+	WebhookSigningSecret         string
+	WebhookAllowedHosts          []string
+	ExplainSnapshotRetentionDays int
+	AuditMode                    string
+	DataEncryptionKey            string
 }
 
 // EmbeddingConfig holds optional embedding model settings (e.g. Ollama nomic-embed-text).
@@ -117,6 +121,7 @@ type LLMConfig struct {
 	PerUserMonthlyCostBudgetUSD float64
 	USDPer1kTokens              float64
 	MaxCallsPerReport           int
+	BudgetFailClosed            bool
 }
 
 // MetricsConfig holds metrics and period-comparison settings.
@@ -177,6 +182,7 @@ func FromAppConfig(cfg config.Config) Config {
 			PerUserMonthlyCostBudgetUSD: cfg.LLM.PerUserMonthlyCostBudgetUSD,
 			USDPer1kTokens:              cfg.LLM.USDPer1kTokens,
 			MaxCallsPerReport:           cfg.LLM.MaxCallsPerReport,
+			BudgetFailClosed:            cfg.LLM.BudgetFailClosed,
 		},
 		Metrics: MetricsConfig{
 			TrendThresholdPercent:    cfg.Metrics.TrendThresholdPercent,
@@ -200,23 +206,27 @@ func FromAppConfig(cfg config.Config) Config {
 		MaxQueryLength:  10000,
 		MaxRowsPerQuery: 1000,
 		Security: SecurityConfig{
-			AuthEnabled:           cfg.Security.AuthEnabled,
-			RateLimitRPM:          cfg.Security.RateLimitRPM,
-			RateLimitBurst:        cfg.Security.RateLimitBurst,
-			RateLimitDistributed:  cfg.Security.RateLimitDistributed,
-			OIDCIssuer:            cfg.Security.OIDCIssuer,
-			OIDCAudience:          cfg.Security.OIDCAudience,
-			OIDCClientID:          cfg.Security.OIDCClientID,
-			OIDCClientSecret:      cfg.Security.OIDCClientSecret,
-			OIDCRedirectURL:       cfg.Security.OIDCRedirectURL,
-			SessionSecret:         cfg.Security.SessionSecret,
-			SessionTTL:            cfg.Security.SessionTTL,
-			ShareLinkDefaultHours: cfg.Security.ShareLinkDefaultHours,
-			ShareLinksEnabled:     cfg.Security.ShareLinksEnabled,
-			ExplainAnalyzeEnabled: cfg.Security.ExplainAnalyzeEnabled,
-			StatStatementsEnabled: cfg.Security.StatStatementsEnabled,
-			WebhookSigningSecret:  cfg.Security.WebhookSigningSecret,
-			WebhookAllowedHosts:   append([]string(nil), cfg.Security.WebhookAllowedHosts...),
+			AuthEnabled:                  cfg.Security.AuthEnabled,
+			RateLimitRPM:                 cfg.Security.RateLimitRPM,
+			RateLimitBurst:               cfg.Security.RateLimitBurst,
+			RateLimitDistributed:         cfg.Security.RateLimitDistributed,
+			OIDCIssuer:                   cfg.Security.OIDCIssuer,
+			OIDCAudience:                 cfg.Security.OIDCAudience,
+			OIDCClientID:                 cfg.Security.OIDCClientID,
+			OIDCClientSecret:             cfg.Security.OIDCClientSecret,
+			OIDCRedirectURL:              cfg.Security.OIDCRedirectURL,
+			SessionSecret:                cfg.Security.SessionSecret,
+			SessionTTL:                   cfg.Security.SessionTTL,
+			ShareLinkDefaultHours:        cfg.Security.ShareLinkDefaultHours,
+			ShareLinksEnabled:            cfg.Security.ShareLinksEnabled,
+			ShareLinkExposeSQL:           cfg.Security.ShareLinkExposeSQL,
+			ExplainAnalyzeEnabled:        cfg.Security.ExplainAnalyzeEnabled,
+			StatStatementsEnabled:        cfg.Security.StatStatementsEnabled,
+			WebhookSigningSecret:         cfg.Security.WebhookSigningSecret,
+			WebhookAllowedHosts:          append([]string(nil), cfg.Security.WebhookAllowedHosts...),
+			ExplainSnapshotRetentionDays: cfg.Security.ExplainSnapshotRetentionDays,
+			AuditMode:                    cfg.Security.AuditMode,
+			DataEncryptionKey:            cfg.Security.DataEncryptionKey,
 		},
 	}
 }

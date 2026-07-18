@@ -87,16 +87,41 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 		return Principal{UserID: userID, OrgID: DefaultOrgID(), Role: normalizeRole(fallbackRole)}, nil
 	}
 	if len(groups) > 0 {
-		var orgID, role string
-		err := s.pool.QueryRow(ctx, `
-			SELECT organization_id::text, role
+		rows, err := s.pool.Query(ctx, `
+			SELECT organization_id::text, role, group_claim
 			FROM app.oidc_group_org_mappings
 			WHERE group_claim = ANY($1)
 			ORDER BY group_claim
-			LIMIT 1
-		`, groups).Scan(&orgID, &role)
-		if err == nil && orgID != "" {
-			role = normalizeRole(role)
+		`, groups)
+		if err != nil {
+			return Principal{}, err
+		}
+		defer rows.Close()
+		type mapping struct {
+			orgID string
+			role  string
+		}
+		seenOrgs := map[string]mapping{}
+		for rows.Next() {
+			var orgID, role, claim string
+			if scanErr := rows.Scan(&orgID, &role, &claim); scanErr != nil {
+				return Principal{}, scanErr
+			}
+			seenOrgs[orgID] = mapping{orgID: orgID, role: role}
+		}
+		if err := rows.Err(); err != nil {
+			return Principal{}, err
+		}
+		if len(seenOrgs) > 1 {
+			// Ambiguous multi-group mapping must not silently pick the first organisation.
+			return Principal{}, ErrNoOrganizationMembership
+		}
+		if len(seenOrgs) == 1 {
+			var m mapping
+			for _, v := range seenOrgs {
+				m = v
+			}
+			role := normalizeRole(m.role)
 			if role == "" {
 				role = normalizeRole(fallbackRole)
 			}
@@ -104,11 +129,11 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 				INSERT INTO app.organization_members (organization_id, user_id, role)
 				VALUES ($1::uuid, $2, $3)
 				ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
-			`, orgID, strings.TrimSpace(userID), role)
-			if preferredOrgID != "" && preferredOrgID != orgID {
+			`, m.orgID, strings.TrimSpace(userID), role)
+			if preferredOrgID != "" && preferredOrgID != m.orgID {
 				return Principal{}, ErrNoOrganizationMembership
 			}
-			return Principal{UserID: userID, OrgID: orgID, Role: role}, nil
+			return Principal{UserID: userID, OrgID: m.orgID, Role: role}, nil
 		}
 	}
 	return s.ResolvePrincipal(ctx, userID, preferredOrgID, fallbackRole)

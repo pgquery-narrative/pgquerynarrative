@@ -3,14 +3,18 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	schemaapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
@@ -28,9 +32,21 @@ type AskService struct {
 	llmBudget     *llm.BudgetStore
 	llmAllowCloud bool
 	connectionResolver
+	authz ConnectionAuthorizer
+}
+
+// SetAuthorizer wires connection-level authorization (C5). Nil is permissive.
+// Intended to be called only once, from narrative.NewClient, before the
+// service is handed to any HTTP handler or background worker.
+func (s *AskService) SetAuthorizer(authz ConnectionAuthorizer) {
+	if s != nil {
+		s.authz = authz
+	}
 }
 
 // SetLLMGovernance wires audit logging, budgets, and external-data policy for Ask LLM calls.
+// Intended to be called only once, from narrative.NewClient, before the
+// service is handed to any HTTP handler.
 func (s *AskService) SetLLMGovernance(audit *llm.AuditStore, budget *llm.BudgetStore, allowCloud bool) {
 	s.llmAudit = audit
 	s.llmBudget = budget
@@ -96,15 +112,50 @@ func NewAskServiceMultiConnection(
 	}
 }
 
+// authorizeConnectionAction checks connection-level authorization (C5) BEFORE
+// resolving a loader/runner for connectionID (nil means "use the default connection").
+func (s *AskService) authorizeConnectionAction(ctx context.Context, connectionID *string, action string) error {
+	connID, err := s.connectionResolver.resolveConnectionID(connectionID)
+	if err != nil {
+		return nil // let the subsequent loaderFor/runnerFor call surface ErrConnectionNotFound
+	}
+	return checkConnectionAccess(ctx, s.authz, connID, action)
+}
+
+// askConnectionForbiddenError converts a connection-authorization denial into the
+// suggestions API error type.
+func askConnectionForbiddenError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+}
+
 // Ask implements the suggestions service Ask method: question → SQL → report.
 func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (*suggestions.AskResult, error) {
 	question := strings.TrimSpace(payload.Question)
 	if question == "" {
 		return nil, &suggestions.ValidationError{Name: "validation_error", Message: "question is required", Code: strPtr("VALIDATION_ERROR")}
 	}
+	connID, resolveErr := s.resolveConnectionID(payload.ConnectionID)
+	if resolveErr != nil {
+		return nil, &suggestions.ValidationError{Name: "validation_error", Message: resolveErr.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionAsk); err != nil {
+		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+	}
 
-	schemaResult, err := s.connectionResolver.loaderFor(payload.ConnectionID).Load(ctx)
+	schemaResult, err := func() (*schemaapi.SchemaResult, error) {
+		loader, err := s.connectionResolver.loaderFor(payload.ConnectionID)
+		if err != nil {
+			return nil, err
+		}
+		return loader.Load(ctx)
+	}()
 	if err != nil {
+		if errors.Is(err, apperrors.ErrConnectionNotFound) {
+			return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		}
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to load schema: " + err.Error(), Code: strPtr("SCHEMA_ERROR")}
 	}
 	schemaText := llm.FormatSchemaForPrompt(schemaResult)
@@ -149,12 +200,28 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	if question == "" {
 		return nil, &suggestions.ValidationError{Name: "validation_error", Message: "question is required", Code: strPtr("VALIDATION_ERROR")}
 	}
+	connID, resolveErr := s.resolveConnectionID(payload.ConnectionID)
+	if resolveErr != nil {
+		return nil, &suggestions.ValidationError{Name: "validation_error", Message: resolveErr.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionAsk); err != nil {
+		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+	}
 	sessionID, historyCtx, err := s.ensureSessionAndHistory(ctx, payload.SessionID, payload.ConnectionID)
 	if err != nil {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to prepare chat session: " + err.Error(), Code: strPtr("SESSION_ERROR")}
 	}
-	schemaResult, err := s.connectionResolver.loaderFor(payload.ConnectionID).Load(ctx)
+	schemaResult, err := func() (*schemaapi.SchemaResult, error) {
+		loader, err := s.connectionResolver.loaderFor(payload.ConnectionID)
+		if err != nil {
+			return nil, err
+		}
+		return loader.Load(ctx)
+	}()
 	if err != nil {
+		if errors.Is(err, apperrors.ErrConnectionNotFound) {
+			return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		}
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to load schema: " + err.Error(), Code: strPtr("SCHEMA_ERROR")}
 	}
 	schemaText := llm.FormatSchemaForPrompt(schemaResult)
@@ -216,11 +283,15 @@ func (s *AskService) ensureSessionAndHistory(ctx context.Context, sessionID *str
 		}
 		return strings.TrimSpace(*sessionID), summarizeChatHistory(history), nil
 	}
-	id, err := s.createChatSession(ctx, s.connectionResolver.normalizedConnectionID(connectionID))
+	id, err := s.resolveConnectionID(connectionID)
 	if err != nil {
 		return "", "", err
 	}
-	return id, "", nil
+	sid, err := s.createChatSession(ctx, id)
+	if err != nil {
+		return "", "", err
+	}
+	return sid, "", nil
 }
 
 func (s *AskService) createChatSession(ctx context.Context, connectionID string) (string, error) {
@@ -385,7 +456,17 @@ func (s *AskService) Explain(ctx context.Context, payload *suggestions.ExplainPa
 
 // Questions suggests schema-driven natural-language prompts users can ask.
 func (s *AskService) Questions(ctx context.Context, payload *suggestions.QuestionsPayload) (*suggestions.SuggestedQuestionsResult, error) {
-	schemaResult, err := s.connectionResolver.loaderFor(payload.ConnectionID).Load(ctx)
+	if err := s.authorizeConnectionAction(ctx, payload.ConnectionID, auth.ActionAsk); err != nil {
+		return nil, askConnectionForbiddenError(err)
+	}
+	loader, err := s.connectionResolver.loaderFor(payload.ConnectionID)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrConnectionNotFound) {
+			return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		}
+		return &suggestions.SuggestedQuestionsResult{Questions: defaultQuestions()}, nil
+	}
+	schemaResult, err := loader.Load(ctx)
 	if err != nil {
 		return &suggestions.SuggestedQuestionsResult{Questions: defaultQuestions()}, nil
 	}

@@ -22,7 +22,7 @@ func BuildPerfSuggestions(r *queryrunner.Result) []string {
 func ConvertMetrics(m *metrics.Metrics) *reports.MetricsData {
 	aggregates := make(map[string]*reports.AggregateData, len(m.Aggregates))
 	for col, agg := range m.Aggregates {
-		count := int32(agg.Count)
+		count := clampInt32(agg.Count)
 		ad := &reports.AggregateData{
 			Sum:   agg.Sum,
 			Avg:   agg.Avg,
@@ -88,7 +88,7 @@ func ConvertMetrics(m *metrics.Metrics) *reports.MetricsData {
 			}
 		}
 		if ts.TrendSummary != nil {
-			pu := int32(ts.TrendSummary.PeriodsUsed)
+			pu := clampInt32(ts.TrendSummary.PeriodsUsed)
 			tsData.TrendSummary = &reports.TrendSummaryData{
 				Direction:   ts.TrendSummary.Direction,
 				Summary:     ts.TrendSummary.Summary,
@@ -116,7 +116,7 @@ func ConvertMetrics(m *metrics.Metrics) *reports.MetricsData {
 			tsData.HoltForecast = ts.HoltForecast
 		}
 		if ts.SeasonalPeriod != 0 {
-			sp := int32(ts.SeasonalPeriod)
+			sp := clampInt32(ts.SeasonalPeriod)
 			tsData.SeasonalPeriod = &sp
 		}
 		if ts.SeasonallyAdjustedForecast != nil {
@@ -139,9 +139,9 @@ func ConvertMetrics(m *metrics.Metrics) *reports.MetricsData {
 	dataQuality := make(map[string]*reports.ColumnQualityData, len(m.DataQuality))
 	for col, q := range m.DataQuality {
 		dataQuality[col] = &reports.ColumnQualityData{
-			NullCount:     int32(q.NullCount),
-			DistinctCount: int32(q.DistinctCount),
-			TotalRows:     int32(q.TotalRows),
+			NullCount:     clampInt32(q.NullCount),
+			DistinctCount: clampInt32(q.DistinctCount),
+			TotalRows:     clampInt32(q.TotalRows),
 			NullPct:       q.NullPct,
 		}
 	}

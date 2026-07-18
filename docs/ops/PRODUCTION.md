@@ -28,7 +28,9 @@ only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
 | Connection health | Stable | `/ready` checks core app DB only; `/ready/connections` reports each analytical pool independently; Prometheus pool metrics include `pool` and `role` labels. |
 | EXPLAIN plan findings | Preview | Catalog row estimates, index context, and confidence levels; triage signals only. |
 | Reports and deterministic metrics | Preview | Safe when result-size limits and query timeouts are configured. |
-| LLM governance and audit | Preview | Policy checks plus `app.llm_audit_events`; cloud providers require `LLM_ALLOW_EXTERNAL_DATA=true`. |
+| LLM governance and audit | Preview | Policy checks plus `app.llm_audit_events`; cloud providers require `LLM_ALLOW_EXTERNAL_DATA=true`. Atomic budgets use reservation ledger + `LLM_BUDGET_FAIL_CLOSED=true` (required for cloud in production). |
+| EXPLAIN snapshot retention | Preview | Snapshots store redacted SQL then AES-GCM seal when `SECURITY_DATA_ENCRYPTION_KEY` (or session secret fallback) is set (`sql_storage_class=encrypted`). Retention via `SECURITY_EXPLAIN_SNAPSHOT_RETENTION_DAYS` (default 90). |
+| Managed API keys | Preview | Admin CRUD at `/api/v1/admin/api-keys` (hash at rest, secret returned once); env bootstrap hashes still supported for automation. |
 | Local Ollama narratives | Preview | Keep `LLM_SEND_ROW_DATA=false` unless row samples are approved. |
 | Cloud LLM providers | Disabled until explicit approval | Requires `LLM_ALLOW_EXTERNAL_DATA=true`; audited when enabled. |
 | Durable scheduling | Preview | Lease/idempotency via `app.schedule_runs`; enable with `SCHEDULE_RUNNER_ENABLED=true` and `SCHEDULE_DURABLE_LEASES=true`. |
@@ -46,6 +48,7 @@ only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
 - Do not enable cloud AI for confidential data without a documented data-classification decision.
 - Prefer a small number of scheduler replicas; durable leases + idempotency keys prevent double delivery, but keep webhook destinations allowlisted.
 - Do not use this as a public multi-tenant SaaS without reviewing membership provisioning and IdP org claim mapping.
+- Report generation and webhook delivery are **at-least-once**, not exactly-once: `app.reports.schedule_run_id` makes report generation idempotent (a retried/recovered run reuses the same report row instead of regenerating), and each webhook attempt carries a stable `X-PGQN-Delivery-ID` (derived from `schedule_run_id`, written to the `app.webhook_deliveries` outbox row *before* any network call) so receivers should dedupe on that header rather than assume single delivery.
 
 ### Required hardening knobs
 

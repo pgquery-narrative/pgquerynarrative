@@ -10,6 +10,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -35,5 +36,13 @@ func main() {
 	if addr == "" {
 		addr = ":8081"
 	}
-	_ = http.ListenAndServe(addr, r)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	_ = srv.ListenAndServe()
 }

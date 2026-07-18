@@ -397,11 +397,8 @@ func (p *Pools) ReadOnly(connectionID string) *pgxpool.Pool {
 func (p *Pools) ensureReadOnlyPool(ctx context.Context, connectionID string) (*pgxpool.Pool, error) {
 	spec, ok := p.readonlySpecs[connectionID]
 	if !ok {
-		spec, ok = p.readonlySpecs[p.DefaultConnectionID]
-		if !ok {
-			return nil, fmt.Errorf("unknown connection %q", connectionID)
-		}
-		connectionID = p.DefaultConnectionID
+		// Blank IDs are normalized to the default by ReadOnly(); unknown non-empty IDs must not fall back.
+		return nil, fmt.Errorf("%w: %q", errors.ErrConnectionNotFound, connectionID)
 	}
 
 	p.readonlyMu.Lock()

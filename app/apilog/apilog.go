@@ -3,7 +3,7 @@
 package apilog
 
 import (
-	"github.com/pgquerynarrative/pgquerynarrative/app/logger"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/logger"
 )
 
 // ValidationError logs a validation error (query or report) for the given endpoint.

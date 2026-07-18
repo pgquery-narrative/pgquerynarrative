@@ -4,8 +4,8 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Report, type SimilarReportItem, type ConnectionInfo } from "@/api/client";
-import { FileText, Download, Clock, Cpu, ArrowLeft, BarChart3, Search } from "lucide-react";
+import { api, type Report, type SimilarReportItem, type ConnectionInfo, type ReportShareInfo } from "@/api/client";
+import { FileText, Download, Clock, Cpu, ArrowLeft, BarChart3, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { buttonVariants } from "@/components/ui/button";
 import { cn, truncate } from "@/lib/utils";
@@ -35,12 +35,33 @@ function ReportDetail() {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareExpiry, setShareExpiry] = useState("168");
   const [shareMessage, setShareMessage] = useState("");
+  const [shares, setShares] = useState<ReportShareInfo[]>([]);
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [revokeId, setRevokeId] = useState<string | null>(null);
+
+  const refreshShares = useCallback(async () => {
+    if (!id) return;
+    setSharesLoading(true);
+    try {
+      const res = await api.listShares(id);
+      setShares(res.items ?? []);
+    } catch {
+      setShares([]);
+    } finally {
+      setSharesLoading(false);
+    }
+  }, [id]);
 
   useEffect(() => {
     if (!id && !token) return;
     const loader = token ? api.getSharedReport(token) : api.getReport(id!);
     loader.then(setReport).catch(() => {}).finally(() => setLoading(false));
   }, [id, token]);
+
+  useEffect(() => {
+    if (!id || token) return;
+    void refreshShares();
+  }, [id, token, refreshShares]);
 
   if (loading) return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /></div>;
   if (!report) return <p className="text-muted-foreground">Report not found.</p>;
@@ -72,10 +93,23 @@ function ReportDetail() {
       const absolute = `${window.location.origin}${result.url}`;
       await navigator.clipboard.writeText(absolute);
       setShareMessage(`Share link copied${result.expires_at ? ` (expires ${new Date(result.expires_at).toLocaleString()})` : ""}`);
+      await refreshShares();
     } catch (e) {
       setShareMessage(e instanceof Error ? e.message : "Failed to create share link");
     } finally {
       setShareLoading(false);
+    }
+  };
+  const revokeShareLink = async (shareId: string) => {
+    setRevokeId(shareId);
+    try {
+      await api.revokeShare(shareId);
+      await refreshShares();
+      setShareMessage("Share link revoked");
+    } catch (e) {
+      setShareMessage(e instanceof Error ? e.message : "Failed to revoke share link");
+    } finally {
+      setRevokeId(null);
     }
   };
 
@@ -101,19 +135,60 @@ function ReportDetail() {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Share Report</CardTitle>
-            <CardDescription>Create a read-only link with optional expiry.</CardDescription>
+            <CardDescription>Create a read-only link with optional expiry. Revoke any active link below.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2 items-center">
-            <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={shareExpiry} onChange={(e) => setShareExpiry(e.target.value)}>
-              <option value="24">24 hours</option>
-              <option value="72">3 days</option>
-              <option value="168">7 days</option>
-              <option value="720">30 days</option>
-            </select>
-            <Button onClick={() => { void createShareLink(); }} disabled={shareLoading}>
-              Create & Copy Link
-            </Button>
-            {shareMessage && <p className="text-xs text-muted-foreground">{shareMessage}</p>}
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-2 items-center">
+              <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={shareExpiry} onChange={(e) => setShareExpiry(e.target.value)}>
+                <option value="24">24 hours</option>
+                <option value="72">3 days</option>
+                <option value="168">7 days</option>
+                <option value="720">30 days</option>
+              </select>
+              <Button onClick={() => { void createShareLink(); }} disabled={shareLoading}>
+                Create & Copy Link
+              </Button>
+              {shareMessage && <p className="text-xs text-muted-foreground">{shareMessage}</p>}
+            </div>
+            <div className="border-t border-border pt-3 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Active and revoked links</p>
+              {sharesLoading ? (
+                <Skeleton className="h-10 w-full" />
+              ) : shares.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No share links yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {shares.map((s) => {
+                    const revoked = Boolean(s.revoked_at);
+                    return (
+                      <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 text-xs border border-border rounded-md px-3 py-2">
+                        <div className="space-y-0.5">
+                          <p className="font-mono">{s.id.slice(0, 8)}…</p>
+                          <p className="text-muted-foreground">
+                            created {new Date(s.created_at).toLocaleString()}
+                            {s.expires_at ? ` · expires ${new Date(s.expires_at).toLocaleString()}` : ""}
+                            {` · accessed ${s.access_count}×`}
+                            {revoked ? ` · revoked ${new Date(s.revoked_at!).toLocaleString()}` : ""}
+                          </p>
+                        </div>
+                        {!revoked && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={revokeId === s.id}
+                            onClick={() => { void revokeShareLink(s.id); }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Revoke
+                          </Button>
+                        )}
+                        {revoked && <Badge variant="secondary">revoked</Badge>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -373,8 +448,11 @@ function ReportList() {
         setReports(res.items || []);
         setSimilar([]);
       }
-    } catch {}
-    finally { setLoading(false); }
+    } catch {
+      // Ignore: UI shows the existing (possibly empty) list on failure.
+    } finally {
+      setLoading(false);
+    }
   }, [connectionFilter, searchText]);
 
   useEffect(() => { load(); }, [load]);

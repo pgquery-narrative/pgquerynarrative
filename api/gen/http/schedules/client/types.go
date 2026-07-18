@@ -19,13 +19,15 @@ type CreateRequestBody struct {
 	SavedQueryID *string `form:"saved_query_id,omitempty" json:"saved_query_id,omitempty" xml:"saved_query_id,omitempty"`
 	SQL          *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
-	// Use @every <duration> format (e.g. @every 6h)
-	CronExpr string `form:"cron_expr" json:"cron_expr" xml:"cron_expr"`
+	// Use @every <duration> format (e.g. @every 6h). Formerly named cron_expr.
+	IntervalExpr string `form:"interval_expr" json:"interval_expr" xml:"interval_expr"`
+	// IANA time zone for scheduling (default UTC)
+	Timezone *string `form:"timezone,omitempty" json:"timezone,omitempty" xml:"timezone,omitempty"`
 	// webhook|log
 	DestinationType string `form:"destination_type" json:"destination_type" xml:"destination_type"`
-	// Webhook URL or log channel name
-	DestinationTarget string `form:"destination_target" json:"destination_target" xml:"destination_target"`
-	Enabled           *bool  `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
+	// Webhook URL (required for webhook); optional for log
+	DestinationTarget *string `form:"destination_target,omitempty" json:"destination_target,omitempty" xml:"destination_target,omitempty"`
+	Enabled           *bool   `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
 }
 
 // UpdateRequestBody is the type of the "schedules" service "update" endpoint
@@ -35,13 +37,15 @@ type UpdateRequestBody struct {
 	SavedQueryID *string `form:"saved_query_id,omitempty" json:"saved_query_id,omitempty" xml:"saved_query_id,omitempty"`
 	SQL          *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
-	// Use @every <duration> format (e.g. @every 6h)
-	CronExpr string `form:"cron_expr" json:"cron_expr" xml:"cron_expr"`
+	// Use @every <duration> format (e.g. @every 6h). Formerly named cron_expr.
+	IntervalExpr string `form:"interval_expr" json:"interval_expr" xml:"interval_expr"`
+	// IANA time zone for scheduling (default UTC)
+	Timezone *string `form:"timezone,omitempty" json:"timezone,omitempty" xml:"timezone,omitempty"`
 	// webhook|log
 	DestinationType string `form:"destination_type" json:"destination_type" xml:"destination_type"`
-	// Webhook URL or log channel name
-	DestinationTarget string `form:"destination_target" json:"destination_target" xml:"destination_target"`
-	Enabled           *bool  `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
+	// Webhook URL (required for webhook); optional for log
+	DestinationTarget *string `form:"destination_target,omitempty" json:"destination_target,omitempty" xml:"destination_target,omitempty"`
+	Enabled           *bool   `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
 }
 
 // ListResponseBody is the type of the "schedules" service "list" endpoint HTTP
@@ -58,7 +62,8 @@ type CreateResponseBody struct {
 	SavedQueryID      *string `form:"saved_query_id,omitempty" json:"saved_query_id,omitempty" xml:"saved_query_id,omitempty"`
 	SQL               *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
 	ConnectionID      *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
-	CronExpr          *string `form:"cron_expr,omitempty" json:"cron_expr,omitempty" xml:"cron_expr,omitempty"`
+	IntervalExpr      *string `form:"interval_expr,omitempty" json:"interval_expr,omitempty" xml:"interval_expr,omitempty"`
+	Timezone          *string `form:"timezone,omitempty" json:"timezone,omitempty" xml:"timezone,omitempty"`
 	DestinationType   *string `form:"destination_type,omitempty" json:"destination_type,omitempty" xml:"destination_type,omitempty"`
 	DestinationTarget *string `form:"destination_target,omitempty" json:"destination_target,omitempty" xml:"destination_target,omitempty"`
 	Enabled           *bool   `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
@@ -78,7 +83,8 @@ type UpdateResponseBody struct {
 	SavedQueryID      *string `form:"saved_query_id,omitempty" json:"saved_query_id,omitempty" xml:"saved_query_id,omitempty"`
 	SQL               *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
 	ConnectionID      *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
-	CronExpr          *string `form:"cron_expr,omitempty" json:"cron_expr,omitempty" xml:"cron_expr,omitempty"`
+	IntervalExpr      *string `form:"interval_expr,omitempty" json:"interval_expr,omitempty" xml:"interval_expr,omitempty"`
+	Timezone          *string `form:"timezone,omitempty" json:"timezone,omitempty" xml:"timezone,omitempty"`
 	DestinationType   *string `form:"destination_type,omitempty" json:"destination_type,omitempty" xml:"destination_type,omitempty"`
 	DestinationTarget *string `form:"destination_target,omitempty" json:"destination_target,omitempty" xml:"destination_target,omitempty"`
 	Enabled           *bool   `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
@@ -188,7 +194,8 @@ type ScheduleResponseBody struct {
 	SavedQueryID      *string `form:"saved_query_id,omitempty" json:"saved_query_id,omitempty" xml:"saved_query_id,omitempty"`
 	SQL               *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
 	ConnectionID      *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
-	CronExpr          *string `form:"cron_expr,omitempty" json:"cron_expr,omitempty" xml:"cron_expr,omitempty"`
+	IntervalExpr      *string `form:"interval_expr,omitempty" json:"interval_expr,omitempty" xml:"interval_expr,omitempty"`
+	Timezone          *string `form:"timezone,omitempty" json:"timezone,omitempty" xml:"timezone,omitempty"`
 	DestinationType   *string `form:"destination_type,omitempty" json:"destination_type,omitempty" xml:"destination_type,omitempty"`
 	DestinationTarget *string `form:"destination_target,omitempty" json:"destination_target,omitempty" xml:"destination_target,omitempty"`
 	Enabled           *bool   `form:"enabled,omitempty" json:"enabled,omitempty" xml:"enabled,omitempty"`
@@ -237,7 +244,8 @@ func NewCreateRequestBody(p *schedules.ScheduleInput) *CreateRequestBody {
 		SavedQueryID:      p.SavedQueryID,
 		SQL:               p.SQL,
 		ConnectionID:      p.ConnectionID,
-		CronExpr:          p.CronExpr,
+		IntervalExpr:      p.IntervalExpr,
+		Timezone:          p.Timezone,
 		DestinationType:   p.DestinationType,
 		DestinationTarget: p.DestinationTarget,
 		Enabled:           p.Enabled,
@@ -253,7 +261,8 @@ func NewUpdateRequestBody(p *schedules.UpdatePayload) *UpdateRequestBody {
 		SavedQueryID:      p.SavedQueryID,
 		SQL:               p.SQL,
 		ConnectionID:      p.ConnectionID,
-		CronExpr:          p.CronExpr,
+		IntervalExpr:      p.IntervalExpr,
+		Timezone:          p.Timezone,
 		DestinationType:   p.DestinationType,
 		DestinationTarget: p.DestinationTarget,
 		Enabled:           p.Enabled,
@@ -286,9 +295,10 @@ func NewCreateScheduleOK(body *CreateResponseBody) *schedules.Schedule {
 		SavedQueryID:      body.SavedQueryID,
 		SQL:               body.SQL,
 		ConnectionID:      *body.ConnectionID,
-		CronExpr:          *body.CronExpr,
+		IntervalExpr:      *body.IntervalExpr,
+		Timezone:          body.Timezone,
 		DestinationType:   *body.DestinationType,
-		DestinationTarget: *body.DestinationTarget,
+		DestinationTarget: body.DestinationTarget,
 		Enabled:           *body.Enabled,
 		LastRunAt:         body.LastRunAt,
 		LastStatus:        body.LastStatus,
@@ -322,9 +332,10 @@ func NewUpdateScheduleOK(body *UpdateResponseBody) *schedules.Schedule {
 		SavedQueryID:      body.SavedQueryID,
 		SQL:               body.SQL,
 		ConnectionID:      *body.ConnectionID,
-		CronExpr:          *body.CronExpr,
+		IntervalExpr:      *body.IntervalExpr,
+		Timezone:          body.Timezone,
 		DestinationType:   *body.DestinationType,
-		DestinationTarget: *body.DestinationTarget,
+		DestinationTarget: body.DestinationTarget,
 		Enabled:           *body.Enabled,
 		LastRunAt:         body.LastRunAt,
 		LastStatus:        body.LastStatus,
@@ -497,14 +508,11 @@ func ValidateCreateResponseBody(body *CreateResponseBody) (err error) {
 	if body.ConnectionID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
 	}
-	if body.CronExpr == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cron_expr", "body"))
+	if body.IntervalExpr == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("interval_expr", "body"))
 	}
 	if body.DestinationType == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("destination_type", "body"))
-	}
-	if body.DestinationTarget == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("destination_target", "body"))
 	}
 	if body.Enabled == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("enabled", "body"))
@@ -547,14 +555,11 @@ func ValidateUpdateResponseBody(body *UpdateResponseBody) (err error) {
 	if body.ConnectionID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
 	}
-	if body.CronExpr == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cron_expr", "body"))
+	if body.IntervalExpr == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("interval_expr", "body"))
 	}
 	if body.DestinationType == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("destination_type", "body"))
-	}
-	if body.DestinationTarget == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("destination_target", "body"))
 	}
 	if body.Enabled == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("enabled", "body"))
@@ -773,14 +778,11 @@ func ValidateScheduleResponseBody(body *ScheduleResponseBody) (err error) {
 	if body.ConnectionID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
 	}
-	if body.CronExpr == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cron_expr", "body"))
+	if body.IntervalExpr == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("interval_expr", "body"))
 	}
 	if body.DestinationType == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("destination_type", "body"))
-	}
-	if body.DestinationTarget == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("destination_target", "body"))
 	}
 	if body.Enabled == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("enabled", "body"))

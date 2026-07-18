@@ -93,6 +93,26 @@ func defElemStringValue(def *pg_query.DefElem) string {
 	return ""
 }
 
+// RedactConstants replaces literal values (string, numeric, boolean) in sql with
+// positional placeholders ($1, $2, ...) using the real PostgreSQL parser, the same
+// technique pg_stat_statements uses to normalize queries. This is used before
+// persisting EXPLAIN snapshots so stored sql_text cannot leak literal predicate
+// values (customer IDs, emails, tokens, etc.) that may appear in a WHERE clause,
+// while still preserving the query's shape for plan-analysis review. Falls back to
+// returning the original sql (via ok=false) when the statement cannot be parsed,
+// so callers can decide on a conservative fallback (e.g. a regex-based redaction).
+func RedactConstants(sql string) (redacted string, ok bool) {
+	trimmed := strings.TrimSpace(sql)
+	if trimmed == "" {
+		return "", true
+	}
+	out, err := pg_query.Normalize(trimmed)
+	if err != nil {
+		return "", false
+	}
+	return out, true
+}
+
 // deparseNode renders a single statement node back to SQL using the PostgreSQL deparser.
 func deparseNode(node *pg_query.Node) (string, error) {
 	tree := &pg_query.ParseResult{

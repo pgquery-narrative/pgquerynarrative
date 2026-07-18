@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Database, Cpu, Settings2, BarChart3 } from "lucide-react";
-import { api, type AnalyticsSettings, type EmbeddingSettings, type LLMSettings } from "@/api/client";
-import { getApiKey, setApiKey } from "@/api/auth";
+import { Database, Cpu, Settings2, BarChart3, KeyRound, Trash2 } from "lucide-react";
+import { api, type AnalyticsSettings, type EmbeddingSettings, type LLMSettings, type ManagedAPIKey } from "@/api/client";
+import { fetchSessionStatus, getApiKey, setApiKey, isBrowserKeyStorageAllowed } from "@/api/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -14,6 +14,29 @@ export default function SettingsPage() {
   const [authEnabled, setAuthEnabled] = useState(false);
   const [apiKey, setApiKeyState] = useState(getApiKey());
   const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [sessionRole, setSessionRole] = useState<string | undefined>();
+  const [managedKeys, setManagedKeys] = useState<ManagedAPIKey[]>([]);
+  const [managedKeysLoading, setManagedKeysLoading] = useState(false);
+  const [managedKeyRole, setManagedKeyRole] = useState("analyst");
+  const [managedKeyMsg, setManagedKeyMsg] = useState("");
+  const [issuedSecret, setIssuedSecret] = useState("");
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [revokingKeyId, setRevokingKeyId] = useState<string | null>(null);
+
+  const isAdmin = sessionRole === "admin";
+
+  const refreshManagedKeys = useCallback(async () => {
+    if (!isAdmin) return;
+    setManagedKeysLoading(true);
+    try {
+      const res = await api.listManagedKeys();
+      setManagedKeys(res.items ?? []);
+    } catch {
+      setManagedKeys([]);
+    } finally {
+      setManagedKeysLoading(false);
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
     api
@@ -25,7 +48,16 @@ export default function SettingsPage() {
         if (r.security) setAuthEnabled(r.security.auth_enabled);
       })
       .catch(() => {});
+    fetchSessionStatus()
+      .then((s) => {
+        if (s.authenticated) setSessionRole(s.role);
+      })
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    void refreshManagedKeys();
+  }, [refreshManagedKeys]);
 
   return (
     <div className="space-y-6">
@@ -126,7 +158,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <Row label="Auth enabled" value={authEnabled ? "yes" : "no"} />
-            {authEnabled && (
+            {authEnabled && isBrowserKeyStorageAllowed() && (
               <div className="space-y-2 pt-2 border-t border-border/50">
                 <label htmlFor="api-key" className="text-sm text-muted-foreground">API key (Bearer token)</label>
                 <Input
@@ -147,15 +179,137 @@ export default function SettingsPage() {
                 >
                   {apiKeySaved ? "Saved" : "Save API key"}
                 </Button>
-                <p className="text-xs text-muted-foreground">Stored in this browser only (localStorage).</p>
+                <p className="text-xs text-muted-foreground">Stored in this browser only (localStorage). Enabled via VITE_ALLOW_BROWSER_API_KEY for this deployment.</p>
               </div>
             )}
+            {authEnabled && !isBrowserKeyStorageAllowed() && (
+              <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
+                Use a session login or the CLI to authenticate; storing API keys in the browser is disabled in this deployment.
+              </p>
+            )}
+            <Row label="Session role" value={sessionRole || "—"} />
             <Row label="Allowed schemas" value="demo (default)" />
             <Row label="Max query length" value="10,000 chars" />
             <Row label="Max rows per query" value="1,000" />
             <Row label="Server port" value={envOrDefault("PORT", "8080")} />
           </CardContent>
         </Card>
+
+        {isAdmin && (
+          <Card className="md:col-span-2">
+            <CardHeader className="flex flex-row items-center gap-3">
+              <KeyRound className="h-5 w-5 text-brand-indigo" />
+              <div>
+                <CardTitle>Managed API keys</CardTitle>
+                <CardDescription>Org-scoped keys issued by admins. The secret is shown once at creation.</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex flex-wrap gap-2 items-center">
+                <select
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={managedKeyRole}
+                  onChange={(e) => setManagedKeyRole(e.target.value)}
+                >
+                  <option value="viewer">viewer</option>
+                  <option value="analyst">analyst</option>
+                  <option value="admin">admin</option>
+                </select>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={creatingKey}
+                  onClick={() => {
+                    void (async () => {
+                      setCreatingKey(true);
+                      setManagedKeyMsg("");
+                      setIssuedSecret("");
+                      try {
+                        const issued = await api.createManagedKey({ role: managedKeyRole });
+                        setIssuedSecret(issued.secret);
+                        setManagedKeyMsg(`Created key ${issued.prefix}… — copy the secret now`);
+                        await refreshManagedKeys();
+                      } catch (e) {
+                        setManagedKeyMsg(e instanceof Error ? e.message : "Failed to create key");
+                      } finally {
+                        setCreatingKey(false);
+                      }
+                    })();
+                  }}
+                >
+                  {creatingKey ? "Creating…" : "Create key"}
+                </Button>
+                {managedKeyMsg && <p className="text-xs text-muted-foreground">{managedKeyMsg}</p>}
+              </div>
+              {issuedSecret && (
+                <div className="rounded-md border border-border bg-muted/40 p-3 space-y-2">
+                  <p className="text-xs font-medium">New secret (shown once)</p>
+                  <code className="block text-xs break-all font-mono">{issuedSecret}</code>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(issuedSecret);
+                    }}
+                  >
+                    Copy secret
+                  </Button>
+                </div>
+              )}
+              {managedKeysLoading ? (
+                <p className="text-xs text-muted-foreground">Loading keys…</p>
+              ) : managedKeys.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No managed keys yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {managedKeys.map((k) => {
+                    const revoked = Boolean(k.revoked_at);
+                    return (
+                      <li key={k.id} className="flex flex-wrap items-center justify-between gap-2 border border-border rounded-md px-3 py-2">
+                        <div className="space-y-0.5">
+                          <p className="font-mono text-xs">{k.prefix}… · {k.role}</p>
+                          <p className="text-xs text-muted-foreground">
+                            created {new Date(k.created_at).toLocaleString()}
+                            {k.expires_at ? ` · expires ${new Date(k.expires_at).toLocaleString()}` : ""}
+                            {revoked ? ` · revoked ${new Date(k.revoked_at!).toLocaleString()}` : ""}
+                          </p>
+                        </div>
+                        {!revoked ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={revokingKeyId === k.id}
+                            onClick={() => {
+                              void (async () => {
+                                setRevokingKeyId(k.id);
+                                try {
+                                  await api.revokeManagedKey(k.id);
+                                  await refreshManagedKeys();
+                                  setManagedKeyMsg("Key revoked");
+                                } catch (e) {
+                                  setManagedKeyMsg(e instanceof Error ? e.message : "Failed to revoke key");
+                                } finally {
+                                  setRevokingKeyId(null);
+                                }
+                              })();
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Revoke
+                          </Button>
+                        ) : (
+                          <Badge variant="secondary">revoked</Badge>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

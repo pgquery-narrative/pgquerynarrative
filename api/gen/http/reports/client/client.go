@@ -43,6 +43,14 @@ type Client struct {
 	// endpoint.
 	GetSharedDoer goahttp.Doer
 
+	// ListShares Doer is the HTTP client used to make requests to the list_shares
+	// endpoint.
+	ListSharesDoer goahttp.Doer
+
+	// RevokeShare Doer is the HTTP client used to make requests to the
+	// revoke_share endpoint.
+	RevokeShareDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -70,6 +78,8 @@ func NewClient(
 		RewriteDoer:         doer,
 		CreateShareDoer:     doer,
 		GetSharedDoer:       doer,
+		ListSharesDoer:      doer,
+		RevokeShareDoer:     doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
 		host:                host,
@@ -231,6 +241,44 @@ func (c *Client) GetShared() goa.Endpoint {
 		resp, err := c.GetSharedDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("reports", "get_shared", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ListShares returns an endpoint that makes HTTP requests to the reports
+// service list_shares server.
+func (c *Client) ListShares() goa.Endpoint {
+	var (
+		decodeResponse = DecodeListSharesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildListSharesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ListSharesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("reports", "list_shares", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// RevokeShare returns an endpoint that makes HTTP requests to the reports
+// service revoke_share server.
+func (c *Client) RevokeShare() goa.Endpoint {
+	var (
+		decodeResponse = DecodeRevokeShareResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildRevokeShareRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.RevokeShareDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("reports", "revoke_share", err)
 		}
 		return decodeResponse(resp)
 	}

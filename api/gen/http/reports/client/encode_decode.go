@@ -643,6 +643,157 @@ func DecodeGetSharedResponse(decoder func(*http.Response) goahttp.Decoder, resto
 	}
 }
 
+// BuildListSharesRequest instantiates a HTTP request object with method and
+// path set to call the "reports" service "list_shares" endpoint
+func (c *Client) BuildListSharesRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		reportID string
+	)
+	{
+		p, ok := v.(*reports.ListSharesPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("reports", "list_shares", "*reports.ListSharesPayload", v)
+		}
+		reportID = p.ReportID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListSharesReportsPath(reportID)}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("reports", "list_shares", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeListSharesResponse returns a decoder for responses returned by the
+// reports list_shares endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeListSharesResponse may return the following errors:
+//   - "not_found" (type *reports.NotFoundError): http.StatusNotFound
+//   - error: internal error
+func DecodeListSharesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ListSharesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("reports", "list_shares", err)
+			}
+			err = ValidateListSharesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("reports", "list_shares", err)
+			}
+			res := NewListSharesReportShareListOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ListSharesNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("reports", "list_shares", err)
+			}
+			err = ValidateListSharesNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("reports", "list_shares", err)
+			}
+			return nil, NewListSharesNotFound(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("reports", "list_shares", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildRevokeShareRequest instantiates a HTTP request object with method and
+// path set to call the "reports" service "revoke_share" endpoint
+func (c *Client) BuildRevokeShareRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		id string
+	)
+	{
+		p, ok := v.(*reports.RevokeSharePayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("reports", "revoke_share", "*reports.RevokeSharePayload", v)
+		}
+		id = p.ID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: RevokeShareReportsPath(id)}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("reports", "revoke_share", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeRevokeShareResponse returns a decoder for responses returned by the
+// reports revoke_share endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeRevokeShareResponse may return the following errors:
+//   - "not_found" (type *reports.NotFoundError): http.StatusNotFound
+//   - error: internal error
+func DecodeRevokeShareResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			return nil, nil
+		case http.StatusNotFound:
+			var (
+				body RevokeShareNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("reports", "revoke_share", err)
+			}
+			err = ValidateRevokeShareNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("reports", "revoke_share", err)
+			}
+			return nil, NewRevokeShareNotFound(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("reports", "revoke_share", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // unmarshalNarrativeContentResponseBodyToReportsNarrativeContent builds a
 // value of type *reports.NarrativeContent from a value of type
 // *NarrativeContentResponseBody.
@@ -1024,6 +1175,22 @@ func unmarshalSimilarReportItemResponseBodyToReportsSimilarReportItem(v *Similar
 		ConnectionID: *v.ConnectionID,
 		CreatedAt:    *v.CreatedAt,
 		Similarity:   *v.Similarity,
+	}
+
+	return res
+}
+
+// unmarshalReportShareInfoResponseBodyToReportsReportShareInfo builds a value
+// of type *reports.ReportShareInfo from a value of type
+// *ReportShareInfoResponseBody.
+func unmarshalReportShareInfoResponseBodyToReportsReportShareInfo(v *ReportShareInfoResponseBody) *reports.ReportShareInfo {
+	res := &reports.ReportShareInfo{
+		ID:             *v.ID,
+		CreatedAt:      *v.CreatedAt,
+		ExpiresAt:      v.ExpiresAt,
+		RevokedAt:      v.RevokedAt,
+		AccessCount:    *v.AccessCount,
+		LastAccessedAt: v.LastAccessedAt,
 	}
 
 	return res

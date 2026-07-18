@@ -7,28 +7,44 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 )
 
+// PoolMetric identifies a connection pool for metrics rendering. It mirrors db.NamedPool
+// but is defined locally (rather than imported from app/db) to avoid an import cycle:
+// app/db depends on app/config, which depends on app/audit, which depends on this package.
+type PoolMetric struct {
+	Name string
+	Role string
+	Pool *pgxpool.Pool
+}
+
 var (
-	requestTotal      atomic.Int64
-	requestErrors     atomic.Int64
-	queryRuns         atomic.Int64
-	queryTimeouts     atomic.Int64
-	llmCalls          atomic.Int64
-	schedulerRuns     atomic.Int64
-	schedulerFailures atomic.Int64
-	scheduleDead      atomic.Int64
-	leaseRecoveries   atomic.Int64
-	webhookDeliveries atomic.Int64
-	webhookFailures   atomic.Int64
-	webhookDead       atomic.Int64
-	authFailures      atomic.Int64
-	authzDenials      atomic.Int64
-	llmBudgetDenials  atomic.Int64
-	llmTokensTotal    atomic.Int64
-	auditWriteFails   atomic.Int64
-	webhookRejected   atomic.Int64
+	requestTotal        atomic.Int64
+	requestErrors       atomic.Int64
+	queryRuns           atomic.Int64
+	queryTimeouts       atomic.Int64
+	llmCalls            atomic.Int64
+	schedulerRuns       atomic.Int64
+	schedulerFailures   atomic.Int64
+	scheduleDead        atomic.Int64
+	leaseRecoveries     atomic.Int64
+	webhookDeliveries   atomic.Int64
+	webhookFailures     atomic.Int64
+	webhookDead         atomic.Int64
+	authFailures        atomic.Int64
+	authzDenials        atomic.Int64
+	llmBudgetDenials    atomic.Int64
+	llmTokensTotal      atomic.Int64
+	auditWriteFails     atomic.Int64
+	webhookRejected     atomic.Int64
+	rateLimitStorageF   atomic.Int64
+	llmBudgetFailClosed atomic.Int64
+	llmBudgetExpired    atomic.Int64
+	embedCalls          atomic.Int64
+	embedDenials        atomic.Int64
+	embedErrors         atomic.Int64
+	embedLatencySumMS   atomic.Int64
+	embedLatencyCount   atomic.Int64
 
 	// Fixed latency buckets in milliseconds for HTTP request duration histogram.
 	latencyBucketsMS = []int64{5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
@@ -110,13 +126,48 @@ func IncAuditWriteFailure() { auditWriteFails.Add(1) }
 // IncWebhookRejected increments webhook deliveries blocked by policy.
 func IncWebhookRejected() { webhookRejected.Add(1) }
 
+// IncRateLimitStorageFailure increments distributed rate limiter storage (Postgres) failures,
+// i.e. cases where the limiter could not reach its backing store and had to apply its
+// configured failure mode (open/closed/local_fallback).
+func IncRateLimitStorageFailure() { rateLimitStorageF.Add(1) }
+
+// IncLLMBudgetFailClosed increments requests denied because the budget ledger
+// was unavailable and fail-closed policy is active.
+func IncLLMBudgetFailClosed() { llmBudgetFailClosed.Add(1) }
+
+// IncLLMBudgetReservationExpired increments abandoned reservations reclaimed by cleanup.
+func IncLLMBudgetReservationExpired(n int64) {
+	if n > 0 {
+		llmBudgetExpired.Add(n)
+	}
+}
+
+// IncEmbedCall increments successful embedding invocations.
+func IncEmbedCall() { embedCalls.Add(1) }
+
+// IncEmbedDenied increments embedding calls blocked by governance policy.
+func IncEmbedDenied() { embedDenials.Add(1) }
+
+// IncEmbedError increments embedding provider/dimension/timeout failures.
+func IncEmbedError() { embedErrors.Add(1) }
+
+// ObserveEmbedDuration records embedding call latency for average reporting.
+func ObserveEmbedDuration(d time.Duration) {
+	ms := d.Milliseconds()
+	if ms < 0 {
+		ms = 0
+	}
+	embedLatencySumMS.Add(ms)
+	embedLatencyCount.Add(1)
+}
+
 // PrometheusPoolMetrics renders pool statistics in Prometheus text exposition format.
 func PrometheusPoolMetrics(version string, pool *pgxpool.Pool) string {
-	return PrometheusAllPoolMetrics(version, []db.NamedPool{{Name: "app", Role: "app", Pool: pool}})
+	return PrometheusAllPoolMetrics(version, []PoolMetric{{Name: "app", Role: "app", Pool: pool}})
 }
 
 // PrometheusAllPoolMetrics renders pool statistics for every configured pool.
-func PrometheusAllPoolMetrics(version string, pools []db.NamedPool) string {
+func PrometheusAllPoolMetrics(version string, pools []PoolMetric) string {
 	var b strings.Builder
 	b.WriteString("# HELP pgqn_info Application build info.\n")
 	b.WriteString("# TYPE pgqn_info gauge\n")
@@ -168,6 +219,17 @@ func PrometheusAllPoolMetrics(version string, pools []db.NamedPool) string {
 	writeCounter(&b, "pgqn_authz_denials_total", authzDenials.Load())
 	writeCounter(&b, "pgqn_audit_write_failures_total", auditWriteFails.Load())
 	writeCounter(&b, "pgqn_webhook_rejections_total", webhookRejected.Load())
+	writeCounter(&b, "pgqn_rate_limit_storage_failures_total", rateLimitStorageF.Load())
+	writeCounter(&b, "pgqn_llm_budget_fail_closed_total", llmBudgetFailClosed.Load())
+	writeCounter(&b, "pgqn_llm_budget_reservations_expired_total", llmBudgetExpired.Load())
+	writeCounter(&b, "pgqn_embed_calls_total", embedCalls.Load())
+	writeCounter(&b, "pgqn_embed_denials_total", embedDenials.Load())
+	writeCounter(&b, "pgqn_embed_errors_total", embedErrors.Load())
+	if n := embedLatencyCount.Load(); n > 0 {
+		avg := float64(embedLatencySumMS.Load()) / float64(n)
+		b.WriteString("# TYPE pgqn_embed_latency_avg_ms gauge\n")
+		b.WriteString(fmt.Sprintf("pgqn_embed_latency_avg_ms %g\n", avg))
+	}
 	return b.String()
 }
 

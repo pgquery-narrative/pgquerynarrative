@@ -22,7 +22,16 @@ type UsageReportingClient interface {
 }
 
 // GenerateWithUsage calls GenerateWithUsage when supported, otherwise estimates tokens.
+// When the client implements MessagesClient and the prompt was produced by
+// FlattenMessages (multi-role), it prefers structured system/user messages so
+// untrusted data stays in the user turn rather than being merged into a single blob.
 func GenerateWithUsage(ctx context.Context, client Client, prompt string) (GenerationResult, error) {
+	if mc, ok := client.(MessagesClient); ok {
+		msgs := PromptToChatMessages(prompt)
+		if len(msgs) > 1 || (len(msgs) == 1 && msgs[0].Role == "system") {
+			return mc.GenerateMessages(ctx, msgs)
+		}
+	}
 	if ur, ok := client.(UsageReportingClient); ok {
 		return ur.GenerateWithUsage(ctx, prompt)
 	}

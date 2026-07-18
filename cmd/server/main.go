@@ -31,7 +31,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
-	"github.com/pgquerynarrative/pgquerynarrative/app/logger"
+	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 	"github.com/pgquerynarrative/pgquerynarrative/app/ratelimit"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
@@ -41,6 +41,7 @@ import (
 	dashboardsServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/dashboards/server"
 	schedulesServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/schedules/server"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/logger"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	"github.com/pgquerynarrative/pgquerynarrative/web"
 	goahttp "goa.design/goa/v3/http"
@@ -85,16 +86,17 @@ func main() {
 	suggestionsEndpoints := suggestions.NewEndpoints(client.SuggestionsService())
 
 	if cfg.Security.ScheduleRunnerEnabled {
-		client.SchedulesRunner().SetWebhookSigningSecret(cfg.Security.WebhookSigningSecret)
+		// Webhook secret + allowlist are configured once in narrative.NewClient via ConfigureWebhook.
 		service.StartScheduleRunner(ctx, client.AppPool(), client.SchedulesRunner(), cfg.Security.ScheduleRunnerInterval)
 		service.StartWebhookRetryWorker(ctx, client.AppPool(), client.SchedulesRunner(), cfg.Security.ScheduleRunnerInterval)
 		appLogger.Info("schedule runner started", "interval", cfg.Security.ScheduleRunnerInterval.String())
-	} else {
-		client.SchedulesRunner().SetWebhookSigningSecret(cfg.Security.WebhookSigningSecret)
 	}
 
 	// Configure HTTP server
-	httpServer := setupHTTPServer(cfg, client, queriesEndpoints, connectionsEndpoints, reportsEndpoints, dashboardsEndpoints, schedulesEndpoints, schemaEndpoints, suggestionsEndpoints, appLogger)
+	httpServer, auditStore := setupHTTPServer(ctx, cfg, client, queriesEndpoints, connectionsEndpoints, reportsEndpoints, dashboardsEndpoints, schedulesEndpoints, schemaEndpoints, suggestionsEndpoints, appLogger)
+	if auditStore != nil {
+		defer auditStore.Close()
+	}
 
 	// Start server in a goroutine
 	go func() {
@@ -128,6 +130,7 @@ func main() {
 // - API routes (via Goa) at /api/v1/*
 // - Web export and React SPA
 func setupHTTPServer(
+	ctx context.Context,
 	cfg config.Config,
 	client *narrative.Client,
 	queriesEndpoints *queries.Endpoints,
@@ -138,7 +141,20 @@ func setupHTTPServer(
 	schemaEndpoints *schema.Endpoints,
 	suggestionsEndpoints *suggestions.Endpoints,
 	appLogger *logger.Logger,
-) *http.Server {
+) (*http.Server, *audit.Store) {
+	var auditStore *audit.Store
+	if store := client.AuditStore(); store != nil {
+		auditStore = store
+	} else if pool := client.AppPool(); pool != nil {
+		auditStore = audit.NewStore(pool, audit.ParseMode(cfg.Security.AuditMode))
+	}
+	// Gate high-risk business operations (query execution, report generation) on the audit
+	// write itself: in audit.ModeRequired, a failed audit write blocks the operation (fail
+	// closed) instead of letting it run unaudited. Must be applied before server.New copies
+	// the endpoint functions below.
+	queriesEndpoints.Use(auditGuardQueries(auditStore))
+	reportsEndpoints.Use(auditGuardReports(auditStore))
+
 	mux := goahttp.NewMuxer()
 	dec := goahttp.RequestDecoder
 	enc := goahttp.ResponseEncoder
@@ -164,9 +180,10 @@ func setupHTTPServer(
 	webHandlers := web.NewHandlers(queriesEndpoints, reportsEndpoints)
 
 	oidc := auth.NewOIDCValidator(auth.OIDCConfig{
-		Issuer:   cfg.Security.OIDCIssuer,
-		Audience: cfg.Security.OIDCAudience,
-		JWKSURL:  cfg.Security.OIDCJWKSURL,
+		Issuer:     cfg.Security.OIDCIssuer,
+		Audience:   cfg.Security.OIDCAudience,
+		JWKSURL:    cfg.Security.OIDCJWKSURL,
+		StrictMode: config.StrictMode(),
 	})
 	sessions := auth.NewSessionManager(cfg.Security.SessionSecret, cfg.Security.SessionTTL, config.StrictMode())
 	membership := auth.NewMembershipStore(client.AppPool(), cfg.Security.OIDCAutoJoinDefaultOrg)
@@ -201,16 +218,13 @@ func setupHTTPServer(
 		}
 	}
 	combinedMux.HandleFunc("/api/v1/diagnostics/db-privileges", dbPrivilegesHandler(cfg, client))
+	combinedMux.HandleFunc("/api/v1/diagnostics/webhook-policy", webhookPolicyHandler(client))
 	combinedMux.Handle("/api/", mux)
 	combinedMux.HandleFunc("/web/reports/export", webHandlers.ExportReport)
 	combinedMux.HandleFunc("/web/reports/export/pdf", webHandlers.ExportReportPDF)
 	combinedMux.HandleFunc("/web/reports/export/shared/pdf", webHandlers.ExportSharedReportPDF)
 	combinedMux.Handle("/", spaHandler("frontend/dist"))
 
-	var auditStore *audit.Store
-	if pool := client.AppPool(); pool != nil {
-		auditStore = audit.NewStore(pool)
-	}
 	authenticator := auth.NewAuthenticator(
 		cfg.Security.AuthEnabled,
 		cfg.Security.APIKey,
@@ -219,13 +233,36 @@ func setupHTTPServer(
 		oidc,
 	)
 	authenticator.SetMembershipStore(membership)
-	rl := ratelimit.NewLimiterFromConfig(client.AppPool(), cfg.Security.RateLimitRPM, cfg.Security.RateLimitBurst, cfg.Security.RateLimitDistributed)
+	authenticator.SetKeyUsageStore(auth.NewKeyUsageStore(client.AppPool()))
+	managedKeys := auth.NewManagedKeyStore(client.AppPool())
+	authenticator.SetManagedKeyStore(managedKeys)
+	connAuthz := auth.NewConnectionAuthorizer(client.AppPool())
+	mountAdminAPI(combinedMux, adminDeps{
+		keys:       managedKeys,
+		membership: membership,
+		connAuthz:  connAuthz,
+		auditStore: auditStore,
+	})
+	failureMode := ratelimit.ParseFailureMode(cfg.Security.RateLimitFailureMode)
+	rl := ratelimit.NewLimiterFromConfig(client.AppPool(), cfg.Security.RateLimitRPM, cfg.Security.RateLimitBurst, cfg.Security.RateLimitDistributed, failureMode)
+	if pgl, ok := rl.(*ratelimit.PostgresLimiter); ok {
+		maxAge := cfg.Security.RateLimitBucketMaxAge
+		if maxAge <= 0 {
+			maxAge = 24 * time.Hour
+		}
+		pgl.StartCleanupLoop(ctx, 10*time.Minute, maxAge)
+	}
+	// Bound how long redacted EXPLAIN snapshots (sql_text, plan JSON) are retained at rest.
+	// ExplainSnapshotRetentionDays <= 0 disables the loop and keeps snapshots forever.
+	service.StartExplainSnapshotCleanupLoop(ctx, client.AppPool(), 6*time.Hour, cfg.Security.ExplainSnapshotRetentionDays)
+	// Reclaim abandoned LLM budget reservations left by crashed workers.
+	llm.StartReservationCleanupLoop(ctx, client.BudgetStore(), 5*time.Minute)
 	trusted := newTrustedProxyMatcher(cfg.Security.TrustedProxies)
 
 	handler := observabilityMiddleware(requestIDMiddleware(requestLoggingMiddleware(combinedMux, appLogger, auditStore, trusted)))
 	handler = maxBodyMiddleware(handler, cfg.Security.MaxRequestBodyBytes)
 	handler = httpmw.AuthMiddleware(handler, authenticator, sessions, auditStore, trusted)
-	handler = httpmw.RateLimitMiddleware(handler, rl, auditStore, trusted)
+	handler = httpmw.RateLimitMiddleware(handler, rl, auditStore, trusted, authenticator, sessions, failureMode, config.StrictMode())
 	handler = securityHeadersMiddleware(handler)
 	if len(cfg.Server.CORSOrigins) > 0 {
 		handler = corsMiddleware(handler, cfg.Server.CORSOrigins)
@@ -237,7 +274,7 @@ func setupHTTPServer(
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  120 * time.Second,
-	}
+	}, auditStore
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -295,6 +332,17 @@ func versionHandler() http.HandlerFunc {
 	}
 }
 
+// toPoolMetrics adapts db.NamedPool (used by narrative.Client) to observability.PoolMetric.
+// observability cannot import app/db directly without creating an import cycle
+// (app/db -> app/config -> app/audit -> app/observability), so the conversion lives here.
+func toPoolMetrics(named []db.NamedPool) []observability.PoolMetric {
+	out := make([]observability.PoolMetric, len(named))
+	for i, n := range named {
+		out[i] = observability.PoolMetric{Name: n.Name, Role: n.Role, Pool: n.Pool}
+	}
+	return out
+}
+
 func metricsHandler(client *narrative.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
@@ -307,7 +355,7 @@ func metricsHandler(client *narrative.Client) http.HandlerFunc {
 		if format == "prometheus" || format == "openmetrics" {
 			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(observability.PrometheusAllPoolMetrics(Version, client.NamedPools())))
+			_, _ = w.Write([]byte(observability.PrometheusAllPoolMetrics(Version, toPoolMetrics(client.NamedPools()))))
 			return
 		}
 		out := map[string]interface{}{"version": Version}
@@ -384,6 +432,30 @@ func dbPrivilegesHandler(cfg config.Config, client *narrative.Client) http.Handl
 			w.WriteHeader(http.StatusOK)
 		}
 		_ = json.NewEncoder(w).Encode(report)
+	}
+}
+
+// webhookPolicyHandler exposes the active webhook hostname allowlist (no secrets) to admins.
+func webhookPolicyHandler(client *narrative.Client) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if auth.RoleFromContext(r.Context()) != auth.RoleAdmin {
+			auth.WriteForbidden(w)
+			return
+		}
+		hosts := client.SchedulesRunner().WebhookAllowedHosts()
+		if hosts == nil {
+			hosts = []string{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"allowed_hosts":    hosts,
+			"allowlist_active": len(hosts) > 0,
+		})
 	}
 }
 
@@ -502,8 +574,8 @@ func requestLoggingMiddleware(next http.Handler, appLogger *logger.Logger, audit
 
 		if auditStore != nil && (strings.HasPrefix(path, "/api/") || path == "/web/reports/export" || path == "/web/reports/export/pdf") {
 			identity, _ := r.Context().Value(auth.IdentityContextKey).(string)
-			auditStore.Record(r.Context(), audit.Entry{
-				EventType: audit.EventAPIRequest,
+			_ = auditStore.Record(r.Context(), audit.Entry{
+				EventType: apiRequestEventType(method, path),
 				Details:   map[string]interface{}{"method": method, "path": path, "status_code": wrapped.statusCode},
 				UserID:    identity,
 				IP:        clientIP,
@@ -511,6 +583,29 @@ func requestLoggingMiddleware(next http.Handler, appLogger *logger.Logger, audit
 			})
 		}
 	})
+}
+
+// apiRequestEventType classifies a request into a specific app.audit_logs event type for
+// known high-value operations (query execution, report generation/export, saved-query
+// mutations); everything else is recorded as the generic API_REQUEST. This is a completion
+// record (includes the final status code) and is independent of the pre-execution,
+// fail-closed-capable RUN_QUERY/GENERATE_REPORT entries recorded by auditGuardQueries/
+// auditGuardReports.
+func apiRequestEventType(method, path string) string {
+	switch {
+	case path == "/api/v1/queries/run" && method == http.MethodPost:
+		return audit.EventRunQuery
+	case (path == "/api/v1/reports/generate" || path == "/api/v1/reports/rewrite") && method == http.MethodPost:
+		return audit.EventGenerateReport
+	case path == "/web/reports/export" || path == "/web/reports/export/pdf":
+		return audit.EventExportReport
+	case path == "/api/v1/queries/saved" && method == http.MethodPost:
+		return audit.EventSaveQuery
+	case strings.HasPrefix(path, "/api/v1/queries/saved/") && method == http.MethodDelete:
+		return audit.EventDeleteQuery
+	default:
+		return audit.EventAPIRequest
+	}
 }
 
 type responseWriter struct {
@@ -566,7 +661,7 @@ func spaHandler(dir string) http.Handler {
 			path = "/index.html"
 		}
 		if f, err := fs.Open(path); err == nil {
-			f.Close()
+			f.Close() // #nosec G104 -- best-effort close of a just-opened static asset handle; nothing actionable on error.
 			if path == "/index.html" {
 				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			} else if strings.Contains(path, "-") && (strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".css")) {

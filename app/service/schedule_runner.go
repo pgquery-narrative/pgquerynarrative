@@ -175,29 +175,74 @@ func (s *SchedulesService) claimDueSchedules(ctx context.Context, workerID strin
 func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID string, claim claimedScheduleRun) error {
 	runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: workerID, OrgID: claim.OrgID, Role: auth.RoleAdmin})
 	if s.reportsSvc == nil {
-		return s.finishScheduleRun(runCtx, claim.RunID, "", errors.New("reports service not configured"), "misconfigured")
+		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", errors.New("reports service not configured"), "misconfigured")
 	}
 	stopHeartbeat := s.startScheduleHeartbeat(runCtx, claim.RunID, claim.ScheduleID, workerID)
 	defer stopHeartbeat()
 
 	sc, err := s.getByIDForOrg(runCtx, claim.ScheduleID, claim.OrgID)
 	if err != nil {
-		return s.finishScheduleRun(runCtx, claim.RunID, "", err, "schedule_not_found")
+		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", err, "schedule_not_found")
 	}
-	reportID, delivered, runErr := s.runSchedule(runCtx, sc)
-	status := "completed"
-	if runErr != nil {
-		status = "failed"
+	reportID, deliveryStatus, runErr := s.runSchedule(runCtx, sc, claim.RunID)
+
+	// Advance scheduling cadence regardless of webhook delivery outcome: cadence and outbox
+	// delivery retries are independent concerns. last_status is informational text only.
+	scheduleStatus := "completed"
+	lastErr := ""
+	switch {
+	case runErr != nil:
+		scheduleStatus = "failed"
+		lastErr = SanitizeStoredError(runErr)
+	case deliveryStatus == "dead_letter":
+		scheduleStatus = "dead_letter"
+		lastErr = "webhook delivery dead-lettered"
+	case deliveryStatus == "pending":
+		scheduleStatus = "pending_delivery"
 	}
-	nextRun, _ := computeNextRun(sc.CronExpr, time.Now().UTC())
+	nextRun, _ := computeNextRun(sc.IntervalExpr, time.Now().UTC())
 	_, _ = s.appPool.Exec(runCtx, `
 		UPDATE app.schedules
 		SET last_run_at = NOW(), last_status = $2, last_error = NULLIF($3, ''),
 		    next_run_at = $4, locked_by = NULL, locked_until = NULL, updated_at = NOW()
 		WHERE id = $1
-	`, sc.ID, status, SanitizeStoredError(runErr), nextRun)
-	_ = delivered
-	return s.finishScheduleRun(runCtx, claim.RunID, reportID, runErr, "")
+	`, sc.ID, scheduleStatus, lastErr, nextRun)
+
+	if runErr != nil {
+		return s.finishScheduleRun(runCtx, claim.RunID, reportID, "failed", runErr, "")
+	}
+	switch deliveryStatus {
+	case "dead_letter":
+		return s.finishScheduleRun(runCtx, claim.RunID, reportID, "dead_letter", errors.New("webhook delivery dead-lettered"), "webhook_dead_letter")
+	case "pending":
+		// Report generated and the webhook is durably enqueued; leave the schedule_run
+		// "running" so the outbox worker (RetryFailedWebhooks) — or lease recovery, if this
+		// worker dies — finalizes it once delivery reaches delivered/dead_letter.
+		return nil
+	default: // "completed" (log) or "delivered" (webhook resolved synchronously)
+		return s.finishScheduleRun(runCtx, claim.RunID, reportID, "completed", nil, "")
+	}
+}
+
+// finalizeScheduleRunAfterDelivery marks a schedule_run terminal once its webhook outbox
+// delivery reaches delivered/dead_letter asynchronously — i.e. after executeClaimedRun
+// already returned with the run left "running" because delivery was still pending. Guarded
+// so a late or duplicate outbox completion cannot clobber a run already finalized another way.
+func (s *SchedulesService) finalizeScheduleRunAfterDelivery(ctx context.Context, scheduleRunID, deliveryStatus, errMsg string) {
+	status := "completed"
+	failureCode := ""
+	message := ""
+	if deliveryStatus == "dead_letter" {
+		status = "dead_letter"
+		failureCode = "webhook_dead_letter"
+		message = firstNonBlank(errMsg, "webhook delivery dead-lettered")
+	}
+	_, _ = s.appPool.Exec(ctx, `
+		UPDATE app.schedule_runs
+		SET status = $2, failure_code = NULLIF($3, ''), failure_message = NULLIF($4, ''),
+		    lease_until = NULL, completed_at = NOW()
+		WHERE id = $1 AND status NOT IN ('completed', 'failed', 'dead_letter')
+	`, scheduleRunID, status, failureCode, message)
 }
 
 func (s *SchedulesService) startScheduleHeartbeat(ctx context.Context, runID, scheduleID, workerID string) func() {
@@ -238,19 +283,17 @@ func (s *SchedulesService) renewScheduleLease(ctx context.Context, runID, schedu
 	return err
 }
 
-func (s *SchedulesService) finishScheduleRun(ctx context.Context, runID, reportID string, runErr error, failureCode string) error {
-	status := "completed"
+// finishScheduleRun marks a schedule_run terminal with an explicit status ("completed",
+// "failed", or "dead_letter" for webhook-dead-lettered runs).
+func (s *SchedulesService) finishScheduleRun(ctx context.Context, runID, reportID, status string, runErr error, failureCode string) error {
 	code := failureCode
-	if runErr != nil {
-		status = "failed"
-		if code == "" {
-			code = "execution_failed"
-		}
+	if runErr != nil && code == "" {
+		code = "execution_failed"
 	}
 	_, err := s.appPool.Exec(ctx, `
 		UPDATE app.schedule_runs
 		SET status = $2,
-		    report_id = NULLIF($3, '')::uuid,
+		    report_id = COALESCE(NULLIF($3, '')::uuid, report_id),
 		    failure_code = NULLIF($4, ''),
 		    failure_message = NULLIF($5, ''),
 		    lease_until = NULL,

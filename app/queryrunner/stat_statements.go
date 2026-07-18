@@ -39,8 +39,8 @@ type statsQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
-// StatStatements queries pg_stat_statements using the app pool (pg_read_all_stats) and
-// filters to statements executed by filterRole when non-empty.
+// StatStatements queries pg_stat_statements on the selected analytical connection
+// and filters to statements executed by filterRole when non-empty.
 func StatStatements(ctx context.Context, statsPool statsQuerier, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {
 	if statsPool == nil {
 		return nil, fmt.Errorf("%w: stats pool not configured", apperrors.ErrStatStatementsUnavailable)

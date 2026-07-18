@@ -109,7 +109,7 @@ func (s *Suggester) Similar(ctx context.Context, payload *suggestions.SimilarPay
 	if text == "" {
 		return &suggestions.SuggestedQueriesResult{Suggestions: []*suggestions.QuerySuggestion{}}, nil
 	}
-	vec, err := s.embedder.Embed(ctx, text)
+	vec, err := s.embedder.Embed(embedding.WithOperation(ctx, "embed_suggestions"), text)
 	if err != nil {
 		return &suggestions.SuggestedQueriesResult{Suggestions: []*suggestions.QuerySuggestion{}}, nil
 	}

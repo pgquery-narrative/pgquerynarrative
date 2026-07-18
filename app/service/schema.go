@@ -6,6 +6,7 @@ import (
 
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
 )
 
@@ -13,6 +14,16 @@ import (
 type SchemaService struct {
 	loader *catalog.Loader
 	connectionResolver
+	authz ConnectionAuthorizer
+}
+
+// SetAuthorizer wires connection-level authorization (C5). Nil is permissive.
+// Intended to be called only once, from narrative.NewClient, before the
+// service is handed to any HTTP handler or background worker.
+func (s *SchemaService) SetAuthorizer(authz ConnectionAuthorizer) {
+	if s != nil {
+		s.authz = authz
+	}
 }
 
 // NewSchemaService creates a schema service that returns allowed schemas,
@@ -43,5 +54,16 @@ func NewSchemaServiceMultiConnection(loaders map[string]*catalog.Loader, default
 
 // Get returns the list of allowed schemas with their tables and columns.
 func (s *SchemaService) Get(ctx context.Context, payload *schema.GetPayload) (*schema.SchemaResult, error) {
-	return s.connectionResolver.loaderFor(payload.ConnectionID).Load(ctx)
+	connID, err := s.connectionResolver.resolveConnectionID(payload.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionSchema); err != nil {
+		return nil, err
+	}
+	loader, err := s.connectionResolver.loaderFor(payload.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	return loader.Load(ctx)
 }

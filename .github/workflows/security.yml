@@ -120,10 +120,13 @@ jobs:
         run: go mod download
       - name: Generate code
         run: make generate
-      - name: Run gosec
+      - name: Run gosec (blocking on high severity/confidence findings)
         uses: securego/gosec@6641fcf966593bf52ed426aa262839b340d56375
         with:
-          args: '-no-fail -fmt json -out gosec-report.json ./...'
+          # No -no-fail: the job fails when issues remain after filtering. Filtered to
+          # high severity + high confidence so pre-existing low/medium findings (tracked
+          # separately) don't block every PR; raise this bar over time as they're fixed.
+          args: '-severity high -confidence high -fmt json -out gosec-report.json ./...'
       - name: Upload gosec results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

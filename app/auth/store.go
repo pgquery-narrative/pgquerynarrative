@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,10 +29,14 @@ const (
 
 // APIKeyEntry is one configured API key with identity and role.
 // Prefer key_hash (SHA-256 hex of the secret) over plain key in production configs.
+// Prefix is a short, non-secret display fragment (e.g. the key's first few
+// characters) set at issuance time so operators can identify a key in logs
+// or an admin UI without ever storing or displaying the full secret.
 type APIKeyEntry struct {
 	Key       string    `json:"key"`
 	KeyHash   string    `json:"key_hash"`
 	ID        string    `json:"id"`
+	Prefix    string    `json:"prefix"`
 	Role      string    `json:"role"`
 	OrgID     string    `json:"org_id"`
 	ExpiresAt time.Time `json:"expires_at"`
@@ -44,7 +49,11 @@ type Authenticator struct {
 	keys       []APIKeyEntry
 	oidc       *OIDCValidator
 	membership *MembershipStore
+	managed    *ManagedKeyStore
 	enabled    bool
+	lastUsed   sync.Map // entry ID (string) -> time.Time
+	keyUsage   *KeyUsageStore
+	usageWarm  sync.Once
 }
 
 // NewAuthenticator builds an authenticator from security configuration.
@@ -60,6 +69,13 @@ func (a *Authenticator) SetMembershipStore(store *MembershipStore) {
 	}
 }
 
+// SetManagedKeyStore attaches durable hashed API keys (CLI/MCP) for authentication.
+func (a *Authenticator) SetManagedKeyStore(store *ManagedKeyStore) {
+	if a != nil {
+		a.managed = store
+	}
+}
+
 func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []APIKeyEntry {
 	var out []APIKeyEntry
 	raw := strings.TrimSpace(keysJSON)
@@ -68,6 +84,7 @@ func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []AP
 			Key       string   `json:"key"`
 			KeyHash   string   `json:"key_hash"`
 			ID        string   `json:"id"`
+			Prefix    string   `json:"prefix"`
 			Role      string   `json:"role"`
 			OrgID     string   `json:"org_id"`
 			ExpiresAt string   `json:"expires_at"`
@@ -83,6 +100,7 @@ func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []AP
 					Key:     strings.TrimSpace(e.Key),
 					KeyHash: strings.TrimSpace(e.KeyHash),
 					ID:      e.ID,
+					Prefix:  strings.TrimSpace(e.Prefix),
 					Role:    e.Role,
 					OrgID:   e.OrgID,
 					Scopes:  append([]string(nil), e.Scopes...),
@@ -93,6 +111,9 @@ func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []AP
 				}
 				if entry.ID == "" {
 					entry.ID = "api-key"
+				}
+				if entry.Prefix == "" && entry.Key != "" {
+					entry.Prefix = keyPrefix(entry.Key)
 				}
 				if ts := strings.TrimSpace(e.ExpiresAt); ts != "" {
 					if t, err := time.Parse(time.RFC3339, ts); err == nil {
@@ -192,7 +213,155 @@ func (a *Authenticator) ValidatePrincipal(r *http.Request) (Principal, bool) {
 		if len(entry.Scopes) > 0 && !entryAllowsRequest(entry, r.Method, r.URL.Path) {
 			return Principal{}, false
 		}
+		a.recordUsage(entry.ID)
 		return Principal{UserID: entry.ID, OrgID: orgID, Role: role}, true
+	}
+	if a.managed != nil {
+		entry, found, lookupErr := a.managed.LookupBySecret(r.Context(), token)
+		if lookupErr == nil && found {
+			if entry.Revoked || entryExpired(entry, now) {
+				return Principal{}, false
+			}
+			orgID := entry.OrgID
+			role := normalizeRole(entry.Role)
+			if preferredOrg != "" && preferredOrg != orgID {
+				return Principal{}, false
+			}
+			if len(entry.Scopes) > 0 && !entryAllowsRequest(entry, r.Method, r.URL.Path) {
+				return Principal{}, false
+			}
+			a.recordUsage(entry.ID)
+			return Principal{UserID: entry.ID, OrgID: orgID, Role: role}, true
+		}
+	}
+	return Principal{}, false
+}
+
+// recordUsage records the current time as the last-used timestamp for the API key entry ID.
+func (a *Authenticator) recordUsage(id string) {
+	if a == nil || strings.TrimSpace(id) == "" {
+		return
+	}
+	now := time.Now().UTC()
+	a.lastUsed.Store(id, now)
+	if a.keyUsage != nil {
+		// Best-effort durable write; do not block auth on ledger latency.
+		go a.keyUsage.Touch(context.Background(), id)
+	}
+}
+
+// LastUsedAt returns the last time the named API key entry successfully authenticated a
+// request, for display in an admin UI or audit log. ok is false if the key has never
+// been used (or was never observed by this process instance and has no durable row).
+func (a *Authenticator) LastUsedAt(id string) (t time.Time, ok bool) {
+	if a == nil {
+		return time.Time{}, false
+	}
+	a.warmLastUsed()
+	v, found := a.lastUsed.Load(id)
+	if found {
+		t, ok = v.(time.Time)
+		if ok {
+			return t, true
+		}
+	}
+	if a.keyUsage != nil {
+		return a.keyUsage.LastUsedAt(context.Background(), id)
+	}
+	return time.Time{}, false
+}
+
+// KeyMetadata describes a configured API key without exposing its secret, for admin listings.
+type KeyMetadata struct {
+	ID         string    `json:"id"`
+	Prefix     string    `json:"prefix"`
+	Role       string    `json:"role"`
+	OrgID      string    `json:"org_id"`
+	Scopes     []string  `json:"scopes"`
+	ExpiresAt  time.Time `json:"expires_at,omitzero"`
+	Revoked    bool      `json:"revoked"`
+	LastUsedAt time.Time `json:"last_used_at,omitzero"`
+}
+
+// KeyMetadataList returns non-secret metadata for all configured API keys, suitable for
+// display in an admin UI or audit endpoint.
+func (a *Authenticator) KeyMetadataList() []KeyMetadata {
+	if a == nil {
+		return nil
+	}
+	out := make([]KeyMetadata, 0, len(a.keys))
+	for _, e := range a.keys {
+		meta := KeyMetadata{
+			ID:        e.ID,
+			Prefix:    e.Prefix,
+			Role:      normalizeRole(e.Role),
+			OrgID:     e.OrgID,
+			Scopes:    append([]string(nil), e.Scopes...),
+			ExpiresAt: e.ExpiresAt,
+			Revoked:   e.Revoked,
+		}
+		if lu, ok := a.LastUsedAt(e.ID); ok {
+			meta.LastUsedAt = lu
+		}
+		out = append(out, meta)
+	}
+	return out
+}
+
+// keyPrefix derives a short, non-secret display fragment from a raw key secret.
+func keyPrefix(key string) string {
+	const n = 8
+	key = strings.TrimSpace(key)
+	if len(key) <= n {
+		return key
+	}
+	return key[:n]
+}
+
+// PeekPrincipal performs a lightweight, DB-free identity check intended only for rate-limit
+// keying. It validates bearer credentials locally (API key match, or OIDC signature/JWKS
+// check) but does not resolve organization membership, so the returned Principal.OrgID may
+// be an approximation (preferred-org header or default org) rather than the authorized
+// membership. Callers MUST NOT use the result for authorization decisions; use
+// ValidatePrincipal for that. Safe to call before or in addition to ValidatePrincipal.
+func (a *Authenticator) PeekPrincipal(r *http.Request) (Principal, bool) {
+	if a == nil || !a.enabled || (len(a.keys) == 0 && (a.oidc == nil || !a.oidc.Enabled())) {
+		return Principal{}, false
+	}
+	token := bearerToken(r)
+	if token == "" {
+		return Principal{}, false
+	}
+	preferredOrg := PreferredOrgFromRequest(r)
+	if a.oidc != nil && a.oidc.Enabled() {
+		if sub, roles, err := a.oidc.Validate(r.Context(), token); err == nil && strings.TrimSpace(sub) != "" {
+			org := preferredOrg
+			if org == "" {
+				org = DefaultOrgID()
+			}
+			role := RoleAnalyst
+			if len(roles) > 0 {
+				role = mapOIDCRole(roles[0])
+			}
+			return Principal{UserID: sub, OrgID: org, Role: role}, true
+		}
+	}
+	now := time.Now().UTC()
+	for _, entry := range a.keys {
+		if !matchesAPIKey(token, entry) {
+			continue
+		}
+		if entry.Revoked || entryExpired(entry, now) {
+			return Principal{}, false
+		}
+		org := entry.OrgID
+		if org == "" {
+			org = preferredOrg
+		}
+		if org == "" {
+			org = DefaultOrgID()
+		}
+		return Principal{UserID: entry.ID, OrgID: org, Role: normalizeRole(entry.Role)}, true
 	}
 	return Principal{}, false
 }
@@ -259,6 +428,7 @@ func isAnalystWritePath(method, path string) bool {
 		"/api/v1/queries/explain",
 		"/api/v1/reports/generate",
 		"/api/v1/reports/rewrite",
+		"/api/v1/reports/share",
 		"/api/v1/suggestions/ask",
 		"/api/v1/suggestions/chat",
 		"/api/v1/suggestions/explain",
@@ -267,6 +437,9 @@ func isAnalystWritePath(method, path string) bool {
 		if path == p {
 			return true
 		}
+	}
+	if strings.HasPrefix(path, "/api/v1/reports/shares/") && strings.HasSuffix(path, "/revoke") {
+		return true
 	}
 	return false
 }

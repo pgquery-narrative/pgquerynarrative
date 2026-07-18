@@ -78,6 +78,15 @@ jobs:
         run: |
           go build -ldflags "-X main.Version=$VERSION" \
             -o pgquerynarrative-mcp-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/mcp-server
+      - name: Build migrate binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build -tags postgres -ldflags "-s -w" \
+            -o pgquerynarrative-migrate-${{ matrix.goos }}-${{ matrix.goarch }} \
+            github.com/golang-migrate/migrate/v4/cmd/migrate
       - name: Upload binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -85,6 +94,7 @@ jobs:
           path: |
             pgquerynarrative-server-${{ matrix.goos }}-${{ matrix.goarch }}
             pgquerynarrative-mcp-${{ matrix.goos }}-${{ matrix.goarch }}
+            pgquerynarrative-migrate-${{ matrix.goos }}-${{ matrix.goarch }}
           retention-days: 7
 
   release:
@@ -95,6 +105,20 @@ jobs:
     permissions:
       contents: write
       id-token: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pgquerynarrative
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: actions/setup-node@v4
@@ -127,27 +151,78 @@ jobs:
           for server in bin/pgquerynarrative-server-*; do
             target="${server#bin/pgquerynarrative-server-}"
             mcp="bin/pgquerynarrative-mcp-${target}"
+            migrate="bin/pgquerynarrative-migrate-${target}"
             pkg="packages/pgquerynarrative-${VERSION}-${target}"
             mkdir -p "$pkg/bin" "$pkg/frontend" "$pkg/app/db" "$pkg/config"
             cp "$server" "$pkg/bin/pgquerynarrative-server"
             cp "$mcp" "$pkg/bin/pgquerynarrative-mcp"
+            cp "$migrate" "$pkg/bin/migrate"
             cp -R frontend/dist "$pkg/frontend/dist"
             cp -R app/db/migrations "$pkg/app/db/migrations"
             cp .env.example "$pkg/config/pgquerynarrative.env.example"
             cp tools/docker/entrypoint.sh "$pkg/bin/entrypoint.sh"
-            chmod +x "$pkg/bin/pgquerynarrative-server" "$pkg/bin/pgquerynarrative-mcp" "$pkg/bin/entrypoint.sh"
+            chmod +x "$pkg/bin/pgquerynarrative-server" "$pkg/bin/pgquerynarrative-mcp" "$pkg/bin/migrate" "$pkg/bin/entrypoint.sh"
             tar -C packages -czf "bin/pgquerynarrative-${VERSION}-${target}.tar.gz" "pgquerynarrative-${VERSION}-${target}"
           done
           (cd bin && sha256sum *.tar.gz > checksums.txt)
           ls -la bin
-      - name: Smoke test release archive
+      - name: Smoke test release archives (binary presence, all platforms)
         run: |
-          mkdir -p /tmp/pgqn-release-smoke
-          tar -xzf bin/pgquerynarrative-${VERSION}-linux-amd64.tar.gz -C /tmp/pgqn-release-smoke
-          test -x /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/bin/pgquerynarrative-server
-          test -f /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/frontend/dist/index.html
-          test -d /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/app/db/migrations
-          test -f /tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/config/pgquerynarrative.env.example
+          for archive in bin/pgquerynarrative-${VERSION}-*.tar.gz; do
+            target="$(basename "$archive" .tar.gz)"
+            dest="/tmp/pgqn-release-smoke/${target}"
+            mkdir -p "$dest"
+            tar -xzf "$archive" -C "$dest"
+            pkg="$dest/${target}"
+            echo "Checking ${pkg}..."
+            test -x "$pkg/bin/pgquerynarrative-server"
+            test -x "$pkg/bin/pgquerynarrative-mcp"
+            test -x "$pkg/bin/migrate"
+            test -f "$pkg/frontend/dist/index.html"
+            test -d "$pkg/app/db/migrations"
+            test -f "$pkg/config/pgquerynarrative.env.example"
+            # migrate is cross-compiled per target platform; only exec it on linux/amd64 (the runner's own platform).
+            if [ "$target" = "pgquerynarrative-${VERSION}-linux-amd64" ]; then
+              "$pkg/bin/migrate" --help
+            fi
+          done
+      - name: Full smoke test (migrate + server + health) on linux/amd64
+        run: |
+          PKG_DIR="/tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/pgquerynarrative-${VERSION}-linux-amd64"
+
+          echo "Initializing database roles/schemas..."
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d pgquerynarrative -f infra/postgres-init/00-init.sql
+
+          echo "Running packaged migrate binary against PostgreSQL service container..."
+          DB_URL="postgres://pgquerynarrative_app:pgquerynarrative_app@127.0.0.1:5432/pgquerynarrative?sslmode=disable"
+          "$PKG_DIR/bin/migrate" -path "$PKG_DIR/app/db/migrations" -database "$DB_URL" up
+
+          echo "Starting packaged server..."
+          export DATABASE_HOST=127.0.0.1 DATABASE_PORT=5432
+          export DATABASE_NAME=pgquerynarrative
+          export DATABASE_USER=pgquerynarrative_app DATABASE_PASSWORD=pgquerynarrative_app
+          export DATABASE_READONLY_USER=pgquerynarrative_readonly DATABASE_READONLY_PASSWORD=pgquerynarrative_readonly
+          export SECURITY_AUTH_ENABLED=false
+          export PGQUERYNARRATIVE_PORT=8080 PGQUERYNARRATIVE_HOST=127.0.0.1
+          (cd "$PKG_DIR" && exec ./bin/pgquerynarrative-server) >/tmp/pgqn-release-smoke.log 2>&1 &
+          SERVER_PID=$!
+
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8080/health; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ok" -ne 1 ]; then
+            echo "❌ Server did not become healthy"
+            cat /tmp/pgqn-release-smoke.log
+            kill "$SERVER_PID" 2>/dev/null || true
+            exit 1
+          fi
+          echo "✅ Packaged server is healthy"
+          kill "$SERVER_PID" 2>/dev/null || true
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:

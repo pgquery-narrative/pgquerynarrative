@@ -2,15 +2,26 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
 )
+
+// defaultReservationTTL bounds how long a reservation counts against the
+// budget before ExpireAbandoned reclaims it (e.g. the process crashed after
+// reserving but before reconciling or releasing).
+const defaultReservationTTL = 5 * time.Minute
+
+// ErrBudgetLedgerUnavailable is returned by Reserve/Check when the ledger
+// database cannot be reached and the store is configured to fail closed.
+var ErrBudgetLedgerUnavailable = errors.New("LLM budget ledger unavailable")
 
 // BudgetConfig limits LLM usage per organization and per user (daily and monthly).
 type BudgetConfig struct {
@@ -23,6 +34,14 @@ type BudgetConfig struct {
 	PerUserMonthlyTokenLimit int     // 0 = unlimited
 	PerUserMonthlyCostUSD    float64 // 0 = unlimited
 	USDPer1kTokens           float64 // cost estimate rate; default 0.002
+	// FailClosed denies LLM calls when the budget ledger database cannot be
+	// reached, instead of the legacy fail-open behavior. Should be true for
+	// cloud providers and production/strict deployments so an outage cannot
+	// be used to bypass spend controls.
+	FailClosed bool
+	// ReservationTTL bounds how long an unreconciled reservation counts
+	// against the budget. Default 5 minutes.
+	ReservationTTL time.Duration
 }
 
 // BudgetStore enforces and records org/user LLM budgets.
@@ -39,6 +58,9 @@ func NewBudgetStore(pool *pgxpool.Pool, cfg BudgetConfig) *BudgetStore {
 	if cfg.USDPer1kTokens <= 0 {
 		cfg.USDPer1kTokens = 0.002
 	}
+	if cfg.ReservationTTL <= 0 {
+		cfg.ReservationTTL = defaultReservationTTL
+	}
 	return &BudgetStore{pool: pool, cfg: cfg}
 }
 
@@ -54,7 +76,22 @@ func (b *BudgetStore) Enabled() bool {
 		c.PerUserMonthlyTokenLimit > 0 || c.PerUserMonthlyCostUSD > 0
 }
 
-// Check returns an error when org or user budgets would be exceeded.
+// FailClosed reports whether ledger unavailability should deny calls.
+func (b *BudgetStore) FailClosed() bool {
+	return b != nil && b.cfg.FailClosed
+}
+
+// rowScanner is satisfied by both *pgxpool.Pool and pgx.Tx for QueryRow calls.
+type rowScanner interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// Check returns an error when org or user budgets would be exceeded. It
+// accounts for both committed usage and currently active (unreconciled)
+// reservations, so concurrent in-flight requests near the limit are blocked
+// even before their actual usage is recorded. Prefer Reserve for the
+// atomic reserve-before-call path; Check remains available for advisory
+// (non-reserving) callers.
 func (b *BudgetStore) Check(ctx context.Context, orgID, userID string, upcomingTokens int) error {
 	if !b.Enabled() {
 		return nil
@@ -62,116 +99,311 @@ func (b *BudgetStore) Check(ctx context.Context, orgID, userID string, upcomingT
 	orgID = normalizeOrgID(orgID)
 	userID = normalizeUserID(userID)
 	upcomingCost := b.EstimateCostUSD(upcomingTokens)
+	return b.checkAllScopes(ctx, b.pool, orgID, userID, upcomingTokens, upcomingCost)
+}
 
-	if err := b.checkOrgDaily(ctx, orgID, upcomingTokens, upcomingCost); err != nil {
+// checkAllScopes runs the four budget scope checks (org daily/monthly, user
+// daily/monthly) against committed usage plus active reservations using q,
+// which may be the pool (advisory Check) or a locked transaction (Reserve).
+func (b *BudgetStore) checkAllScopes(ctx context.Context, q rowScanner, orgID, userID string, upcomingTokens int, upcomingCost float64) error {
+	if err := b.checkScope(ctx, q, "org_daily", orgID, "", upcomingTokens, upcomingCost); err != nil {
 		return err
 	}
-	if err := b.checkOrgMonthly(ctx, orgID, upcomingTokens, upcomingCost); err != nil {
+	if err := b.checkScope(ctx, q, "org_monthly", orgID, "", upcomingTokens, upcomingCost); err != nil {
 		return err
 	}
-	if userID != "" {
-		if err := b.checkUserDaily(ctx, orgID, userID, upcomingTokens, upcomingCost); err != nil {
-			return err
-		}
-		if err := b.checkUserMonthly(ctx, orgID, userID, upcomingTokens, upcomingCost); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (b *BudgetStore) checkOrgDaily(ctx context.Context, orgID string, upcomingTokens int, upcomingCost float64) error {
-	if b.cfg.DailyTokenLimit <= 0 && b.cfg.DailyCostUSD <= 0 {
+	if userID == "" {
 		return nil
 	}
-	tokens, cost := b.queryOrgUsage(ctx, orgID, `
-		SELECT COALESCE(prompt_tokens + completion_tokens, 0), COALESCE(estimated_cost_usd, 0)
-		FROM app.llm_budget_usage
-		WHERE organization_id = $1::uuid AND usage_date = CURRENT_DATE
-	`, orgID)
-	if b.cfg.DailyTokenLimit > 0 && int(tokens)+upcomingTokens > b.cfg.DailyTokenLimit {
-		return fmt.Errorf("LLM daily token budget exceeded for organization (%d/%d)", tokens, b.cfg.DailyTokenLimit)
+	if err := b.checkScope(ctx, q, "user_daily", orgID, userID, upcomingTokens, upcomingCost); err != nil {
+		return err
 	}
-	if b.cfg.DailyCostUSD > 0 && cost+upcomingCost > b.cfg.DailyCostUSD {
-		return fmt.Errorf("LLM daily cost budget exceeded for organization (%.4f/%.4f USD)", cost, b.cfg.DailyCostUSD)
+	if err := b.checkScope(ctx, q, "user_monthly", orgID, userID, upcomingTokens, upcomingCost); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (b *BudgetStore) checkOrgMonthly(ctx context.Context, orgID string, upcomingTokens int, upcomingCost float64) error {
-	if b.cfg.MonthlyTokenLimit <= 0 && b.cfg.MonthlyCostUSD <= 0 {
+func (b *BudgetStore) checkScope(ctx context.Context, q rowScanner, scope, orgID, userID string, upcomingTokens int, upcomingCost float64) error {
+	tokenLimit, costLimit := b.limitsForScope(scope)
+	if tokenLimit <= 0 && costLimit <= 0 {
 		return nil
 	}
-	tokens, cost := b.queryOrgUsage(ctx, orgID, `
-		SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0)
-		FROM app.llm_budget_usage
-		WHERE organization_id = $1::uuid
-		  AND usage_date >= date_trunc('month', CURRENT_DATE)::date
-	`, orgID)
-	if b.cfg.MonthlyTokenLimit > 0 && int(tokens)+upcomingTokens > b.cfg.MonthlyTokenLimit {
-		return fmt.Errorf("LLM monthly token budget exceeded for organization (%d/%d)", tokens, b.cfg.MonthlyTokenLimit)
+	committedTokens, committedCost, err := b.committedUsage(ctx, q, scope, orgID, userID)
+	if err != nil {
+		return b.ledgerError(err)
 	}
-	if b.cfg.MonthlyCostUSD > 0 && cost+upcomingCost > b.cfg.MonthlyCostUSD {
-		return fmt.Errorf("LLM monthly cost budget exceeded for organization (%.4f/%.4f USD)", cost, b.cfg.MonthlyCostUSD)
+	reservedTokens, reservedCost, err := b.activeReservations(ctx, q, orgID, userID)
+	if err != nil {
+		return b.ledgerError(err)
 	}
-	return nil
-}
-
-func (b *BudgetStore) checkUserDaily(ctx context.Context, orgID, userID string, upcomingTokens int, upcomingCost float64) error {
-	if b.cfg.PerUserDailyTokenLimit <= 0 && b.cfg.PerUserDailyCostUSD <= 0 {
-		return nil
+	totalTokens := committedTokens + reservedTokens + int64(upcomingTokens)
+	totalCost := committedCost + reservedCost + upcomingCost
+	if tokenLimit > 0 && totalTokens > int64(tokenLimit) {
+		return fmt.Errorf("LLM %s token budget exceeded (%d/%d, includes %d reserved)", scope, totalTokens, tokenLimit, reservedTokens)
 	}
-	tokens, cost := b.queryUserUsage(ctx, orgID, userID, `
-		SELECT COALESCE(prompt_tokens + completion_tokens, 0), COALESCE(estimated_cost_usd, 0)
-		FROM app.llm_user_budget_usage
-		WHERE organization_id = $1::uuid AND user_id = $2 AND usage_date = CURRENT_DATE
-	`, orgID, userID)
-	if b.cfg.PerUserDailyTokenLimit > 0 && int(tokens)+upcomingTokens > b.cfg.PerUserDailyTokenLimit {
-		return fmt.Errorf("LLM daily token budget exceeded for user %q (%d/%d)", userID, tokens, b.cfg.PerUserDailyTokenLimit)
-	}
-	if b.cfg.PerUserDailyCostUSD > 0 && cost+upcomingCost > b.cfg.PerUserDailyCostUSD {
-		return fmt.Errorf("LLM daily cost budget exceeded for user %q (%.4f/%.4f USD)", userID, cost, b.cfg.PerUserDailyCostUSD)
+	if costLimit > 0 && totalCost > costLimit {
+		return fmt.Errorf("LLM %s cost budget exceeded (%.4f/%.4f USD, includes %.4f reserved)", scope, totalCost, costLimit, reservedCost)
 	}
 	return nil
 }
 
-func (b *BudgetStore) checkUserMonthly(ctx context.Context, orgID, userID string, upcomingTokens int, upcomingCost float64) error {
-	if b.cfg.PerUserMonthlyTokenLimit <= 0 && b.cfg.PerUserMonthlyCostUSD <= 0 {
-		return nil
-	}
-	tokens, cost := b.queryUserUsage(ctx, orgID, userID, `
-		SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0)
-		FROM app.llm_user_budget_usage
-		WHERE organization_id = $1::uuid AND user_id = $2
-		  AND usage_date >= date_trunc('month', CURRENT_DATE)::date
-	`, orgID, userID)
-	if b.cfg.PerUserMonthlyTokenLimit > 0 && int(tokens)+upcomingTokens > b.cfg.PerUserMonthlyTokenLimit {
-		return fmt.Errorf("LLM monthly token budget exceeded for user %q (%d/%d)", userID, tokens, b.cfg.PerUserMonthlyTokenLimit)
-	}
-	if b.cfg.PerUserMonthlyCostUSD > 0 && cost+upcomingCost > b.cfg.PerUserMonthlyCostUSD {
-		return fmt.Errorf("LLM monthly cost budget exceeded for user %q (%.4f/%.4f USD)", userID, cost, b.cfg.PerUserMonthlyCostUSD)
-	}
-	return nil
-}
-
-func (b *BudgetStore) queryOrgUsage(ctx context.Context, orgID, query string, args ...interface{}) (int64, float64) {
-	var tokens int64
-	var cost float64
-	scan := db.QueryRowWithOrg(ctx, b.pool, orgID, query, args...)
-	if err := scan(&tokens, &cost); err != nil {
+func (b *BudgetStore) limitsForScope(scope string) (tokenLimit int, costLimit float64) {
+	switch scope {
+	case "org_daily":
+		return b.cfg.DailyTokenLimit, b.cfg.DailyCostUSD
+	case "org_monthly":
+		return b.cfg.MonthlyTokenLimit, b.cfg.MonthlyCostUSD
+	case "user_daily":
+		return b.cfg.PerUserDailyTokenLimit, b.cfg.PerUserDailyCostUSD
+	case "user_monthly":
+		return b.cfg.PerUserMonthlyTokenLimit, b.cfg.PerUserMonthlyCostUSD
+	default:
 		return 0, 0
 	}
-	return tokens, cost
 }
 
-func (b *BudgetStore) queryUserUsage(ctx context.Context, orgID, userID, query string, args ...interface{}) (int64, float64) {
+// committedUsage returns already-recorded usage (from RecordUsage/ReconcileUsage) for a scope.
+func (b *BudgetStore) committedUsage(ctx context.Context, q rowScanner, scope, orgID, userID string) (int64, float64, error) {
 	var tokens int64
 	var cost float64
-	scan := db.QueryRowWithOrg(ctx, b.pool, orgID, query, args...)
-	if err := scan(&tokens, &cost); err != nil {
-		return 0, 0
+	var row pgx.Row
+	switch scope {
+	case "org_daily":
+		row = q.QueryRow(ctx, `
+			SELECT COALESCE(prompt_tokens + completion_tokens, 0), COALESCE(estimated_cost_usd, 0)
+			FROM app.llm_budget_usage
+			WHERE organization_id = $1::uuid AND usage_date = CURRENT_DATE
+		`, orgID)
+	case "org_monthly":
+		row = q.QueryRow(ctx, `
+			SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0)
+			FROM app.llm_budget_usage
+			WHERE organization_id = $1::uuid AND usage_date >= date_trunc('month', CURRENT_DATE)::date
+		`, orgID)
+	case "user_daily":
+		row = q.QueryRow(ctx, `
+			SELECT COALESCE(prompt_tokens + completion_tokens, 0), COALESCE(estimated_cost_usd, 0)
+			FROM app.llm_user_budget_usage
+			WHERE organization_id = $1::uuid AND user_id = $2 AND usage_date = CURRENT_DATE
+		`, orgID, userID)
+	case "user_monthly":
+		row = q.QueryRow(ctx, `
+			SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0)
+			FROM app.llm_user_budget_usage
+			WHERE organization_id = $1::uuid AND user_id = $2 AND usage_date >= date_trunc('month', CURRENT_DATE)::date
+		`, orgID, userID)
+	default:
+		return 0, 0, nil
 	}
-	return tokens, cost
+	if err := row.Scan(&tokens, &cost); err != nil {
+		return 0, 0, err
+	}
+	return tokens, cost, nil
+}
+
+// activeReservations sums reserved (not yet reconciled/released/expired) tokens and cost.
+// When userID is empty, sums across the whole organization (org-level scopes).
+func (b *BudgetStore) activeReservations(ctx context.Context, q rowScanner, orgID, userID string) (int64, float64, error) {
+	var tokens int64
+	var cost float64
+	var row pgx.Row
+	if userID == "" {
+		row = q.QueryRow(ctx, `
+			SELECT COALESCE(SUM(reserved_tokens), 0), COALESCE(SUM(reserved_cost_usd), 0)
+			FROM app.llm_budget_reservations
+			WHERE organization_id = $1::uuid AND status = 'reserved' AND expires_at > NOW()
+		`, orgID)
+	} else {
+		row = q.QueryRow(ctx, `
+			SELECT COALESCE(SUM(reserved_tokens), 0), COALESCE(SUM(reserved_cost_usd), 0)
+			FROM app.llm_budget_reservations
+			WHERE organization_id = $1::uuid AND user_id = $2 AND status = 'reserved' AND expires_at > NOW()
+		`, orgID, userID)
+	}
+	if err := row.Scan(&tokens, &cost); err != nil {
+		return 0, 0, err
+	}
+	return tokens, cost, nil
+}
+
+// ledgerError maps a ledger read/write error to either a hard denial
+// (FailClosed) or nil (legacy fail-open advisory behavior), and records
+// observability signal either way.
+func (b *BudgetStore) ledgerError(err error) error {
+	if err == nil {
+		return nil
+	}
+	observability.IncAuditWriteFailure()
+	if b.cfg.FailClosed {
+		observability.IncLLMBudgetFailClosed()
+		return fmt.Errorf("%w: %v", ErrBudgetLedgerUnavailable, err)
+	}
+	return nil
+}
+
+// Reserve atomically checks org/user budgets (committed usage + active
+// reservations) and, if within limits, inserts a reservation row for
+// estimatedTokens (prompt estimate + configured max output allowance) before
+// the provider call is made. The check-and-insert is serialized per
+// org+user pair with a Postgres advisory lock so concurrent requests near
+// the limit cannot both pass the check.
+//
+// Returns an empty requestID with a nil error when budgets are disabled
+// (nothing to reserve). On denial, returns an error describing which
+// budget would be exceeded. On ledger error, denies only when FailClosed
+// is configured; otherwise fails open and returns ("", nil).
+func (b *BudgetStore) Reserve(ctx context.Context, orgID, userID string, estimatedTokens int) (string, error) {
+	if b == nil || b.pool == nil || !b.Enabled() {
+		return "", nil
+	}
+	orgID = normalizeOrgID(orgID)
+	userID = normalizeUserID(userID)
+	if estimatedTokens < 0 {
+		estimatedTokens = 0
+	}
+	estimatedCost := b.EstimateCostUSD(estimatedTokens)
+
+	conn, err := b.pool.Acquire(ctx)
+	if err != nil {
+		return "", b.ledgerError(err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, orgID); err != nil {
+		return "", b.ledgerError(err)
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT set_config('app.current_org_id', '', false)`)
+	}()
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return "", b.ledgerError(err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(context.Background())
+		}
+	}()
+
+	// Serialize the check-then-insert for this org+user pair so two
+	// concurrent requests near the limit cannot both observe "under limit".
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, orgID+":"+userID); err != nil {
+		return "", b.ledgerError(err)
+	}
+
+	if err := b.checkAllScopes(ctx, tx, orgID, userID, estimatedTokens, estimatedCost); err != nil {
+		return "", err
+	}
+
+	ttl := b.cfg.ReservationTTL
+	if ttl <= 0 {
+		ttl = defaultReservationTTL
+	}
+	var requestID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO app.llm_budget_reservations (organization_id, user_id, reserved_tokens, reserved_cost_usd, status, expires_at)
+		VALUES ($1::uuid, $2, $3, $4, 'reserved', NOW() + $5::interval)
+		RETURNING request_id::text
+	`, orgID, userID, estimatedTokens, estimatedCost, fmt.Sprintf("%d seconds", int(ttl.Seconds()))).Scan(&requestID)
+	if err != nil {
+		return "", b.ledgerError(err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return "", b.ledgerError(err)
+	}
+	committed = true
+	return requestID, nil
+}
+
+// ReconcileUsage marks a reservation committed with actual token/cost usage
+// and folds the actual usage into the daily/monthly ledgers (RecordUsage).
+// Call after a successful provider response. No-op when requestID is empty
+// (budgets disabled or Reserve was skipped).
+func (b *BudgetStore) ReconcileUsage(ctx context.Context, requestID, orgID, userID string, promptTokens, completionTokens int) {
+	if b == nil || b.pool == nil {
+		return
+	}
+	orgID = normalizeOrgID(orgID)
+	userID = normalizeUserID(userID)
+	actualCost := b.EstimateCostUSD(promptTokens + completionTokens)
+	if requestID != "" {
+		ctx2, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := db.ExecWithOrg(ctx2, b.pool, orgID, `
+			UPDATE app.llm_budget_reservations
+			SET status = 'committed', reserved_tokens = $2, reserved_cost_usd = $3, updated_at = NOW()
+			WHERE request_id = $1::uuid AND status = 'reserved'
+		`, requestID, promptTokens+completionTokens, actualCost); err != nil {
+			observability.IncAuditWriteFailure()
+		}
+	}
+	b.RecordUsage(ctx, orgID, userID, promptTokens, completionTokens)
+}
+
+// ReleaseReservation releases a reservation without recording usage, e.g.
+// when the provider call failed or was denied after the reservation was made.
+// No-op when requestID is empty.
+func (b *BudgetStore) ReleaseReservation(ctx context.Context, requestID, orgID string) {
+	if b == nil || b.pool == nil || requestID == "" {
+		return
+	}
+	orgID = normalizeOrgID(orgID)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := db.ExecWithOrg(ctx, b.pool, orgID, `
+		UPDATE app.llm_budget_reservations
+		SET status = 'released', updated_at = NOW()
+		WHERE request_id = $1::uuid AND status = 'reserved'
+	`, requestID); err != nil {
+		observability.IncAuditWriteFailure()
+	}
+}
+
+// ExpireAbandoned marks reservations past their expiry as expired so they
+// stop counting against budgets (e.g. the process crashed between Reserve
+// and ReconcileUsage/ReleaseReservation). Intended to run periodically from
+// a maintenance job. Returns the number of reservations expired.
+func (b *BudgetStore) ExpireAbandoned(ctx context.Context) (int64, error) {
+	if b == nil || b.pool == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	tag, err := b.pool.Exec(ctx, `
+		UPDATE app.llm_budget_reservations
+		SET status = 'expired', updated_at = NOW()
+		WHERE status = 'reserved' AND expires_at < NOW()
+	`)
+	if err != nil {
+		return 0, err
+	}
+	n := tag.RowsAffected()
+	observability.IncLLMBudgetReservationExpired(n)
+	return n, nil
+}
+
+// StartReservationCleanupLoop periodically expires abandoned budget reservations.
+// interval <= 0 disables the loop.
+func StartReservationCleanupLoop(ctx context.Context, store *BudgetStore, interval time.Duration) {
+	if store == nil || interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _ = store.ExpireAbandoned(ctx)
+			}
+		}
+	}()
 }
 
 // RecordUsage increments org and user budget ledgers.

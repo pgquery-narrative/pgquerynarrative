@@ -26,6 +26,8 @@ type Server struct {
 	Rewrite     http.Handler
 	CreateShare http.Handler
 	GetShared   http.Handler
+	ListShares  http.Handler
+	RevokeShare http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -62,6 +64,8 @@ func New(
 			{"Rewrite", "POST", "/api/v1/reports/rewrite"},
 			{"CreateShare", "POST", "/api/v1/reports/share"},
 			{"GetShared", "GET", "/api/v1/reports/shared/{token}"},
+			{"ListShares", "GET", "/api/v1/reports/{report_id}/shares"},
+			{"RevokeShare", "POST", "/api/v1/reports/shares/{id}/revoke"},
 		},
 		Generate:    NewGenerateHandler(e.Generate, mux, decoder, encoder, errhandler, formatter),
 		Get:         NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
@@ -70,6 +74,8 @@ func New(
 		Rewrite:     NewRewriteHandler(e.Rewrite, mux, decoder, encoder, errhandler, formatter),
 		CreateShare: NewCreateShareHandler(e.CreateShare, mux, decoder, encoder, errhandler, formatter),
 		GetShared:   NewGetSharedHandler(e.GetShared, mux, decoder, encoder, errhandler, formatter),
+		ListShares:  NewListSharesHandler(e.ListShares, mux, decoder, encoder, errhandler, formatter),
+		RevokeShare: NewRevokeShareHandler(e.RevokeShare, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -85,6 +91,8 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Rewrite = m(s.Rewrite)
 	s.CreateShare = m(s.CreateShare)
 	s.GetShared = m(s.GetShared)
+	s.ListShares = m(s.ListShares)
+	s.RevokeShare = m(s.RevokeShare)
 }
 
 // MethodNames returns the methods served.
@@ -99,6 +107,8 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountRewriteHandler(mux, h.Rewrite)
 	MountCreateShareHandler(mux, h.CreateShare)
 	MountGetSharedHandler(mux, h.GetShared)
+	MountListSharesHandler(mux, h.ListShares)
+	MountRevokeShareHandler(mux, h.RevokeShare)
 }
 
 // Mount configures the mux to serve the reports endpoints.
@@ -454,6 +464,112 @@ func NewGetSharedHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get_shared")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "reports")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountListSharesHandler configures the mux to serve the "reports" service
+// "list_shares" endpoint.
+func MountListSharesHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/api/v1/reports/{report_id}/shares", f)
+}
+
+// NewListSharesHandler creates a HTTP handler which loads the HTTP request and
+// calls the "reports" service "list_shares" endpoint.
+func NewListSharesHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeListSharesRequest(mux, decoder)
+		encodeResponse = EncodeListSharesResponse(encoder)
+		encodeError    = EncodeListSharesError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_shares")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "reports")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountRevokeShareHandler configures the mux to serve the "reports" service
+// "revoke_share" endpoint.
+func MountRevokeShareHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/api/v1/reports/shares/{id}/revoke", f)
+}
+
+// NewRevokeShareHandler creates a HTTP handler which loads the HTTP request
+// and calls the "reports" service "revoke_share" endpoint.
+func NewRevokeShareHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeRevokeShareRequest(mux, decoder)
+		encodeResponse = EncodeRevokeShareResponse(encoder)
+		encodeError    = EncodeRevokeShareError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "revoke_share")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "reports")
 		payload, err := decodeRequest(r)
 		if err != nil {

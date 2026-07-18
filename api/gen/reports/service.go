@@ -27,6 +27,11 @@ type Service interface {
 	CreateShare(context.Context, *CreateSharePayload) (res *ReportShareLink, err error)
 	// Fetch a report by valid share token.
 	GetShared(context.Context, *GetSharedPayload) (res *Report, err error)
+	// List active and revoked share links for a report. Never returns the raw
+	// token, only non-secret metadata.
+	ListShares(context.Context, *ListSharesPayload) (res *ReportShareList, err error)
+	// Revoke a share link so it can no longer be used to fetch its report.
+	RevokeShare(context.Context, *RevokeSharePayload) (err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -43,7 +48,7 @@ const ServiceName = "reports"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [7]string{"generate", "get", "list", "similar", "rewrite", "create_share", "get_shared"}
+var MethodNames = [9]string{"generate", "get", "list", "similar", "rewrite", "create_share", "get_shared", "list_shares", "revoke_share"}
 
 type AggregateData struct {
 	Sum   *float64
@@ -141,6 +146,12 @@ type ListPayload struct {
 	Offset       int32
 }
 
+// ListSharesPayload is the payload type of the reports service list_shares
+// method.
+type ListSharesPayload struct {
+	ReportID string
+}
+
 type MetricsData struct {
 	Aggregates    map[string]*AggregateData
 	TopCategories map[string][]*TopCategoryData
@@ -202,6 +213,15 @@ type ReportList struct {
 	Offset int32
 }
 
+type ReportShareInfo struct {
+	ID             string
+	CreatedAt      string
+	ExpiresAt      *string
+	RevokedAt      *string
+	AccessCount    int32
+	LastAccessedAt *string
+}
+
 // ReportShareLink is the result type of the reports service create_share
 // method.
 type ReportShareLink struct {
@@ -210,9 +230,21 @@ type ReportShareLink struct {
 	ExpiresAt *string
 }
 
+// ReportShareList is the result type of the reports service list_shares method.
+type ReportShareList struct {
+	Items []*ReportShareInfo
+}
+
 // ReportSimilarResult is the result type of the reports service similar method.
 type ReportSimilarResult struct {
 	Items []*SimilarReportItem
+}
+
+// RevokeSharePayload is the payload type of the reports service revoke_share
+// method.
+type RevokeSharePayload struct {
+	// Share link ID (not the token)
+	ID string
 }
 
 // RewritePayload is the payload type of the reports service rewrite method.

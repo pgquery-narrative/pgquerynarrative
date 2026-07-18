@@ -161,13 +161,13 @@ generate:
 	fi && \
 	$(GO) generate ./... && \
 	goa gen github.com/pgquerynarrative/pgquerynarrative/api/design
-	@sh ./tools/fix-gen-metrics-validator.sh 2>/dev/null || true
-	@sh ./tools/copy-gen-to-api-gen.sh 2>/dev/null || true
+	@sh ./tools/fix-gen-metrics-validator.sh
+	@sh ./tools/copy-gen-to-api-gen.sh
 	@echo "✅ Code generated"
 
 build-frontend:
 	@echo "🔨 Building frontend..."
-	@cd frontend && npm install --silent && npm run build
+	@cd frontend && npm ci && npm run build
 	@echo "✅ Frontend built: frontend/dist/"
 
 # Server version ldflags (set VERSION for release build).
@@ -190,7 +190,7 @@ build-mcp:
 	$(GO) build $(MCP_LDFLAGS) -o bin/mcp-server ./cmd/mcp-server
 	@echo "✅ MCP server: bin/mcp-server"
 
-# Release build: native server + MCP binaries and checksums.
+# Release build: native server + MCP + migrate binaries and checksums.
 # Multi-arch release assets are built in .github/workflows/release.yml (CGO per platform).
 VERSION ?=
 build-release:
@@ -199,8 +199,10 @@ build-release:
 	echo "Building release binaries for $$native_os/$$native_arch..."; \
 	CGO_ENABLED=1 $(GO) build $(SERVER_LDFLAGS) -o bin/pgquerynarrative-server-$$native_os-$$native_arch ./cmd/server; \
 	CGO_ENABLED=0 $(GO) build $(MCP_LDFLAGS) -o bin/pgquerynarrative-mcp-$$native_os-$$native_arch ./cmd/mcp-server; \
+	CGO_ENABLED=0 $(GO) build -tags postgres -ldflags "-s -w" -o bin/pgquerynarrative-migrate-$$native_os-$$native_arch \
+		github.com/golang-migrate/migrate/v4/cmd/migrate; \
 	(cd bin && sha256sum pgquerynarrative-* > checksums.txt)
-	@echo "✅ Release binaries in bin/ (VERSION=$(VERSION))"
+	@echo "✅ Release binaries (server, mcp, migrate) in bin/ (VERSION=$(VERSION))"
 
 run:
 	$(GO) run ./cmd/server
@@ -324,6 +326,20 @@ migrate-docker: postgres-up
 		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
 		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
 	@echo "✅ Migrations applied"
+
+# Migration reversibility check: up -> down -all -> up via Docker (no host Go required).
+# Prerequisite: docker compose up -d postgres (or: make postgres-up)
+migrate-cycle-docker: postgres-up
+	@$(MAKE) db-init || true
+	@echo "🔁 Verifying migration up → down → up cycle via Docker..."
+	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
+		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
+	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
+		sh -c 'apk add --no-cache git && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" down -all && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
+	@echo "✅ Migration up/down/up cycle passed"
 
 db-security-verify-docker: postgres-up
 	@echo "🔒 Verifying PostgreSQL security boundary..."

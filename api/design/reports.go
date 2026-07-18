@@ -156,6 +156,39 @@ var _ = Service("reports", func() {
 			Response(StatusNotFound, "not_found")
 		})
 	})
+
+	Method("list_shares", func() {
+		Description("List active and revoked share links for a report. Never returns the raw token, only non-secret metadata.")
+		Payload(func() {
+			Attribute("report_id", String, func() {
+				Format(FormatUUID)
+			})
+			Required("report_id")
+		})
+		Result(ReportShareList)
+		Error("not_found", NotFoundError)
+		HTTP(func() {
+			GET("/api/v1/reports/{report_id}/shares")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+		})
+	})
+
+	Method("revoke_share", func() {
+		Description("Revoke a share link so it can no longer be used to fetch its report.")
+		Payload(func() {
+			Attribute("id", String, "Share link ID (not the token)", func() {
+				Format(FormatUUID)
+			})
+			Required("id")
+		})
+		Error("not_found", NotFoundError)
+		HTTP(func() {
+			POST("/api/v1/reports/shares/{id}/revoke")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+		})
+	})
 })
 
 var GenerateReportPayload = Type("GenerateReportPayload", func() {
@@ -332,6 +365,23 @@ var ReportShareLink = Type("ReportShareLink", func() {
 	Attribute("url", String)
 	Attribute("expires_at", String, func() { Format(FormatDateTime) })
 	Required("token", "url")
+})
+
+// ReportShareInfo is non-secret metadata about a share link: it never carries the raw
+// token or its hash, only enough information to let an owner audit and revoke links.
+var ReportShareInfo = Type("ReportShareInfo", func() {
+	Attribute("id", String, func() { Format(FormatUUID) })
+	Attribute("created_at", String, func() { Format(FormatDateTime) })
+	Attribute("expires_at", String, func() { Format(FormatDateTime) })
+	Attribute("revoked_at", String, func() { Format(FormatDateTime) })
+	Attribute("access_count", Int32)
+	Attribute("last_accessed_at", String, func() { Format(FormatDateTime) })
+	Required("id", "created_at", "access_count")
+})
+
+var ReportShareList = Type("ReportShareList", func() {
+	Attribute("items", ArrayOf(ReportShareInfo))
+	Required("items")
 })
 
 var LLMError = Type("LLMError", func() {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -46,9 +47,28 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt string) (string, err
 }
 
 func (c *GeminiClient) GenerateWithUsage(ctx context.Context, prompt string) (GenerationResult, error) {
+	return c.GenerateMessages(ctx, PromptToChatMessages(prompt))
+}
+
+// GenerateMessages flattens role-tagged messages into Gemini's single-turn contents API.
+func (c *GeminiClient) GenerateMessages(ctx context.Context, messages []ChatMessage) (GenerationResult, error) {
 	if c.apiKey == "" {
 		return GenerationResult{}, fmt.Errorf("gemini: LLM_API_KEY is required")
 	}
+	var b strings.Builder
+	for i, m := range messages {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		role := strings.TrimSpace(m.Role)
+		if role == "" {
+			role = "user"
+		}
+		b.WriteString(strings.ToUpper(role))
+		b.WriteString(":\n")
+		b.WriteString(m.Content)
+	}
+	prompt := b.String()
 	url := fmt.Sprintf("%s/models/%s:generateContent", geminiBaseURL, c.model)
 	payload := map[string]interface{}{
 		"contents": []map[string]interface{}{
@@ -75,8 +95,8 @@ func (c *GeminiClient) GenerateWithUsage(ctx context.Context, prompt string) (Ge
 		if err != nil {
 			return GenerationResult{}, fmt.Errorf("gemini: request: %w", err)
 		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-		resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // #nosec G104 -- best-effort error-body read; empty body on failure just yields a less detailed error message.
+		resp.Body.Close()                                           // #nosec G104 -- close error on a body we're discarding is not actionable.
 		if resp.StatusCode == http.StatusOK {
 			var result struct {
 				Candidates []struct {

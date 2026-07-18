@@ -1,0 +1,21 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Hash Join",
+      "Total Cost": 40000.0,
+      "Plan Rows": 500000,
+      "Hash Cond": "(trips.zone_id = zones.id)",
+      "Plans": [
+        {"Node Type": "Seq Scan", "Relation Name": "trips", "Schema": "demo", "Total Cost": 20000.0, "Plan Rows": 500000},
+        {
+          "Node Type": "Hash",
+          "Total Cost": 500.0,
+          "Plan Rows": 260,
+          "Plans": [
+            {"Node Type": "Seq Scan", "Relation Name": "zones", "Schema": "demo", "Total Cost": 400.0, "Plan Rows": 260}
+          ]
+        }
+      ]
+    }
+  }
+]

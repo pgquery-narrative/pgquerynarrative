@@ -167,6 +167,8 @@ func runDraft(base, repoRoot string, args []string) {
 		body = strings.TrimSpace(string(b))
 	} else {
 		p := filepath.Join(base, "templates", *tplName+".txt")
+		// #nosec G304 -- tplName is a CLI flag set by the operator running this local admin
+		// tool, not untrusted network input.
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			fatalf("read template %s: %v", p, err)
@@ -176,6 +178,8 @@ func runDraft(base, repoRoot string, args []string) {
 		body = strings.ReplaceAll(body, "{{HIGHLIGHT}}", *highlight)
 	}
 	if *gitRecent {
+		// #nosec G204 -- repoRoot is derived internally (not user/network input); this is a
+		// local admin CLI invoking a fixed git subcommand with fixed flags.
 		out, err := exec.Command("git", "-C", repoRoot, "log", "-5", "--oneline", "--no-decorate").CombinedOutput()
 		if err != nil {
 			fatalf("git log: %v\n%s", err, out)
@@ -276,10 +280,13 @@ func runApprove(base string, args []string) {
 	if !fileMustBeInDir(src, pendingDir) {
 		fatalf("refuse to approve outside pending/: %s", src)
 	}
+	// #nosec G703 -- src is validated against pendingDir by fileMustBeInDir above; this is a
+	// local admin CLI operating on args the invoking operator already controls, not network input.
 	if _, err := os.Stat(src); err != nil {
 		fatalf("stat: %v", err)
 	}
 	dst := filepath.Join(base, "approved", filepath.Base(src))
+	// #nosec G703 -- src validated above; dst is base/approved/<basename>, confined to base.
 	if err := os.Rename(src, dst); err != nil {
 		fatalf("rename: %v", err)
 	}
@@ -295,6 +302,7 @@ func runReject(base string, args []string) {
 	if !fileMustBeInDir(src, pendingDir) {
 		fatalf("refuse to reject outside pending/: %s", src)
 	}
+	// #nosec G703 -- src is validated against pendingDir by fileMustBeInDir above.
 	if err := os.Remove(src); err != nil {
 		fatalf("remove: %v", err)
 	}
@@ -309,6 +317,12 @@ func runShow(base string, args []string) {
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(base, p)
 	}
+	p = filepath.Clean(p)
+	if !fileMustBeInDir(p, base) {
+		fatalf("refuse to show outside %s: %s", base, p)
+	}
+	// #nosec G703 -- p is validated against base above (fileMustBeInDir); this is a local
+	// admin CLI operating on args the invoking operator already controls, not network input.
 	b, err := os.ReadFile(p)
 	if err != nil {
 		fatalf("read: %v", err)

@@ -110,6 +110,13 @@ var (
 	// ErrExplainNotRunnable indicates an EXPLAIN statement was submitted to the
 	// regular query execution endpoint, which only executes plain SELECT queries.
 	ErrExplainNotRunnable = errors.New("EXPLAIN statements cannot be executed here; use the explain endpoint")
+
+	// ErrConnectionNotFound indicates a non-empty connection ID that is not configured.
+	ErrConnectionNotFound = errors.New("connection not found")
+
+	// ErrConnectionForbidden indicates the authenticated principal is not authorized
+	// to use the requested connection for the requested action (see app/auth/connection_authz.go).
+	ErrConnectionForbidden = errors.New("not authorized to use this connection")
 )
 
 // Helper functions for wrapping errors with context. Use %w so callers can use errors.Is/As.

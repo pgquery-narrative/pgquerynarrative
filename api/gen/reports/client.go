@@ -22,10 +22,12 @@ type Client struct {
 	RewriteEndpoint     goa.Endpoint
 	CreateShareEndpoint goa.Endpoint
 	GetSharedEndpoint   goa.Endpoint
+	ListSharesEndpoint  goa.Endpoint
+	RevokeShareEndpoint goa.Endpoint
 }
 
 // NewClient initializes a "reports" service client given the endpoints.
-func NewClient(generate, get, list, similar, rewrite, createShare, getShared goa.Endpoint) *Client {
+func NewClient(generate, get, list, similar, rewrite, createShare, getShared, listShares, revokeShare goa.Endpoint) *Client {
 	return &Client{
 		GenerateEndpoint:    generate,
 		GetEndpoint:         get,
@@ -34,6 +36,8 @@ func NewClient(generate, get, list, similar, rewrite, createShare, getShared goa
 		RewriteEndpoint:     rewrite,
 		CreateShareEndpoint: createShare,
 		GetSharedEndpoint:   getShared,
+		ListSharesEndpoint:  listShares,
+		RevokeShareEndpoint: revokeShare,
 	}
 }
 
@@ -123,4 +127,26 @@ func (c *Client) GetShared(ctx context.Context, p *GetSharedPayload) (res *Repor
 		return
 	}
 	return ires.(*Report), nil
+}
+
+// ListShares calls the "list_shares" endpoint of the "reports" service.
+// ListShares may return the following errors:
+//   - "not_found" (type *NotFoundError)
+//   - error: internal error
+func (c *Client) ListShares(ctx context.Context, p *ListSharesPayload) (res *ReportShareList, err error) {
+	var ires any
+	ires, err = c.ListSharesEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ReportShareList), nil
+}
+
+// RevokeShare calls the "revoke_share" endpoint of the "reports" service.
+// RevokeShare may return the following errors:
+//   - "not_found" (type *NotFoundError)
+//   - error: internal error
+func (c *Client) RevokeShare(ctx context.Context, p *RevokeSharePayload) (err error) {
+	_, err = c.RevokeShareEndpoint(ctx, p)
+	return
 }

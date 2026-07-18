@@ -121,33 +121,39 @@ type DataConnectionConfig struct {
 
 // SecurityConfig contains security-related settings.
 type SecurityConfig struct {
-	AuthEnabled            bool     // When true, API and web export require Bearer token (SECURITY_API_KEY).
-	APIKey                 string   // Bearer token for API auth; required when AuthEnabled is true.
-	APIKeyHash             string   // SHA-256 hex digest of SECURITY_API_KEY (preferred in production).
-	RateLimitRPM           int      // Max requests per minute per client (0 = disabled). Applied when > 0.
-	RateLimitBurst         int      // Burst size for rate limiter (allow short spikes). Default 2 * RateLimitRPM when 0.
-	TrustedProxies         []string // IPs/CIDRs that may set X-Forwarded-For / X-Real-IP (empty = use RemoteAddr only).
-	MaxRequestBodyBytes    int64    // Max HTTP request body size (0 = default 5 MiB).
-	ShareLinkDefaultHours  int      // Default share-link TTL when expires_in_hours is omitted (default 168).
-	ShareLinksEnabled      bool     // Allow unauthenticated shared report links. Default false.
-	ExplainAnalyzeEnabled  bool     // Allow EXPLAIN ANALYZE (executes query). Default false.
-	StatStatementsEnabled  bool     // Expose pg_stat_statements API. Default true.
-	APIKeysJSON            string   // Optional JSON array of {key,id,role} for multi-key RBAC.
-	RateLimitDistributed   bool     // Use PostgreSQL-backed rate limiting (multi-replica safe).
-	OIDCIssuer             string   // Optional OIDC issuer URL for JWT Bearer auth.
-	OIDCAudience           string   // Expected JWT aud claim.
-	OIDCJWKSURL            string   // Optional JWKS URL (defaults to issuer/.well-known/jwks.json).
-	ScheduleRunnerEnabled  bool     // Background schedule execution. Default false.
-	ScheduleRunnerInterval time.Duration
-	ScheduleDurableLeases  bool   // Require durable schedule_runs claiming. Default true.
-	WebhookSigningSecret   string // HMAC secret for outbound webhook signatures.
-	OIDCClientID           string
-	OIDCClientSecret       string
-	OIDCRedirectURL        string
-	SessionSecret          string
-	SessionTTL             time.Duration
-	OIDCAutoJoinDefaultOrg bool     // Auto-provision default-org membership on first OIDC login. Default true.
-	WebhookAllowedHosts    []string // Optional hostname allowlist for webhook destinations.
+	AuthEnabled                  bool          // When true, API and web export require Bearer token (SECURITY_API_KEY).
+	APIKey                       string        // Bearer token for API auth; required when AuthEnabled is true.
+	APIKeyHash                   string        // SHA-256 hex digest of SECURITY_API_KEY (preferred in production).
+	RateLimitRPM                 int           // Max requests per minute per client (0 = disabled). Applied when > 0.
+	RateLimitBurst               int           // Burst size for rate limiter (allow short spikes). Default 2 * RateLimitRPM when 0.
+	TrustedProxies               []string      // IPs/CIDRs that may set X-Forwarded-For / X-Real-IP (empty = use RemoteAddr only).
+	MaxRequestBodyBytes          int64         // Max HTTP request body size (0 = default 5 MiB).
+	ShareLinkDefaultHours        int           // Default share-link TTL when expires_in_hours is omitted (default 168).
+	ShareLinksEnabled            bool          // Allow unauthenticated shared report links. Default false.
+	ExplainAnalyzeEnabled        bool          // Allow EXPLAIN ANALYZE (executes query). Default false.
+	StatStatementsEnabled        bool          // Expose pg_stat_statements API. Default true.
+	APIKeysJSON                  string        // Optional JSON array of {key,id,role} for multi-key RBAC.
+	RateLimitDistributed         bool          // Use PostgreSQL-backed rate limiting (multi-replica safe).
+	RateLimitFailureMode         string        // Behavior when distributed limiter storage fails: open (default) | closed | local_fallback.
+	RateLimitBucketMaxAge        time.Duration // Distributed rate-limit buckets inactive longer than this are cleaned up. Default 24h.
+	OIDCIssuer                   string        // Optional OIDC issuer URL for JWT Bearer auth.
+	OIDCAudience                 string        // Expected JWT aud claim.
+	OIDCJWKSURL                  string        // Optional JWKS URL (defaults to issuer/.well-known/jwks.json).
+	ScheduleRunnerEnabled        bool          // Background schedule execution. Default false.
+	ScheduleRunnerInterval       time.Duration
+	ScheduleDurableLeases        bool   // Require durable schedule_runs claiming. Default true.
+	WebhookSigningSecret         string // HMAC secret for outbound webhook signatures.
+	OIDCClientID                 string
+	OIDCClientSecret             string
+	OIDCRedirectURL              string
+	SessionSecret                string
+	SessionTTL                   time.Duration
+	OIDCAutoJoinDefaultOrg       bool     // Auto-provision default-org membership on first OIDC login. Default false.
+	WebhookAllowedHosts          []string // Optional hostname allowlist for webhook destinations.
+	AuditMode                    string   // Audit durability mode: best_effort (default) | required | buffered.
+	ExplainSnapshotRetentionDays int      // Delete stored EXPLAIN snapshots older than this many days (0 = keep forever). Default 90.
+	ShareLinkExposeSQL           bool     // When false (default), public shared-report views omit the underlying SQL text.
+	DataEncryptionKey            string   // AES-GCM key material for at-rest sealing of EXPLAIN snapshots (SECURITY_DATA_ENCRYPTION_KEY).
 }
 
 // LLMConfig contains settings for the LLM provider used for narrative generation.
@@ -170,6 +176,7 @@ type LLMConfig struct {
 	PerUserMonthlyCostBudgetUSD float64 // Per-user monthly USD budget (0 = unlimited)
 	USDPer1kTokens              float64 // Estimated cost rate for budget accounting
 	MaxCallsPerReport           int     // Cap auxiliary LLM calls per report (0 = default 12)
+	BudgetFailClosed            bool    // Deny LLM calls when the budget ledger DB is unreachable, instead of failing open
 }
 
 // Load reads configuration from environment variables and returns a Config struct.
@@ -206,33 +213,39 @@ func Load() Config {
 			MaxColumns:       getEnvInt("QUERY_MAX_COLUMNS", 100),
 		},
 		Security: SecurityConfig{
-			AuthEnabled:            getEnvBool("SECURITY_AUTH_ENABLED", false),
-			APIKey:                 getEnv("SECURITY_API_KEY", ""),
-			APIKeyHash:             getEnv("SECURITY_API_KEY_HASH", ""),
-			RateLimitRPM:           getEnvInt("SECURITY_RATE_LIMIT_RPM", 0),
-			RateLimitBurst:         getEnvInt("SECURITY_RATE_LIMIT_BURST", 0),
-			TrustedProxies:         getEnvSlice("SECURITY_TRUSTED_PROXIES", ","),
-			MaxRequestBodyBytes:    getEnvInt64("SECURITY_MAX_REQUEST_BODY_BYTES", 5*1024*1024),
-			ShareLinkDefaultHours:  getEnvInt("SECURITY_SHARE_LINK_DEFAULT_HOURS", 168),
-			ShareLinksEnabled:      getEnvBool("SECURITY_SHARE_LINKS_ENABLED", false),
-			ExplainAnalyzeEnabled:  getEnvBool("SECURITY_EXPLAIN_ANALYZE_ENABLED", false),
-			StatStatementsEnabled:  getEnvBool("SECURITY_STAT_STATEMENTS_ENABLED", true),
-			APIKeysJSON:            auth.LoadAPIKeysJSON(getEnv("SECURITY_API_KEYS_JSON", "")),
-			RateLimitDistributed:   getEnvBool("SECURITY_RATE_LIMIT_DISTRIBUTED", false),
-			OIDCIssuer:             getEnv("SECURITY_OIDC_ISSUER", ""),
-			OIDCAudience:           getEnv("SECURITY_OIDC_AUDIENCE", ""),
-			OIDCJWKSURL:            getEnv("SECURITY_OIDC_JWKS_URL", ""),
-			ScheduleRunnerEnabled:  getEnvBool("SCHEDULE_RUNNER_ENABLED", false),
-			ScheduleRunnerInterval: getEnvDuration("SCHEDULE_RUNNER_INTERVAL", time.Minute),
-			ScheduleDurableLeases:  getEnvBool("SCHEDULE_DURABLE_LEASES", true),
-			WebhookSigningSecret:   getEnv("SECURITY_WEBHOOK_SIGNING_SECRET", ""),
-			OIDCClientID:           getEnv("SECURITY_OIDC_CLIENT_ID", ""),
-			OIDCClientSecret:       getEnv("SECURITY_OIDC_CLIENT_SECRET", ""),
-			OIDCRedirectURL:        getEnv("SECURITY_OIDC_REDIRECT_URL", "http://localhost:8080/auth/callback"),
-			SessionSecret:          getEnv("SECURITY_SESSION_SECRET", ""),
-			SessionTTL:             getEnvDuration("SECURITY_SESSION_TTL", 8*time.Hour),
-			OIDCAutoJoinDefaultOrg: getEnvBool("SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG", true),
-			WebhookAllowedHosts:    getEnvSlice("SECURITY_WEBHOOK_ALLOWED_HOSTS", ","),
+			AuthEnabled:                  getEnvBool("SECURITY_AUTH_ENABLED", false),
+			APIKey:                       getEnv("SECURITY_API_KEY", ""),
+			APIKeyHash:                   getEnv("SECURITY_API_KEY_HASH", ""),
+			RateLimitRPM:                 getEnvInt("SECURITY_RATE_LIMIT_RPM", 0),
+			RateLimitBurst:               getEnvInt("SECURITY_RATE_LIMIT_BURST", 0),
+			TrustedProxies:               getEnvSlice("SECURITY_TRUSTED_PROXIES", ","),
+			MaxRequestBodyBytes:          getEnvInt64("SECURITY_MAX_REQUEST_BODY_BYTES", 5*1024*1024),
+			ShareLinkDefaultHours:        getEnvInt("SECURITY_SHARE_LINK_DEFAULT_HOURS", 168),
+			ShareLinksEnabled:            getEnvBool("SECURITY_SHARE_LINKS_ENABLED", false),
+			ExplainAnalyzeEnabled:        getEnvBool("SECURITY_EXPLAIN_ANALYZE_ENABLED", false),
+			StatStatementsEnabled:        getEnvBool("SECURITY_STAT_STATEMENTS_ENABLED", true),
+			APIKeysJSON:                  auth.LoadAPIKeysJSON(getEnv("SECURITY_API_KEYS_JSON", "")),
+			RateLimitDistributed:         getEnvBool("SECURITY_RATE_LIMIT_DISTRIBUTED", false),
+			RateLimitFailureMode:         getEnv("SECURITY_RATE_LIMIT_FAILURE_MODE", "open"),
+			RateLimitBucketMaxAge:        getEnvDuration("SECURITY_RATE_LIMIT_BUCKET_MAX_AGE", 24*time.Hour),
+			OIDCIssuer:                   getEnv("SECURITY_OIDC_ISSUER", ""),
+			OIDCAudience:                 getEnv("SECURITY_OIDC_AUDIENCE", ""),
+			OIDCJWKSURL:                  getEnv("SECURITY_OIDC_JWKS_URL", ""),
+			ScheduleRunnerEnabled:        getEnvBool("SCHEDULE_RUNNER_ENABLED", false),
+			ScheduleRunnerInterval:       getEnvDuration("SCHEDULE_RUNNER_INTERVAL", time.Minute),
+			ScheduleDurableLeases:        getEnvBool("SCHEDULE_DURABLE_LEASES", true),
+			WebhookSigningSecret:         getEnv("SECURITY_WEBHOOK_SIGNING_SECRET", ""),
+			OIDCClientID:                 getEnv("SECURITY_OIDC_CLIENT_ID", ""),
+			OIDCClientSecret:             getEnv("SECURITY_OIDC_CLIENT_SECRET", ""),
+			OIDCRedirectURL:              getEnv("SECURITY_OIDC_REDIRECT_URL", "http://localhost:8080/auth/callback"),
+			SessionSecret:                getEnv("SECURITY_SESSION_SECRET", ""),
+			SessionTTL:                   getEnvDuration("SECURITY_SESSION_TTL", 8*time.Hour),
+			OIDCAutoJoinDefaultOrg:       getEnvBool("SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG", false),
+			WebhookAllowedHosts:          getEnvSlice("SECURITY_WEBHOOK_ALLOWED_HOSTS", ","),
+			AuditMode:                    getEnv("SECURITY_AUDIT_MODE", "best_effort"),
+			ExplainSnapshotRetentionDays: getEnvInt("SECURITY_EXPLAIN_SNAPSHOT_RETENTION_DAYS", 90),
+			ShareLinkExposeSQL:           getEnvBool("SECURITY_SHARE_LINK_EXPOSE_SQL", false),
+			DataEncryptionKey:            getEnv("SECURITY_DATA_ENCRYPTION_KEY", ""),
 		},
 		LLM: LLMConfig{
 			Provider:                    getEnv("LLM_PROVIDER", "ollama"),
@@ -253,6 +266,7 @@ func Load() Config {
 			PerUserMonthlyCostBudgetUSD: getEnvFloat("LLM_PER_USER_MONTHLY_COST_BUDGET_USD", 0),
 			USDPer1kTokens:              getEnvFloat("LLM_USD_PER_1K_TOKENS", 0.002),
 			MaxCallsPerReport:           getEnvInt("LLM_MAX_CALLS_PER_REPORT", 12),
+			BudgetFailClosed:            getEnvBool("LLM_BUDGET_FAIL_CLOSED", IsCloudLLMProvider(getEnv("LLM_PROVIDER", "ollama")) || StrictMode()),
 		},
 		Metrics: validateMetricsConfig(MetricsConfig{
 			TrendThresholdPercent:    getEnvFloat("PERIOD_TREND_THRESHOLD_PERCENT", 0.5),

@@ -3,12 +3,16 @@ package db
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 )
 
-// ExecWithOrg runs a statement with app.current_org_id set for RLS policies.
+// ExecWithOrg runs a statement with app.current_org_id set (via SET LOCAL, transaction-local)
+// for RLS policies. Unlike a session-level set_config, the setting is discarded by Postgres
+// the instant the transaction ends, so it cannot leak onto the connection once released back
+// to the pool.
 func ExecWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) error {
 	if pool == nil {
 		return nil
@@ -16,20 +20,15 @@ func ExecWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, arg
 	if orgID == "" {
 		orgID = auth.DefaultOrgID()
 	}
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
+	return withOrgTxID(ctx, pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, sql, args...)
 		return err
-	}
-	defer conn.Release()
-	if _, err := conn.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, orgID); err != nil {
-		return err
-	}
-	_, err = conn.Exec(ctx, sql, args...)
-	_, _ = conn.Exec(context.Background(), `SELECT set_config('app.current_org_id', '', false)`)
-	return err
+	})
 }
 
-// QueryRowWithOrg runs QueryRow with org context set until Scan completes.
+// QueryRowWithOrg runs QueryRow with app.current_org_id set (via SET LOCAL) until the returned
+// scan function is called, which commits (or rolls back on scan error) the underlying
+// transaction.
 func QueryRowWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) func(dest ...any) error {
 	if pool == nil {
 		return func(dest ...any) error { return nil }
@@ -37,20 +36,17 @@ func QueryRowWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string,
 	if orgID == "" {
 		orgID = auth.DefaultOrgID()
 	}
-	conn, err := pool.Acquire(ctx)
+	tx, err := beginOrgTx(ctx, pool, orgID)
 	if err != nil {
 		return func(dest ...any) error { return err }
 	}
-	if _, err := conn.Exec(ctx, `SELECT set_config('app.current_org_id', $1, false)`, orgID); err != nil {
-		conn.Release()
-		return func(dest ...any) error { return err }
-	}
-	row := conn.QueryRow(ctx, sql, args...)
+	row := tx.QueryRow(ctx, sql, args...)
 	return func(dest ...any) error {
-		defer func() {
-			_, _ = conn.Exec(context.Background(), `SELECT set_config('app.current_org_id', '', false)`)
-			conn.Release()
-		}()
-		return row.Scan(dest...)
+		scanErr := row.Scan(dest...)
+		if scanErr != nil {
+			_ = tx.Rollback(context.Background())
+			return scanErr
+		}
+		return tx.Commit(context.Background())
 	}
 }

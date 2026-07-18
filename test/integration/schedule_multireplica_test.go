@@ -17,8 +17,8 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
 )
 
-// TestScheduleClaim_MultiReplicaIdempotent verifies two workers cannot claim the same due run.
-func TestScheduleClaim_MultiReplicaIdempotent(t *testing.T) {
+func setupSchedulePool(t *testing.T) (*pgxpool.Pool, context.Context) {
+	t.Helper()
 	ctx := context.Background()
 	container := testhelpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
@@ -60,7 +60,13 @@ func TestScheduleClaim_MultiReplicaIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	t.Cleanup(pool.Close)
+	return pool, ctx
+}
+
+// TestScheduleClaim_MultiReplicaIdempotent verifies two workers cannot claim the same due run.
+func TestScheduleClaim_MultiReplicaIdempotent(t *testing.T) {
+	pool, ctx := setupSchedulePool(t)
 
 	appDB := db.NewOrgScoped(pool)
 	svcA := service.NewSchedulesService(appDB, nil, nil)
@@ -70,12 +76,12 @@ func TestScheduleClaim_MultiReplicaIdempotent(t *testing.T) {
 
 	org := auth.DefaultOrganizationID
 	var scheduleID string
-	err = pool.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		INSERT INTO app.schedules (
-			name, sql, connection_id, cron_expr, destination_type, destination_target,
+			name, sql, connection_id, interval_expr, destination_type, destination_target,
 			enabled, next_run_at, organization_id
 		) VALUES (
-			'multi-replica', 'SELECT 1', 'default', '*/5 * * * *', 'log', '',
+			'multi-replica', 'SELECT 1', 'default', '@every 5m', 'log', '',
 			true, NOW() - INTERVAL '1 minute', $1::uuid
 		) RETURNING id
 	`, org).Scan(&scheduleID)
@@ -98,5 +104,79 @@ func TestScheduleClaim_MultiReplicaIdempotent(t *testing.T) {
 	}
 	if runCount != 1 {
 		t.Fatalf("expected exactly 1 schedule_run after two workers, got %d", runCount)
+	}
+}
+
+// TestScheduleLeaseRecovery_TwoReplicaCrashRecovery reclaims an expired lease onto a second worker.
+func TestScheduleLeaseRecovery_TwoReplicaCrashRecovery(t *testing.T) {
+	pool, ctx := setupSchedulePool(t)
+
+	appDB := db.NewOrgScoped(pool)
+	svc := service.NewSchedulesService(appDB, nil, nil)
+	svc.SetRawPool(pool)
+
+	org := auth.DefaultOrganizationID
+	var scheduleID, runID string
+	err := pool.QueryRow(ctx, `
+		INSERT INTO app.schedules (
+			name, sql, connection_id, interval_expr, destination_type, destination_target,
+			enabled, next_run_at, organization_id, locked_by, locked_until
+		) VALUES (
+			'lease-recovery', 'SELECT 1', 'default', '@every 5m', 'log', '',
+			true, NOW() + INTERVAL '1 hour', $1::uuid, 'crashed-worker', NOW() - INTERVAL '1 minute'
+		) RETURNING id
+	`, org).Scan(&scheduleID)
+	if err != nil {
+		t.Fatalf("insert schedule: %v", err)
+	}
+	err = pool.QueryRow(ctx, `
+		INSERT INTO app.schedule_runs (
+			schedule_id, organization_id, scheduled_for, idempotency_key,
+			worker_id, lease_until, status, attempt_count, started_at
+		) VALUES (
+			$1, $2::uuid, NOW() - INTERVAL '10 minutes', 'lease-recovery-key',
+			'crashed-worker', NOW() - INTERVAL '1 minute', 'running', 1, NOW() - INTERVAL '10 minutes'
+		) RETURNING id
+	`, scheduleID, org).Scan(&runID)
+	if err != nil {
+		t.Fatalf("insert stuck run: %v", err)
+	}
+
+	recovered, err := svc.RecoverExpiredScheduleLeases(ctx, pool, "recovery-worker")
+	if err != nil {
+		t.Fatalf("RecoverExpiredScheduleLeases: %v", err)
+	}
+	if len(recovered) != 1 {
+		t.Fatalf("expected 1 recovered run, got %d", len(recovered))
+	}
+	if recovered[0].RunID != runID {
+		t.Fatalf("recovered run id = %s, want %s", recovered[0].RunID, runID)
+	}
+
+	var workerID string
+	var attempts int
+	var leaseUntil time.Time
+	if err := pool.QueryRow(ctx, `
+		SELECT worker_id, attempt_count, lease_until FROM app.schedule_runs WHERE id = $1
+	`, runID).Scan(&workerID, &attempts, &leaseUntil); err != nil {
+		t.Fatal(err)
+	}
+	if workerID != "recovery-worker" {
+		t.Fatalf("worker_id = %q, want recovery-worker", workerID)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempt_count = %d, want 2", attempts)
+	}
+	if !leaseUntil.After(time.Now().UTC()) {
+		t.Fatalf("expected renewed lease_until in the future, got %v", leaseUntil)
+	}
+
+	// Second recovery while lease is fresh must claim nothing.
+	again, err := svc.RecoverExpiredScheduleLeases(ctx, pool, "other-worker")
+	if err != nil {
+		t.Fatalf("second recovery: %v", err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("expected 0 recovered runs while lease is fresh, got %d", len(again))
 	}
 }

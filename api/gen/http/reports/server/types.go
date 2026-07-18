@@ -119,6 +119,12 @@ type GetSharedResponseBody struct {
 	LlmProvider      string                         `form:"llm_provider" json:"llm_provider" xml:"llm_provider"`
 }
 
+// ListSharesResponseBody is the type of the "reports" service "list_shares"
+// endpoint HTTP response body.
+type ListSharesResponseBody struct {
+	Items []*ReportShareInfoResponseBody `form:"items" json:"items" xml:"items"`
+}
+
 // GenerateLlmErrorResponseBody is the type of the "reports" service "generate"
 // endpoint HTTP response body for the "llm_error" error.
 type GenerateLlmErrorResponseBody struct {
@@ -178,6 +184,22 @@ type CreateShareNotFoundResponseBody struct {
 // GetSharedNotFoundResponseBody is the type of the "reports" service
 // "get_shared" endpoint HTTP response body for the "not_found" error.
 type GetSharedNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// ListSharesNotFoundResponseBody is the type of the "reports" service
+// "list_shares" endpoint HTTP response body for the "not_found" error.
+type ListSharesNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RevokeShareNotFoundResponseBody is the type of the "reports" service
+// "revoke_share" endpoint HTTP response body for the "not_found" error.
+type RevokeShareNotFoundResponseBody struct {
 	Name    string  `form:"name" json:"name" xml:"name"`
 	Message string  `form:"message" json:"message" xml:"message"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -362,6 +384,16 @@ type SimilarReportItemResponseBody struct {
 	Similarity   float64 `form:"similarity" json:"similarity" xml:"similarity"`
 }
 
+// ReportShareInfoResponseBody is used to define fields on response body types.
+type ReportShareInfoResponseBody struct {
+	ID             string  `form:"id" json:"id" xml:"id"`
+	CreatedAt      string  `form:"created_at" json:"created_at" xml:"created_at"`
+	ExpiresAt      *string `form:"expires_at,omitempty" json:"expires_at,omitempty" xml:"expires_at,omitempty"`
+	RevokedAt      *string `form:"revoked_at,omitempty" json:"revoked_at,omitempty" xml:"revoked_at,omitempty"`
+	AccessCount    int32   `form:"access_count" json:"access_count" xml:"access_count"`
+	LastAccessedAt *string `form:"last_accessed_at,omitempty" json:"last_accessed_at,omitempty" xml:"last_accessed_at,omitempty"`
+}
+
 // NewGenerateResponseBody builds the HTTP response body from the result of the
 // "generate" endpoint of the "reports" service.
 func NewGenerateResponseBody(res *reports.Report) *GenerateResponseBody {
@@ -542,6 +574,25 @@ func NewGetSharedResponseBody(res *reports.Report) *GetSharedResponseBody {
 	return body
 }
 
+// NewListSharesResponseBody builds the HTTP response body from the result of
+// the "list_shares" endpoint of the "reports" service.
+func NewListSharesResponseBody(res *reports.ReportShareList) *ListSharesResponseBody {
+	body := &ListSharesResponseBody{}
+	if res.Items != nil {
+		body.Items = make([]*ReportShareInfoResponseBody, len(res.Items))
+		for i, val := range res.Items {
+			if val == nil {
+				body.Items[i] = nil
+				continue
+			}
+			body.Items[i] = marshalReportsReportShareInfoToReportShareInfoResponseBody(val)
+		}
+	} else {
+		body.Items = []*ReportShareInfoResponseBody{}
+	}
+	return body
+}
+
 // NewGenerateLlmErrorResponseBody builds the HTTP response body from the
 // result of the "generate" endpoint of the "reports" service.
 func NewGenerateLlmErrorResponseBody(res *reports.LLMError) *GenerateLlmErrorResponseBody {
@@ -630,6 +681,28 @@ func NewGetSharedNotFoundResponseBody(res *reports.NotFoundError) *GetSharedNotF
 	return body
 }
 
+// NewListSharesNotFoundResponseBody builds the HTTP response body from the
+// result of the "list_shares" endpoint of the "reports" service.
+func NewListSharesNotFoundResponseBody(res *reports.NotFoundError) *ListSharesNotFoundResponseBody {
+	body := &ListSharesNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewRevokeShareNotFoundResponseBody builds the HTTP response body from the
+// result of the "revoke_share" endpoint of the "reports" service.
+func NewRevokeShareNotFoundResponseBody(res *reports.NotFoundError) *RevokeShareNotFoundResponseBody {
+	body := &RevokeShareNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
 // NewGenerateReportPayload builds a reports service generate endpoint payload.
 func NewGenerateReportPayload(body *GenerateRequestBody) *reports.GenerateReportPayload {
 	v := &reports.GenerateReportPayload{
@@ -694,6 +767,22 @@ func NewCreateSharePayload(body *CreateShareRequestBody) *reports.CreateSharePay
 func NewGetSharedPayload(token string) *reports.GetSharedPayload {
 	v := &reports.GetSharedPayload{}
 	v.Token = token
+
+	return v
+}
+
+// NewListSharesPayload builds a reports service list_shares endpoint payload.
+func NewListSharesPayload(reportID string) *reports.ListSharesPayload {
+	v := &reports.ListSharesPayload{}
+	v.ReportID = reportID
+
+	return v
+}
+
+// NewRevokeSharePayload builds a reports service revoke_share endpoint payload.
+func NewRevokeSharePayload(id string) *reports.RevokeSharePayload {
+	v := &reports.RevokeSharePayload{}
+	v.ID = id
 
 	return v
 }

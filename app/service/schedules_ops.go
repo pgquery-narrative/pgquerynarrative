@@ -38,34 +38,25 @@ func (s *SchedulesService) ListRuns(ctx context.Context, payload *schedules.List
 	return &schedules.ScheduleRunListResult{Items: items}, rows.Err()
 }
 
-// RetryRun requeues a failed or dead-letter schedule run and executes it on this worker.
+// RetryRun requeues a failed or dead-letter schedule run via an atomic claim and the durable worker path.
 func (s *SchedulesService) RetryRun(ctx context.Context, payload *schedules.RetryRunPayload) (*schedules.ScheduleRunRecord, error) {
-	row := s.appPool.QueryRow(ctx, `
-		SELECT id, schedule_id, status, attempt_count, scheduled_for, started_at, completed_at,
-		       report_id, failure_code, failure_message
-		FROM app.schedule_runs
-		WHERE id = $1 AND organization_id = $2
-	`, payload.RunID, orgID(ctx))
-	current, err := scanScheduleRun(row)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, &schedules.NotFoundError{Name: "not_found", Message: "schedule run not found", Code: strPtr("NOT_FOUND")}
-		}
-		return nil, err
-	}
-	if current.Status != "failed" && current.Status != "dead_letter" {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: "only failed or dead_letter runs can be retried", Code: strPtr("VALIDATION_ERROR")}
-	}
 	workerID := scheduleWorkerID()
 	leaseUntil := time.Now().UTC().Add(defaultScheduleLease)
-	_, err = s.appPool.Exec(ctx, `
+	row := s.appPool.QueryRow(ctx, `
 		UPDATE app.schedule_runs
 		SET status = 'running', attempt_count = attempt_count + 1,
 		    lease_until = $2, worker_id = $4, started_at = NOW(), completed_at = NULL,
 		    failure_code = NULL, failure_message = NULL
 		WHERE id = $1 AND organization_id = $3
+		  AND status IN ('failed', 'dead_letter')
+		RETURNING id, schedule_id, status, attempt_count, scheduled_for, started_at, completed_at,
+		          report_id, failure_code, failure_message
 	`, payload.RunID, leaseUntil, orgID(ctx), workerID)
+	current, err := scanScheduleRun(row)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &schedules.NotFoundError{Name: "not_found", Message: "schedule run not found or not retryable", Code: strPtr("NOT_FOUND")}
+		}
 		return nil, err
 	}
 	_, _ = s.appPool.Exec(ctx, `

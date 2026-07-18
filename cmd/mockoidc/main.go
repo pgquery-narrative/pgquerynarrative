@@ -27,7 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("mock OIDC issuer=%s audience=%s client_id=%s", srv.Issuer, audience, clientID)
+	log.Printf("mock OIDC issuer=%s audience=%s client_id=%s", srv.Issuer, audience, clientID) // #nosec G706 -- startup log of local test-only IdP; values come from env vars set by the operator, not network input.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig

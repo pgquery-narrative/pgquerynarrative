@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/logger"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/logger"
 )
 
 func enabled() bool {

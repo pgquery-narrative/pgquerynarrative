@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/logger"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/logger"
 )
 
 func TestRequestLoggingMiddleware_errorResponseLogsBody(t *testing.T) {

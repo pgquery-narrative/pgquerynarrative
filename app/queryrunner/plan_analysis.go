@@ -8,18 +8,30 @@ import "fmt"
 // It complements the seq-scan / high-cost / cardinality checks in walkPlanNode.
 func detectPlanSignals(node map[string]interface{}, nodeType, schema, relation string, totalCost float64) []PlanFinding {
 	var out []PlanFinding
-	target := relationOrNode(nodeType, schema, relation)
+
+	// Nodes like Sort or Gather Merge carry no "Relation Name" of their own, but
+	// filters/sorts/joins can only be related to existing index definitions if
+	// we know which table they apply to. When the node itself lacks a relation
+	// and exactly one base table exists in its subtree, attribute the finding
+	// to that table so catalog enrichment (index evidence) can still apply.
+	effSchema, effRelation := schema, relation
+	if effRelation == "" {
+		effSchema, effRelation = inferSingleTableRelation(node)
+	}
+	target := relationOrNode(nodeType, effSchema, effRelation)
+	relatedCols := relatedColumnsForNode(node)
 
 	base := func(category, confidence, msg string, evidence []string) PlanFinding {
 		return PlanFinding{
-			NodeType:      nodeType,
-			Schema:        schema,
-			Relation:      relation,
-			EstimatedCost: totalCost,
-			Category:      category,
-			Confidence:    confidence,
-			Message:       msg,
-			Evidence:      evidence,
+			NodeType:       nodeType,
+			Schema:         effSchema,
+			Relation:       effRelation,
+			EstimatedCost:  totalCost,
+			Category:       category,
+			Confidence:     confidence,
+			Message:        msg,
+			Evidence:       evidence,
+			RelatedColumns: relatedCols,
 		}
 	}
 

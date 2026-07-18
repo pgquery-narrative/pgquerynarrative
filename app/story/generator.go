@@ -68,7 +68,7 @@ func (g *Generator) Generate(ctx context.Context, sql string, columns []string, 
 		return nil, fmt.Errorf("failed to generate narrative: %w", err)
 	}
 
-	narrative, err := ParseNarrative(response)
+	narrative, err := ParseNarrative(response, string(metricsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse narrative: %w", err)
 	}

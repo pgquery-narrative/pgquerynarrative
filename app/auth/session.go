@@ -100,12 +100,14 @@ func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 		}
 		s.RefreshToken = sealed
 	}
-	payload, err := json.Marshal(s)
+	// RefreshToken above is sealed (AES-GCM encrypted) before this point when
+	// present, so the marshaled JSON never contains the plaintext token.
+	payload, err := json.Marshal(s) // #nosec G117 -- RefreshToken is sealSecret()-encrypted above, not plaintext.
 	if err != nil {
 		return err
 	}
 	token := signPayload(m.secret, payload)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is config-driven (m.secure); false only for local http:// dev via SECURITY_COOKIE_SECURE.
 		Name:     sessionCookieName,
 		Value:    token,
 		Path:     "/",
@@ -119,7 +121,7 @@ func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 
 // Clear removes the session cookie.
 func (m *SessionManager) Clear(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- see Save above.
 		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",

@@ -99,6 +99,11 @@ func NewRunnerForConnection(resolver poolResolver, connectionID string, validato
 	return r
 }
 
+// StatsPool returns the analytical pool used for catalog/stats queries on this runner.
+func (r *Runner) StatsPool() *pgxpool.Pool {
+	return r.activePool()
+}
+
 func (r *Runner) activePool() *pgxpool.Pool {
 	if r.pool != nil {
 		return r.pool

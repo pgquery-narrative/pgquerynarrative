@@ -149,11 +149,8 @@ func (b *BrowserOIDC) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	idToken, _ := tokenResp["id_token"].(string)
-	if idToken == "" {
-		if access, _ := tokenResp["access_token"].(string); access != "" && b.oidc != nil && b.oidc.Enabled() {
-			idToken = access
-		}
-	}
+	// Never accept access_token as a substitute for id_token — access tokens may lack
+	// required identity claims and are not intended for session establishment.
 	if idToken == "" || b.oidc == nil || !b.oidc.Enabled() {
 		http.Error(w, "missing id_token", http.StatusUnauthorized)
 		return
@@ -227,13 +224,31 @@ func (b *BrowserOIDC) RefreshHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "provider refresh failed", http.StatusUnauthorized)
 			return
 		}
-		if idToken, _ := tokenResp["id_token"].(string); idToken != "" && b.oidc != nil && b.oidc.Enabled() {
-			if sub, roles, validateErr := b.oidc.Validate(r.Context(), idToken); validateErr == nil && strings.TrimSpace(sub) != "" {
-				s.UserID = sub
-				if len(roles) > 0 {
-					s.Role = mapOIDCRole(roles[0])
-				}
-			}
+		idToken, _ := tokenResp["id_token"].(string)
+		if idToken == "" {
+			b.session.Clear(w)
+			http.Error(w, "missing id_token on refresh", http.StatusUnauthorized)
+			return
+		}
+		if b.oidc == nil || !b.oidc.Enabled() {
+			b.session.Clear(w)
+			http.Error(w, "oidc not configured", http.StatusUnauthorized)
+			return
+		}
+		sub, roles, validateErr := b.oidc.Validate(r.Context(), idToken)
+		if validateErr != nil || strings.TrimSpace(sub) == "" {
+			b.session.Clear(w)
+			http.Error(w, "invalid refreshed id_token", http.StatusUnauthorized)
+			return
+		}
+		if sub != s.UserID {
+			b.session.Clear(w)
+			http.Error(w, "subject mismatch on refresh", http.StatusUnauthorized)
+			return
+		}
+		s.UserID = sub
+		if len(roles) > 0 {
+			s.Role = mapOIDCRole(roles[0])
 		}
 		if rt, _ := tokenResp["refresh_token"].(string); rt != "" {
 			s.RefreshToken = rt

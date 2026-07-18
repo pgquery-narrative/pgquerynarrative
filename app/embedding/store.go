@@ -14,6 +14,16 @@ import (
 // EmbeddingVectorDimension is the size used for pgvector (e.g. nomic-embed-text).
 const EmbeddingVectorDimension = 768
 
+func validateEmbeddingDimension(embedding []float32) error {
+	if len(embedding) == 0 {
+		return fmt.Errorf("embedding vector is empty")
+	}
+	if len(embedding) != EmbeddingVectorDimension {
+		return fmt.Errorf("embedding dimension mismatch: expected %d, got %d", EmbeddingVectorDimension, len(embedding))
+	}
+	return nil
+}
+
 // SimilarQuery holds a saved query and its similarity score (0–1, higher is more similar).
 type SimilarQuery struct {
 	SavedQueryID string
@@ -51,6 +61,9 @@ func NewStore(appPool db.DB) *Store {
 // Upsert saves or replaces the embedding for a saved query. Stores JSONB and, when
 // pgvector is available, a native vector column for in-database semantic search.
 func (s *Store) Upsert(ctx context.Context, savedQueryID string, embedding []float32, model string) error {
+	if err := validateEmbeddingDimension(embedding); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(embedding)
 	if err != nil {
 		return fmt.Errorf("marshal embedding: %w", err)
@@ -242,6 +255,9 @@ func sortByScoreDesc(list []scoredQuery) {
 
 // UpsertReport saves or replaces the embedding for a generated report.
 func (s *Store) UpsertReport(ctx context.Context, reportID string, embedding []float32, model string) error {
+	if err := validateEmbeddingDimension(embedding); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(embedding)
 	if err != nil {
 		return fmt.Errorf("marshal report embedding: %w", err)

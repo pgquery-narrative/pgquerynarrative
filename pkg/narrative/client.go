@@ -3,12 +3,15 @@ package narrative
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
 	appconfig "github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
@@ -36,11 +39,25 @@ type Client struct {
 	schemaService      *service.SchemaService
 	connectionsService *service.ConnectionsService
 	suggestionsService suggestions.Service
+	budgetStore        *llm.BudgetStore
+	auditStore         *audit.Store
 }
 
 // NewClient builds a narrative client from the given config. It creates
 // database pools, query runner, LLM client, and all services. The returned
 // client must be closed to release resources.
+//
+// NewClient is the sole wiring point for security-sensitive service
+// configuration: connection authorization (SetAuthorizer /
+// service.ConnectionAuthorizer), webhook signing/allowlisting
+// (SchedulesService.ConfigureWebhook), and LLM governance
+// (SetLLMGovernance / service.GovernedAI). Callers (cmd/server/main.go,
+// tests, embedders) must treat the services returned by Client's accessors
+// as configured-and-frozen: do not call SetAuthorizer, ConfigureWebhook,
+// SetLLMGovernance, or other construction-time Set*/Configure* security
+// setters again after NewClient returns. Methods that only toggle runtime
+// behavior already exposed to end users (e.g. per-request options) are not
+// subject to this restriction.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -120,7 +137,8 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}
 
 	appDB := db.NewOrgScoped(pools.App)
-	auditStore := llm.NewAuditStore(pools.App)
+	llmAuditStore := llm.NewAuditStore(pools.App)
+	secAuditStore := audit.NewStore(pools.App, audit.ParseMode(cfg.Security.AuditMode))
 	budgetStore := llm.NewBudgetStore(pools.App, llm.BudgetConfig{
 		DailyTokenLimit:          cfg.LLM.DailyTokenBudget,
 		DailyCostUSD:             cfg.LLM.DailyCostBudgetUSD,
@@ -131,6 +149,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		PerUserMonthlyTokenLimit: cfg.LLM.PerUserMonthlyTokenBudget,
 		PerUserMonthlyCostUSD:    cfg.LLM.PerUserMonthlyCostBudgetUSD,
 		USDPer1kTokens:           cfg.LLM.USDPer1kTokens,
+		FailClosed:               cfg.LLM.BudgetFailClosed,
 	})
 
 	var queriesService *service.QueriesService
@@ -153,14 +172,21 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		MaxTimeSeriesPeriods:     cfg.Metrics.MaxTimeSeriesPeriods,
 	}
 	if cfg.Embedding.BaseURL != "" && cfg.Embedding.Model != "" {
-		emb := embedding.NewOllamaEmbedder(cfg.Embedding.BaseURL, cfg.Embedding.Model)
+		rawEmbedder := embedding.NewOllamaEmbedder(cfg.Embedding.BaseURL, cfg.Embedding.Model)
+		// Ollama embeddings run against a local/self-hosted server, so "ollama" is the
+		// provider label for audit/policy purposes; a future cloud embedding provider
+		// would use its own provider name here so config.IsCloudLLMProvider gates it.
+		govEmb := embedding.NewGovernedEmbedder(rawEmbedder, llmAuditStore, "ollama", cfg.LLM.AllowExternalData, cfg.LLM.RedactPII)
+		govEmb.SetExpectedDimension(embedding.EmbeddingVectorDimension)
+		emb := embedding.Embedder(govEmb)
 		queriesService = service.NewQueriesServiceMultiConnection(appDB, runners, defaultConnectionID, metricsCfg, emb, embeddingStore, cfg.Embedding.Model, readonlyUsers)
 		queriesService.SetStatStatementsEnabled(cfg.Security.StatStatementsEnabled)
 		reportsService = service.NewReportsServiceMultiConnection(appDB, runners, defaultConnectionID, llmClient, metricsCfg, emb, embeddingStore)
 		reportsService.SetShareLinkDefaultHours(cfg.Security.ShareLinkDefaultHours)
 		reportsService.SetShareLinksEnabled(cfg.Security.ShareLinksEnabled)
+		reportsService.SetShareLinkExposeSQL(cfg.Security.ShareLinkExposeSQL)
 		reportsService.SetPromptOptions(promptOpts)
-		reportsService.SetLLMGovernance(auditStore, budgetStore, cfg.LLM.AllowExternalData)
+		reportsService.SetLLMGovernance(llmAuditStore, budgetStore, cfg.LLM.AllowExternalData)
 		reportsService.SetMaxLLMCallsPerReport(cfg.LLM.MaxCallsPerReport)
 		suggester = pkgsuggestions.NewSuggesterWithEmbedding(appDB, emb, embeddingStore)
 	} else {
@@ -169,20 +195,37 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		reportsService = service.NewReportsServiceMultiConnection(appDB, runners, defaultConnectionID, llmClient, metricsCfg, nil, nil)
 		reportsService.SetShareLinkDefaultHours(cfg.Security.ShareLinkDefaultHours)
 		reportsService.SetShareLinksEnabled(cfg.Security.ShareLinksEnabled)
+		reportsService.SetShareLinkExposeSQL(cfg.Security.ShareLinkExposeSQL)
 		reportsService.SetPromptOptions(promptOpts)
-		reportsService.SetLLMGovernance(auditStore, budgetStore, cfg.LLM.AllowExternalData)
+		reportsService.SetLLMGovernance(llmAuditStore, budgetStore, cfg.LLM.AllowExternalData)
 		reportsService.SetMaxLLMCallsPerReport(cfg.LLM.MaxCallsPerReport)
 		suggester = pkgsuggestions.NewSuggester(appDB)
 	}
 	schemaService := service.NewSchemaServiceMultiConnection(loaders, defaultConnectionID)
 	askService := service.NewAskServiceMultiConnection(appDB, loaders, llmClient, validator, reportsService, defaultConnectionID)
-	askService.SetLLMGovernance(auditStore, budgetStore, cfg.LLM.AllowExternalData)
+	askService.SetLLMGovernance(llmAuditStore, budgetStore, cfg.LLM.AllowExternalData)
 	suggestionsService := &service.SuggestionsServiceWrapper{Suggester: suggester, AskSvc: askService}
 	connectionsService := service.NewConnectionsService(connectionItems)
 	dashboardsService := service.NewDashboardsService(appDB, reportsService, queriesService)
 	schedulesService := service.NewSchedulesService(appDB, queriesService, reportsService)
 	schedulesService.SetRawPool(pools.App)
-	schedulesService.SetWebhookSigningSecret(cfg.Security.WebhookSigningSecret, cfg.Security.WebhookAllowedHosts...)
+	schedulesService.ConfigureWebhook(cfg.Security.WebhookSigningSecret, cfg.Security.WebhookAllowedHosts)
+
+	connAuthz := auth.NewConnectionAuthorizer(pools.App)
+	queriesService.SetAuthorizer(connAuthz)
+	reportsService.SetAuthorizer(connAuthz)
+	schemaService.SetAuthorizer(connAuthz)
+	askService.SetAuthorizer(connAuthz)
+	schedulesService.SetAuthorizer(connAuthz)
+	connectionsService.SetAuthorizer(connAuthz)
+
+	reportsService.SetAuditStore(secAuditStore)
+	encKey := []byte(strings.TrimSpace(cfg.Security.DataEncryptionKey))
+	if len(encKey) == 0 {
+		encKey = []byte(strings.TrimSpace(cfg.Security.SessionSecret))
+	}
+	queriesService.SetDataEncryptionKey(encKey)
+	reportsService.SetDataEncryptionKey(encKey)
 
 	return &Client{
 		pools:              pools,
@@ -193,7 +236,25 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		schemaService:      schemaService,
 		connectionsService: connectionsService,
 		suggestionsService: suggestionsService,
+		budgetStore:        budgetStore,
+		auditStore:         secAuditStore,
 	}, nil
+}
+
+// BudgetStore returns the LLM budget enforcer for background reservation cleanup.
+func (c *Client) BudgetStore() *llm.BudgetStore {
+	if c == nil {
+		return nil
+	}
+	return c.budgetStore
+}
+
+// AuditStore returns the security audit store wired during NewClient.
+func (c *Client) AuditStore() *audit.Store {
+	if c == nil {
+		return nil
+	}
+	return c.auditStore
 }
 
 // DashboardsService returns the dashboards service for use with Goa endpoints.
@@ -206,7 +267,13 @@ func (c *Client) SchedulesService() schedules.Service {
 	return c.schedulesService
 }
 
-// SchedulesRunner returns the concrete schedules service for background execution.
+// SchedulesRunner returns the concrete schedules service for background
+// execution (service.StartScheduleRunner, service.StartWebhookRetryWorker
+// need methods, like RunDue and webhook delivery helpers, not on the
+// schedules.Service Goa interface). Callers must treat the returned value as
+// read-only/frozen: webhook signing secret, allowed hosts, and the
+// authorizer are wired once in NewClient (see ConfigureWebhook, SetAuthorizer
+// above) and must not be reconfigured here.
 func (c *Client) SchedulesRunner() *service.SchedulesService {
 	return c.schedulesService
 }

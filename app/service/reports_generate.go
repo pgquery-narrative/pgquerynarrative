@@ -3,16 +3,20 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/apilog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/charts"
 	"github.com/pgquerynarrative/pgquerynarrative/app/debuglog"
+	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
@@ -22,9 +26,18 @@ import (
 func (s *ReportsService) generateReport(ctx context.Context, payload *reports.GenerateReportPayload, opts reportGenOpts) (*reports.Report, error) {
 	ctx = withLLMCallBudget(ctx, s.maxLLMCallsPerReport)
 	debuglog.Log("report generation started")
-	// Execute query
-	connectionID := s.normalizedConnectionID(payload.ConnectionID)
-	queryResult, err := s.connectionResolver.runnerFor(payload.ConnectionID).Run(ctx, payload.SQL, 1000)
+	connectionID, err := s.resolveConnectionID(payload.ConnectionID)
+	if err != nil {
+		return nil, &reports.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connectionID, auth.ActionReport); err != nil {
+		return nil, &reports.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+	}
+	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
+	if err != nil {
+		return nil, &reports.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+	}
+	queryResult, err := runner.Run(ctx, payload.SQL, 1000)
 	if err != nil {
 		kind, userMsg := ClassifyRunError(err)
 		if kind == RunErrorTimeout {
@@ -61,7 +74,7 @@ func (s *ReportsService) generateReport(ctx context.Context, payload *reports.Ge
 	// Optional RAG: retrieve similar past queries and add to prompt context
 	var similarContext string
 	if !opts.skipNarrativeLLM && s.embedder != nil && s.embeddingStore != nil {
-		if vec, err := s.embedder.Embed(ctx, payload.SQL); err == nil {
+		if vec, err := s.embedder.Embed(embedding.WithOperation(ctx, "embed_rag"), payload.SQL); err == nil {
 			if similar, err := s.embeddingStore.FindSimilar(ctx, vec, 3); err == nil && len(similar) > 0 {
 				const maxSQLLen = 200
 				var b strings.Builder
@@ -110,7 +123,7 @@ func (s *ReportsService) generateReport(ctx context.Context, payload *reports.Ge
 
 	// Store report in database
 	debuglog.Log("storing report in database")
-	reportID, err := s.storeReport(ctx, payload, narrative, calcMetrics, queryResult, providerName, modelName, connectionID)
+	reportID, err := s.storeReport(ctx, payload, narrative, calcMetrics, queryResult, providerName, modelName, connectionID, opts.scheduleRunID)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +311,7 @@ func (s *ReportsService) storeReportEmbedding(ctx context.Context, reportID stri
 	if text == "" {
 		return
 	}
-	vec, err := s.embedder.Embed(ctx, text)
+	vec, err := s.embedder.Embed(embedding.WithOperation(ctx, "embed_report_store"), text)
 	if err != nil {
 		return
 	}
@@ -463,7 +476,7 @@ func chartTypeLabel(chartType string) string {
 	}
 }
 
-func (s *ReportsService) storeReport(ctx context.Context, payload *reports.GenerateReportPayload, narrative *story.NarrativeContent, calcMetrics *metrics.Metrics, queryResult *queryrunner.Result, providerName, modelName, connectionID string) (string, error) {
+func (s *ReportsService) storeReport(ctx context.Context, payload *reports.GenerateReportPayload, narrative *story.NarrativeContent, calcMetrics *metrics.Metrics, queryResult *queryrunner.Result, providerName, modelName, connectionID, scheduleRunID string) (string, error) {
 	narrativeJSON, _ := json.Marshal(narrative)
 	metricsJSON, _ := json.Marshal(calcMetrics)
 	statsJSON, _ := json.Marshal(map[string]interface{}{
@@ -473,16 +486,36 @@ func (s *ReportsService) storeReport(ctx context.Context, payload *reports.Gener
 
 	var reportID string
 	p := auth.PrincipalFromContext(ctx)
+	sqlAtRest := sealProductSQL(s.dataEncKey, payload.SQL)
 	err := s.appPool.QueryRow(ctx, `
 		INSERT INTO app.reports (
 			saved_query_id, sql, narrative_md, narrative_json, metrics, stats,
-			llm_model, llm_provider, success, connection_id, organization_id, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			llm_model, llm_provider, success, connection_id, organization_id, created_by, schedule_run_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULLIF($13, '')::uuid)
 		RETURNING id
-	`, payload.SavedQueryID, payload.SQL, narrative.Headline, narrativeJSON, metricsJSON, statsJSON,
-		modelName, providerName, true, connectionID, p.OrgID, p.UserID).Scan(&reportID)
+	`, payload.SavedQueryID, sqlAtRest, narrative.Headline, narrativeJSON, metricsJSON, statsJSON,
+		modelName, providerName, true, connectionID, p.OrgID, p.UserID, scheduleRunID).Scan(&reportID)
+	if err != nil {
+		// Two workers can race to generate the first report for the same schedule_run_id
+		// (e.g. lease recovery overlapping the original worker). The partial unique index on
+		// schedule_run_id turns the loser's insert into a conflict instead of a duplicate
+		// report/report_id; reuse the winner's report rather than surfacing an error.
+		if scheduleRunID != "" && isUniqueViolation(err) {
+			if existingID, selErr := s.reportIDForScheduleRun(ctx, scheduleRunID); selErr == nil && existingID != "" {
+				return existingID, nil
+			}
+		}
+		return "", err
+	}
+	return reportID, nil
+}
 
-	return reportID, err
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+	return false
 }
 
 func llmMetadata(client llm.Client) (providerName, modelName string) {

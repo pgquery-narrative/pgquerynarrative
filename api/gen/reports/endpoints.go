@@ -22,6 +22,8 @@ type Endpoints struct {
 	Rewrite     goa.Endpoint
 	CreateShare goa.Endpoint
 	GetShared   goa.Endpoint
+	ListShares  goa.Endpoint
+	RevokeShare goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "reports" service with endpoints.
@@ -34,6 +36,8 @@ func NewEndpoints(s Service) *Endpoints {
 		Rewrite:     NewRewriteEndpoint(s),
 		CreateShare: NewCreateShareEndpoint(s),
 		GetShared:   NewGetSharedEndpoint(s),
+		ListShares:  NewListSharesEndpoint(s),
+		RevokeShare: NewRevokeShareEndpoint(s),
 	}
 }
 
@@ -46,6 +50,8 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Rewrite = m(e.Rewrite)
 	e.CreateShare = m(e.CreateShare)
 	e.GetShared = m(e.GetShared)
+	e.ListShares = m(e.ListShares)
+	e.RevokeShare = m(e.RevokeShare)
 }
 
 // NewGenerateEndpoint returns an endpoint function that calls the method
@@ -108,5 +114,23 @@ func NewGetSharedEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GetSharedPayload)
 		return s.GetShared(ctx, p)
+	}
+}
+
+// NewListSharesEndpoint returns an endpoint function that calls the method
+// "list_shares" of service "reports".
+func NewListSharesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ListSharesPayload)
+		return s.ListShares(ctx, p)
+	}
+}
+
+// NewRevokeShareEndpoint returns an endpoint function that calls the method
+// "revoke_share" of service "reports".
+func NewRevokeShareEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*RevokeSharePayload)
+		return nil, s.RevokeShare(ctx, p)
 	}
 }

@@ -12,19 +12,25 @@ import (
 // provided schema. The schema text should describe allowed tables and columns
 // (e.g. from FormatSchemaForPrompt).
 func BuildNL2SQLPrompt(question, schemaText string) string {
-	var sb strings.Builder
-	sb.WriteString("You are a SQL expert. The database is PostgreSQL. Use PostgreSQL syntax only.\n\n")
-	sb.WriteString("RULES:\n")
-	sb.WriteString("- Use only the tables and columns in the schema below. Do not use other tables or invent columns.\n")
-	sb.WriteString("- For \"top N\" or \"first N\" rows use ORDER BY ... LIMIT N at the end (e.g. LIMIT 5). Do NOT use TOP N or FETCH FIRST.\n")
-	sb.WriteString("- Use single quotes for string literals. Use double quotes only for identifiers if needed.\n")
-	sb.WriteString("- Dates: use CURRENT_DATE, date_trunc('month', date), INTERVAL '30 days', etc.\n\n")
-	sb.WriteString("SCHEMA:\n")
-	sb.WriteString(schemaText)
-	sb.WriteString("\n\nQUESTION:\n")
-	sb.WriteString(question)
-	sb.WriteString("\n\nRespond with ONLY the SQL statement. No explanation, no markdown code fences, no extra text. Single SELECT (or WITH ... SELECT) only.\n")
-	return sb.String()
+	return FlattenMessages(BuildNL2SQLMessages(question, schemaText))
+}
+
+// BuildNL2SQLMessages separates system SQL rules from untrusted schema/question data.
+func BuildNL2SQLMessages(question, schemaText string) []ChatMessage {
+	system := strings.Join([]string{
+		"You are a SQL expert. The database is PostgreSQL. Use PostgreSQL syntax only.",
+		"RULES:",
+		"- Use only the tables and columns in the schema below. Do not use other tables or invent columns.",
+		"- For \"top N\" or \"first N\" rows use ORDER BY ... LIMIT N at the end (e.g. LIMIT 5). Do NOT use TOP N or FETCH FIRST.",
+		"- Use single quotes for string literals. Use double quotes only for identifiers if needed.",
+		"- Dates: use CURRENT_DATE, date_trunc('month', date), INTERVAL '30 days', etc.",
+		"- Respond with ONLY the SQL statement. No explanation, no markdown code fences, no extra text. Single SELECT (or WITH ... SELECT) only.",
+	}, "\n")
+	user := "SCHEMA:\n" + wrapUntrusted("SCHEMA", schemaText) + "\n\nQUESTION:\n" + wrapUntrusted("QUESTION", question)
+	return []ChatMessage{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}
 }
 
 // FormatSchemaForPrompt turns a schema result into a short text description
@@ -64,7 +70,10 @@ var (
 // BuildExplainPrompt builds a short prompt asking the LLM to explain the given
 // SQL in one or two plain-English sentences.
 func BuildExplainPrompt(sql string) string {
-	return "Explain the following SQL query in one or two short sentences in plain English. Describe what data it returns or what it computes. Do not include code or markdown.\n\nSQL:\n" + sql + "\n\nExplanation:"
+	return FlattenMessages([]ChatMessage{
+		{Role: "system", Content: "Explain SQL queries in one or two short sentences in plain English. Describe what data it returns or what it computes. Do not include code or markdown."},
+		{Role: "user", Content: "SQL:\n" + wrapUntrusted("SQL_QUERY", sql)},
+	})
 }
 
 // ParseSQLFromResponse extracts a single SQL statement from the LLM response.

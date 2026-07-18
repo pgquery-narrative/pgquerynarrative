@@ -117,6 +117,12 @@ type GetSharedResponseBody struct {
 	LlmProvider      *string                        `form:"llm_provider,omitempty" json:"llm_provider,omitempty" xml:"llm_provider,omitempty"`
 }
 
+// ListSharesResponseBody is the type of the "reports" service "list_shares"
+// endpoint HTTP response body.
+type ListSharesResponseBody struct {
+	Items []*ReportShareInfoResponseBody `form:"items,omitempty" json:"items,omitempty" xml:"items,omitempty"`
+}
+
 // GenerateLlmErrorResponseBody is the type of the "reports" service "generate"
 // endpoint HTTP response body for the "llm_error" error.
 type GenerateLlmErrorResponseBody struct {
@@ -176,6 +182,22 @@ type CreateShareNotFoundResponseBody struct {
 // GetSharedNotFoundResponseBody is the type of the "reports" service
 // "get_shared" endpoint HTTP response body for the "not_found" error.
 type GetSharedNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// ListSharesNotFoundResponseBody is the type of the "reports" service
+// "list_shares" endpoint HTTP response body for the "not_found" error.
+type ListSharesNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RevokeShareNotFoundResponseBody is the type of the "reports" service
+// "revoke_share" endpoint HTTP response body for the "not_found" error.
+type RevokeShareNotFoundResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -358,6 +380,16 @@ type SimilarReportItemResponseBody struct {
 	ConnectionID *string  `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 	CreatedAt    *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	Similarity   *float64 `form:"similarity,omitempty" json:"similarity,omitempty" xml:"similarity,omitempty"`
+}
+
+// ReportShareInfoResponseBody is used to define fields on response body types.
+type ReportShareInfoResponseBody struct {
+	ID             *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	CreatedAt      *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	ExpiresAt      *string `form:"expires_at,omitempty" json:"expires_at,omitempty" xml:"expires_at,omitempty"`
+	RevokedAt      *string `form:"revoked_at,omitempty" json:"revoked_at,omitempty" xml:"revoked_at,omitempty"`
+	AccessCount    *int32  `form:"access_count,omitempty" json:"access_count,omitempty" xml:"access_count,omitempty"`
+	LastAccessedAt *string `form:"last_accessed_at,omitempty" json:"last_accessed_at,omitempty" xml:"last_accessed_at,omitempty"`
 }
 
 // NewGenerateRequestBody builds the HTTP request body from the payload of the
@@ -647,6 +679,46 @@ func NewGetSharedNotFound(body *GetSharedNotFoundResponseBody) *reports.NotFound
 	return v
 }
 
+// NewListSharesReportShareListOK builds a "reports" service "list_shares"
+// endpoint result from a HTTP "OK" response.
+func NewListSharesReportShareListOK(body *ListSharesResponseBody) *reports.ReportShareList {
+	v := &reports.ReportShareList{}
+	v.Items = make([]*reports.ReportShareInfo, len(body.Items))
+	for i, val := range body.Items {
+		if val == nil {
+			v.Items[i] = nil
+			continue
+		}
+		v.Items[i] = unmarshalReportShareInfoResponseBodyToReportsReportShareInfo(val)
+	}
+
+	return v
+}
+
+// NewListSharesNotFound builds a reports service list_shares endpoint
+// not_found error.
+func NewListSharesNotFound(body *ListSharesNotFoundResponseBody) *reports.NotFoundError {
+	v := &reports.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewRevokeShareNotFound builds a reports service revoke_share endpoint
+// not_found error.
+func NewRevokeShareNotFound(body *RevokeShareNotFoundResponseBody) *reports.NotFoundError {
+	v := &reports.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
 // ValidateGenerateResponseBody runs the validations defined on
 // GenerateResponseBody
 func ValidateGenerateResponseBody(body *GenerateResponseBody) (err error) {
@@ -878,6 +950,22 @@ func ValidateGetSharedResponseBody(body *GetSharedResponseBody) (err error) {
 	return
 }
 
+// ValidateListSharesResponseBody runs the validations defined on
+// list_shares_response_body
+func ValidateListSharesResponseBody(body *ListSharesResponseBody) (err error) {
+	if body.Items == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("items", "body"))
+	}
+	for _, e := range body.Items {
+		if e != nil {
+			if err2 := ValidateReportShareInfoResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateGenerateLlmErrorResponseBody runs the validations defined on
 // generate_llm_error_response_body
 func ValidateGenerateLlmErrorResponseBody(body *GenerateLlmErrorResponseBody) (err error) {
@@ -965,6 +1053,30 @@ func ValidateCreateShareNotFoundResponseBody(body *CreateShareNotFoundResponseBo
 // ValidateGetSharedNotFoundResponseBody runs the validations defined on
 // get_shared_not_found_response_body
 func ValidateGetSharedNotFoundResponseBody(body *GetSharedNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateListSharesNotFoundResponseBody runs the validations defined on
+// list_shares_not_found_response_body
+func ValidateListSharesNotFoundResponseBody(body *ListSharesNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateRevokeShareNotFoundResponseBody runs the validations defined on
+// revoke_share_not_found_response_body
+func ValidateRevokeShareNotFoundResponseBody(body *RevokeShareNotFoundResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -1251,6 +1363,36 @@ func ValidateSimilarReportItemResponseBody(body *SimilarReportItemResponseBody) 
 	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateReportShareInfoResponseBody runs the validations defined on
+// ReportShareInfoResponseBody
+func ValidateReportShareInfoResponseBody(body *ReportShareInfoResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.CreatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("created_at", "body"))
+	}
+	if body.AccessCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("access_count", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.CreatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
+	}
+	if body.ExpiresAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.expires_at", *body.ExpiresAt, goa.FormatDateTime))
+	}
+	if body.RevokedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.revoked_at", *body.RevokedAt, goa.FormatDateTime))
+	}
+	if body.LastAccessedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.last_accessed_at", *body.LastAccessedAt, goa.FormatDateTime))
 	}
 	return
 }

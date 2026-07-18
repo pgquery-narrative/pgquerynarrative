@@ -9,7 +9,7 @@ export default function SchedulesPage() {
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
   const [name, setName] = useState("");
   const [savedQueryID, setSavedQueryID] = useState("");
-  const [cronExpr, setCronExpr] = useState("@every 6h");
+  const [intervalExpr, setIntervalExpr] = useState("@every 6h");
   const [target, setTarget] = useState("schedule-log");
   const [error, setError] = useState("");
 
@@ -27,7 +27,7 @@ export default function SchedulesPage() {
       await api.createSchedule({
         name: name.trim(),
         saved_query_id: savedQueryID || undefined,
-        cron_expr: cronExpr.trim(),
+        interval_expr: intervalExpr.trim(),
         destination_type: "log",
         destination_target: target.trim() || "schedule-log",
       });
@@ -70,7 +70,7 @@ export default function SchedulesPage() {
             <option value="">Select saved query...</option>
             {savedQueries.map((q) => <option key={q.id} value={q.id}>{q.name}</option>)}
           </select>
-          <Input placeholder="@every 6h" value={cronExpr} onChange={(e) => setCronExpr(e.target.value)} />
+          <Input placeholder="@every 6h" value={intervalExpr} onChange={(e) => setIntervalExpr(e.target.value)} />
           <Input placeholder="destination target" value={target} onChange={(e) => setTarget(e.target.value)} />
           <div className="md:col-span-4">
             <Button onClick={() => { void create(); }} disabled={!name.trim()}>Create Schedule</Button>
@@ -86,7 +86,7 @@ export default function SchedulesPage() {
               <div>
                 <p className="font-medium">{s.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {s.cron_expr} • {s.destination_type}:{s.destination_target} • {s.enabled ? "enabled" : "disabled"}
+                  {s.interval_expr} • {s.destination_type}:{s.destination_target} • {s.enabled ? "enabled" : "disabled"}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   last: {s.last_status || "never"} {s.last_run_at ? `at ${new Date(s.last_run_at).toLocaleString()}` : ""}
