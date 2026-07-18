@@ -19,6 +19,9 @@
 --      connection_permissions for principal_type/principal_id ('user' with the
 --      user id, or 'role' with the role name). connection_id = NULL in
 --      connection_permissions is a wildcard meaning "all connections for this org".
+--
+-- Column names use can_* prefixes because EXPLAIN/ANALYZE/SCHEMA are reserved
+-- SQL keywords and cannot be used as unquoted identifiers.
 
 CREATE TABLE IF NOT EXISTS app.organization_connections (
     organization_id UUID NOT NULL REFERENCES app.organizations(id) ON DELETE CASCADE,
@@ -45,14 +48,14 @@ CREATE TABLE IF NOT EXISTS app.connection_permissions (
     connection_id TEXT,
     principal_type TEXT NOT NULL CHECK (principal_type IN ('user', 'role', 'team')),
     principal_id TEXT NOT NULL,
-    query BOOLEAN NOT NULL DEFAULT false,
-    explain BOOLEAN NOT NULL DEFAULT false,
-    analyze BOOLEAN NOT NULL DEFAULT false,
-    schema BOOLEAN NOT NULL DEFAULT false,
-    report BOOLEAN NOT NULL DEFAULT false,
-    schedule BOOLEAN NOT NULL DEFAULT false,
-    stats BOOLEAN NOT NULL DEFAULT false,
-    ask BOOLEAN NOT NULL DEFAULT false,
+    can_query BOOLEAN NOT NULL DEFAULT false,
+    can_explain BOOLEAN NOT NULL DEFAULT false,
+    can_analyze BOOLEAN NOT NULL DEFAULT false,
+    can_schema BOOLEAN NOT NULL DEFAULT false,
+    can_report BOOLEAN NOT NULL DEFAULT false,
+    can_schedule BOOLEAN NOT NULL DEFAULT false,
+    can_stats BOOLEAN NOT NULL DEFAULT false,
+    can_ask BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -60,7 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_connection_permissions_lookup
     ON app.connection_permissions(organization_id, connection_id, principal_type, principal_id);
 
 -- Prevents duplicate grants for the same (org, connection-or-wildcard, principal) and
--- gives the bootstrap seed below an idempotent upsert target.
+-- gives the bootstrap seed below an idempotent target.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_connection_permissions_principal
     ON app.connection_permissions (organization_id, COALESCE(connection_id, ''), principal_type, principal_id);
 
@@ -78,11 +81,18 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON app.connection_permissions TO pgquerynar
 -- adds organization_connections rows for the default org and flips it from bootstrap
 -- into enforcement, so existing single-team deploys keep working without a manual
 -- permissions setup step for their admin user(s).
+-- Use NOT EXISTS (not ON CONFLICT) because the unique index includes an expression.
 INSERT INTO app.connection_permissions (
     organization_id, connection_id, principal_type, principal_id,
-    query, explain, analyze, schema, report, schedule, stats, ask
-) VALUES (
-    '00000000-0000-0000-0000-000000000001', NULL, 'role', 'admin',
-    true, true, true, true, true, true, true, true
+    can_query, can_explain, can_analyze, can_schema, can_report, can_schedule, can_stats, can_ask
 )
-ON CONFLICT (organization_id, COALESCE(connection_id, ''), principal_type, principal_id) DO NOTHING;
+SELECT
+    '00000000-0000-0000-0000-000000000001'::uuid, NULL, 'role', 'admin',
+    true, true, true, true, true, true, true, true
+WHERE NOT EXISTS (
+    SELECT 1 FROM app.connection_permissions
+    WHERE organization_id = '00000000-0000-0000-0000-000000000001'::uuid
+      AND connection_id IS NULL
+      AND principal_type = 'role'
+      AND principal_id = 'admin'
+);

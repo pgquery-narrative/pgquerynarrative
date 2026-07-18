@@ -41,14 +41,14 @@ var ErrConnectionForbidden = apperrors.ErrConnectionForbidden
 
 // connectionActionColumns maps action names to connection_permissions boolean columns.
 var connectionActionColumns = map[string]string{
-	ActionQuery:    "query",
-	ActionExplain:  "explain",
-	ActionAnalyze:  "analyze",
-	ActionSchema:   "schema",
-	ActionReport:   "report",
-	ActionSchedule: "schedule",
-	ActionStats:    "stats",
-	ActionAsk:      "ask",
+	ActionQuery:    "can_query",
+	ActionExplain:  "can_explain",
+	ActionAnalyze:  "can_analyze",
+	ActionSchema:   "can_schema",
+	ActionReport:   "can_report",
+	ActionSchedule: "can_schedule",
+	ActionStats:    "can_stats",
+	ActionAsk:      "can_ask",
 }
 
 // ConnectionAuthorizer checks organisation and principal permissions for DB connections.

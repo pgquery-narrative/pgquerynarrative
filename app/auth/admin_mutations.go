@@ -65,7 +65,7 @@ func (a *ConnectionAuthorizer) GrantPermission(ctx context.Context, orgID, conne
 	return execWithOrg(ctx, a.pool, orgID, `
 		INSERT INTO app.connection_permissions (
 			organization_id, connection_id, principal_type, principal_id,
-			query, explain, analyze, schema, report, schedule, stats, ask
+			can_query, can_explain, can_analyze, can_schema, can_report, can_schedule, can_stats, can_ask
 		) VALUES (
 			$1::uuid, $2, 'user', $3,
 			$4, $5, $6, $7, $8, $9, $10, $11
