@@ -41,9 +41,19 @@ test.describe("Critical path", () => {
 
     await page.getByTestId("query-save-name").fill(saveName);
     await page.getByTestId("query-save").click();
-    await expect(page.getByTestId("query-save-success")).toContainText(saveName, {
-      timeout: 15_000,
-    });
+    await expect
+      .poll(
+        async () => {
+          if (await page.getByTestId("query-save-success").isVisible()) return "ok";
+          if (await page.getByRole("alert").isVisible()) {
+            return `alert:${await page.getByRole("alert").innerText()}`;
+          }
+          return "pending";
+        },
+        { timeout: 15_000 },
+      )
+      .toBe("ok");
+    await expect(page.getByTestId("query-save-success")).toContainText(saveName);
 
     await page.goto("/saved");
     await expect(page.getByTestId("saved-queries-page")).toBeVisible();

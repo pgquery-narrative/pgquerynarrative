@@ -425,12 +425,17 @@ func AllowsMethod(role, method, path string) bool {
 }
 
 func isAnalystWritePath(method, path string) bool {
+	method = strings.ToUpper(method)
+	if method == http.MethodDelete && strings.HasPrefix(path, "/api/v1/queries/saved/") {
+		return true
+	}
 	if method != http.MethodPost {
 		return false
 	}
 	allowed := []string{
 		"/api/v1/queries/run",
 		"/api/v1/queries/explain",
+		"/api/v1/queries/saved",
 		"/api/v1/reports/generate",
 		"/api/v1/reports/rewrite",
 		"/api/v1/reports/share",
