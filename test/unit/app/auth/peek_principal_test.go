@@ -112,6 +112,7 @@ func TestAllowsMethod_AnalystWritePaths(t *testing.T) {
 	allowed := []string{
 		"/api/v1/queries/run",
 		"/api/v1/queries/explain",
+		"/api/v1/queries/saved",
 		"/api/v1/reports/generate",
 		"/api/v1/reports/rewrite",
 		"/api/v1/suggestions/ask",
@@ -123,8 +124,8 @@ func TestAllowsMethod_AnalystWritePaths(t *testing.T) {
 			t.Errorf("AllowsMethod(analyst, POST, %q) = false, want true", p)
 		}
 	}
-	if auth.AllowsMethod(auth.RoleAnalyst, http.MethodPost, "/api/v1/queries/saved") {
-		t.Error("AllowsMethod(analyst, POST, /api/v1/queries/saved) = true, want false")
+	if !auth.AllowsMethod(auth.RoleAnalyst, http.MethodDelete, "/api/v1/queries/saved/abc") {
+		t.Error("AllowsMethod(analyst, DELETE, /api/v1/queries/saved/abc) = false, want true")
 	}
 	if auth.AllowsMethod(auth.RoleAnalyst, http.MethodDelete, "/api/v1/queries/run") {
 		t.Error("AllowsMethod(analyst, DELETE, ...) = true, want false (only POST allowed)")
