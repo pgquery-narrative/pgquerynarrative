@@ -7,12 +7,14 @@ cd "$ROOT"
 
 PORT="${PLAYWRIGHT_PORT:-18088}"
 MOCK_PORT="${MOCK_OIDC_PORT:-19999}"
+MOCK_OLLAMA_PORT="${MOCK_OLLAMA_PORT:-11435}"
 BASE_URL="http://127.0.0.1:${PORT}"
 MOCK_ADDR="127.0.0.1:${MOCK_PORT}"
+MOCK_OLLAMA_ADDR="127.0.0.1:${MOCK_OLLAMA_PORT}"
 OIDC_MODE="${PLAYWRIGHT_OIDC:-0}"
 
 cleanup() {
-  kill "${SERVER_PID:-}" "${MOCK_PID:-}" 2>/dev/null || true
+  kill "${SERVER_PID:-}" "${MOCK_PID:-}" "${MOCK_OLLAMA_PID:-}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -22,8 +24,9 @@ echo "Building frontend..."
 echo "Generating API code..."
 make generate
 
-echo "Building server..."
+echo "Building server and mock Ollama..."
 CGO_ENABLED=1 go build -o bin/playwright-server ./cmd/server
+go build -o bin/mockollama ./cmd/mockollama
 
 export DATABASE_HOST="${DATABASE_HOST:-localhost}"
 export DATABASE_PORT="${DATABASE_PORT:-5432}"
@@ -34,6 +37,43 @@ export DATABASE_READONLY_USER="${DATABASE_READONLY_USER:-pgquerynarrative_readon
 export DATABASE_READONLY_PASSWORD="${DATABASE_READONLY_PASSWORD:-pgquerynarrative_readonly}"
 export PGQUERYNARRATIVE_PORT="${PORT}"
 export SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-playwright-session-secret-32-chars!!}"
+
+# Seed demo.sales so critical-path queries have data (idempotent inserts).
+seed_demo() {
+  echo "Seeding demo data..."
+  if docker compose exec -T postgres psql -U postgres -d pgquerynarrative -f - < tools/db/seed.sql >/tmp/pgqn-playwright-seed.log 2>&1; then
+    echo "Seed via docker compose OK"
+    return 0
+  fi
+  if command -v psql >/dev/null 2>&1; then
+    local db_url="${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/pgquerynarrative?sslmode=disable}"
+    if psql "$db_url" -f ./tools/db/seed.sql >/tmp/pgqn-playwright-seed.log 2>&1; then
+      echo "Seed via psql OK"
+      return 0
+    fi
+  fi
+  echo "WARNING: demo seed failed (queries may return 0 rows). Log:"
+  tail -20 /tmp/pgqn-playwright-seed.log || true
+}
+seed_demo
+
+echo "Starting mock Ollama on ${MOCK_OLLAMA_ADDR}..."
+MOCK_OLLAMA_ADDR="${MOCK_OLLAMA_ADDR}" ./bin/mockollama >/tmp/pgqn-mockollama.log 2>&1 &
+MOCK_OLLAMA_PID=$!
+for _ in $(seq 1 30); do
+  if curl -sf "http://${MOCK_OLLAMA_ADDR}/health" >/dev/null; then
+    break
+  fi
+  sleep 0.2
+done
+curl -sf "http://${MOCK_OLLAMA_ADDR}/health" >/dev/null || {
+  echo "mock Ollama failed to start; log:"
+  tail -50 /tmp/pgqn-mockollama.log || true
+  exit 1
+}
+export LLM_PROVIDER=ollama
+export LLM_BASE_URL="http://${MOCK_OLLAMA_ADDR}"
+export LLM_MODEL="${LLM_MODEL:-playwright}"
 
 if [[ "$OIDC_MODE" == "1" ]]; then
   export MOCK_OIDC_ADDR="${MOCK_ADDR}"

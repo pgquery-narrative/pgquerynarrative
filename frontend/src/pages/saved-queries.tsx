@@ -80,6 +80,8 @@ export default function SavedQueries() {
   const renderQueryCard = (q: SavedQuery, badge?: string) => (
     <div
       key={q.id}
+      data-testid="saved-query-item"
+      data-query-name={q.name}
       className={`w-full p-4 rounded-lg border transition-colors ${selected?.id === q.id || selected?.sql === q.sql ? "border-primary/50 bg-primary/5" : "border-border hover:bg-secondary/30"}`}
     >
       <button onClick={() => setSelected(q)} className="w-full text-left cursor-pointer">
@@ -109,7 +111,7 @@ export default function SavedQueries() {
   );
 
   return (
-    <div className="space-y-6">
+    <div data-testid="saved-queries-page" className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Saved Queries</h1>
@@ -143,7 +145,7 @@ export default function SavedQueries() {
 
       <div className="grid gap-6 md:grid-cols-[1fr_1fr]">
         {/* List */}
-        <div className="space-y-2">
+        <div data-testid="saved-queries-list" className="space-y-2">
           {loading || semanticLoading ? [1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20 w-full" />) : showSemantic && semantic.length > 0 ? (
             semantic.map((s, idx) => {
               const match = queries.find((q) => q.sql === s.sql);

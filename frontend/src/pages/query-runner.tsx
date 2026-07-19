@@ -386,6 +386,7 @@ export default function QueryRunner() {
         <CardContent className="p-6 space-y-4">
           <Textarea
             ref={editorRef}
+            data-testid="query-sql"
             placeholder="SELECT product_category, SUM(total_amount) AS total&#10;FROM demo.sales&#10;GROUP BY product_category"
             value={sql}
             onChange={(e) => setSql(e.target.value)}
@@ -394,7 +395,7 @@ export default function QueryRunner() {
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => runQuery()} disabled={loading || explainLoading}>
+              <Button data-testid="query-run" onClick={() => runQuery()} disabled={loading || explainLoading}>
                 {loading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Play className="h-4 w-4" />}
                 Run Query
               </Button>
@@ -402,7 +403,7 @@ export default function QueryRunner() {
                 {explainLoading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Binary className="h-4 w-4" />}
                 Explain
               </Button>
-              <Button variant="secondary" onClick={generateReport} disabled={genLoading || !sql.trim()}>
+              <Button data-testid="query-generate-report" variant="secondary" onClick={generateReport} disabled={genLoading || !sql.trim()}>
                 {genLoading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <FileText className="h-4 w-4" />}
                 Generate Report
               </Button>
@@ -423,6 +424,7 @@ export default function QueryRunner() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_auto] gap-2">
             <Input
+              data-testid="query-save-name"
               aria-label="Saved query name"
               placeholder="Saved query name"
               value={saveName}
@@ -437,12 +439,12 @@ export default function QueryRunner() {
               onChange={(e) => setSaveTags(e.target.value)}
               className="h-10"
             />
-            <Button variant="outline" onClick={saveQuery} disabled={saveLoading || !sql.trim()}>
+            <Button data-testid="query-save" variant="outline" onClick={saveQuery} disabled={saveLoading || !sql.trim()}>
               {saveLoading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <BookmarkPlus className="h-4 w-4" />}
               Save Query
             </Button>
           </div>
-          {saveSuccess && <p className="text-xs text-emerald-600">{saveSuccess}</p>}
+          {saveSuccess && <p data-testid="query-save-success" className="text-xs text-emerald-600">{saveSuccess}</p>}
           <p className="text-[11px] text-muted-foreground">Tip: Save stable, business-friendly queries so teammates can reuse them from Saved Queries.</p>
           <p className="text-[11px] text-muted-foreground">Ctrl+Enter run. Ctrl+E focus editor. Explain shows the Postgres plan (check ANALYZE to execute). Click schema items to insert. Only SELECT/WITH on allowed schemas.</p>
         </CardContent>
@@ -604,11 +606,11 @@ export default function QueryRunner() {
             </Card>
           )}
 
-          <Card className="panel-accent-top panel-corner-accent border-primary/20">
+          <Card data-testid="query-results" className="panel-accent-top panel-corner-accent border-primary/20">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Results</CardTitle>
               <div className="flex items-center gap-3 text-xs text-foreground/85">
-                <span className="flex items-center gap-1"><Rows3 className="h-3 w-3" />{result.row_count} rows</span>
+                <span data-testid="query-row-count" className="flex items-center gap-1"><Rows3 className="h-3 w-3" />{result.row_count} rows</span>
                 <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{result.execution_time_ms}ms</span>
               </div>
             </CardHeader>
@@ -687,7 +689,7 @@ export default function QueryRunner() {
             </a>
           </CardHeader>
           <CardContent className="space-y-4">
-            {report.narrative.headline && <h3 className="text-lg font-semibold">{report.narrative.headline}</h3>}
+            {report.narrative.headline && <h3 data-testid="query-report-headline" className="text-lg font-semibold">{report.narrative.headline}</h3>}
             {report.narrative.takeaways && report.narrative.takeaways.length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wide mb-2">Key Takeaways</h4>

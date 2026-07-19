@@ -4,10 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "test:smoke": "playwright test smoke.spec.ts",
-    "test:oidc": "playwright test oidc.spec.ts"
+    "test:smoke": "playwright test smoke.spec.ts critical-path.spec.ts",
+    "test:oidc": "playwright test oidc.spec.ts",
+    "test:critical": "playwright test critical-path.spec.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0"
+    "@playwright/test": "1.61.1"
   }
 }
