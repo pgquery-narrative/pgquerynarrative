@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -298,11 +298,18 @@ migrate-force:
 postgres-up:
 	@docker compose up -d postgres
 	@echo "⏳ Waiting for PostgreSQL..."
-	@timeout=60; \
+	@timeout=90; \
 	while [ $$timeout -gt 0 ]; do \
 		if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then \
-			echo "✅ PostgreSQL is ready"; \
-			break; \
+			stable=1; \
+			for _ in 1 2 3; do \
+				sleep 1; \
+				docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || stable=0; \
+			done; \
+			if [ $$stable -eq 1 ]; then \
+				echo "✅ PostgreSQL is ready"; \
+				break; \
+			fi; \
 		fi; \
 		sleep 1; \
 		timeout=$$((timeout - 1)); \
@@ -318,7 +325,7 @@ postgres-recreate:
 # Run migrations without host Go/psql — uses a one-off golang container on the compose network.
 # Prerequisite: docker compose up -d postgres (or: make postgres-up)
 migrate-docker: postgres-up
-	@$(MAKE) db-init || true
+	@$(MAKE) db-init-docker || true
 	@echo "📦 Running migrations via Docker (no host Go required)..."
 	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
 		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
@@ -330,10 +337,19 @@ migrate-docker: postgres-up
 # Migration reversibility check: up -> down -all -> up via Docker (no host Go required).
 # Prerequisite: docker compose up -d postgres (or: make postgres-up)
 migrate-cycle-docker: postgres-up
-	@$(MAKE) db-init || true
 	@echo "🔁 Verifying migration up → down → up cycle via Docker..."
-	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
-		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
+	@ready=0; \
+	for i in $$(seq 1 60); do \
+		if docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then \
+			ready=1; break; \
+		fi; \
+		sleep 1; \
+	done; \
+	if [ "$$ready" != "1" ]; then \
+		echo "❌ Postgres not ready. Run: make postgres-up"; \
+		exit 1; \
+	fi
+	@$(MAKE) db-init-docker || true
 	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
 		sh -c 'apk add --no-cache git && \
 		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up && \
@@ -409,10 +425,16 @@ seed-nyc-docker: postgres-up $(NYC_VENV)/bin/python
 db-init:
 	@echo "🗄️  Initializing database..."
 	@if docker ps | grep -q pgquerynarrative-postgres; then \
-		sh ./tools/db/init.sh; \
+		$(MAKE) db-init-docker; \
 	else \
 		$(MAKE) local-db-init || true; \
 	fi
+
+# Docker-only DB bootstrap (never falls back to host createdb — avoids CI races
+# with a shutting-down local Postgres socket on GitHub runners).
+db-init-docker:
+	@echo "🗄️  Initializing database (Docker)..."
+	@sh ./tools/db/init.sh
 
 # Local PostgreSQL: create database and roles (no Docker). Uses default connection
 # (e.g. current user on macOS Homebrew). Requires superuser.

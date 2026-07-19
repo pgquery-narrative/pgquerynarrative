@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { ensureAuthenticated } from "./auth";
 
 const DEMO_SQL =
   "SELECT product_category, COUNT(*)::int AS n FROM demo.sales GROUP BY 1 ORDER BY 1 LIMIT 5";
 
 test.describe("Critical path", () => {
+  test.beforeEach(async ({ page }) => {
+    await ensureAuthenticated(page);
+  });
+
   test("empty SQL run shows an alert", async ({ page }) => {
     await page.goto("/query");
     await page.getByTestId("query-run").click();
@@ -18,9 +23,21 @@ test.describe("Critical path", () => {
     await page.getByTestId("query-sql").fill(DEMO_SQL);
     await page.getByTestId("query-run").click();
 
-    await expect(page.getByTestId("query-results")).toBeVisible({ timeout: 30_000 });
+    // Prefer results; surface API/UI errors if the query failed.
+    const results = page.getByTestId("query-results");
+    const alert = page.getByRole("alert");
+    await expect
+      .poll(
+        async () => {
+          if (await results.isVisible()) return "results";
+          if (await alert.isVisible()) return "alert";
+          return "pending";
+        },
+        { timeout: 30_000 },
+      )
+      .toBe("results");
     await expect(page.getByTestId("query-row-count")).toContainText(/\d+ rows/);
-    await expect(page.getByTestId("query-results").locator("tbody tr").first()).toBeVisible();
+    await expect(results.locator("tbody tr").first()).toBeVisible();
 
     await page.getByTestId("query-save-name").fill(saveName);
     await page.getByTestId("query-save").click();
