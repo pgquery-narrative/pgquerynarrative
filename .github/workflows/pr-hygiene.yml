@@ -9,7 +9,10 @@ jobs:
     name: Require linked issue in PR body
     runs-on: ubuntu-latest
     # Dependabot PRs are dependency bumps, not product work — skip issue linkage.
-    if: github.actor != 'dependabot[bot]'
+    # Also match head branch so manual workflow re-runs on Dependabot PRs stay skipped.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      !startsWith(github.head_ref, 'dependabot/')
     steps:
       - name: Validate issue linkage
         env:
