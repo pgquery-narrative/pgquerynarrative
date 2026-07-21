@@ -259,6 +259,9 @@ pilot-report:
 lint:
 	@if command -v $(GOLANGCI_LINT) >/dev/null 2>&1; then \
 		$(GOLANGCI_LINT) run; \
+	elif [ -n "$${CI:-}" ] || [ -n "$${GITHUB_ACTIONS:-}" ]; then \
+		echo "❌ golangci-lint is required in CI. Install it before running make lint."; \
+		exit 1; \
 	else \
 		echo "⚠️  golangci-lint not installed. Install with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
 	fi

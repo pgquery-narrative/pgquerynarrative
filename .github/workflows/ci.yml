@@ -21,6 +21,8 @@ jobs:
         run: go mod download
       - name: Generate code
         run: make generate
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
       - name: Check generated code is committed
         run: |
           git diff --exit-code api/gen/ gen/ || (

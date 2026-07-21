@@ -20,7 +20,7 @@ func resetDiscoveryCache(t *testing.T) {
 
 func TestOIDCEndpoints_httpIssuerAllowsHTTPJWKS(t *testing.T) {
 	resetDiscoveryCache(t)
-	var srv *httptest.Server
+	var srv *httptest.Server //nolint:gosimple // handler must reference srv.URL before assignment
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/.well-known/openid-configuration":
@@ -52,8 +52,7 @@ func TestOIDCEndpoints_httpIssuerAllowsHTTPJWKS(t *testing.T) {
 
 func TestOIDCEndpoints_httpsIssuerRejectsHTTPJWKS(t *testing.T) {
 	resetDiscoveryCache(t)
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			// Claim an https issuer while serving over http so the https JWKS rule is exercised.
 			"issuer":                 "https://idp.example.test",
@@ -74,8 +73,6 @@ func TestOIDCEndpoints_httpsIssuerRejectsHTTPJWKS(t *testing.T) {
 	// For https rejection, configure issuer https://... but fetch from srv — issuer mismatch.
 	// Instead encode the rule directly: http issuer was allowed above; here force https issuer
 	// string with http jwks by making discovery return matching https issuer (won't match srv.URL).
-	_, _, err := OIDCEndpoints(ctx, "https://idp.example.test", srv.Client())
-	// Request goes to https://idp.example.test/.well-known/... which fails network → fallback, no error.
 	// Build a transport that rewrites https://idp.example.test to the httptest URL.
 	client := srv.Client()
 	client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -84,7 +81,7 @@ func TestOIDCEndpoints_httpsIssuerRejectsHTTPJWKS(t *testing.T) {
 		return http.DefaultTransport.RoundTrip(req)
 	})
 	resetDiscoveryCache(t)
-	_, _, err = OIDCEndpoints(ctx, "https://idp.example.test", client)
+	_, _, err := OIDCEndpoints(ctx, "https://idp.example.test", client)
 	if err == nil || !strings.Contains(err.Error(), "jwks_uri must use https") {
 		t.Fatalf("expected https jwks enforcement, got err=%v", err)
 	}

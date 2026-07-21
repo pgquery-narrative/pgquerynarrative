@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 const defaultNarrative = `{"headline":"Playwright E2E headline","takeaways":["Takeaway one","Takeaway two"],"drivers":["Driver one"],"limitations":["Limitation one"],"recommendations":["Recommendation one"]}`
@@ -27,7 +28,15 @@ func main() {
 		_, _ = w.Write([]byte("OK"))
 	})
 	log.Printf("mock Ollama listening on http://%s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil { // #nosec G114 -- local test-only stub
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
