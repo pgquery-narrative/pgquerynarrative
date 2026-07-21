@@ -8,6 +8,8 @@ jobs:
   require-linked-issue:
     name: Require linked issue in PR body
     runs-on: ubuntu-latest
+    # Dependabot PRs are dependency bumps, not product work — skip issue linkage.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - name: Validate issue linkage
         env:

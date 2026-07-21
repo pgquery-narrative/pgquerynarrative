@@ -42,9 +42,12 @@ updates:
       interval: weekly
     labels:
       - dependencies
-      - github-actions
     groups:
       github-actions:
         patterns:
           - "*"
+    # download-artifact is not referenced in workflows; Dependabot still probes it
+    # and fails the Updates job with unknown_error, turning main red.
+    ignore:
+      - dependency-name: "actions/download-artifact"
     open-pull-requests-limit: 5
