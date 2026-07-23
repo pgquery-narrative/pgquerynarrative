@@ -39,7 +39,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-go-cgo
@@ -88,7 +88,7 @@ jobs:
             -o pgquerynarrative-migrate-${{ matrix.goos }}-${{ matrix.goarch }} \
             github.com/golang-migrate/migrate/v4/cmd/migrate
       - name: Upload binaries
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -120,8 +120,8 @@ jobs:
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -230,7 +230,7 @@ jobs:
           format: spdx-json
           output-file: bin/sbom.spdx.json
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Sign release artifacts
         env:
           COSIGN_EXPERIMENTAL: "1"
@@ -240,7 +240,7 @@ jobs:
           done
           ls -la bin/*.sig bin/*.cert || true
       - name: Create Release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
           files: bin/*
           generate_release_notes: true
@@ -259,7 +259,7 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Set version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -269,16 +269,16 @@ jobs:
           fi
           echo "VERSION=${VER#v}" >> $GITHUB_ENV
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
       - name: Login to GHCR
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1
+        uses: docker/login-action@06fb636fac595d6fb4b28a5dfcb21a6f5091859c
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push image
         id: build_push
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -289,7 +289,7 @@ jobs:
           sbom: true
           provenance: true
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Sign OCI image by digest
         env:
           COSIGN_EXPERIMENTAL: "1"
