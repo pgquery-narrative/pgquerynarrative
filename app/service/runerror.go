@@ -37,8 +37,12 @@ func ClassifyRunError(err error) (RunErrorKind, string) {
 		apperrors.ErrMultipleStatements,
 		apperrors.ErrStatStatementsUnavailable,
 		apperrors.ErrExplainAnalyzeDisabled,
+		apperrors.ErrQueryExecutionFailed,
 	} {
 		if errors.Is(err, sentinel) {
+			if errors.Is(err, apperrors.ErrQueryExecutionFailed) {
+				return RunErrorValidation, "Query execution failed. Check your SQL and try again."
+			}
 			return RunErrorValidation, sentinel.Error()
 		}
 	}

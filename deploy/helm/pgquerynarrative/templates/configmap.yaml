@@ -16,11 +16,23 @@ data:
   DATABASE_SSL_MODE: {{ .Values.database.sslMode | quote }}
   DATABASE_ALLOWED_SCHEMAS: {{ .Values.database.allowedSchemas | quote }}
   DATABASE_MAX_CONNECTIONS: {{ .Values.database.maxConnections | quote }}
+  DATABASE_MIN_CONNECTIONS: {{ .Values.database.minConnections | quote }}
+  DATABASE_GLOBAL_MAX_CONNECTIONS: {{ .Values.database.globalMaxConnections | quote }}
   DATABASE_READONLY_USER: {{ .Values.database.readonlyUser | quote }}
+  QUERY_TIMEOUT: {{ .Values.database.queryTimeout | quote }}
+  QUERY_LOCK_TIMEOUT: {{ .Values.database.lockTimeout | quote }}
+  QUERY_IDLE_IN_TX_TIMEOUT: {{ .Values.database.idleInTxTimeout | quote }}
+  QUERY_MAX_RESULT_BYTES: {{ .Values.database.maxResultBytes | quote }}
+  QUERY_MAX_CELL_BYTES: {{ .Values.database.maxCellBytes | quote }}
+  QUERY_MAX_COLUMNS: {{ .Values.database.maxColumns | quote }}
   SECURITY_AUTH_ENABLED: {{ .Values.security.authEnabled | quote }}
+  SECURITY_ALLOW_INSECURE_NO_AUTH: {{ .Values.security.allowInsecureNoAuth | quote }}
   SECURITY_RATE_LIMIT_RPM: {{ .Values.security.rateLimitRPM | quote }}
   SECURITY_RATE_LIMIT_DISTRIBUTED: {{ .Values.security.rateLimitDistributed | quote }}
+  SECURITY_RATE_LIMIT_FAILURE_MODE: {{ .Values.security.rateLimitFailureMode | quote }}
+  SECURITY_AUDIT_MODE: {{ .Values.security.auditMode | quote }}
   SECURITY_EXPLAIN_ANALYZE_ENABLED: {{ .Values.security.explainAnalyzeEnabled | quote }}
+  SECURITY_SHARE_LINKS_ENABLED: {{ .Values.security.shareLinksEnabled | quote }}
   SECURITY_STAT_STATEMENTS_ENABLED: {{ .Values.security.statStatementsEnabled | quote }}
   SECURITY_SHARE_LINK_DEFAULT_HOURS: {{ .Values.security.shareLinkDefaultHours | quote }}
   SECURITY_OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
@@ -32,8 +44,12 @@ data:
   SECURITY_WEBHOOK_ALLOWED_HOSTS: {{ .Values.webhook.allowedHosts | quote }}
   SCHEDULE_RUNNER_ENABLED: {{ .Values.security.scheduleRunnerEnabled | quote }}
   SCHEDULE_RUNNER_INTERVAL: {{ .Values.security.scheduleRunnerInterval | quote }}
+  SCHEDULE_DURABLE_LEASES: {{ .Values.security.scheduleDurableLeases | quote }}
   LLM_PROVIDER: {{ .Values.llm.provider | quote }}
   LLM_MODEL: {{ .Values.llm.model | quote }}
   LLM_BASE_URL: {{ .Values.llm.baseURL | quote }}
   LLM_REDACT_PII: {{ .Values.llm.redactPII | quote }}
+  LLM_SEND_ROW_DATA: {{ .Values.llm.sendRowData | quote }}
+  LLM_ALLOW_EXTERNAL_DATA: {{ .Values.llm.allowExternalData | quote }}
+  LLM_BUDGET_FAIL_CLOSED: {{ .Values.llm.budgetFailClosed | quote }}
   PGQUERYNARRATIVE_SEED: {{ .Values.seed | quote }}

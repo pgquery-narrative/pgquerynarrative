@@ -28,14 +28,14 @@ func (s *ReportsService) generateReport(ctx context.Context, payload *reports.Ge
 	debuglog.Log("report generation started")
 	connectionID, err := s.resolveConnectionID(payload.ConnectionID)
 	if err != nil {
-		return nil, &reports.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		return nil, &reports.ValidationError{Name: "validation_error", Message: "connection not found", Code: strPtr("CONNECTION_NOT_FOUND")}
 	}
 	if err := checkConnectionAccess(ctx, s.authz, connectionID, auth.ActionReport); err != nil {
-		return nil, &reports.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+		return nil, &reports.ValidationError{Name: "validation_error", Message: "connection access denied", Code: strPtr("CONNECTION_FORBIDDEN")}
 	}
 	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
 	if err != nil {
-		return nil, &reports.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		return nil, &reports.ValidationError{Name: "validation_error", Message: "connection not found", Code: strPtr("CONNECTION_NOT_FOUND")}
 	}
 	queryResult, err := runner.Run(ctx, payload.SQL, 1000)
 	if err != nil {
@@ -486,7 +486,10 @@ func (s *ReportsService) storeReport(ctx context.Context, payload *reports.Gener
 
 	var reportID string
 	p := auth.PrincipalFromContext(ctx)
-	sqlAtRest := sealProductSQL(s.dataEncKey, payload.SQL)
+	sqlAtRest, sealErr := sealProductSQL(s.dataEncKey, payload.SQL)
+	if sealErr != nil {
+		return "", sealErr
+	}
 	err := s.appPool.QueryRow(ctx, `
 		INSERT INTO app.reports (
 			saved_query_id, sql, narrative_md, narrative_json, metrics, stats,

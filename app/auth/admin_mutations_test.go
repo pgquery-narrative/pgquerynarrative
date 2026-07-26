@@ -15,16 +15,18 @@ func TestDecideConnectionAuthzMatrix(t *testing.T) {
 		name                         string
 		orgHasAny, assigned, granted bool
 		role                         string
+		allowlistRequired            bool
 		wantErr                      bool
 	}{
-		{"bootstrap", false, false, false, RoleAnalyst, false},
-		{"not_assigned", true, false, false, RoleAnalyst, true},
-		{"admin_ok", true, true, false, RoleAdmin, false},
-		{"granted", true, true, true, RoleAnalyst, false},
-		{"denied", true, true, false, RoleAnalyst, true},
+		{"bootstrap", false, false, false, RoleAnalyst, false, false},
+		{"empty_deny", false, false, false, RoleAnalyst, true, true},
+		{"not_assigned", true, false, false, RoleAnalyst, true, true},
+		{"admin_ok", true, true, false, RoleAdmin, true, false},
+		{"granted", true, true, true, RoleAnalyst, true, false},
+		{"denied", true, true, false, RoleAnalyst, true, true},
 	}
 	for _, tc := range cases {
-		err := decideConnectionAuthz(tc.orgHasAny, tc.assigned, tc.role, tc.granted)
+		err := decideConnectionAuthz(tc.orgHasAny, tc.assigned, tc.role, tc.granted, tc.allowlistRequired)
 		if (err != nil) != tc.wantErr {
 			t.Fatalf("%s: err=%v wantErr=%v", tc.name, err, tc.wantErr)
 		}

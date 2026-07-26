@@ -115,6 +115,7 @@ func TestAllowsMethod_AnalystWritePaths(t *testing.T) {
 		"/api/v1/queries/saved",
 		"/api/v1/reports/generate",
 		"/api/v1/reports/rewrite",
+		"/api/v1/schedules",
 		"/api/v1/suggestions/ask",
 		"/api/v1/suggestions/chat",
 		"/api/v1/suggestions/explain",
@@ -126,6 +127,12 @@ func TestAllowsMethod_AnalystWritePaths(t *testing.T) {
 	}
 	if !auth.AllowsMethod(auth.RoleAnalyst, http.MethodDelete, "/api/v1/queries/saved/abc") {
 		t.Error("AllowsMethod(analyst, DELETE, /api/v1/queries/saved/abc) = false, want true")
+	}
+	if !auth.AllowsMethod(auth.RoleAnalyst, http.MethodPost, "/api/v1/schedules/abc/run") {
+		t.Error("AllowsMethod(analyst, POST, /api/v1/schedules/abc/run) = false, want true")
+	}
+	if !auth.AllowsMethod(auth.RoleAnalyst, http.MethodPut, "/api/v1/schedules/abc") {
+		t.Error("AllowsMethod(analyst, PUT, /api/v1/schedules/abc) = false, want true")
 	}
 	if auth.AllowsMethod(auth.RoleAnalyst, http.MethodDelete, "/api/v1/queries/run") {
 		t.Error("AllowsMethod(analyst, DELETE, ...) = true, want false (only POST allowed)")

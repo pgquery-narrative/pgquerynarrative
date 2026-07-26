@@ -15,28 +15,34 @@
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.18.0",
+    "react-router": "^8.3.0",
     "recharts": "^3.7.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.20.0",
+    "@eslint/js": "^9.39.2",
     "@tailwindcss/vite": "^4.3.1",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "eslint": "^9.20.0",
+    "eslint": "^9.39.2",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.14.0",
+    "jsdom": "^26.1.0",
     "lucide-react": "^0.513.0",
+    "postcss": "^8.5.18",
     "tailwind-merge": "^3.3.0",
     "tailwindcss": "^4.1.8",
-    "typescript": "^5.8.3",
+    "typescript": "~5.8.3",
     "typescript-eslint": "^8.24.0",
     "vite": "^8.1.0",
-    "vitest": "^3.2.4",
-    "jsdom": "^26.1.0"
+    "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "postcss": "^8.5.18",
+    "brace-expansion": "^5.0.8",
+    "minimatch": "^10.1.1"
   }
 }

@@ -23,7 +23,7 @@ type Loader struct {
 }
 
 type poolResolver interface {
-	ReadOnly(connectionID string) *pgxpool.Pool
+	ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 }
 
 // NewLoader creates a catalog loader that queries information_schema
@@ -37,12 +37,15 @@ func NewLoaderForConnection(resolver poolResolver, connectionID string, allowedS
 	return &Loader{poolResolver: resolver, connectionID: connectionID, allowedSchemas: allowedSchemas}
 }
 
-func (l *Loader) activePool() *pgxpool.Pool {
+func (l *Loader) activePool(ctx context.Context) *pgxpool.Pool {
 	if l.pool != nil {
 		return l.pool
 	}
 	if l.poolResolver != nil {
-		return l.poolResolver.ReadOnly(l.connectionID)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		return l.poolResolver.ReadOnly(ctx, l.connectionID)
 	}
 	return nil
 }
@@ -64,7 +67,7 @@ func (l *Loader) Load(ctx context.Context) (*schema.SchemaResult, error) {
 	if len(l.allowedSchemas) == 0 {
 		return &schema.SchemaResult{Schemas: []*schema.SchemaInfo{}}, nil
 	}
-	pool := l.activePool()
+	pool := l.activePool(ctx)
 	if pool == nil {
 		return nil, fmt.Errorf("read-only pool unavailable")
 	}

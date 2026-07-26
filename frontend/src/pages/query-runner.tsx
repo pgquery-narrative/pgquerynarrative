@@ -684,9 +684,14 @@ export default function QueryRunner() {
               <CardTitle className="text-brand-cyan">Narrative Report</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">{report.llm_provider} / {report.llm_model}</p>
             </div>
-            <a href={`/web/reports/export/pdf?id=${report.id}`} download>
-              <Button variant="ghost" size="sm"><Download className="h-4 w-4" /> PDF</Button>
-            </a>
+            <div className="flex gap-2">
+              <a href={`/reports/${report.id}`}>
+                <Button data-testid="query-report-open" variant="outline" size="sm">Open report</Button>
+              </a>
+              <a href={`/web/reports/export/pdf?id=${report.id}`} download>
+                <Button variant="ghost" size="sm"><Download className="h-4 w-4" /> PDF</Button>
+              </a>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {report.narrative.headline && <h3 data-testid="query-report-headline" className="text-lg font-semibold">{report.narrative.headline}</h3>}

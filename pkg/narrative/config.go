@@ -34,14 +34,20 @@ type Config struct {
 // SecurityConfig holds security settings for narrative client services.
 type SecurityConfig struct {
 	AuthEnabled                  bool
+	AllowInsecureNoAuth          bool
+	APIKey                       string
+	APIKeyHash                   string
+	APIKeysJSON                  string
 	RateLimitRPM                 int
 	RateLimitBurst               int
 	RateLimitDistributed         bool
+	RateLimitFailureMode         string
 	OIDCIssuer                   string
 	OIDCAudience                 string
 	OIDCClientID                 string
 	OIDCClientSecret             string
 	OIDCRedirectURL              string
+	OIDCAutoJoinDefaultOrg       bool
 	SessionSecret                string
 	SessionTTL                   time.Duration
 	ShareLinkDefaultHours        int
@@ -49,11 +55,14 @@ type SecurityConfig struct {
 	ShareLinkExposeSQL           bool
 	ExplainAnalyzeEnabled        bool
 	StatStatementsEnabled        bool
+	ScheduleRunnerEnabled        bool
+	ScheduleDurableLeases        bool
 	WebhookSigningSecret         string
 	WebhookAllowedHosts          []string
 	ExplainSnapshotRetentionDays int
 	AuditMode                    string
 	DataEncryptionKey            string
+	ConnectionAllowlistRequired  bool
 }
 
 // EmbeddingConfig holds optional embedding model settings (e.g. Ollama nomic-embed-text).
@@ -78,6 +87,9 @@ type DatabaseConfig struct {
 	QueryTimeout     time.Duration
 	LockTimeout      time.Duration
 	IdleTxTimeout    time.Duration
+	MaxResultBytes   int
+	MaxCellBytes     int
+	MaxColumns       int
 	DefaultID        string
 	Connections      []DataConnectionConfig
 }
@@ -160,6 +172,9 @@ func FromAppConfig(cfg config.Config) Config {
 			QueryTimeout:     cfg.Database.QueryTimeout,
 			LockTimeout:      cfg.Database.LockTimeout,
 			IdleTxTimeout:    cfg.Database.IdleTxTimeout,
+			MaxResultBytes:   cfg.Database.MaxResultBytes,
+			MaxCellBytes:     cfg.Database.MaxCellBytes,
+			MaxColumns:       cfg.Database.MaxColumns,
 			DefaultID:        cfg.Database.DefaultID,
 			Connections:      toNarrativeConnections(cfg.Database.Connections),
 		},
@@ -207,14 +222,20 @@ func FromAppConfig(cfg config.Config) Config {
 		MaxRowsPerQuery: 1000,
 		Security: SecurityConfig{
 			AuthEnabled:                  cfg.Security.AuthEnabled,
+			AllowInsecureNoAuth:          cfg.Security.AllowInsecureNoAuth,
+			APIKey:                       cfg.Security.APIKey,
+			APIKeyHash:                   cfg.Security.APIKeyHash,
+			APIKeysJSON:                  cfg.Security.APIKeysJSON,
 			RateLimitRPM:                 cfg.Security.RateLimitRPM,
 			RateLimitBurst:               cfg.Security.RateLimitBurst,
 			RateLimitDistributed:         cfg.Security.RateLimitDistributed,
+			RateLimitFailureMode:         cfg.Security.RateLimitFailureMode,
 			OIDCIssuer:                   cfg.Security.OIDCIssuer,
 			OIDCAudience:                 cfg.Security.OIDCAudience,
 			OIDCClientID:                 cfg.Security.OIDCClientID,
 			OIDCClientSecret:             cfg.Security.OIDCClientSecret,
 			OIDCRedirectURL:              cfg.Security.OIDCRedirectURL,
+			OIDCAutoJoinDefaultOrg:       cfg.Security.OIDCAutoJoinDefaultOrg,
 			SessionSecret:                cfg.Security.SessionSecret,
 			SessionTTL:                   cfg.Security.SessionTTL,
 			ShareLinkDefaultHours:        cfg.Security.ShareLinkDefaultHours,
@@ -222,11 +243,14 @@ func FromAppConfig(cfg config.Config) Config {
 			ShareLinkExposeSQL:           cfg.Security.ShareLinkExposeSQL,
 			ExplainAnalyzeEnabled:        cfg.Security.ExplainAnalyzeEnabled,
 			StatStatementsEnabled:        cfg.Security.StatStatementsEnabled,
+			ScheduleRunnerEnabled:        cfg.Security.ScheduleRunnerEnabled,
+			ScheduleDurableLeases:        cfg.Security.ScheduleDurableLeases,
 			WebhookSigningSecret:         cfg.Security.WebhookSigningSecret,
 			WebhookAllowedHosts:          append([]string(nil), cfg.Security.WebhookAllowedHosts...),
 			ExplainSnapshotRetentionDays: cfg.Security.ExplainSnapshotRetentionDays,
 			AuditMode:                    cfg.Security.AuditMode,
 			DataEncryptionKey:            cfg.Security.DataEncryptionKey,
+			ConnectionAllowlistRequired:  cfg.Security.ConnectionAllowlistRequired,
 		},
 	}
 }
@@ -270,26 +294,44 @@ func (c Config) Validate() error {
 	if config.IsCloudLLMProvider(c.LLM.Provider) && c.LLM.SendRowData && c.LLM.MaxSampleRows > 3 {
 		return fmt.Errorf("LLM_MAX_SAMPLE_ROWS must be <= 3 for cloud providers when LLM_SEND_ROW_DATA=true")
 	}
-	if !config.StrictMode() {
-		return nil
-	}
 	ac := config.Config{
 		Database: config.DatabaseConfig{
 			SSLMode:          c.Database.SSLMode,
 			QueryTimeout:     c.Database.QueryTimeout,
 			LockTimeout:      c.Database.LockTimeout,
+			IdleTxTimeout:    c.Database.IdleTxTimeout,
 			Password:         c.Database.Password,
 			ReadOnlyPassword: c.Database.ReadOnlyPassword,
+			MaxResultBytes:   c.Database.MaxResultBytes,
+			MaxCellBytes:     c.Database.MaxCellBytes,
+			MaxColumns:       c.Database.MaxColumns,
+			AllowedSchemas:   append([]string(nil), c.AllowedSchemas...),
 			Connections:      toAppConnectionsFromNarrative(c.Database.Connections),
 		},
 		Security: config.SecurityConfig{
-			AuthEnabled:           c.Security.AuthEnabled,
-			RateLimitRPM:          c.Security.RateLimitRPM,
-			RateLimitBurst:        c.Security.RateLimitBurst,
-			RateLimitDistributed:  c.Security.RateLimitDistributed,
-			ExplainAnalyzeEnabled: c.Security.ExplainAnalyzeEnabled,
-			ShareLinksEnabled:     c.Security.ShareLinksEnabled,
-			ScheduleDurableLeases: true,
+			AuthEnabled:                 c.Security.AuthEnabled,
+			AllowInsecureNoAuth:         c.Security.AllowInsecureNoAuth,
+			APIKey:                      c.Security.APIKey,
+			APIKeyHash:                  c.Security.APIKeyHash,
+			APIKeysJSON:                 c.Security.APIKeysJSON,
+			RateLimitRPM:                c.Security.RateLimitRPM,
+			RateLimitBurst:              c.Security.RateLimitBurst,
+			RateLimitDistributed:        c.Security.RateLimitDistributed,
+			RateLimitFailureMode:        c.Security.RateLimitFailureMode,
+			ExplainAnalyzeEnabled:       c.Security.ExplainAnalyzeEnabled,
+			ShareLinksEnabled:           c.Security.ShareLinksEnabled,
+			ScheduleRunnerEnabled:       c.Security.ScheduleRunnerEnabled,
+			ScheduleDurableLeases:       c.Security.ScheduleDurableLeases,
+			WebhookSigningSecret:        c.Security.WebhookSigningSecret,
+			WebhookAllowedHosts:         append([]string(nil), c.Security.WebhookAllowedHosts...),
+			OIDCIssuer:                  c.Security.OIDCIssuer,
+			OIDCAudience:                c.Security.OIDCAudience,
+			OIDCClientID:                c.Security.OIDCClientID,
+			OIDCAutoJoinDefaultOrg:      c.Security.OIDCAutoJoinDefaultOrg,
+			SessionSecret:               c.Security.SessionSecret,
+			AuditMode:                   c.Security.AuditMode,
+			DataEncryptionKey:           c.Security.DataEncryptionKey,
+			ConnectionAllowlistRequired: c.Security.ConnectionAllowlistRequired,
 		},
 		LLM: config.LLMConfig{
 			Provider:          c.LLM.Provider,
@@ -297,6 +339,7 @@ func (c Config) Validate() error {
 			AllowExternalData: c.LLM.AllowExternalData,
 			MaxSampleRows:     c.LLM.MaxSampleRows,
 			RedactPII:         c.LLM.RedactPII,
+			BudgetFailClosed:  c.LLM.BudgetFailClosed,
 		},
 	}
 	return ac.Validate()

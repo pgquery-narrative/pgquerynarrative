@@ -53,7 +53,8 @@ var connectionActionColumns = map[string]string{
 
 // ConnectionAuthorizer checks organisation and principal permissions for DB connections.
 type ConnectionAuthorizer struct {
-	pool *pgxpool.Pool
+	pool              *pgxpool.Pool
+	allowlistRequired bool
 }
 
 // NewConnectionAuthorizer returns an authorizer backed by the app pool.
@@ -64,10 +65,28 @@ func NewConnectionAuthorizer(pool *pgxpool.Pool) *ConnectionAuthorizer {
 	return &ConnectionAuthorizer{pool: pool}
 }
 
+// SetAllowlistRequired toggles fail-closed behaviour when an organisation has no
+// organization_connections rows. When true (Isolation MVP / StrictMode default),
+// empty allowlists deny all connections instead of the legacy bootstrap allow-all.
+func (a *ConnectionAuthorizer) SetAllowlistRequired(required bool) {
+	if a == nil {
+		return
+	}
+	a.allowlistRequired = required
+}
+
+// AllowlistRequired reports whether empty organization_connections deny access.
+func (a *ConnectionAuthorizer) AllowlistRequired() bool {
+	return a != nil && a.allowlistRequired
+}
+
 // decideConnectionAuthz is the pure decision matrix (unit-tested without a database).
-func decideConnectionAuthz(orgHasAnyRows, connectionAssigned bool, role string, principalGranted bool) error {
+func decideConnectionAuthz(orgHasAnyRows, connectionAssigned bool, role string, principalGranted bool, allowlistRequired bool) error {
 	if !orgHasAnyRows {
-		return nil // bootstrap
+		if allowlistRequired {
+			return fmt.Errorf("%w: organization has no connection assignments", ErrConnectionForbidden)
+		}
+		return nil // legacy bootstrap: empty allowlist permits all configured connections
 	}
 	if !connectionAssigned {
 		return fmt.Errorf("%w: connection not assigned to organisation", ErrConnectionForbidden)
@@ -99,19 +118,19 @@ func (a *ConnectionAuthorizer) AuthorizeConnection(ctx context.Context, orgID, u
 	role = normalizeRole(role)
 
 	var connCount int
-	if err := a.pool.QueryRow(ctx, `
+	if err := queryRowWithOrg(ctx, a.pool, orgID, `
 		SELECT COUNT(*) FROM app.organization_connections WHERE organization_id = $1::uuid
-	`, orgID).Scan(&connCount); err != nil {
+	`, orgID)(&connCount); err != nil {
 		return err
 	}
 	orgHasAnyRows := connCount > 0
 	connectionAssigned := false
 	if orgHasAnyRows {
 		var enabled bool
-		err := a.pool.QueryRow(ctx, `
+		err := queryRowWithOrg(ctx, a.pool, orgID, `
 			SELECT enabled FROM app.organization_connections
 			WHERE organization_id = $1::uuid AND connection_id = $2
-		`, orgID, connectionID).Scan(&enabled)
+		`, orgID, connectionID)(&enabled)
 		if err == nil && enabled {
 			connectionAssigned = true
 		} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -133,12 +152,12 @@ func (a *ConnectionAuthorizer) AuthorizeConnection(ctx context.Context, orgID, u
 				  )
 			)
 		`, col)
-		if err := a.pool.QueryRow(ctx, q, orgID, connectionID, strings.TrimSpace(userID), role).Scan(&principalGranted); err != nil {
+		if err := queryRowWithOrg(ctx, a.pool, orgID, q, orgID, connectionID, strings.TrimSpace(userID), role)(&principalGranted); err != nil {
 			return err
 		}
 	}
 
-	return decideConnectionAuthz(orgHasAnyRows, connectionAssigned, role, principalGranted)
+	return decideConnectionAuthz(orgHasAnyRows, connectionAssigned, role, principalGranted, a.allowlistRequired)
 }
 
 // AllowedConnections returns configured connection IDs the principal may use for action.

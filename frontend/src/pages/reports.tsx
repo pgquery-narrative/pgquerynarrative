@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link } from "react-router";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +35,7 @@ function ReportDetail() {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareExpiry, setShareExpiry] = useState("168");
   const [shareMessage, setShareMessage] = useState("");
+  const [lastShareURL, setLastShareURL] = useState("");
   const [shares, setShares] = useState<ReportShareInfo[]>([]);
   const [sharesLoading, setSharesLoading] = useState(false);
   const [revokeId, setRevokeId] = useState<string | null>(null);
@@ -87,12 +88,18 @@ function ReportDetail() {
     if (!id) return;
     setShareLoading(true);
     setShareMessage("");
+    setLastShareURL("");
     try {
       const expiry = Number(shareExpiry);
       const result = await api.createShareLink(id, Number.isFinite(expiry) && expiry > 0 ? expiry : undefined);
       const absolute = `${window.location.origin}${result.url}`;
-      await navigator.clipboard.writeText(absolute);
-      setShareMessage(`Share link copied${result.expires_at ? ` (expires ${new Date(result.expires_at).toLocaleString()})` : ""}`);
+      setLastShareURL(result.url);
+      try {
+        await navigator.clipboard.writeText(absolute);
+        setShareMessage(`Share link copied${result.expires_at ? ` (expires ${new Date(result.expires_at).toLocaleString()})` : ""}`);
+      } catch {
+        setShareMessage(`Share link created${result.expires_at ? ` (expires ${new Date(result.expires_at).toLocaleString()})` : ""}`);
+      }
       await refreshShares();
     } catch (e) {
       setShareMessage(e instanceof Error ? e.message : "Failed to create share link");
@@ -119,7 +126,7 @@ function ReportDetail() {
 
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{narrative?.headline || "Report"}</h1>
+          <h1 data-testid={isSharedView ? "shared-report-headline" : "report-detail-headline"} className="text-2xl font-bold tracking-tight">{narrative?.headline || "Report"}</h1>
           <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(report.created_at).toLocaleString()}</span>
             <span className="flex items-center gap-1"><Cpu className="h-3 w-3" />{report.llm_provider} / {report.llm_model}</span>
@@ -132,25 +139,35 @@ function ReportDetail() {
         </div>
       </div>
       {!isSharedView && (
-        <Card>
+        <Card data-testid="report-share-panel">
           <CardHeader>
             <CardTitle className="text-sm">Share Report</CardTitle>
             <CardDescription>Create a read-only link with optional expiry. Revoke any active link below.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-2 items-center">
-              <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={shareExpiry} onChange={(e) => setShareExpiry(e.target.value)}>
+              <select
+                data-testid="share-expiry"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={shareExpiry}
+                onChange={(e) => setShareExpiry(e.target.value)}
+              >
                 <option value="24">24 hours</option>
                 <option value="72">3 days</option>
                 <option value="168">7 days</option>
                 <option value="720">30 days</option>
               </select>
-              <Button onClick={() => { void createShareLink(); }} disabled={shareLoading}>
+              <Button data-testid="share-create" onClick={() => { void createShareLink(); }} disabled={shareLoading}>
                 Create & Copy Link
               </Button>
-              {shareMessage && <p className="text-xs text-muted-foreground">{shareMessage}</p>}
+              {shareMessage && <p data-testid="share-message" className="text-xs text-muted-foreground">{shareMessage}</p>}
+              {lastShareURL && (
+                <p data-testid="share-link-url" data-url={lastShareURL} className="sr-only">
+                  {lastShareURL}
+                </p>
+              )}
             </div>
-            <div className="border-t border-border pt-3 space-y-2">
+            <div data-testid="share-list" className="border-t border-border pt-3 space-y-2">
               <p className="text-xs font-medium text-muted-foreground">Active and revoked links</p>
               {sharesLoading ? (
                 <Skeleton className="h-10 w-full" />
@@ -161,7 +178,13 @@ function ReportDetail() {
                   {shares.map((s) => {
                     const revoked = Boolean(s.revoked_at);
                     return (
-                      <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 text-xs border border-border rounded-md px-3 py-2">
+                      <li
+                        key={s.id}
+                        data-testid="share-item"
+                        data-share-id={s.id}
+                        data-revoked={revoked ? "true" : "false"}
+                        className="flex flex-wrap items-center justify-between gap-2 text-xs border border-border rounded-md px-3 py-2"
+                      >
                         <div className="space-y-0.5">
                           <p className="font-mono">{s.id.slice(0, 8)}…</p>
                           <p className="text-muted-foreground">
@@ -173,6 +196,7 @@ function ReportDetail() {
                         </div>
                         {!revoked && (
                           <Button
+                            data-testid="share-revoke"
                             variant="destructive"
                             size="sm"
                             disabled={revokeId === s.id}
@@ -461,7 +485,7 @@ function ReportList() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div data-testid="reports-list-page" className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
         <p className="text-muted-foreground mt-1">Generated narrative reports from your queries.</p>
@@ -496,13 +520,13 @@ function ReportList() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div data-testid="reports-list" className="space-y-3">
           {(searchText.trim() ? similar : reports).map((r) => (
-            <Link key={r.id} to={`/reports/${r.id}`}>
+            <Link key={r.id} data-testid="report-list-item" data-report-id={r.id} to={`/reports/${r.id}`}>
               <Card className="hover:border-primary/30 transition-colors cursor-pointer">
                 <CardContent className="p-5 flex items-center justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{("headline" in r && r.headline) || ("narrative" in r ? r.narrative?.headline : "") || truncate(r.sql, 60)}</p>
+                    <p data-testid="report-list-headline" className="text-sm font-medium">{("headline" in r && r.headline) || ("narrative" in r ? r.narrative?.headline : "") || truncate(r.sql, 60)}</p>
                     <div className="flex items-center gap-3 mt-1.5">
                       <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(r.created_at).toLocaleDateString()}</span>
                       {"llm_provider" in r && <Badge variant="secondary" className="text-[10px]">{r.llm_provider}</Badge>}

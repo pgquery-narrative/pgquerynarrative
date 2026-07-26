@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -205,7 +205,8 @@ build-release:
 	@echo "✅ Release binaries (server, mcp, migrate) in bin/ (VERSION=$(VERSION))"
 
 run:
-	$(GO) run ./cmd/server
+	@# Local/dev open-admin requires explicit opt-in (compose sets this too). Override by enabling auth.
+	SECURITY_ALLOW_INSECURE_NO_AUTH=$${SECURITY_ALLOW_INSECURE_NO_AUTH:-true} $(GO) run ./cmd/server
 
 # ============================================================================
 # Testing
@@ -275,6 +276,11 @@ fmt:
 pilot-acceptance:
 	@chmod +x ./tools/ops/pilot_acceptance.sh
 	@DOCKER_API_VERSION=1.44 ./tools/ops/pilot_acceptance.sh
+
+# Helm chart StrictMode gates (default values fail; ci-values render).
+helm-strict-check:
+	@chmod +x ./tools/ops/helm_strict_check.sh
+	@./tools/ops/helm_strict_check.sh
 
 # ============================================================================
 # Database operations

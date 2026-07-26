@@ -99,7 +99,7 @@ func (r *Runner) PeriodComparison(ctx context.Context, innerSQL, timeCol string,
 	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
 	defer cancel()
 
-	rows, err := r.activePool().Query(queryCtx, wrappedSQL)
+	rows, err := r.activePool(queryCtx).Query(queryCtx, wrappedSQL)
 	if err != nil {
 		return nil, fmt.Errorf("period comparison query failed: %w", err)
 	}

@@ -17,7 +17,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(res.status, message as string, body);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  if (!text.trim()) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export class ApiError extends Error {
@@ -172,6 +174,31 @@ export interface Schedule {
   next_run_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface ScheduleRun {
+  id: string;
+  schedule_id: string;
+  status: string;
+  attempt_count: number;
+  scheduled_for: string;
+  started_at?: string;
+  completed_at?: string;
+  report_id?: string;
+  failure_code?: string;
+  failure_message?: string;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  schedule_id?: string;
+  destination_url: string;
+  status: string;
+  attempt_count: number;
+  http_status?: number;
+  error_message?: string;
+  created_at: string;
+  completed_at?: string;
 }
 
 export interface AskResult {
@@ -365,4 +392,8 @@ export const api = {
   updateSchedule: (id: string, payload: Record<string, unknown>) => request<Schedule>(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: "DELETE" }),
   runScheduleNow: (id: string) => request<{ schedule: Schedule; report_id?: string; delivered: boolean }>(`/schedules/${id}/run`, { method: "POST" }),
+  listScheduleRuns: (id: string) => request<{ items: ScheduleRun[] }>(`/schedules/${encodeURIComponent(id)}/runs`),
+  retryScheduleRun: (runId: string) =>
+    request<ScheduleRun>(`/schedule-runs/${encodeURIComponent(runId)}/retry`, { method: "POST" }),
+  listWebhookDeliveries: () => request<{ items: WebhookDelivery[] }>("/webhook-deliveries"),
 };

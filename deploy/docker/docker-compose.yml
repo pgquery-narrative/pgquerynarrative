@@ -1,13 +1,20 @@
-# Production-style Docker Compose for PgQueryNarrative.
-# Run from repository root: docker compose -f deploy/docker/docker-compose.yml up -d
-# Build context is the repository root so the Dockerfile can COPY app/, cmd/, etc.
+# Production-oriented Compose overlay — does NOT ship with open-admin defaults.
+#
+# Prerequisites:
+#   1. Copy deploy/docker/.env.production.example → deploy/docker/.env.production
+#   2. Fill strong secrets (APP_ENV=production StrictMode will refuse placeholders)
+#   3. From repo root:
+#        docker compose -f deploy/docker/docker-compose.yml --env-file deploy/docker/.env.production up -d --build
+#
+# Postgres is NOT published to the host. Reach the app via 127.0.0.1:8080 only.
+# Prefer Helm/Kubernetes for real company deployments (docs/ops/PRODUCTION.md).
 
-name: pgquerynarrative-deploy
+name: pgquerynarrative-prod
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
-    container_name: pgquerynarrative-postgres
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: pgquerynarrative-postgres-prod
     command:
       - postgres
       - -c
@@ -15,49 +22,71 @@ services:
       - -c
       - pg_stat_statements.track=all
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-pgquerynarrative}
-    ports:
-      - "5432:5432"
+    # Internal only — no host port publish.
+    expose:
+      - "5432"
     volumes:
-      - pgquerynarrative_data:/var/lib/postgresql/data
-      - ../../infra/postgres-init:/docker-entrypoint-initdb.d
+      - pgquerynarrative_prod_data:/var/lib/postgresql/data
+      - ../../infra/postgres-init:/docker-entrypoint-initdb.d:ro
       - ../../infra/postgres-extension:/extension:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\""]
       interval: 5s
       timeout: 3s
       retries: 5
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
 
   app:
     build:
       context: ../..
-      dockerfile: deploy/docker/Dockerfile
-    container_name: pgquerynarrative-app
+      dockerfile: Dockerfile
+    container_name: pgquerynarrative-app-prod
     environment:
+      APP_ENV: production
       PGQUERYNARRATIVE_HOST: 0.0.0.0
       PGQUERYNARRATIVE_PORT: 8080
-      DATABASE_HOST: ${DATABASE_HOST:-postgres}
-      DATABASE_PORT: ${DATABASE_PORT:-5432}
-      DATABASE_NAME: ${DATABASE_NAME:-pgquerynarrative}
-      DATABASE_USER: ${DATABASE_USER:-pgquerynarrative_app}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-pgquerynarrative_app}
-      DATABASE_READONLY_USER: ${DATABASE_READONLY_USER:-pgquerynarrative_readonly}
-      DATABASE_READONLY_PASSWORD: ${DATABASE_READONLY_PASSWORD:-pgquerynarrative_readonly}
-      DATABASE_SSL_MODE: disable
-      DATABASE_MAX_CONNECTIONS: 5
-      DATABASE_ALLOWED_SCHEMAS: ${DATABASE_ALLOWED_SCHEMAS:-demo,opendata}
-      LLM_PROVIDER: ollama
+      SECURITY_AUTH_ENABLED: "true"
+      SECURITY_ALLOW_INSECURE_NO_AUTH: "false"
+      SECURITY_API_KEY_HASH: ${SECURITY_API_KEY_HASH:?set SECURITY_API_KEY_HASH}
+      SECURITY_SESSION_SECRET: ${SECURITY_SESSION_SECRET:?set SECURITY_SESSION_SECRET}
+      SECURITY_DATA_ENCRYPTION_KEY: ${SECURITY_DATA_ENCRYPTION_KEY:?set SECURITY_DATA_ENCRYPTION_KEY}
+      SECURITY_RATE_LIMIT_RPM: ${SECURITY_RATE_LIMIT_RPM:-120}
+      SECURITY_RATE_LIMIT_DISTRIBUTED: "true"
+      SECURITY_RATE_LIMIT_FAILURE_MODE: closed
+      SECURITY_AUDIT_MODE: required
+      SECURITY_SHARE_LINKS_ENABLED: "false"
+      SECURITY_EXPLAIN_ANALYZE_ENABLED: "false"
+      SCHEDULE_RUNNER_ENABLED: "false"
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-pgquerynarrative}
+      DATABASE_USER: ${DATABASE_USER:?set DATABASE_USER}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
+      DATABASE_READONLY_USER: ${DATABASE_READONLY_USER:?set DATABASE_READONLY_USER}
+      DATABASE_READONLY_PASSWORD: ${DATABASE_READONLY_PASSWORD:?set DATABASE_READONLY_PASSWORD}
+      DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-require}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-5}
+      DATABASE_ALLOWED_SCHEMAS: ${DATABASE_ALLOWED_SCHEMAS:?set DATABASE_ALLOWED_SCHEMAS}
+      QUERY_TIMEOUT: 30s
+      QUERY_LOCK_TIMEOUT: 2s
+      QUERY_IDLE_IN_TX_TIMEOUT: 10s
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
-      LOG_DEBUG: ${LOG_DEBUG:-}
+      LLM_SEND_ROW_DATA: "false"
+      LLM_ALLOW_EXTERNAL_DATA: "false"
+      LLM_REDACT_PII: "true"
+      LLM_BUDGET_FAIL_CLOSED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,11 +95,11 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 10s
+      start_period: 20s
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
 
 volumes:
-  pgquerynarrative_data:
+  pgquerynarrative_prod_data:

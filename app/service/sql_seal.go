@@ -1,21 +1,26 @@
 package service
 
 import (
+	"fmt"
+
 	"github.com/pgquerynarrative/pgquerynarrative/app/security"
 )
 
 // sealProductSQL encrypts SQL for at-rest storage when a data encryption key is configured.
-// On seal failure the plaintext is returned so writes are not blocked by crypto errors;
-// callers that require fail-closed behavior should check IsSealed after write.
-func sealProductSQL(key []byte, sql string) string {
-	if len(key) == 0 || sql == "" || security.IsSealed(sql) {
-		return sql
+// When a key is configured, seal failures fail closed (error) so plaintext is never persisted.
+// When no key is configured, plaintext is returned unchanged (StrictMode requires a key).
+func sealProductSQL(key []byte, sql string) (string, error) {
+	if sql == "" || security.IsSealed(sql) {
+		return sql, nil
+	}
+	if len(key) == 0 {
+		return sql, nil
 	}
 	sealed, err := security.Seal(key, sql)
 	if err != nil {
-		return sql
+		return "", fmt.Errorf("encrypt SQL for storage: %w", err)
 	}
-	return sealed
+	return sealed, nil
 }
 
 // openProductSQL decrypts a Seal envelope when present. Legacy plaintext passes through.

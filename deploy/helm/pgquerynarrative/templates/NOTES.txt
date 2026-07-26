@@ -1,7 +1,13 @@
-PgQueryNarrative is installed.
+PgQueryNarrative is installed with APP_ENV={{ .Values.appEnv }}.
 
-1. Ensure PostgreSQL is available and the database/roles exist (see deployment docs).
-2. Get the application URL:
+StrictMode: the process refuses to start unless auth, TLS DB mode, hashed API keys,
+rate-limit failure mode, audit mode, and encryption secrets validate.
+
+1. Ensure PostgreSQL roles/passwords match the Secret and SSL is enabled.
+2. Confirm SECURITY_API_KEY_HASH matches your automation key
+   (printf '%s' "$API_KEY" | shasum -a 256).
+3. Keep SCHEDULE_RUNNER_ENABLED=false until webhook allowlist + signing secret are set.
+4. Get the application URL:
 {{- if .Values.ingress.enabled }}
   http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
 {{- else }}

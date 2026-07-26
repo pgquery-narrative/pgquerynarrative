@@ -56,7 +56,7 @@ Files are downloaded from the TLC CDN as Parquet and loaded into Postgres.
 | Migration | `000026_opendata_nyc_taxi` |
 | Loader | [`tools/db/load_nyc_taxi.py`](../tools/db/load_nyc_taxi.py) |
 | Showcase SQL | [`tools/db/opendata-showcase.sql`](../tools/db/opendata-showcase.sql) |
-| Allowlist | `DATABASE_ALLOWED_SCHEMAS=demo,opendata` (Compose default) |
+| Allowlist | Set `DATABASE_ALLOWED_SCHEMAS=demo,opendata` (default is `demo` only) |
 
 ```bash
 # After Postgres is up and migrations applied:

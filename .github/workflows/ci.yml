@@ -84,7 +84,8 @@ jobs:
             pkg="$1"; floor="$2"
             name="$(basename "$pkg")"
             profile="cov_${name}.out"
-            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg/..." "$pkg/..." "./test/unit/app/$name/..."
+            # Cover the package itself (not test doubles under subdirs like app/auth/mockoidc).
+            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg" "$pkg" "./test/unit/app/$name/..."
             pct="$(go tool cover -func="$profile" | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
             echo "$pkg coverage: ${pct}% (floor ${floor}%)"
             awk -v t="$pct" -v f="$floor" -v p="$pkg" 'BEGIN { if (t+0 < f+0) { print "Coverage below floor for " p ": " t "% < " f "%"; exit 1 } }'
@@ -129,6 +130,18 @@ jobs:
           make migrate-docker
           make db-security-verify-docker
 
+  helm-strict:
+    name: Helm StrictMode gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Verify chart rejects unsafe defaults
+        run: make helm-strict-check
+
   migration-cycle:
     name: Migration up/down/up
     runs-on: ubuntu-latest
@@ -163,7 +176,7 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
       - name: Run govulncheck
         run: govulncheck ./...
 
@@ -320,7 +333,9 @@ jobs:
           export DATABASE_USER=pgquerynarrative_app DATABASE_PASSWORD=pgquerynarrative_app
           export DATABASE_NAME=pgquerynarrative
           export DATABASE_READONLY_USER=pgquerynarrative_readonly DATABASE_READONLY_PASSWORD=pgquerynarrative_readonly
-          export SECURITY_AUTH_ENABLED=false PGQUERYNARRATIVE_PORT=8080
+          export SECURITY_AUTH_ENABLED=false
+          export SECURITY_ALLOW_INSECURE_NO_AUTH=true
+          export PGQUERYNARRATIVE_PORT=8080
           ./bin/server >/tmp/pgqn-load-smoke.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/health && break; sleep 1; done
           curl -sf http://127.0.0.1:8080/health

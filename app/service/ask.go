@@ -128,7 +128,28 @@ func askConnectionForbiddenError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+	return &suggestions.ValidationError{Name: "validation_error", Message: "connection access denied", Code: strPtr("CONNECTION_FORBIDDEN")}
+}
+
+func askConnectionNotFoundError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &suggestions.ValidationError{Name: "validation_error", Message: "connection not found", Code: strPtr("CONNECTION_NOT_FOUND")}
+}
+
+func askValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &suggestions.ValidationError{Name: "validation_error", Message: SanitizeAPIError(err, "Invalid request."), Code: strPtr("VALIDATION_ERROR")}
+}
+
+func askLLMError(code, fallback string, err error) error {
+	if err == nil {
+		return &suggestions.LLMError{Name: "llm_error", Message: fallback, Code: strPtr(code)}
+	}
+	return &suggestions.LLMError{Name: "llm_error", Message: SanitizeAPIError(err, fallback), Code: strPtr(code)}
 }
 
 // Ask implements the suggestions service Ask method: question → SQL → report.
@@ -139,10 +160,10 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 	}
 	connID, resolveErr := s.resolveConnectionID(payload.ConnectionID)
 	if resolveErr != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: resolveErr.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		return nil, askConnectionNotFoundError(resolveErr)
 	}
 	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionAsk); err != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+		return nil, askConnectionForbiddenError(err)
 	}
 
 	schemaResult, err := func() (*schemaapi.SchemaResult, error) {
@@ -154,16 +175,16 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 	}()
 	if err != nil {
 		if errors.Is(err, apperrors.ErrConnectionNotFound) {
-			return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+			return nil, askConnectionNotFoundError(err)
 		}
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to load schema: " + err.Error(), Code: strPtr("SCHEMA_ERROR")}
+		return nil, askLLMError("SCHEMA_ERROR", "failed to load schema", err)
 	}
 	schemaText := llm.FormatSchemaForPrompt(schemaResult)
 	prompt := llm.BuildNL2SQLPrompt(question, schemaText)
 
 	response, err := s.invokeLLM(ctx, "nl2sql", prompt, question)
 	if err != nil {
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("LLM_ERROR")}
+		return nil, askLLMError("LLM_ERROR", "LLM request failed", err)
 	}
 	sql := llm.ParseSQLFromResponse(response)
 	sql = strings.TrimSpace(sql)
@@ -172,19 +193,19 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 	}
 
 	if err := s.validator.Validate(sql); err != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, askValidationError(err)
 	}
 
 	reportPayload := &reports.GenerateReportPayload{SQL: sql, ConnectionID: payload.ConnectionID}
 	report, err := s.reportsSvc.GenerateForAsk(ctx, reportPayload)
 	if err != nil {
 		if ve, ok := err.(*reports.ValidationError); ok {
-			return nil, &suggestions.ValidationError{Name: ve.Name, Message: ve.Message, Code: ve.Code}
+			return nil, &suggestions.ValidationError{Name: ve.Name, Message: SanitizeAPIError(errors.New(ve.Message), ve.Message), Code: ve.Code}
 		}
 		if le, ok := err.(*reports.LLMError); ok {
-			return nil, &suggestions.LLMError{Name: le.Name, Message: le.Message, Code: le.Code}
+			return nil, &suggestions.LLMError{Name: le.Name, Message: SanitizeAPIError(errors.New(le.Message), "report generation failed"), Code: le.Code}
 		}
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("REPORT_ERROR")}
+		return nil, askLLMError("REPORT_ERROR", "report generation failed", err)
 	}
 
 	return &suggestions.AskResult{
@@ -202,14 +223,14 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	}
 	connID, resolveErr := s.resolveConnectionID(payload.ConnectionID)
 	if resolveErr != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: resolveErr.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		return nil, askConnectionNotFoundError(resolveErr)
 	}
 	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionAsk); err != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+		return nil, askConnectionForbiddenError(err)
 	}
 	sessionID, historyCtx, err := s.ensureSessionAndHistory(ctx, payload.SessionID, payload.ConnectionID)
 	if err != nil {
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to prepare chat session: " + err.Error(), Code: strPtr("SESSION_ERROR")}
+		return nil, askLLMError("SESSION_ERROR", "failed to prepare chat session", err)
 	}
 	schemaResult, err := func() (*schemaapi.SchemaResult, error) {
 		loader, err := s.connectionResolver.loaderFor(payload.ConnectionID)
@@ -220,9 +241,9 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	}()
 	if err != nil {
 		if errors.Is(err, apperrors.ErrConnectionNotFound) {
-			return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+			return nil, askConnectionNotFoundError(err)
 		}
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to load schema: " + err.Error(), Code: strPtr("SCHEMA_ERROR")}
+		return nil, askLLMError("SCHEMA_ERROR", "failed to load schema", err)
 	}
 	schemaText := llm.FormatSchemaForPrompt(schemaResult)
 	prompt := llm.BuildNL2SQLPrompt(question, schemaText)
@@ -231,31 +252,31 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	}
 	response, err := s.invokeLLM(ctx, "nl2sql", prompt, question)
 	if err != nil {
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("LLM_ERROR")}
+		return nil, askLLMError("LLM_ERROR", "LLM request failed", err)
 	}
 	sqlText := strings.TrimSpace(llm.ParseSQLFromResponse(response))
 	if sqlText == "" {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "LLM did not return any SQL", Code: strPtr("LLM_ERROR")}
 	}
 	if err := s.validator.Validate(sqlText); err != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, askValidationError(err)
 	}
 	report, err := s.reportsSvc.GenerateForAsk(ctx, &reports.GenerateReportPayload{SQL: sqlText, ConnectionID: payload.ConnectionID})
 	if err != nil {
 		if ve, ok := err.(*reports.ValidationError); ok {
-			return nil, &suggestions.ValidationError{Name: ve.Name, Message: ve.Message, Code: ve.Code}
+			return nil, &suggestions.ValidationError{Name: ve.Name, Message: SanitizeAPIError(errors.New(ve.Message), ve.Message), Code: ve.Code}
 		}
 		if le, ok := err.(*reports.LLMError); ok {
-			return nil, &suggestions.LLMError{Name: le.Name, Message: le.Message, Code: le.Code}
+			return nil, &suggestions.LLMError{Name: le.Name, Message: SanitizeAPIError(errors.New(le.Message), "report generation failed"), Code: le.Code}
 		}
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("REPORT_ERROR")}
+		return nil, askLLMError("REPORT_ERROR", "report generation failed", err)
 	}
 	if err := s.appendChatMessage(ctx, sessionID, question, sqlText, report.ID); err != nil {
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to persist chat message: " + err.Error(), Code: strPtr("SESSION_ERROR")}
+		return nil, askLLMError("SESSION_ERROR", "failed to persist chat message", err)
 	}
 	history, err := s.loadChatHistory(ctx, sessionID, 8)
 	if err != nil {
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: "failed to load chat history: " + err.Error(), Code: strPtr("SESSION_ERROR")}
+		return nil, askLLMError("SESSION_ERROR", "failed to load chat history", err)
 	}
 	followUps := s.buildFollowUps(ctx, history, question)
 	return &suggestions.ChatResult{
@@ -440,12 +461,12 @@ func (s *AskService) Explain(ctx context.Context, payload *suggestions.ExplainPa
 	sql = strings.TrimSuffix(sql, ";")
 	sql = strings.TrimSpace(sql)
 	if err := s.validator.Validate(sql); err != nil {
-		return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, askValidationError(err)
 	}
 	prompt := llm.BuildExplainPrompt(sql)
 	response, err := s.invokeLLM(ctx, "nl2sql", prompt, sql)
 	if err != nil {
-		return nil, &suggestions.LLMError{Name: "llm_error", Message: err.Error(), Code: strPtr("LLM_ERROR")}
+		return nil, askLLMError("LLM_ERROR", "LLM request failed", err)
 	}
 	explanation := strings.TrimSpace(response)
 	if explanation == "" {
@@ -462,7 +483,7 @@ func (s *AskService) Questions(ctx context.Context, payload *suggestions.Questio
 	loader, err := s.connectionResolver.loaderFor(payload.ConnectionID)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrConnectionNotFound) {
-			return nil, &suggestions.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+			return nil, askConnectionNotFoundError(err)
 		}
 		return &suggestions.SuggestedQuestionsResult{Questions: defaultQuestions()}, nil
 	}

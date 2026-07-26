@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AlertCircle, Home, RefreshCw } from "lucide-react";

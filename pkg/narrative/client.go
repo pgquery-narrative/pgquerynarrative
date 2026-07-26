@@ -84,6 +84,8 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	orgSecrets := auth.NewOrgConnectionSecretStore(pools.App, cfg.Security.DataEncryptionKey)
+	pools.SetOrgDSNLookup(orgSecrets)
 
 	allowedSchemas := cfg.AllowedSchemas
 	if len(allowedSchemas) == 0 {
@@ -212,6 +214,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	schedulesService.ConfigureWebhook(cfg.Security.WebhookSigningSecret, cfg.Security.WebhookAllowedHosts)
 
 	connAuthz := auth.NewConnectionAuthorizer(pools.App)
+	connAuthz.SetAllowlistRequired(cfg.Security.ConnectionAllowlistRequired)
 	queriesService.SetAuthorizer(connAuthz)
 	reportsService.SetAuthorizer(connAuthz)
 	schemaService.SetAuthorizer(connAuthz)

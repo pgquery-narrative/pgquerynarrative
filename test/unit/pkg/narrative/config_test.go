@@ -75,9 +75,20 @@ func TestFromAppConfig_MapsMetricsFields(t *testing.T) {
 
 func TestConfig_Validate_CloudLLMRequiresOptIn(t *testing.T) {
 	cfg := narrative.Config{
-		LLM: narrative.LLMConfig{Provider: "openai", AllowExternalData: false},
+		Security: narrative.SecurityConfig{AllowInsecureNoAuth: true},
+		LLM:      narrative.LLMConfig{Provider: "openai", AllowExternalData: false},
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected cloud LLM validation error")
+	}
+}
+
+func TestConfig_Validate_AuthDisabledRequiresInsecureOptIn(t *testing.T) {
+	cfg := narrative.Config{
+		Security: narrative.SecurityConfig{AuthEnabled: false, AllowInsecureNoAuth: false},
+		LLM:      narrative.LLMConfig{Provider: "ollama"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected insecure opt-in validation error")
 	}
 }

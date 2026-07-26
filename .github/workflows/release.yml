@@ -203,6 +203,7 @@ jobs:
           export DATABASE_USER=pgquerynarrative_app DATABASE_PASSWORD=pgquerynarrative_app
           export DATABASE_READONLY_USER=pgquerynarrative_readonly DATABASE_READONLY_PASSWORD=pgquerynarrative_readonly
           export SECURITY_AUTH_ENABLED=false
+          export SECURITY_ALLOW_INSECURE_NO_AUTH=true
           export PGQUERYNARRATIVE_PORT=8080 PGQUERYNARRATIVE_HOST=127.0.0.1
           (cd "$PKG_DIR" && exec ./bin/pgquerynarrative-server) >/tmp/pgqn-release-smoke.log 2>&1 &
           SERVER_PID=$!

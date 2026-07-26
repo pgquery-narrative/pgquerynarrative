@@ -92,7 +92,7 @@ type DatabaseConfig struct {
 	QueryTimeout     time.Duration // Maximum query execution time
 	LockTimeout      time.Duration // Database-side lock timeout for query connections
 	IdleTxTimeout    time.Duration // Database-side idle-in-transaction timeout
-	AllowedSchemas   []string      // Schemas queries may access (e.g. demo, public). Default: public,demo.
+	AllowedSchemas   []string      // Schemas queries may access (e.g. demo). Default: demo. Never include app.
 	MaxResultBytes   int           // Approximate max materialized result bytes
 	MaxCellBytes     int           // Approximate max bytes for an individual cell
 	MaxColumns       int           // Max columns returned by a query
@@ -122,6 +122,7 @@ type DataConnectionConfig struct {
 // SecurityConfig contains security-related settings.
 type SecurityConfig struct {
 	AuthEnabled                  bool          // When true, API and web export require Bearer token (SECURITY_API_KEY).
+	AllowInsecureNoAuth          bool          // Explicit opt-in for AuthEnabled=false (open admin). Forbidden in StrictMode.
 	APIKey                       string        // Bearer token for API auth; required when AuthEnabled is true.
 	APIKeyHash                   string        // SHA-256 hex digest of SECURITY_API_KEY (preferred in production).
 	RateLimitRPM                 int           // Max requests per minute per client (0 = disabled). Applied when > 0.
@@ -154,6 +155,7 @@ type SecurityConfig struct {
 	ExplainSnapshotRetentionDays int      // Delete stored EXPLAIN snapshots older than this many days (0 = keep forever). Default 90.
 	ShareLinkExposeSQL           bool     // When false (default), public shared-report views omit the underlying SQL text.
 	DataEncryptionKey            string   // AES-GCM key material for at-rest sealing of EXPLAIN snapshots (SECURITY_DATA_ENCRYPTION_KEY).
+	ConnectionAllowlistRequired  bool     // When true, orgs with zero organization_connections rows cannot use any connection.
 }
 
 // LLMConfig contains settings for the LLM provider used for narrative generation.
@@ -207,13 +209,14 @@ func Load() Config {
 			QueryTimeout:     getEnvDuration("QUERY_TIMEOUT", 30*time.Second),
 			LockTimeout:      getEnvDuration("QUERY_LOCK_TIMEOUT", 2*time.Second),
 			IdleTxTimeout:    getEnvDuration("QUERY_IDLE_IN_TX_TIMEOUT", 10*time.Second),
-			AllowedSchemas:   getEnvAllowedSchemas("DATABASE_ALLOWED_SCHEMAS", "demo,opendata"),
+			AllowedSchemas:   getEnvAllowedSchemas("DATABASE_ALLOWED_SCHEMAS", "demo"),
 			MaxResultBytes:   getEnvInt("QUERY_MAX_RESULT_BYTES", 10*1024*1024),
 			MaxCellBytes:     getEnvInt("QUERY_MAX_CELL_BYTES", 1024*1024),
 			MaxColumns:       getEnvInt("QUERY_MAX_COLUMNS", 100),
 		},
 		Security: SecurityConfig{
 			AuthEnabled:                  getEnvBool("SECURITY_AUTH_ENABLED", false),
+			AllowInsecureNoAuth:          getEnvBool("SECURITY_ALLOW_INSECURE_NO_AUTH", false),
 			APIKey:                       getEnv("SECURITY_API_KEY", ""),
 			APIKeyHash:                   getEnv("SECURITY_API_KEY_HASH", ""),
 			RateLimitRPM:                 getEnvInt("SECURITY_RATE_LIMIT_RPM", 0),
@@ -226,7 +229,7 @@ func Load() Config {
 			StatStatementsEnabled:        getEnvBool("SECURITY_STAT_STATEMENTS_ENABLED", true),
 			APIKeysJSON:                  auth.LoadAPIKeysJSON(getEnv("SECURITY_API_KEYS_JSON", "")),
 			RateLimitDistributed:         getEnvBool("SECURITY_RATE_LIMIT_DISTRIBUTED", false),
-			RateLimitFailureMode:         getEnv("SECURITY_RATE_LIMIT_FAILURE_MODE", "open"),
+			RateLimitFailureMode:         getEnv("SECURITY_RATE_LIMIT_FAILURE_MODE", defaultRateLimitFailureMode()),
 			RateLimitBucketMaxAge:        getEnvDuration("SECURITY_RATE_LIMIT_BUCKET_MAX_AGE", 24*time.Hour),
 			OIDCIssuer:                   getEnv("SECURITY_OIDC_ISSUER", ""),
 			OIDCAudience:                 getEnv("SECURITY_OIDC_AUDIENCE", ""),
@@ -242,10 +245,11 @@ func Load() Config {
 			SessionTTL:                   getEnvDuration("SECURITY_SESSION_TTL", 8*time.Hour),
 			OIDCAutoJoinDefaultOrg:       getEnvBool("SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG", false),
 			WebhookAllowedHosts:          getEnvSlice("SECURITY_WEBHOOK_ALLOWED_HOSTS", ","),
-			AuditMode:                    getEnv("SECURITY_AUDIT_MODE", "best_effort"),
+			AuditMode:                    getEnv("SECURITY_AUDIT_MODE", defaultAuditMode()),
 			ExplainSnapshotRetentionDays: getEnvInt("SECURITY_EXPLAIN_SNAPSHOT_RETENTION_DAYS", 90),
 			ShareLinkExposeSQL:           getEnvBool("SECURITY_SHARE_LINK_EXPOSE_SQL", false),
 			DataEncryptionKey:            getEnv("SECURITY_DATA_ENCRYPTION_KEY", ""),
+			ConnectionAllowlistRequired:  getEnvBool("SECURITY_CONNECTION_ALLOWLIST_REQUIRED", StrictMode()),
 		},
 		LLM: LLMConfig{
 			Provider:                    getEnv("LLM_PROVIDER", "ollama"),
@@ -306,6 +310,22 @@ func Load() Config {
 		cfg.Embedding.BaseURL = cfg.LLM.BaseURL
 	}
 	return cfg
+}
+
+// defaultRateLimitFailureMode returns a fail-closed default when StrictMode or auth is on.
+func defaultRateLimitFailureMode() string {
+	if StrictMode() || getEnvBool("SECURITY_AUTH_ENABLED", false) {
+		return "closed"
+	}
+	return "open"
+}
+
+// defaultAuditMode returns a StrictMode-safe default when APP_ENV=production.
+func defaultAuditMode() string {
+	if StrictMode() {
+		return "required"
+	}
+	return "best_effort"
 }
 
 // validateMetricsConfig clamps metrics config to valid ranges. Call after loading from env.

@@ -23,11 +23,12 @@ type RolePrivilege struct {
 	PrivilegedFlags bool   `json:"privileged_flags"`
 }
 
-// ReadonlyProbeResult captures write/DDL/catalog checks for the readonly role.
+// ReadonlyProbeResult captures write/DDL/catalog/app-schema checks for the readonly role.
 type ReadonlyProbeResult struct {
 	WriteBlocked   bool   `json:"write_blocked"`
 	DDLBlocked     bool   `json:"ddl_blocked"`
 	CatalogBlocked bool   `json:"catalog_blocked"`
+	AppBlocked     bool   `json:"app_blocked"`
 	Error          string `json:"error,omitempty"`
 }
 
@@ -100,7 +101,7 @@ func loadRolePrivileges(ctx context.Context, pool *pgxpool.Pool, names ...string
 }
 
 func probeReadonlyRole(ctx context.Context, cfg config.DatabaseConfig) (ReadonlyProbeResult, []string) {
-	result := ReadonlyProbeResult{WriteBlocked: true, DDLBlocked: true, CatalogBlocked: true}
+	result := ReadonlyProbeResult{WriteBlocked: true, DDLBlocked: true, CatalogBlocked: true, AppBlocked: true}
 	var issues []string
 
 	conn := cfg.Connections
@@ -132,7 +133,7 @@ func probeReadonlyRole(ctx context.Context, cfg config.DatabaseConfig) (Readonly
 	if _, err := pool.Exec(ctx, fmt.Sprintf("INSERT INTO %s.sales DEFAULT VALUES", pgxQuoteIdent(schema))); err == nil {
 		result.WriteBlocked = false
 		issues = append(issues, "readonly role can write to allowed schema")
-	} else if !isPermissionDenied(err) {
+	} else if !isPermissionDenied(err) && !isUndefinedTable(err) {
 		result.WriteBlocked = false
 		issues = append(issues, "readonly write probe inconclusive: "+err.Error())
 	}
@@ -153,6 +154,20 @@ func probeReadonlyRole(ctx context.Context, cfg config.DatabaseConfig) (Readonly
 		issues = append(issues, "readonly catalog probe inconclusive: "+err.Error())
 	}
 
+	// App metadata must never be readable by the query role.
+	if err := pool.QueryRow(ctx, "SELECT 1 FROM app.saved_queries LIMIT 1").Scan(new(int)); err == nil {
+		result.AppBlocked = false
+		issues = append(issues, "readonly role can read app.saved_queries")
+	} else if !isPermissionDenied(err) && !isUndefinedTable(err) {
+		result.AppBlocked = false
+		issues = append(issues, "readonly app-schema probe inconclusive: "+err.Error())
+	}
+	var hasUsage bool
+	if err := pool.QueryRow(ctx, `SELECT has_schema_privilege(current_user, 'app', 'USAGE')`).Scan(&hasUsage); err == nil && hasUsage {
+		result.AppBlocked = false
+		issues = append(issues, "readonly role has USAGE on app schema")
+	}
+
 	return result, issues
 }
 
@@ -164,6 +179,14 @@ func isPermissionDenied(err error) bool {
 	return strings.Contains(msg, "permission denied") ||
 		strings.Contains(msg, "insufficient privilege") ||
 		strings.Contains(msg, "must be owner")
+}
+
+func isUndefinedTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") || strings.Contains(msg, "undefined table")
 }
 
 func pgxQuoteIdent(name string) string {

@@ -50,7 +50,7 @@ jobs:
           publish_results: false
       - name: Upload Scorecard SARIF
         uses: github/codeql-action/upload-sarif@45580472a5bb82c4681c4ac726cfdb60060c2ee1
-        if: always()
+        if: always() && hashFiles('scorecard.sarif') != ''
         with:
           sarif_file: scorecard.sarif
 

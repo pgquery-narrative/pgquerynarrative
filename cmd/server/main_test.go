@@ -55,3 +55,24 @@ func TestRequestLoggingMiddleware_successDoesNotLogErrorLine(t *testing.T) {
 		t.Errorf("success response should not log error response line: %s", logOut)
 	}
 }
+
+func TestSecurityHeadersMiddleware_HSTSOnHTTPS(t *testing.T) {
+	handler := securityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Strict-Transport-Security"); got == "" {
+		t.Fatal("expected HSTS header when X-Forwarded-Proto=https")
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if got := rec2.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("did not expect HSTS on plain HTTP, got %q", got)
+	}
+}

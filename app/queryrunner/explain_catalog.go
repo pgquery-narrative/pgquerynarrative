@@ -34,7 +34,7 @@ const lowUseIndexScanThreshold = 0
 // enrichExplainFindings adds table-size, index, and statistics-freshness
 // context from the catalog, and suppresses low-value index recommendations.
 func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFinding) []PlanFinding {
-	if len(findings) == 0 || r.activePool() == nil {
+	if len(findings) == 0 || r.activePool(ctx) == nil {
 		return findings
 	}
 
@@ -54,7 +54,7 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 	}
 
 	stats := make(map[relKey]tableCatalogStats, len(keys))
-	pool := r.activePool()
+	pool := r.activePool(ctx)
 	if pool == nil {
 		return findings
 	}

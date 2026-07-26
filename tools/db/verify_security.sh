@@ -43,4 +43,15 @@ if psql "$READONLY_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 FROM pg_catalog.pg_authi
   exit 1
 fi
 
-echo "OK: readonly role cannot write, create, bypass RLS, or read blocked public objects."
+if psql "$READONLY_URL" -v ON_ERROR_STOP=1 -c "SELECT 1 FROM app.saved_queries LIMIT 1;" >/tmp/pgqn-readonly-app.log 2>&1; then
+  echo "ERROR: readonly role was able to read app.saved_queries (app schema must be blocked)" >&2
+  exit 1
+fi
+
+app_usage="$(psql "$READONLY_URL" -At -v ON_ERROR_STOP=1 -c "SELECT has_schema_privilege(current_user, 'app', 'USAGE');")"
+if [ "$app_usage" = "t" ]; then
+  echo "ERROR: readonly role has USAGE on app schema" >&2
+  exit 1
+fi
+
+echo "OK: readonly role cannot write, create, bypass RLS, read app metadata, or read blocked public objects."

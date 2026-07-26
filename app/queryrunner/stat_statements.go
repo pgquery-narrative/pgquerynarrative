@@ -110,5 +110,5 @@ LIMIT $1`, roleFilter, col)
 
 // StatStatements on Runner delegates to StatStatements using the runner pool (legacy/tests).
 func (r *Runner) StatStatements(ctx context.Context, orderBy string, limit int) (*StatStatementsResult, error) {
-	return StatStatements(ctx, r.activePool(), "", orderBy, limit, r.queryLimit)
+	return StatStatements(ctx, r.activePool(ctx), "", orderBy, limit, r.queryLimit)
 }

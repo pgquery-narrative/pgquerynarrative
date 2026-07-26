@@ -8,7 +8,10 @@ import (
 func TestSealOpenProductSQL_roundTrip(t *testing.T) {
 	key := []byte("test-data-encryption-key")
 	plain := "SELECT 1 FROM demo.orders"
-	sealed := sealProductSQL(key, plain)
+	sealed, err := sealProductSQL(key, plain)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
 	if sealed == plain || !strings.HasPrefix(sealed, "v1:") {
 		t.Fatalf("expected sealed envelope, got %q", sealed)
 	}
@@ -29,7 +32,10 @@ func TestOpenProductSQL_legacyPlaintext(t *testing.T) {
 }
 
 func TestOpenProductSQL_failClosedWithoutKey(t *testing.T) {
-	sealed := sealProductSQL([]byte("secret"), "SELECT 1")
+	sealed, err := sealProductSQL([]byte("secret"), "SELECT 1")
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
 	if got := openProductSQL(nil, sealed); got != "" {
 		t.Fatalf("sealed without key should return empty, got %q", got)
 	}
@@ -39,10 +45,12 @@ func TestOpenProductSQL_failClosedWithoutKey(t *testing.T) {
 }
 
 func TestSealProductSQL_noKeyOrEmpty(t *testing.T) {
-	if got := sealProductSQL(nil, "SELECT 1"); got != "SELECT 1" {
-		t.Fatalf("no key should leave plaintext, got %q", got)
+	got, err := sealProductSQL(nil, "SELECT 1")
+	if err != nil || got != "SELECT 1" {
+		t.Fatalf("no key should leave plaintext, got %q err=%v", got, err)
 	}
-	if got := sealProductSQL([]byte("k"), ""); got != "" {
-		t.Fatalf("empty sql should stay empty, got %q", got)
+	got, err = sealProductSQL([]byte("k"), "")
+	if err != nil || got != "" {
+		t.Fatalf("empty sql should stay empty, got %q err=%v", got, err)
 	}
 }

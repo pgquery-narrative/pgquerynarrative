@@ -36,6 +36,49 @@ func execWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, arg
 	})
 }
 
+func queryWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) (pgx.Rows, error) {
+	if pool == nil {
+		return nil, fmt.Errorf("database pool is not configured")
+	}
+	if orgID == "" {
+		orgID = DefaultOrgID()
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.current_org_id', $1, true)`, orgID); err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	return &orgTxRows{Rows: rows, tx: tx}, nil
+}
+
+// orgTxRows commits the org-scoped transaction when the caller closes the rows.
+type orgTxRows struct {
+	pgx.Rows
+	tx     pgx.Tx
+	closed bool
+}
+
+func (r *orgTxRows) Close() {
+	if r.closed {
+		return
+	}
+	r.closed = true
+	r.Rows.Close()
+	if r.Rows.Err() != nil {
+		_ = r.tx.Rollback(context.Background())
+		return
+	}
+	_ = r.tx.Commit(context.Background())
+}
+
 func queryRowWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) func(dest ...any) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {

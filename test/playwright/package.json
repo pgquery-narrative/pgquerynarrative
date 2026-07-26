@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "test:smoke": "playwright test smoke.spec.ts critical-path.spec.ts",
+    "test:smoke": "playwright test smoke.spec.ts critical-path.spec.ts shares.spec.ts schedules.spec.ts",
     "test:oidc": "playwright test oidc.spec.ts",
-    "test:critical": "playwright test critical-path.spec.ts"
+    "test:critical": "playwright test critical-path.spec.ts shares.spec.ts schedules.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1"

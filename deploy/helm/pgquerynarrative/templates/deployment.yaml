@@ -17,10 +17,17 @@ spec:
         app.kubernetes.io/name: pgquerynarrative
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: {{ .Values.server.port | int }}
               name: http
@@ -45,3 +52,6 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}

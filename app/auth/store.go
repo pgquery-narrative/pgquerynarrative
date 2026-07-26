@@ -160,10 +160,11 @@ func (a *Authenticator) ValidatePrincipal(r *http.Request) (Principal, bool) {
 	if !a.enabled {
 		return Principal{UserID: "system", OrgID: DefaultOrgID(), Role: RoleAdmin}, true
 	}
-	// Auth is enabled but no credential sources are configured: treat as open/dev (system).
+	// Auth enabled with no credential sources must fail closed (never open-admin).
 	// Managed keys count as a credential source so CLI/MCP keys work without env API keys.
+	// For local open access set SECURITY_AUTH_ENABLED=false instead.
 	if len(a.keys) == 0 && (a.oidc == nil || !a.oidc.Enabled()) && a.managed == nil {
-		return Principal{UserID: "system", OrgID: DefaultOrgID(), Role: RoleAdmin}, true
+		return Principal{}, false
 	}
 	token := bearerToken(r)
 	if token == "" {
@@ -426,7 +427,10 @@ func AllowsMethod(role, method, path string) bool {
 
 func isAnalystWritePath(method, path string) bool {
 	method = strings.ToUpper(method)
-	if method == http.MethodDelete && strings.HasPrefix(path, "/api/v1/queries/saved/") {
+	if method == http.MethodDelete && (strings.HasPrefix(path, "/api/v1/queries/saved/") || strings.HasPrefix(path, "/api/v1/schedules/")) {
+		return true
+	}
+	if method == http.MethodPut && strings.HasPrefix(path, "/api/v1/schedules/") {
 		return true
 	}
 	if method != http.MethodPost {
@@ -439,6 +443,7 @@ func isAnalystWritePath(method, path string) bool {
 		"/api/v1/reports/generate",
 		"/api/v1/reports/rewrite",
 		"/api/v1/reports/share",
+		"/api/v1/schedules",
 		"/api/v1/suggestions/ask",
 		"/api/v1/suggestions/chat",
 		"/api/v1/suggestions/explain",
@@ -449,6 +454,9 @@ func isAnalystWritePath(method, path string) bool {
 		}
 	}
 	if strings.HasPrefix(path, "/api/v1/reports/shares/") && strings.HasSuffix(path, "/revoke") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/v1/schedules/") && strings.HasSuffix(path, "/run") {
 		return true
 	}
 	return false

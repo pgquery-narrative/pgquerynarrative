@@ -41,6 +41,51 @@ func (a *ConnectionAuthorizer) AssignConnection(ctx context.Context, orgID, conn
 	`, orgID, connectionID)
 }
 
+// UnassignConnection removes an organisation's access to a connection_id.
+func (a *ConnectionAuthorizer) UnassignConnection(ctx context.Context, orgID, connectionID string) error {
+	if a == nil || a.pool == nil {
+		return fmt.Errorf("connection authorizer is not configured")
+	}
+	orgID = strings.TrimSpace(orgID)
+	connectionID = strings.TrimSpace(connectionID)
+	if orgID == "" || connectionID == "" {
+		return fmt.Errorf("organization_id and connection_id are required")
+	}
+	return execWithOrg(ctx, a.pool, orgID, `
+		DELETE FROM app.organization_connections
+		WHERE organization_id = $1::uuid AND connection_id = $2
+	`, orgID, connectionID)
+}
+
+// ListAssignedConnections returns connection IDs assigned to the organisation.
+func (a *ConnectionAuthorizer) ListAssignedConnections(ctx context.Context, orgID string) ([]string, error) {
+	if a == nil || a.pool == nil {
+		return nil, fmt.Errorf("connection authorizer is not configured")
+	}
+	orgID = strings.TrimSpace(orgID)
+	if orgID == "" {
+		return nil, fmt.Errorf("organization_id is required")
+	}
+	rows, err := queryWithOrg(ctx, a.pool, orgID, `
+		SELECT connection_id FROM app.organization_connections
+		WHERE organization_id = $1::uuid AND enabled = true
+		ORDER BY connection_id
+	`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // GrantPermission sets action flags for a user principal on a connection.
 func (a *ConnectionAuthorizer) GrantPermission(ctx context.Context, orgID, connectionID, principalID string, actions map[string]bool) error {
 	if a == nil || a.pool == nil {

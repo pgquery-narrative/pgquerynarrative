@@ -10,8 +10,8 @@ import (
 
 // TestDecideConnectionAuthz_Matrix exercises the pure authorization decision used
 // by AuthorizeConnection: admin ok, analyst denied without perm, analyst allowed
-// with perm, cross-org (connection not assigned to org) fails, and bootstrap
-// (no organization_connections rows yet) allows everyone.
+// with perm, cross-org (connection not assigned to org) fails, bootstrap allow-all
+// when allowlist is not required, and fail-closed empty allowlist when required.
 func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 	cases := []struct {
 		name               string
@@ -19,23 +19,44 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 		connectionAssigned bool
 		role               string
 		principalGranted   bool
+		allowlistRequired  bool
 		wantErr            bool
 	}{
 		{
-			name:               "bootstrap allows admin",
+			name:               "bootstrap allows admin when allowlist not required",
 			orgHasAnyRows:      false,
 			connectionAssigned: false,
 			role:               RoleAdmin,
 			principalGranted:   false,
+			allowlistRequired:  false,
 			wantErr:            false,
 		},
 		{
-			name:               "bootstrap allows analyst",
+			name:               "bootstrap allows analyst when allowlist not required",
 			orgHasAnyRows:      false,
 			connectionAssigned: false,
 			role:               RoleAnalyst,
 			principalGranted:   false,
+			allowlistRequired:  false,
 			wantErr:            false,
+		},
+		{
+			name:               "empty allowlist denies admin when required",
+			orgHasAnyRows:      false,
+			connectionAssigned: false,
+			role:               RoleAdmin,
+			principalGranted:   false,
+			allowlistRequired:  true,
+			wantErr:            true,
+		},
+		{
+			name:               "empty allowlist denies analyst when required",
+			orgHasAnyRows:      false,
+			connectionAssigned: false,
+			role:               RoleAnalyst,
+			principalGranted:   false,
+			allowlistRequired:  true,
+			wantErr:            true,
 		},
 		{
 			name:               "admin ok once assigned even without explicit grant",
@@ -43,6 +64,7 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 			connectionAssigned: true,
 			role:               RoleAdmin,
 			principalGranted:   false,
+			allowlistRequired:  true,
 			wantErr:            false,
 		},
 		{
@@ -51,6 +73,7 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 			connectionAssigned: true,
 			role:               RoleAnalyst,
 			principalGranted:   false,
+			allowlistRequired:  true,
 			wantErr:            true,
 		},
 		{
@@ -59,6 +82,7 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 			connectionAssigned: true,
 			role:               RoleAnalyst,
 			principalGranted:   true,
+			allowlistRequired:  true,
 			wantErr:            false,
 		},
 		{
@@ -67,6 +91,7 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 			connectionAssigned: true,
 			role:               RoleViewer,
 			principalGranted:   false,
+			allowlistRequired:  true,
 			wantErr:            true,
 		},
 		{
@@ -75,6 +100,7 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 			connectionAssigned: false,
 			role:               RoleAdmin,
 			principalGranted:   false,
+			allowlistRequired:  true,
 			wantErr:            true,
 		},
 		{
@@ -83,13 +109,14 @@ func TestDecideConnectionAuthz_Matrix(t *testing.T) {
 			connectionAssigned: false,
 			role:               RoleAnalyst,
 			principalGranted:   true,
+			allowlistRequired:  true,
 			wantErr:            true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := decideConnectionAuthz(tc.orgHasAnyRows, tc.connectionAssigned, tc.role, tc.principalGranted)
+			err := decideConnectionAuthz(tc.orgHasAnyRows, tc.connectionAssigned, tc.role, tc.principalGranted, tc.allowlistRequired)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -128,10 +155,16 @@ func TestAuthorizeConnection_NilAuthorizerIsPermissive(t *testing.T) {
 // TestAuthorizeConnection_UnknownAction ensures an unsupported action is rejected
 // even when the authorizer would otherwise be permissive.
 func TestAuthorizeConnection_UnknownAction(t *testing.T) {
-	// Use a non-nil pool field via NewConnectionAuthorizer(nil) still short-circuits
-	// on the nil pool check before action validation, so exercise the validation
-	// directly through the exported constant set instead.
 	if _, ok := connectionActionColumns["not_a_real_action"]; ok {
 		t.Fatalf("test action unexpectedly recognized")
 	}
+}
+
+func TestSetAllowlistRequired(t *testing.T) {
+	a := NewConnectionAuthorizer(nil)
+	if a != nil {
+		t.Fatal("expected nil authorizer when pool is nil")
+	}
+	var nilAuth *ConnectionAuthorizer
+	nilAuth.SetAllowlistRequired(true) // must not panic
 }

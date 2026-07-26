@@ -1,6 +1,6 @@
 import { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router";
 import "@/styles/globals.css";
 import { ThemeProvider } from "@/contexts/theme-context";
 import { AnnounceProvider } from "@/contexts/announce-context";
