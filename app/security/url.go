@@ -57,21 +57,23 @@ func ValidateWebhookURL(raw string) error {
 	return nil
 }
 
-// ValidateWebhookHostAllowlist ensures the destination host matches an optional allowlist.
+// ValidateWebhookHostAllowlist ensures the destination host matches a required allowlist.
+// An empty allowlist fails closed (no webhook destinations are permitted).
 func ValidateWebhookHostAllowlist(raw string, allowed []string) error {
-	if len(allowed) == 0 {
-		return nil
+	normalized := normalizeAllowedHosts(allowed)
+	if len(normalized) == 0 {
+		return fmt.Errorf("webhook host allowlist is required (SECURITY_WEBHOOK_ALLOWED_HOSTS)")
 	}
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return fmt.Errorf("invalid webhook URL: %w", err)
 	}
 	host := strings.ToLower(strings.TrimSpace(u.Hostname()))
-	for _, pattern := range allowed {
+	if host == "" {
+		return fmt.Errorf("webhook URL must include a host")
+	}
+	for _, pattern := range normalized {
 		pattern = strings.ToLower(strings.TrimSpace(pattern))
-		if pattern == "" {
-			continue
-		}
 		if host == pattern || strings.HasSuffix(host, "."+pattern) {
 			return nil
 		}

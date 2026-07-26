@@ -65,6 +65,9 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("invalid configuration: %v", err)
 	}
+	if cfg.Security.AllowInsecureNoAuth {
+		log.Printf("WARNING: SECURITY_ALLOW_INSECURE_NO_AUTH=true — authentication is disabled and the API uses an open-admin principal. Local/dev only; forbidden when APP_ENV=production.")
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -73,6 +76,13 @@ func main() {
 		log.Fatalf("failed to create narrative client: %v", err)
 	}
 	defer client.Close()
+
+	if config.StrictMode() {
+		report := db.AuditSecurityBoundary(ctx, client.AppPool(), cfg.Database)
+		if !report.OK {
+			log.Fatalf("database security boundary check failed in production: %s", strings.Join(report.Issues, "; "))
+		}
+	}
 
 	appLogger := logger.NewFromConfig(cfg.Logging.Level, cfg.Logging.Pretty)
 	logger.SetDefault(appLogger)
@@ -237,11 +247,20 @@ func setupHTTPServer(
 	managedKeys := auth.NewManagedKeyStore(client.AppPool())
 	authenticator.SetManagedKeyStore(managedKeys)
 	connAuthz := auth.NewConnectionAuthorizer(client.AppPool())
+	connAuthz.SetAllowlistRequired(cfg.Security.ConnectionAllowlistRequired)
+	orgSecrets := auth.NewOrgConnectionSecretStore(client.AppPool(), cfg.Security.DataEncryptionKey)
 	mountAdminAPI(combinedMux, adminDeps{
 		keys:       managedKeys,
 		membership: membership,
 		connAuthz:  connAuthz,
 		auditStore: auditStore,
+		sessions:   sessions,
+		encKey:     cfg.Security.DataEncryptionKey,
+		orgSecrets: orgSecrets,
+	})
+	mountMeAPI(combinedMux, meDeps{
+		membership: membership,
+		sessions:   sessions,
 	})
 	failureMode := ratelimit.ParseFailureMode(cfg.Security.RateLimitFailureMode)
 	rl := ratelimit.NewLimiterFromConfig(client.AppPool(), cfg.Security.RateLimitRPM, cfg.Security.RateLimitBurst, cfg.Security.RateLimitDistributed, failureMode)
@@ -506,8 +525,20 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'")
+		if isHTTPSRequest(r) {
+			// App typically terminates TLS at ingress; honor forwarded proto.
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isHTTPSRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	return strings.EqualFold(proto, "https")
 }
 
 func maxBodyMiddleware(next http.Handler, maxBytes int64) http.Handler {

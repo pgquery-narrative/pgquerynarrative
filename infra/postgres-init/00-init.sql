@@ -25,8 +25,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA app
 
 GRANT USAGE ON SCHEMA public TO pgquerynarrative_app;
 
--- Readonly: demo schema only (no public access).
+-- Readonly: demo schema only (no public / app access).
 GRANT USAGE ON SCHEMA demo TO pgquerynarrative_readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA demo TO pgquerynarrative_readonly;
 ALTER DEFAULT PRIVILEGES IN SCHEMA demo
     GRANT SELECT ON TABLES TO pgquerynarrative_readonly;
+
+-- Fail closed: query role must not touch app metadata.
+REVOKE ALL ON SCHEMA app FROM pgquerynarrative_readonly;

@@ -1,5 +1,10 @@
 # Default values for pgquerynarrative.
-# Override when installing: helm install pgqn ./deploy/helm/pgquerynarrative -f my-values.yaml
+# Chart defaults are StrictMode-aligned (APP_ENV=production). Install fails until
+# required secrets are overridden — do not ship placeholder passwords/keys.
+#
+#   helm install pgqn ./deploy/helm/pgquerynarrative -f my-values.yaml
+#
+# See values-production.example.yaml for a complete override checklist.
 
 replicaCount: 1
 
@@ -8,6 +13,7 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+# Forces config.Validate() StrictMode checks at process start.
 appEnv: production
 
 # Database: point to your Postgres (in-cluster or external)
@@ -18,15 +24,27 @@ database:
   user: pgquerynarrative_app
   sslMode: require
   maxConnections: 5
+  minConnections: "0"
+  globalMaxConnections: "40"
   readonlyUser: pgquerynarrative_readonly
-  allowedSchemas: demo
+  # Curate reporting schemas only; never point at raw OLTP schemas in production.
+  allowedSchemas: analytics
+  queryTimeout: 30s
+  lockTimeout: 2s
+  idleInTxTimeout: 10s
+  maxResultBytes: "10485760"
+  maxCellBytes: "1048576"
+  maxColumns: "100"
 
-# Secrets: set via --set or a values file; do not commit real passwords
+# Secrets: REQUIRED overrides. Empty values fail helm template/install.
+# Generate API key hash:  printf '%s' "$API_KEY" | shasum -a 256 | awk '{print $1}'
 secret:
-  databasePassword: changeme
-  databaseReadonlyPassword: changeme
-  apiKey: changeme-replace-with-long-random-api-key-at-least-32-chars
-  sessionSecret: changeme-replace-with-long-random-session-secret
+  databasePassword: ""
+  databaseReadonlyPassword: ""
+  # Preferred in production (plaintext SECURITY_API_KEY is rejected by StrictMode).
+  apiKeyHash: ""
+  sessionSecret: ""
+  dataEncryptionKey: ""
   oidcClientSecret: ""
   webhookSigningSecret: ""
 
@@ -39,23 +57,34 @@ oidc:
   autoJoinDefaultOrg: false
 
 webhook:
+  # Required for any webhook destination (empty allowlist fails closed).
   allowedHosts: ""
 
 security:
   authEnabled: true
+  allowInsecureNoAuth: false
   rateLimitRPM: 120
   rateLimitDistributed: true
+  # Fail closed when the distributed limiter backend is unavailable.
+  rateLimitFailureMode: closed
+  auditMode: required
   explainAnalyzeEnabled: false
+  shareLinksEnabled: false
   statStatementsEnabled: true
   shareLinkDefaultHours: 168
-  scheduleRunnerEnabled: true
+  # Keep off until webhook allowlist + signing secret are configured.
+  scheduleRunnerEnabled: false
   scheduleRunnerInterval: 1m
+  scheduleDurableLeases: true
 
 llm:
   provider: ollama
   model: llama3.2
-  baseURL: http://host.docker.internal:11434
+  baseURL: http://ollama.example.internal:11434
   redactPII: true
+  sendRowData: false
+  allowExternalData: false
+  budgetFailClosed: true
   # apiKey: ""  # for OpenAI, Groq, etc.
 
 server:
@@ -70,17 +99,43 @@ resources:
     memory: 256Mi
     cpu: 500m
 
-# Optional: seed demo data on first run
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+# Optional: seed demo data on first run (disable for company data).
 seed: false
 
-# Ingress: set enabled true and set host to expose via Ingress
+# NetworkPolicy: restrict ingress to ingress-controller + same-namespace; egress DNS/Postgres/HTTPS.
+networkPolicy:
+  enabled: true
+  ingressFrom: []
+
+# Ingress: enable TLS for production (HSTS is set by the app when X-Forwarded-Proto=https).
 ingress:
   enabled: false
   className: nginx
   host: pgquerynarrative.local
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls: []
+  # Example:
   # tls:
-  #   enabled: false
-  #   secretName: pgquerynarrative-tls
+  #   - hosts:
+  #       - pgquerynarrative.example.com
+  #     secretName: pgquerynarrative-tls
 
 service:
   type: ClusterIP

@@ -21,8 +21,8 @@ only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
 
 | Capability | Production maturity | Notes |
 |---|---|---|
-| Browser OIDC + session cookies | Preview | PKCE login at `/auth/login`; HttpOnly session cookie; API keys still supported for automation. |
-| Organisation scoping / IDOR | Preview | App-layer `organization_id` filters on saved queries, reports, schedules, dashboards, ask sessions; Postgres RLS when `app.current_org_id` is set. |
+| Browser OIDC + session cookies | Stable for trusted internal IdPs | PKCE login at `/auth/login`; HttpOnly session cookie; API keys still supported for automation. |
+| Organisation scoping / IDOR | Stable for trusted internal multi-org | App-layer `organization_id` filters; FORCE RLS; membership required in StrictMode; auto-join default org forbidden in production; connection allowlist required in StrictMode. Public multi-tenant SaaS remains a non-goal. |
 | Read-only query runner | Stable for trusted internal teams | Requires DB grants plus app validation and configured query limits. |
 | Release artifacts | Stable | Release archives include binaries, `frontend/dist`, migrations, example config, checksums, SBOM, and archive smoke checks; OCI images publish for linux/amd64 and linux/arm64. |
 | Connection health | Stable | `/ready` checks core app DB only; `/ready/connections` reports each analytical pool independently; Prometheus pool metrics include `pool` and `role` labels. |
@@ -34,12 +34,12 @@ only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
 | Local Ollama narratives | Preview | Keep `LLM_SEND_ROW_DATA=false` unless row samples are approved. |
 | Cloud LLM providers | Disabled until explicit approval | Requires `LLM_ALLOW_EXTERNAL_DATA=true`; audited when enabled. |
 | Durable scheduling | Preview | Lease/idempotency via `app.schedule_runs`; enable with `SCHEDULE_RUNNER_ENABLED=true` and `SCHEDULE_DURABLE_LEASES=true`. |
-| Webhooks | Preview | SSRF-hardened dial, HMAC signatures, delivery audit; validate destinations in staging first. |
+| Webhooks | Stable with allowlist | SSRF-hardened dial, HMAC signatures, delivery audit; hostname allowlist **required** (empty fails closed). |
 | Public share links | Preview/internal only | Disabled by default (`SECURITY_SHARE_LINKS_ENABLED=false`). |
 | Observability | Preview | Prometheus counters + Grafana dashboard (`deploy/grafana/`) + alert rules (`deploy/prometheus/alerts.yml`). |
 | Incident response | Preview | Formal runbooks in `docs/ops/INCIDENT_RUNBOOKS.md`. |
 | CI quality gates | Preview | Unit/integration tests, race detector, gosec artifact scan, govulncheck, frontend typecheck/lint/Vitest, Playwright, load smoke, CodeQL Go+JS, OSSF Scorecard, npm/pip audits, SBOM on release. |
-| Multi-organisation SaaS | Preview (internal) | Membership table + OIDC mapping + fail-closed RLS; not a public multi-tenant SaaS yet. |
+| Multi-organisation SaaS | Isolation MVP: Stable for trusted internal multi-org; public SaaS: non-goal | Membership + IdP mapping + fail-closed RLS + required connection allowlist (`SECURITY_CONNECTION_ALLOWLIST_REQUIRED`). Per-org encrypted DSNs (Phase 2) via `/api/v1/admin/connection-secrets`. Do not expose as public multi-tenant SaaS without a dedicated review. |
 
 ### Production non-goals for this release
 
@@ -52,14 +52,24 @@ only curated schemas or reporting views through `DATABASE_ALLOWED_SCHEMAS`.
 
 ### Required hardening knobs
 
-Set these before connecting to company data:
+Set these before connecting to company data. With `APP_ENV=production` (or
+`SECURITY_STRICT=true`), the process **refuses to start** unless validation
+passes (`config.Validate` / StrictMode).
 
 ```bash
 APP_ENV=production
 SECURITY_AUTH_ENABLED=true
+SECURITY_ALLOW_INSECURE_NO_AUTH=false
+SECURITY_API_KEY_HASH=<sha256-hex-of-api-key>   # plaintext SECURITY_API_KEY rejected
+SECURITY_SESSION_SECRET=<random-32+-chars>
+SECURITY_DATA_ENCRYPTION_KEY=<random-32+-chars>
 SECURITY_RATE_LIMIT_RPM=120
 SECURITY_RATE_LIMIT_DISTRIBUTED=true
-DATABASE_SSL_MODE=require
+SECURITY_RATE_LIMIT_FAILURE_MODE=closed         # not open
+SECURITY_AUDIT_MODE=required                    # not best_effort
+DATABASE_SSL_MODE=require                       # or verify-ca / verify-full
+DATABASE_PASSWORD=<non-default-16+-chars>
+DATABASE_READONLY_PASSWORD=<non-default-16+-chars>
 DATABASE_ALLOWED_SCHEMAS=analytics
 DATABASE_MIN_CONNECTIONS=0
 DATABASE_GLOBAL_MAX_CONNECTIONS=40
@@ -73,7 +83,24 @@ LLM_SEND_ROW_DATA=false
 LLM_ALLOW_EXTERNAL_DATA=false
 SCHEDULE_RUNNER_ENABLED=false
 SECURITY_EXPLAIN_ANALYZE_ENABLED=false
+SECURITY_SHARE_LINKS_ENABLED=false
+SECURITY_CONNECTION_ALLOWLIST_REQUIRED=true     # default true in StrictMode; empty org allowlists deny
+SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG=false
 ```
+
+Never allowlist `app`, `pg_catalog`, or `information_schema`. In production, `public` is also rejected.
+Local Compose (`docker-compose.yml`) is **dev-only**: binds to `127.0.0.1`, sets
+`SECURITY_ALLOW_INSECURE_NO_AUTH=true`, and defaults schemas to `demo`. For a
+compose-shaped production path use `deploy/docker/docker-compose.yml` with
+`deploy/docker/.env.production` (required secrets; Postgres not published).
+
+When enabling the schedule runner in production, also set a webhook hostname
+allowlist and signing secret (`SECURITY_WEBHOOK_ALLOWED_HOSTS`,
+`SECURITY_WEBHOOK_SIGNING_SECRET`) plus `SCHEDULE_DURABLE_LEASES=true`.
+
+Deploy templates: Helm chart defaults are StrictMode-aligned and **fail
+install** until secrets are overridden (`deploy/helm/pgquerynarrative/`).
+Verify with `make helm-strict-check`.
 
 ---
 
@@ -469,7 +496,7 @@ Security is layered: no single control is sufficient.
 ┌───────────────────────────▼─────────────────────────────────┐
 │  App layer                                                  │
 │  · pg_query parse-tree validator (single stmt, SELECT/WITH) │
-│  · Allowed schemas: demo, public (DATABASE_ALLOWED_SCHEMAS) │
+│  · Allowed schemas: curated only (DATABASE_ALLOWED_SCHEMAS; never app) │
 │  · EXPLAIN unwrap + same inner-query checks (B1)            │
 │  · Row cap: SELECT * FROM (<sql>) LIMIT $1 (default 1000)   │
 │  · Per-query timeout: 30s (QUERY_TIMEOUT)                   │
@@ -611,16 +638,30 @@ Defense in depth: validator → role separation → RLS (rep demo) or permissive
 
 ---
 
+## Isolation MVP checklist (trusted internal multi-org)
+
+Use before enabling multiple organisations against a shared connection catalog:
+
+1. **Memberships provisioned:** Every user has an `app.organization_members` row; `SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG=false`.
+2. **Connection allowlist required:** `SECURITY_CONNECTION_ALLOWLIST_REQUIRED=true` (StrictMode default). Migration `000044` seeds `default` for the bootstrap org; assign connections to other orgs via `POST /api/v1/admin/connection-assignments`.
+3. **Org switch verified:** `GET /api/v1/me/organizations` lists memberships; `POST /api/v1/me/organization` updates the session; UI org switcher sends `X-Organization-ID` for API-key clients.
+4. **Cross-org IDOR:** Org B cannot read org A metadata (`TestPilot_CrossOrgIDOR`) or authorize org A's connections (`TestPilot_ConnectionAllowlistIDOR`).
+5. **Optional Phase 2 DSNs:** With `SECURITY_DATA_ENCRYPTION_KEY` set, store per-org analytics URLs at `POST /api/v1/admin/connection-secrets` (DSN never returned by list APIs).
+
+Public self-serve signup / billing remains out of scope.
+
+---
+
 ## Internal pilot acceptance checklist
 
 Use this checklist before promoting a deployment from staging to a measured production pilot:
 
 1. **Auth:** Browser OIDC login works (`/auth/login` → `/auth/callback`); `/auth/session` returns authenticated user; API key automation still works for CI.
-2. **Isolation:** Saved query/report/dashboard from org A is not readable by org B principal (IDOR spot-check).
+2. **Isolation:** Saved query/report/dashboard from org A is not readable by org B principal (IDOR spot-check). Connection allowlist: org B cannot run on connections assigned only to org A.
 3. **Query safety:** `QUERY_MAX_RESULT_BYTES`, timeouts, and readonly role verified against a large-table query.
 4. **LLM:** `app.llm_audit_events` records narrative and NL→SQL calls; cloud provider blocked without `LLM_ALLOW_EXTERNAL_DATA=true`.
 5. **Scheduler:** Duplicate replicas do not double-deliver; inspect `GET /api/v1/schedules/{id}/runs`; retry dead letters with `POST /api/v1/schedule-runs/{run_id}/retry`.
-6. **Webhooks:** Private IP destinations rejected; optional allowlist via `SECURITY_WEBHOOK_ALLOWED_HOSTS`; inspect `GET /api/v1/webhook-deliveries`.
+6. **Webhooks:** Private IP destinations rejected; **required** hostname allowlist via `SECURITY_WEBHOOK_ALLOWED_HOSTS` (empty fails closed); inspect `GET /api/v1/webhook-deliveries`.
 7. **Observability:** `/metrics?format=prometheus` scraped; alert on HTTP errors, auth failures, scheduler failures/dead letters, webhook failures/dead letters, LLM budget denials, and pool saturation.
 8. **Backups:** Restore drill completed for app metadata tables and readonly data source.
 

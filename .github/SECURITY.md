@@ -57,20 +57,25 @@ Include:
 ## Security Features
 
 ### Current Security Measures
-- SQL injection prevention (query validation)
-- Read-only query execution (separate database users)
-- Query timeout protection
-- Row limit enforcement
-- Schema access control
-- Input validation
+- SQL injection prevention (AST query validation via pg_query)
+- Read-only query execution (separate database role + session flags)
+- Query timeout / result size / column limits
+- Schema allowlisting (`DATABASE_ALLOWED_SCHEMAS`)
+- API authentication (hashed API keys, managed keys, OIDC)
+- Distributed rate limiting with fail-closed modes in production
+- Audit trail with required/buffered durability modes
+- EXPLAIN snapshot sealing (AES-GCM) when encryption keys are configured
+- Security headers (CSP, frame denial, etc.)
+- **StrictMode** (`APP_ENV=production` / `SECURITY_STRICT=true`): process refuses to start on unsafe config; Helm chart fails install on placeholder secrets
+- Open-admin disabled unless `SECURITY_ALLOW_INSECURE_NO_AUTH=true` (forbidden in production)
+- Default query schema allowlist is `demo` only; `app` / system catalogs rejected; readonly role cannot read `app.*`
+- Root `docker-compose.yml` is localhost-bound local/dev only; production-shaped compose lives under `deploy/docker/`
+- Webhook hostname allowlist is **required** (empty fails closed); NetworkPolicy + HSTS (when HTTPS) in deploy templates
+- Query/EXPLAIN errors do not embed Postgres driver detail; SQL at-rest seal fails closed when a key is configured
+- Rate-limit failure mode cannot be `open` when auth is enabled
 
-### Planned Security Enhancements
-- [ ] API authentication (API keys, JWT)
-- [ ] Rate limiting
-- [ ] Request logging and monitoring
-- [ ] Audit trail for queries
-- [ ] Encryption at rest
-- [ ] Security headers (CSP, HSTS, etc.)
+### Production StrictMode (mandatory for company data)
+See `docs/ops/PRODUCTION.md`. Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled.
 
 ## Security Scanning
 

@@ -37,6 +37,8 @@ export DATABASE_READONLY_USER="${DATABASE_READONLY_USER:-pgquerynarrative_readon
 export DATABASE_READONLY_PASSWORD="${DATABASE_READONLY_PASSWORD:-pgquerynarrative_readonly}"
 export PGQUERYNARRATIVE_PORT="${PORT}"
 export SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-playwright-session-secret-32-chars!!}"
+# Enable public share links for browser E2E (disabled by default; forbidden in production validate).
+export SECURITY_SHARE_LINKS_ENABLED="${SECURITY_SHARE_LINKS_ENABLED:-true}"
 
 # Seed demo.sales so critical-path queries have data (idempotent inserts).
 seed_demo() {

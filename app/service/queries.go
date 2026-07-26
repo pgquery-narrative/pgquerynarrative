@@ -488,7 +488,7 @@ func connectionNotFoundQueriesError(err error) error {
 	}
 	return &queries.ValidationError{
 		Name:    "validation_error",
-		Message: err.Error(),
+		Message: "connection not found",
 		Code:    strPtr("CONNECTION_NOT_FOUND"),
 	}
 }
@@ -501,7 +501,7 @@ func connectionForbiddenQueriesError(err error) error {
 	}
 	return &queries.ValidationError{
 		Name:    "validation_error",
-		Message: err.Error(),
+		Message: "connection access denied",
 		Code:    strPtr("CONNECTION_FORBIDDEN"),
 	}
 }
@@ -523,11 +523,15 @@ func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPay
 	if err := checkConnectionAccess(ctx, s.authz, connectionID, auth.ActionQuery); err != nil {
 		return nil, connectionForbiddenQueriesError(err)
 	}
+	sqlAtRest, sealErr := sealProductSQL(s.dataEncKey, payload.SQL)
+	if sealErr != nil {
+		return nil, &queries.ValidationError{Name: "validation_error", Message: "failed to protect query SQL at rest", Code: strPtr("ENCRYPTION_ERROR")}
+	}
 	row := s.appPool.QueryRow(ctx, `
 		INSERT INTO app.saved_queries (name, sql, description, tags, connection_id, organization_id, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, name, sql, description, tags, connection_id, created_at, updated_at
-	`, payload.Name, sealProductSQL(s.dataEncKey, payload.SQL), payload.Description, payload.Tags, connectionID, orgID(ctx), auth.PrincipalFromContext(ctx).UserID)
+	`, payload.Name, sqlAtRest, payload.Description, payload.Tags, connectionID, orgID(ctx), auth.PrincipalFromContext(ctx).UserID)
 
 	var item queries.SavedQuery
 	var createdAt time.Time
@@ -736,15 +740,18 @@ func (s *QueriesService) persistExplainSnapshot(ctx context.Context, connectionI
 	}
 	if len(s.dataEncKey) > 0 {
 		sealedSQL, serr := security.Seal(s.dataEncKey, redactedSQL)
-		if serr == nil {
-			sqlText = sealedSQL
-			storageClass = SQLClassEncrypted
+		if serr != nil {
+			return // fail closed: do not persist plaintext EXPLAIN snapshot when encryption is configured
 		}
+		sqlText = sealedSQL
+		storageClass = SQLClassEncrypted
 		if len(planJSON) > 0 {
-			if sealedPlan, perr := security.Seal(s.dataEncKey, string(planJSON)); perr == nil {
-				encPayload, _ := json.Marshal(map[string]string{"ciphertext": sealedPlan})
-				planJSON = encPayload
+			sealedPlan, perr := security.Seal(s.dataEncKey, string(planJSON))
+			if perr != nil {
+				return
 			}
+			encPayload, _ := json.Marshal(map[string]string{"ciphertext": sealedPlan})
+			planJSON = encPayload
 		}
 	}
 	_, _ = s.appPool.Exec(ctx, `

@@ -35,6 +35,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.production
+deploy/docker/.env.production
 *.secret
 secrets/
 

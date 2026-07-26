@@ -1,3 +1,13 @@
+# =============================================================================
+# LOCAL DEVELOPMENT ONLY — not a production template.
+# =============================================================================
+# - Auth is intentionally open via SECURITY_ALLOW_INSECURE_NO_AUTH (explicit opt-in).
+# - Postgres and the app bind to 127.0.0.1 only (not published on all interfaces).
+# - Default passwords and SSL=disable are for local demos.
+# For production use: deploy/helm/pgquerynarrative/ or deploy/kubernetes/ with
+# APP_ENV=production (StrictMode). See docs/ops/PRODUCTION.md.
+# =============================================================================
+
 name: pgquerynarrative
 
 services:
@@ -18,8 +28,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-pgquerynarrative}
+    # Localhost only — do not publish Postgres on 0.0.0.0.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgquerynarrative_data:/var/lib/postgresql/data
       - ./infra/postgres-init:/docker-entrypoint-initdb.d
@@ -53,6 +64,9 @@ services:
     environment:
       PGQUERYNARRATIVE_HOST: 0.0.0.0
       PGQUERYNARRATIVE_PORT: 8080
+      # Explicit open-admin opt-in for local compose only (forbidden when APP_ENV=production).
+      SECURITY_AUTH_ENABLED: "false"
+      SECURITY_ALLOW_INSECURE_NO_AUTH: "true"
       DATABASE_HOST: ${DATABASE_HOST:-postgres}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
       DATABASE_NAME: ${DATABASE_NAME:-pgquerynarrative}
@@ -62,7 +76,9 @@ services:
       DATABASE_READONLY_PASSWORD: ${DATABASE_READONLY_PASSWORD:-pgquerynarrative_readonly}
       DATABASE_SSL_MODE: disable
       DATABASE_MAX_CONNECTIONS: 5
-      DATABASE_ALLOWED_SCHEMAS: ${DATABASE_ALLOWED_SCHEMAS:-demo,opendata}
+      # Curated demo schema only. Add opendata explicitly after make seed-nyc-docker:
+      # DATABASE_ALLOWED_SCHEMAS=demo,opendata
+      DATABASE_ALLOWED_SCHEMAS: ${DATABASE_ALLOWED_SCHEMAS:-demo}
       # LLM: repo-root .env (see .env.example). Free + strong: Groq llama-3.3-70b-versatile or Gemini gemini-2.0-flash + LLM_API_KEY.
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}
@@ -71,8 +87,9 @@ services:
       LOG_DEBUG: ${LOG_DEBUG:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Localhost only — do not publish the API on all interfaces.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy

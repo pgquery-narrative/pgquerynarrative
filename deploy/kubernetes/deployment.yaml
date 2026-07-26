@@ -18,6 +18,9 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: pgquerynarrative:1.0.0
@@ -27,7 +30,9 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop:
-                - NET_RAW
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: tmp
               mountPath: /tmp

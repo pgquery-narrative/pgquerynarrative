@@ -1,0 +1,11 @@
+# CI / helm template smoke values — synthetic secrets only, not for real deployments.
+database:
+  host: postgres.ci.example
+  allowedSchemas: analytics
+
+secret:
+  databasePassword: "ci-app-password-ok16"
+  databaseReadonlyPassword: "ci-ro-password-ok16!"
+  apiKeyHash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  sessionSecret: "ci-session-secret-at-least-32-chars!!"
+  dataEncryptionKey: "ci-encryption-key-at-least-32-chars!"

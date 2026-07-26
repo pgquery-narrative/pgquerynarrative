@@ -8,18 +8,21 @@ import (
 
 func TestValidateWebhookHostAllowlist_AllowsSuffix(t *testing.T) {
 	if err := security.ValidateWebhookHostAllowlist("https://hooks.example.com/path", []string{"example.com"}); err != nil {
-		t.Fatalf("expected allowlist match: %v", err)
+		t.Fatalf("expected allow: %v", err)
 	}
 }
 
 func TestValidateWebhookHostAllowlist_BlocksUnknownHost(t *testing.T) {
 	if err := security.ValidateWebhookHostAllowlist("https://evil.example.net/path", []string{"example.com"}); err == nil {
-		t.Fatal("expected allowlist rejection")
+		t.Fatal("expected block for unknown host")
 	}
 }
 
-func TestValidateWebhookHostAllowlist_EmptyAllowlistAllowsAll(t *testing.T) {
-	if err := security.ValidateWebhookHostAllowlist("https://hooks.example.com/path", nil); err != nil {
-		t.Fatalf("empty allowlist should allow: %v", err)
+func TestValidateWebhookHostAllowlist_EmptyAllowlistFailsClosed(t *testing.T) {
+	if err := security.ValidateWebhookHostAllowlist("https://hooks.example.com/path", nil); err == nil {
+		t.Fatal("empty allowlist must fail closed")
+	}
+	if err := security.ValidateWebhookHostAllowlist("https://hooks.example.com/path", []string{}); err == nil {
+		t.Fatal("empty allowlist must fail closed")
 	}
 }

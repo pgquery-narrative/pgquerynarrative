@@ -138,7 +138,7 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 	defer cancel()
 
 	start := time.Now()
-	pool := r.activePool()
+	pool := r.activePool(queryCtx)
 	if pool == nil {
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
@@ -147,13 +147,14 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
 		}
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrQueryExecutionFailed, err)
+		// Do not embed driver/Postgres detail in the returned error.
+		return nil, apperrors.ErrQueryExecutionFailed
 	}
 
 	elapsed := time.Since(start).Milliseconds()
 	totalCost, findings, planJSON, err := parseExplainJSON([]byte(planText))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrQueryExecutionFailed, err)
+		return nil, apperrors.ErrQueryExecutionFailed
 	}
 
 	return &ExplainResult{

@@ -51,7 +51,7 @@ func (s *ReportsService) CreateShare(ctx context.Context, payload *reports.Creat
 	// only its hash, so it cannot be recovered from the database.
 	err = s.appPool.QueryRow(ctx, `
 		INSERT INTO app.report_share_tokens (report_id, organization_id, token_hash, expires_at)
-		VALUES ($1, $2, $3, NOW() + ($4::text || ' hours')::interval)
+		VALUES ($1, $2, $3, NOW() + make_interval(hours => $4::int))
 		RETURNING id::text, expires_at
 	`, payload.ReportID, orgID(ctx), tokenHash, expiresHours).Scan(&shareID, &expiresAt)
 	if err != nil {

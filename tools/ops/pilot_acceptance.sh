@@ -111,6 +111,7 @@ if ! lsof -i ":${SMOKE_PORT}" >/dev/null 2>&1; then
   export DATABASE_READONLY_USER=pgquerynarrative_readonly
   export DATABASE_READONLY_PASSWORD=pgquerynarrative_readonly
   export SECURITY_AUTH_ENABLED=false
+  export SECURITY_ALLOW_INSECURE_NO_AUTH=true
   export PGQUERYNARRATIVE_PORT="${SMOKE_PORT}"
 
   ./bin/server >/tmp/pgqn-pilot-smoke.log 2>&1 &

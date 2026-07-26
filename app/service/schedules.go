@@ -108,31 +108,35 @@ func (s *SchedulesService) List(ctx context.Context) (*schedules.ScheduleListRes
 
 func (s *SchedulesService) Create(ctx context.Context, payload *schedules.ScheduleInput) (*schedules.Schedule, error) {
 	if err := validateScheduleInput(payload, s.webhookAllowedHosts()); err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, scheduleValidationError(err)
 	}
 	connID, err := s.queriesSvc.resolveConnectionID(payload.ConnectionID)
 	if err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_NOT_FOUND")}
+		return nil, scheduleConnectionNotFoundError(err)
 	}
 	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionSchedule); err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("CONNECTION_FORBIDDEN")}
+		return nil, scheduleConnectionForbiddenError(err)
 	}
 	if err := s.validateScheduleSQL(ctx, payload); err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, scheduleValidationError(err)
 	}
 	nextRunAt, err := computeNextRun(payload.IntervalExpr, time.Now().UTC())
 	if err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, scheduleValidationError(err)
 	}
 	var id string
 	p := auth.PrincipalFromContext(ctx)
+	sqlAtRest, sealErr := sealProductSQL(s.productEncKey(), strings.TrimSpace(ptrString(payload.SQL)))
+	if sealErr != nil {
+		return nil, &schedules.ValidationError{Name: "validation_error", Message: "failed to protect schedule SQL at rest", Code: strPtr("ENCRYPTION_ERROR")}
+	}
 	err = s.appPool.QueryRow(ctx, `
 		INSERT INTO app.schedules (name, saved_query_id, sql, connection_id, interval_expr, destination_type, destination_target, enabled, next_run_at, organization_id, created_by)
 		VALUES ($1, $2, NULLIF($3, ''), COALESCE(NULLIF($4, ''), 'default'), $5, $6, $7, COALESCE($8, true), $9, $10, $11)
 		RETURNING id
-	`, payload.Name, payload.SavedQueryID, sealProductSQL(s.productEncKey(), strings.TrimSpace(ptrString(payload.SQL))), payload.ConnectionID, payload.IntervalExpr, payload.DestinationType, payload.DestinationTarget, payload.Enabled, nextRunAt, p.OrgID, p.UserID).Scan(&id)
+	`, payload.Name, payload.SavedQueryID, sqlAtRest, payload.ConnectionID, payload.IntervalExpr, payload.DestinationType, payload.DestinationTarget, payload.Enabled, nextRunAt, p.OrgID, p.UserID).Scan(&id)
 	if err != nil {
-		return nil, err
+		return nil, scheduleStoreError(err)
 	}
 	return s.getByID(ctx, id)
 }
@@ -153,14 +157,18 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 		Enabled:           coalesceBoolPtr(payload.Enabled, current.Enabled),
 	}
 	if err := validateScheduleInput(in, s.webhookAllowedHosts()); err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, scheduleValidationError(err)
 	}
 	if err := s.validateScheduleSQL(ctx, in); err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, scheduleValidationError(err)
 	}
 	nextRunAt, err := computeNextRun(in.IntervalExpr, time.Now().UTC())
 	if err != nil {
-		return nil, &schedules.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+		return nil, scheduleValidationError(err)
+	}
+	sqlAtRest, sealErr := sealProductSQL(s.productEncKey(), ptrString(in.SQL))
+	if sealErr != nil {
+		return nil, &schedules.ValidationError{Name: "validation_error", Message: "failed to protect schedule SQL at rest", Code: strPtr("ENCRYPTION_ERROR")}
 	}
 	_, err = s.appPool.Exec(ctx, `
 		UPDATE app.schedules
@@ -168,9 +176,9 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 		    interval_expr = $6, destination_type = $7, destination_target = $8, enabled = COALESCE($9, enabled),
 		    next_run_at = $10, updated_at = NOW()
 		WHERE id = $1 AND organization_id = $11
-	`, payload.ID, in.Name, in.SavedQueryID, sealProductSQL(s.productEncKey(), ptrString(in.SQL)), in.ConnectionID, in.IntervalExpr, in.DestinationType, in.DestinationTarget, in.Enabled, nextRunAt, orgID(ctx))
+	`, payload.ID, in.Name, in.SavedQueryID, sqlAtRest, in.ConnectionID, in.IntervalExpr, in.DestinationType, in.DestinationTarget, in.Enabled, nextRunAt, orgID(ctx))
 	if err != nil {
-		return nil, err
+		return nil, scheduleStoreError(err)
 	}
 	return s.getByID(ctx, payload.ID)
 }
@@ -550,4 +558,32 @@ func ptrString(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func scheduleValidationError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &schedules.ValidationError{Name: "validation_error", Message: SanitizeAPIError(err, "Invalid schedule."), Code: strPtr("VALIDATION_ERROR")}
+}
+
+func scheduleConnectionNotFoundError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &schedules.ValidationError{Name: "validation_error", Message: "connection not found", Code: strPtr("CONNECTION_NOT_FOUND")}
+}
+
+func scheduleConnectionForbiddenError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &schedules.ValidationError{Name: "validation_error", Message: "connection access denied", Code: strPtr("CONNECTION_FORBIDDEN")}
+}
+
+func scheduleStoreError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &schedules.ValidationError{Name: "validation_error", Message: SanitizeAPIError(err, "Failed to save schedule."), Code: strPtr("STORAGE_ERROR")}
 }

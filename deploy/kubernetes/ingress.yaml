@@ -1,4 +1,5 @@
-# Optional: expose the app via Ingress. Adjust ingressClassName and host for your cluster.
+# Optional: expose the app via Ingress with TLS.
+# HSTS is emitted by the app when X-Forwarded-Proto=https.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -6,10 +7,16 @@ metadata:
   namespace: pgquerynarrative
   labels:
     app.kubernetes.io/name: pgquerynarrative
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - pgquerynarrative.example.com
+      secretName: pgquerynarrative-tls
   rules:
-    - host: pgquerynarrative.local
+    - host: pgquerynarrative.example.com
       http:
         paths:
           - path: /
@@ -19,7 +26,3 @@ spec:
                 name: pgquerynarrative
                 port:
                   number: 8080
-  # tls:
-  #   - hosts:
-  #       - pgquerynarrative.local
-  #     secretName: pgquerynarrative-tls

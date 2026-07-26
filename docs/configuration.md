@@ -56,7 +56,7 @@ PgQueryNarrative is configured via **environment variables** only. Sensible defa
 | `QUERY_MAX_RESULT_BYTES` | `10485760` | Approximate maximum materialized result size before returning `QUERY_RESULT_TOO_LARGE`. |
 | `QUERY_MAX_CELL_BYTES` | `1048576` | Approximate maximum size for one returned cell. |
 | `QUERY_MAX_COLUMNS` | `100` | Maximum number of columns returned by a query. |
-| `DATABASE_ALLOWED_SCHEMAS` | `demo,opendata` | Comma-separated schemas queries may access (e.g. `demo,opendata` or `public,analytics`). |
+| `DATABASE_ALLOWED_SCHEMAS` | `demo` | Comma-separated schemas queries may access (e.g. `demo` or `demo,opendata`). Never include `app`. |
 | `DATABASE_DEFAULT_CONNECTION_ID` | `default` | Default data connection ID used when `connection_id` is omitted in API/UI/MCP requests. |
 | `DATABASE_CONNECTIONS_JSON` | (empty) | Optional JSON array of additional read-only data connections. Each item supports: `id`, `name`, `host`, `port`, `database`, `readOnlyUser`, `readOnlyPassword`, `sslMode`, `queryTimeout`, `lockTimeout`, `idleTxTimeout`, `allowedSchemas`, `maxResultBytes`, `maxCellBytes`, `maxColumns`. |
 
@@ -208,8 +208,9 @@ Example query shape: `SELECT cohort_month, period_index, SUM(revenue) AS revenue
 
 | Variable | Default | Description |
 |---------|---------|-------------|
-| `SECURITY_AUTH_ENABLED` | `false` | When true, `/api/*` and `/web/reports/export*` require `Authorization: Bearer <SECURITY_API_KEY>`. `/health` and `/ready` are never protected. |
-| `SECURITY_API_KEY` | (empty) | Bearer token for API auth. Required when `SECURITY_AUTH_ENABLED` is true. |
+| `SECURITY_AUTH_ENABLED` | `false` | When true, `/api/*` and `/web/reports/export*` require Bearer API key or OIDC/session. `/health` and `/ready` are never protected. |
+| `SECURITY_ALLOW_INSECURE_NO_AUTH` | `false` | Required when `SECURITY_AUTH_ENABLED=false` (explicit open-admin opt-in). Forbidden in production StrictMode. |
+| `SECURITY_API_KEY` | (empty) | Bearer token for API auth (dev). Prefer `SECURITY_API_KEY_HASH` in production. |
 | `SECURITY_RATE_LIMIT_RPM` | `0` | Max requests per minute per client IP (0 = disabled). |
 | `SECURITY_RATE_LIMIT_BURST` | `0` | Burst size for rate limiter (0 = 2× RPM). |
 | `SECURITY_EXPLAIN_ANALYZE_ENABLED` | `false` | Allows EXPLAIN ANALYZE, which executes the query. Keep false in production unless explicitly approved. |
@@ -224,7 +225,7 @@ Example query shape: `SELECT cohort_month, period_index, SUM(revenue) AS revenue
 | `SECURITY_SESSION_TTL` | `8h` | Browser session lifetime. |
 | `SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG` | `true` | Auto-provision default-org membership on first OIDC login. |
 | `SECURITY_WEBHOOK_SIGNING_SECRET` | (empty) | HMAC secret for outbound schedule webhook signatures. |
-| `SECURITY_WEBHOOK_ALLOWED_HOSTS` | (empty) | Comma-separated hostname allowlist for webhook destinations (SSRF protection). |
+| `SECURITY_WEBHOOK_ALLOWED_HOSTS` | (empty) | **Required** for webhook destinations (comma-separated hosts). Empty allowlist fails closed. |
 | `SCHEDULE_RUNNER_ENABLED` | `false` | Enables background schedule execution. Keep false until durable schedule leases are deployed. |
 | `SCHEDULE_RUNNER_INTERVAL` | `1m` | Poll interval when the schedule runner is enabled. |
 

@@ -1,0 +1,60 @@
+# Example production overrides for helm install.
+# Copy and fill — never commit real secrets.
+#
+#   helm upgrade --install pgqn ./deploy/helm/pgquerynarrative -f values-production.example.yaml
+#
+# Process will refuse to start unless APP_ENV=production StrictMode validation passes.
+
+appEnv: production
+
+database:
+  host: postgres.prod.example.com
+  sslMode: require
+  allowedSchemas: analytics
+  maxConnections: 5
+  minConnections: "0"
+  globalMaxConnections: "40"
+
+secret:
+  databasePassword: "REPLACE_WITH_STRONG_APP_PASSWORD_16PLUS"
+  databaseReadonlyPassword: "REPLACE_WITH_STRONG_READONLY_PASSWORD_16PLUS"
+  # printf '%s' "$API_KEY" | shasum -a 256 | awk '{print $1}'
+  apiKeyHash: "REPLACE_WITH_SHA256_HEX_OF_API_KEY"
+  sessionSecret: "REPLACE_WITH_RANDOM_SESSION_SECRET_32PLUS_CHARS"
+  dataEncryptionKey: "REPLACE_WITH_RANDOM_DATA_ENCRYPTION_KEY_32PLUS"
+  # webhookSigningSecret: "REPLACE_WHEN_ENABLING_SCHEDULE_RUNNER"
+
+webhook:
+  allowedHosts: ""
+  # When enabling schedules:
+  # allowedHosts: "hooks.example.com"
+
+security:
+  authEnabled: true
+  rateLimitRPM: 120
+  rateLimitDistributed: true
+  rateLimitFailureMode: closed
+  auditMode: required
+  scheduleRunnerEnabled: false
+  scheduleDurableLeases: true
+  shareLinksEnabled: false
+  explainAnalyzeEnabled: false
+
+llm:
+  sendRowData: false
+  allowExternalData: false
+  budgetFailClosed: true
+  redactPII: true
+
+ingress:
+  enabled: true
+  host: pgquerynarrative.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  tls:
+    - hosts:
+        - pgquerynarrative.example.com
+      secretName: pgquerynarrative-tls
+
+networkPolicy:
+  enabled: true

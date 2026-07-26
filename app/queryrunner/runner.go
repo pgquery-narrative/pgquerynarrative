@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -30,7 +29,7 @@ type Result struct {
 }
 
 type poolResolver interface {
-	ReadOnly(connectionID string) *pgxpool.Pool
+	ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 }
 
 type Runner struct {
@@ -101,15 +100,15 @@ func NewRunnerForConnection(resolver poolResolver, connectionID string, validato
 
 // StatsPool returns the analytical pool used for catalog/stats queries on this runner.
 func (r *Runner) StatsPool() *pgxpool.Pool {
-	return r.activePool()
+	return r.activePool(context.Background())
 }
 
-func (r *Runner) activePool() *pgxpool.Pool {
+func (r *Runner) activePool(ctx context.Context) *pgxpool.Pool {
 	if r.pool != nil {
 		return r.pool
 	}
 	if r.poolResolver != nil {
-		return r.poolResolver.ReadOnly(r.connectionID)
+		return r.poolResolver.ReadOnly(ctx, r.connectionID)
 	}
 	return nil
 }
@@ -138,7 +137,7 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	wrappedSQL := fmt.Sprintf("SELECT * FROM (%s) AS pgqn_sub LIMIT $1", cleanedSQL)
 
 	start := time.Now()
-	pool := r.activePool()
+	pool := r.activePool(queryCtx)
 	if pool == nil {
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
@@ -147,10 +146,8 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s: query exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
 		}
-		if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
-			return nil, fmt.Errorf("%w: database connection error - %v", apperrors.ErrQueryExecutionFailed, err)
-		}
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrQueryExecutionFailed, err)
+		// Do not embed driver/Postgres detail in the returned error (relation names, SQLSTATE).
+		return nil, apperrors.ErrQueryExecutionFailed
 	}
 	defer rows.Close()
 

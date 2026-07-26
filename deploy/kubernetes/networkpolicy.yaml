@@ -1,0 +1,69 @@
+# Restrict pod traffic: only allow ingress from the cluster ingress controller
+# (and same-namespace peers) and egress to DNS + Postgres + HTTPS.
+# Adjust namespaceSelector / podSelector labels to match your ingress controller.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pgquerynarrative
+  namespace: pgquerynarrative
+  labels:
+    app.kubernetes.io/name: pgquerynarrative
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pgquerynarrative
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # PostgreSQL (same namespace or labeled postgres pods)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # HTTPS for OIDC / allowlisted webhooks / approved cloud LLM only.
+    # Intentionally excludes RFC1918 and link-local; still broad for public HTTPS —
+    # prefer egress via a proxy or destination NetworkPolicy when available.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8443

@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/errors"
 )
@@ -32,6 +33,27 @@ type Pools struct {
 	poolDefaults  poolOptions
 	idleEvict     time.Duration
 	stopEvict     context.CancelFunc
+
+	orgDSN  OrgDSNLookup
+	orgLazy map[string]*lazyReadOnlyPool // key: orgID + "\x00" + connectionID
+}
+
+// OrgDSNLookup resolves optional per-organisation encrypted analytics DSNs.
+type OrgDSNLookup interface {
+	OpenDSN(ctx context.Context, orgID, connectionID string) (dsn string, schemas []string, ok bool, err error)
+}
+
+// SetOrgDSNLookup wires Phase 2 per-org DSN resolution. Nil disables org-owned pools.
+func (p *Pools) SetOrgDSNLookup(lookup OrgDSNLookup) {
+	if p == nil {
+		return
+	}
+	p.readonlyMu.Lock()
+	defer p.readonlyMu.Unlock()
+	p.orgDSN = lookup
+	if p.orgLazy == nil {
+		p.orgLazy = make(map[string]*lazyReadOnlyPool)
+	}
 }
 
 type readonlySpec struct {
@@ -126,6 +148,7 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 		App:                 appPool,
 		readonlySpecs:       readonlySpecs,
 		readonlyLazy:        make(map[string]*lazyReadOnlyPool),
+		orgLazy:             make(map[string]*lazyReadOnlyPool),
 		poolDefaults:        poolDefaults,
 		idleEvict:           defaultReadonlyIdleEvict,
 		stopEvict:           stopEvict,
@@ -273,6 +296,12 @@ func (p *Pools) Close() {
 		}
 		delete(p.readonlyLazy, id)
 	}
+	for id, entry := range p.orgLazy {
+		if entry != nil && entry.pool != nil {
+			entry.pool.Close()
+		}
+		delete(p.orgLazy, id)
+	}
 	p.readonlyMu.Unlock()
 	for _, pool := range p.ReadOnlyPools {
 		if pool != nil {
@@ -380,18 +409,83 @@ func (p *Pools) NamedPools() []NamedPool {
 }
 
 // ReadOnly returns the read-only pool for connectionID, lazily opening it when needed.
-func (p *Pools) ReadOnly(connectionID string) *pgxpool.Pool {
+// When ctx carries an organisation with a Phase 2 encrypted DSN for connectionID,
+// that org-owned pool is used instead of the shared catalog pool.
+func (p *Pools) ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool {
 	if p == nil {
 		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if connectionID == "" {
 		connectionID = p.DefaultConnectionID
 	}
-	pool, err := p.ensureReadOnlyPool(context.Background(), connectionID)
+	if orgID := auth.OrgIDFromContext(ctx); orgID != "" {
+		pool, err := p.ensureOrgReadOnlyPool(ctx, orgID, connectionID)
+		if err != nil {
+			return nil
+		}
+		if pool != nil {
+			return pool
+		}
+	}
+	pool, err := p.ensureReadOnlyPool(ctx, connectionID)
 	if err != nil {
 		return nil
 	}
 	return pool
+}
+
+func orgPoolKey(orgID, connectionID string) string {
+	return orgID + "\x00" + connectionID
+}
+
+func (p *Pools) ensureOrgReadOnlyPool(ctx context.Context, orgID, connectionID string) (*pgxpool.Pool, error) {
+	if p.orgDSN == nil {
+		return nil, nil
+	}
+	key := orgPoolKey(orgID, connectionID)
+	p.readonlyMu.Lock()
+	entry := p.orgLazy[key]
+	if entry != nil && entry.pool != nil {
+		entry.lastUsed = time.Now()
+		pool := entry.pool
+		p.readonlyMu.Unlock()
+		return pool, nil
+	}
+	lookup := p.orgDSN
+	p.readonlyMu.Unlock()
+
+	dsn, schemas, ok, err := lookup.OpenDSN(ctx, orgID, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || strings.TrimSpace(dsn) == "" {
+		return nil, nil
+	}
+
+	opts := p.poolDefaults
+	if len(schemas) > 0 {
+		opts.searchPath = append([]string(nil), schemas...)
+	} else if spec, has := p.readonlySpecs[connectionID]; has {
+		opts = spec.opts
+	}
+
+	pool, err := newPoolWithRetries(ctx, dsn, opts)
+	if err != nil {
+		return nil, fmt.Errorf("%w (org %s conn %s): %v", errors.ErrReadOnlyPoolFailed, orgID, connectionID, err)
+	}
+
+	p.readonlyMu.Lock()
+	defer p.readonlyMu.Unlock()
+	if existing := p.orgLazy[key]; existing != nil && existing.pool != nil {
+		pool.Close()
+		existing.lastUsed = time.Now()
+		return existing.pool, nil
+	}
+	p.orgLazy[key] = &lazyReadOnlyPool{pool: pool, lastUsed: time.Now()}
+	return pool, nil
 }
 
 func (p *Pools) ensureReadOnlyPool(ctx context.Context, connectionID string) (*pgxpool.Pool, error) {
@@ -470,5 +564,18 @@ func (p *Pools) evictOnce() {
 		entry.pool.Close()
 		delete(p.readonlyLazy, id)
 		delete(p.ReadOnlyPools, id)
+	}
+	for id, entry := range p.orgLazy {
+		if entry == nil || entry.pool == nil {
+			continue
+		}
+		if entry.lastUsed.After(cutoff) {
+			continue
+		}
+		if stat := entry.pool.Stat(); stat.AcquiredConns() > 0 || stat.TotalConns() > stat.IdleConns() {
+			continue
+		}
+		entry.pool.Close()
+		delete(p.orgLazy, id)
 	}
 }

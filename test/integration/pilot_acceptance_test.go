@@ -117,6 +117,49 @@ func TestPilot_CrossOrgIDOR(t *testing.T) {
 	assertOrgInvisible(t, orgBCtx, orgBDB, "webhook_deliveries", webhookDeliveryID)
 }
 
+// TestPilot_ConnectionAllowlistIDOR verifies org B cannot authorize a connection
+// assigned only to org A when allowlist enforcement is required.
+func TestPilot_ConnectionAllowlistIDOR(t *testing.T) {
+	ctx := context.Background()
+	admin, connStr := pilotPostgres(t, ctx)
+	defer admin.Close()
+
+	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer appPool.Close()
+
+	orgA := auth.DefaultOrganizationID
+	orgB := insertPilotOrg(t, ctx, admin, "pilot-conn-b", "pilot-conn-b")
+
+	authz := auth.NewConnectionAuthorizer(appPool)
+	authz.SetAllowlistRequired(true)
+
+	if err := authz.AssignConnection(ctx, orgA, "default"); err != nil {
+		t.Fatalf("assign org A: %v", err)
+	}
+	// Ensure org B has an allowlist row for a different id so empty-bootstrap is not used,
+	// then verify "default" (only on org A) is forbidden.
+	if err := authz.AssignConnection(ctx, orgB, "analytics-only"); err != nil {
+		t.Fatalf("assign org B decoy: %v", err)
+	}
+
+	orgACtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "admin-a", OrgID: orgA, Role: auth.RoleAdmin})
+	if err := authz.AuthorizeConnection(orgACtx, orgA, "admin-a", auth.RoleAdmin, "default", auth.ActionQuery); err != nil {
+		t.Fatalf("org A should use default: %v", err)
+	}
+	orgBCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "admin-b", OrgID: orgB, Role: auth.RoleAdmin})
+	if err := authz.AuthorizeConnection(orgBCtx, orgB, "admin-b", auth.RoleAdmin, "default", auth.ActionQuery); err == nil {
+		t.Fatal("org B must not authorize org A's connection")
+	}
+
+	emptyOrg := insertPilotOrg(t, ctx, admin, "pilot-empty", "pilot-empty")
+	if err := authz.AuthorizeConnection(ctx, emptyOrg, "admin-e", auth.RoleAdmin, "default", auth.ActionQuery); err == nil {
+		t.Fatal("empty allowlist must deny when allowlist required")
+	}
+}
+
 func assertOrgInvisible(t *testing.T, ctx context.Context, database db.DB, table, id string) {
 	t.Helper()
 	var seen string
