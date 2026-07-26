@@ -132,8 +132,10 @@ func (s *OrgConnectionSecretStore) OpenDSN(ctx context.Context, orgID, connectio
 	if orgID == "" || connectionID == "" {
 		return "", nil, false, nil
 	}
+	// Without an encryption key, org-owned DSNs cannot be opened — fall back to the
+	// shared catalog pool (ok=false). Callers that store secrets must set the key.
 	if len(s.encKey) == 0 {
-		return "", nil, false, fmt.Errorf("SECURITY_DATA_ENCRYPTION_KEY is required to open connection secrets")
+		return "", nil, false, nil
 	}
 	var sealed string
 	var raw []byte

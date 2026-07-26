@@ -84,7 +84,8 @@ jobs:
             pkg="$1"; floor="$2"
             name="$(basename "$pkg")"
             profile="cov_${name}.out"
-            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg/..." "$pkg/..." "./test/unit/app/$name/..."
+            # Cover the package itself (not test doubles under subdirs like app/auth/mockoidc).
+            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg" "$pkg" "./test/unit/app/$name/..."
             pct="$(go tool cover -func="$profile" | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
             echo "$pkg coverage: ${pct}% (floor ${floor}%)"
             awk -v t="$pct" -v f="$floor" -v p="$pkg" 'BEGIN { if (t+0 < f+0) { print "Coverage below floor for " p ": " t "% < " f "%"; exit 1 } }'
