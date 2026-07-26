@@ -7,18 +7,19 @@ ON CONFLICT (organization_id, connection_id) DO UPDATE SET enabled = true;
 
 -- Seeding organization_connections flips the default org out of bootstrap mode
 -- (empty allowlist = allow all). Non-admin roles then need explicit grants.
--- Admin already has a wildcard grant from migration 000034; add analyst + viewer.
+-- Scope to connection_id='default' (not wildcard NULL) so additional connections
+-- still require grants. Admin already has a wildcard grant from migration 000034.
 INSERT INTO app.connection_permissions (
     organization_id, connection_id, principal_type, principal_id,
     can_query, can_explain, can_analyze, can_schema, can_report, can_schedule, can_stats, can_ask
 )
 SELECT
-    '00000000-0000-0000-0000-000000000001'::uuid, NULL, 'role', 'analyst',
+    '00000000-0000-0000-0000-000000000001'::uuid, 'default', 'role', 'analyst',
     true, true, true, true, true, true, true, true
 WHERE NOT EXISTS (
     SELECT 1 FROM app.connection_permissions
     WHERE organization_id = '00000000-0000-0000-0000-000000000001'::uuid
-      AND connection_id IS NULL
+      AND connection_id = 'default'
       AND principal_type = 'role'
       AND principal_id = 'analyst'
 );
@@ -28,12 +29,12 @@ INSERT INTO app.connection_permissions (
     can_query, can_explain, can_analyze, can_schema, can_report, can_schedule, can_stats, can_ask
 )
 SELECT
-    '00000000-0000-0000-0000-000000000001'::uuid, NULL, 'role', 'viewer',
+    '00000000-0000-0000-0000-000000000001'::uuid, 'default', 'role', 'viewer',
     true, true, false, true, true, false, true, false
 WHERE NOT EXISTS (
     SELECT 1 FROM app.connection_permissions
     WHERE organization_id = '00000000-0000-0000-0000-000000000001'::uuid
-      AND connection_id IS NULL
+      AND connection_id = 'default'
       AND principal_type = 'role'
       AND principal_id = 'viewer'
 );
