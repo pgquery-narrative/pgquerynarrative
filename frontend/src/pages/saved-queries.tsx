@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api, type SavedQuery, type ConnectionInfo, ApiError } from "@/api/client";
 import { Search, Trash2, Copy, Play, AlertCircle, Bookmark } from "lucide-react";
 import { truncate } from "@/lib/utils";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 export default function SavedQueries() {
   const [queries, setQueries] = useState<SavedQuery[]>([]);

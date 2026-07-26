@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/contexts/theme-context";
 import { LayoutDashboard, Terminal, Bookmark, FileText, Settings, PanelLeftClose, PanelLeft, Moon, Sun, PanelsTopLeft, CalendarClock, Activity } from "lucide-react";

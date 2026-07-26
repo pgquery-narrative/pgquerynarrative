@@ -73,18 +73,18 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
-	var managedKeysExists bool
+	var secretsExists bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'managed_api_keys'
+			WHERE table_schema = 'app' AND table_name = 'organization_connection_secrets'
 		)
-	`).Scan(&managedKeysExists)
+	`).Scan(&secretsExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if managedKeysExists {
-		t.Fatal("app.managed_api_keys still exists after rolling back migration 42")
+	if secretsExists {
+		t.Fatal("app.organization_connection_secrets still exists after rolling back migration 44")
 	}
 
 	if err := m.Steps(1); err != nil {
@@ -104,13 +104,13 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'managed_api_keys'
+			WHERE table_schema = 'app' AND table_name = 'organization_connection_secrets'
 		)
-	`).Scan(&managedKeysExists)
+	`).Scan(&secretsExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !managedKeysExists {
-		t.Fatal("app.managed_api_keys missing after re-applying migration 42")
+	if !secretsExists {
+		t.Fatal("app.organization_connection_secrets missing after re-applying migration 44")
 	}
 }

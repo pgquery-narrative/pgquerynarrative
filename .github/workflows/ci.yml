@@ -332,7 +332,9 @@ jobs:
           export DATABASE_USER=pgquerynarrative_app DATABASE_PASSWORD=pgquerynarrative_app
           export DATABASE_NAME=pgquerynarrative
           export DATABASE_READONLY_USER=pgquerynarrative_readonly DATABASE_READONLY_PASSWORD=pgquerynarrative_readonly
-          export SECURITY_AUTH_ENABLED=false PGQUERYNARRATIVE_PORT=8080
+          export SECURITY_AUTH_ENABLED=false
+          export SECURITY_ALLOW_INSECURE_NO_AUTH=true
+          export PGQUERYNARRATIVE_PORT=8080
           ./bin/server >/tmp/pgqn-load-smoke.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/health && break; sleep 1; done
           curl -sf http://127.0.0.1:8080/health

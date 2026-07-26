@@ -104,6 +104,8 @@ if [[ "$OIDC_MODE" == "1" ]]; then
   export SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG=true
 else
   export SECURITY_AUTH_ENABLED=false
+  # Explicit opt-in required when auth is disabled (fail-closed default).
+  export SECURITY_ALLOW_INSECURE_NO_AUTH=true
 fi
 
 ./bin/playwright-server >/tmp/pgqn-playwright-server.log 2>&1 &
