@@ -12,11 +12,13 @@ import (
 // Private rows are visible only to their creator; organisation rows are visible to members.
 func visibleResourcePredicate(orgParam, userParam int, role string) string {
 	if auth.IsAdminRole(role) {
-		return fmt.Sprintf("organization_id = $%d", orgParam)
+		// Callers always bind userParam; reference it with an explicit cast so
+		// PostgreSQL can infer the parameter type (unused params error with 42P18).
+		return fmt.Sprintf("organization_id = $%d AND ($%d::text IS NOT NULL OR $%d::text IS NULL)", orgParam, userParam, userParam)
 	}
 	return fmt.Sprintf(`organization_id = $%d AND (
 		COALESCE(visibility, 'organization') <> 'private'
-		OR created_by = $%d
+		OR created_by = $%d::text
 	)`, orgParam, userParam)
 }
 
