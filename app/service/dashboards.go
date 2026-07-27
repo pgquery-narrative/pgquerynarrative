@@ -26,7 +26,9 @@ func NewDashboardsService(appPool db.DB, reportsSvc *ReportsService, queriesSvc 
 }
 
 func (s *DashboardsService) List(ctx context.Context) (*dashboards.DashboardListResult, error) {
-	rows, err := s.appPool.Query(ctx, `SELECT id FROM app.dashboards WHERE organization_id = $1 ORDER BY updated_at DESC`, orgID(ctx))
+	p := auth.PrincipalFromContext(ctx)
+	visPred := visibleResourcePredicate(1, 2, p.Role)
+	rows, err := s.appPool.Query(ctx, `SELECT id FROM app.dashboards WHERE `+visPred+` ORDER BY updated_at DESC`, p.OrgID, p.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -50,10 +52,10 @@ func (s *DashboardsService) Create(ctx context.Context, payload *dashboards.Crea
 	p := auth.PrincipalFromContext(ctx)
 	var id string
 	if err := s.appPool.QueryRow(ctx, `
-		INSERT INTO app.dashboards (name, organization_id)
-		VALUES ($1, $2)
+		INSERT INTO app.dashboards (name, organization_id, created_by, visibility)
+		VALUES ($1, $2, $3, 'organization')
 		RETURNING id
-	`, payload.Name, p.OrgID).Scan(&id); err != nil {
+	`, payload.Name, p.OrgID, p.UserID).Scan(&id); err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, &dashboards.GetPayload{ID: id})
@@ -123,7 +125,22 @@ func (s *DashboardsService) Update(ctx context.Context, payload *dashboards.Upda
 }
 
 func (s *DashboardsService) Delete(ctx context.Context, payload *dashboards.DeletePayload) error {
-	_, err := s.appPool.Exec(ctx, `DELETE FROM app.dashboards WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
+	p := auth.PrincipalFromContext(ctx)
+	var createdBy string
+	err := s.appPool.QueryRow(ctx, `
+		SELECT COALESCE(created_by, '') FROM app.dashboards
+		WHERE id = $1 AND organization_id = $2
+	`, payload.ID, p.OrgID).Scan(&createdBy)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &dashboards.NotFoundError{Name: "not_found", Message: "dashboard not found", Code: strPtr("NOT_FOUND")}
+		}
+		return err
+	}
+	if !canMutateOwnedResource(ctx, createdBy) {
+		return &dashboards.NotFoundError{Name: "not_found", Message: "dashboard not found", Code: strPtr("NOT_FOUND")}
+	}
+	_, err = s.appPool.Exec(ctx, `DELETE FROM app.dashboards WHERE id = $1 AND organization_id = $2`, payload.ID, p.OrgID)
 	return err
 }
 

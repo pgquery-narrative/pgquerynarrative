@@ -129,7 +129,7 @@ func (s *SchedulesService) RetryFailedWebhooks(ctx context.Context, rawPool *pgx
 		if final == "dead_letter" || status == "failed" {
 			observability.IncWebhookFailure()
 		}
-		runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "system", OrgID: item.orgID, Role: auth.RoleAdmin})
+		runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "system", OrgID: item.orgID, Role: auth.RoleTenantAdmin})
 		_, _ = s.appPool.Exec(runCtx, `
 			UPDATE app.webhook_deliveries
 			SET status = $2,

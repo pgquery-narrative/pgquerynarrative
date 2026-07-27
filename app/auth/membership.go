@@ -15,6 +15,10 @@ import (
 // ErrNoOrganizationMembership is returned when a user has no org membership.
 var ErrNoOrganizationMembership = errors.New("user is not a member of any organization")
 
+// ErrOrganizationSelectionRequired is returned when a user has multiple memberships
+// and no preferred organisation was supplied.
+var ErrOrganizationSelectionRequired = errors.New("organization selection required")
+
 // MembershipStore resolves organization membership for authenticated users.
 type MembershipStore struct {
 	pool            *pgxpool.Pool
@@ -76,15 +80,12 @@ func (s *MembershipStore) ResolvePrincipal(ctx context.Context, userID, preferre
 		return Principal{}, ErrNoOrganizationMembership
 	}
 
-	def := DefaultOrgID()
-	for _, m := range members {
-		if m.OrgID == def {
-			return Principal{UserID: userID, OrgID: m.OrgID, Role: m.Role}, nil
-		}
+	if len(members) == 1 {
+		m := members[0]
+		return Principal{UserID: userID, OrgID: m.OrgID, Role: m.Role}, nil
 	}
-	// Stable choice: first membership by org id order from query.
-	m := members[0]
-	return Principal{UserID: userID, OrgID: m.OrgID, Role: m.Role}, nil
+	// Multiple memberships with no explicit preference: do not silently pick.
+	return Principal{}, ErrOrganizationSelectionRequired
 }
 
 // ResolveFromGroupClaims maps OIDC group claims to organizations when configured.

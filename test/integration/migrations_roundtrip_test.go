@@ -73,18 +73,18 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
-	var secretsExists bool
+	var sessionsExists bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'organization_connection_secrets'
+			WHERE table_schema = 'app' AND table_name = 'browser_sessions'
 		)
-	`).Scan(&secretsExists)
+	`).Scan(&sessionsExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if secretsExists {
-		t.Fatal("app.organization_connection_secrets still exists after rolling back migration 44")
+	if sessionsExists {
+		t.Fatal("app.browser_sessions still exists after rolling back migration 46")
 	}
 
 	if err := m.Steps(1); err != nil {
@@ -104,13 +104,27 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'organization_connection_secrets'
+			WHERE table_schema = 'app' AND table_name = 'browser_sessions'
 		)
-	`).Scan(&secretsExists)
+	`).Scan(&sessionsExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !secretsExists {
-		t.Fatal("app.organization_connection_secrets missing after re-applying migration 44")
+	if !sessionsExists {
+		t.Fatal("app.browser_sessions missing after re-applying migration 46")
+	}
+
+	var visibilityCol bool
+	err = pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'app' AND table_name = 'saved_queries' AND column_name = 'visibility'
+		)
+	`).Scan(&visibilityCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !visibilityCol {
+		t.Fatal("saved_queries.visibility missing after migration 46")
 	}
 }

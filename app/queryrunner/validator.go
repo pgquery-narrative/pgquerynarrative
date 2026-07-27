@@ -19,6 +19,7 @@ import (
 type Validator struct {
 	allowedSchemas map[string]bool // Set of allowed schema names (lowercase)
 	maxQueryLength int             // Maximum query length in bytes
+	enforceSchemas bool            // When true, schema checks run even if the allowlist is empty
 }
 
 // NewValidator creates a new query validator with the specified configuration.
@@ -38,7 +39,22 @@ func NewValidator(allowedSchemas []string, maxQueryLength int) *Validator {
 	return &Validator{
 		allowedSchemas: schemaMap,
 		maxQueryLength: maxQueryLength,
+		enforceSchemas: len(allowedSchemas) > 0,
 	}
+}
+
+// ValidateForSchemas clones the validator's non-schema settings for a request-
+// specific schema allowlist and returns the derived validator.
+// Schema enforcement is always enabled for request overrides so an empty tenant
+// allowlist cannot silently disable checks.
+func (v *Validator) ValidateForSchemas(allowedSchemas []string) *Validator {
+	var maxLen int
+	if v != nil {
+		maxLen = v.maxQueryLength
+	}
+	derived := NewValidator(allowedSchemas, maxLen)
+	derived.enforceSchemas = true
+	return derived
 }
 
 // Validate checks if a SQL query is safe to execute.
@@ -121,8 +137,8 @@ func (v *Validator) Validate(sql string) error {
 		return errors.ErrDisallowedKeyword
 	}
 
-	// Check schema access (if schema restrictions are configured)
-	if len(v.allowedSchemas) > 0 {
+	// Check schema access when schema restrictions are configured or explicitly enforced.
+	if v.enforceSchemas || len(v.allowedSchemas) > 0 {
 		cteNames := collectCTENames(readOnlyQuery)
 		if hasUnqualifiedTables(readOnlyQuery, cteNames) {
 			return errors.ErrUnqualifiedTable

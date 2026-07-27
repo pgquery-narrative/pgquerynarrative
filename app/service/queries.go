@@ -87,7 +87,7 @@ func NewQueriesService(readOnlyPool *pgxpool.Pool, appPool db.DB, runner *queryr
 }
 
 // ValidateQuery checks SQL safety for the given connection without executing it.
-func (s *QueriesService) ValidateQuery(connectionID *string, sql string) error {
+func (s *QueriesService) ValidateQuery(ctx context.Context, connectionID *string, sql string) error {
 	sql = strings.TrimSpace(sql)
 	if sql == "" {
 		return nil
@@ -96,7 +96,7 @@ func (s *QueriesService) ValidateQuery(connectionID *string, sql string) error {
 	if err != nil {
 		return err
 	}
-	return runner.ValidateQuery(sql)
+	return runner.ValidateQueryWithContext(ctx, sql)
 }
 
 // NewQueriesServiceWithEmbedding is like NewQueriesService but enables storing embeddings
@@ -314,6 +314,15 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 	if err != nil {
 		return nil, connectionNotFoundQueriesError(err)
 	}
+	statsPool := runner.StatsPoolFor(ctx)
+	if statsPool == nil {
+		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("STAT_STATEMENTS_UNAVAILABLE")}
+	}
+	// Prefer the live role of the resolved (possibly tenant) pool over catalog config.
+	var liveRole string
+	if qerr := statsPool.QueryRow(ctx, `SELECT current_user`).Scan(&liveRole); qerr == nil && strings.TrimSpace(liveRole) != "" {
+		filterRole = liveRole
+	}
 	orderBy := payload.OrderBy
 	if orderBy == "" {
 		orderBy = "total_time"
@@ -326,10 +335,6 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 	timeout := 30 * time.Second
 	if runner != nil {
 		timeout = runner.QueryTimeout()
-	}
-	statsPool := runner.StatsPool()
-	if statsPool == nil {
-		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("STAT_STATEMENTS_UNAVAILABLE")}
 	}
 	result, err := queryrunner.StatStatements(ctx, statsPool, filterRole, orderBy, limit, timeout)
 	if err != nil {
@@ -573,7 +578,12 @@ func (s *QueriesService) Save(ctx context.Context, payload *queries.SaveQueryPay
 func (s *QueriesService) ListSaved(ctx context.Context, payload *queries.ListSavedPayload) (*queries.SavedQueryList, error) {
 	limit := int(payload.Limit)
 	offset := int(payload.Offset)
-	oid := orgID(ctx)
+	p := auth.PrincipalFromContext(ctx)
+	oid := p.OrgID
+	if oid == "" {
+		oid = orgID(ctx)
+	}
+	visPred := visibleResourcePredicate(1, 2, p.Role)
 
 	var rows pgx.Rows
 	var err error
@@ -582,36 +592,36 @@ func (s *QueriesService) ListSaved(ctx context.Context, payload *queries.ListSav
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE tags && $1 AND connection_id = $2 AND organization_id = $3
+			WHERE tags && $3 AND connection_id = $4 AND `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $4 OFFSET $5
-		`, payload.Tags, *payload.ConnectionID, oid, limit, offset)
+			LIMIT $5 OFFSET $6
+		`, oid, p.UserID, payload.Tags, *payload.ConnectionID, limit, offset)
 		} else {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE tags && $1 AND organization_id = $2
+			WHERE tags && $3 AND `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $3 OFFSET $4
-		`, payload.Tags, oid, limit, offset)
+			LIMIT $4 OFFSET $5
+		`, oid, p.UserID, payload.Tags, limit, offset)
 		}
 	} else {
 		if payload.ConnectionID != nil && strings.TrimSpace(*payload.ConnectionID) != "" {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE connection_id = $1 AND organization_id = $2
+			WHERE connection_id = $3 AND `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $3 OFFSET $4
-		`, *payload.ConnectionID, oid, limit, offset)
+			LIMIT $4 OFFSET $5
+		`, oid, p.UserID, *payload.ConnectionID, limit, offset)
 		} else {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 			FROM app.saved_queries
-			WHERE organization_id = $1
+			WHERE `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $2 OFFSET $3
-		`, oid, limit, offset)
+			LIMIT $3 OFFSET $4
+		`, oid, p.UserID, limit, offset)
 		}
 	}
 	if err != nil {
@@ -654,11 +664,13 @@ func (s *QueriesService) ListSaved(ctx context.Context, payload *queries.ListSav
 //   - NotFoundError if query doesn't exist
 //   - Error if database operation fails
 func (s *QueriesService) GetSaved(ctx context.Context, payload *queries.GetSavedPayload) (*queries.SavedQuery, error) {
+	p := auth.PrincipalFromContext(ctx)
+	visPred := visibleResourcePredicate(2, 3, p.Role)
 	row := s.appPool.QueryRow(ctx, `
 		SELECT id, name, sql, description, tags, connection_id, created_at, updated_at
 		FROM app.saved_queries
-		WHERE id = $1 AND organization_id = $2
-	`, payload.ID, orgID(ctx))
+		WHERE id = $1 AND `+visPred+`
+	`, payload.ID, p.OrgID, p.UserID)
 
 	var item queries.SavedQuery
 	var createdAt time.Time
@@ -690,7 +702,30 @@ func (s *QueriesService) GetSaved(ctx context.Context, payload *queries.GetSaved
 //   - NotFoundError if query doesn't exist
 //   - Error if database operation fails
 func (s *QueriesService) DeleteSaved(ctx context.Context, payload *queries.DeleteSavedPayload) error {
-	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.saved_queries WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
+	p := auth.PrincipalFromContext(ctx)
+	var createdBy string
+	err := s.appPool.QueryRow(ctx, `
+		SELECT COALESCE(created_by, '') FROM app.saved_queries
+		WHERE id = $1 AND organization_id = $2
+	`, payload.ID, p.OrgID).Scan(&createdBy)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &queries.NotFoundError{
+				Name:    "not_found",
+				Message: "saved query not found",
+				Code:    strPtr("NOT_FOUND"),
+			}
+		}
+		return err
+	}
+	if !canMutateOwnedResource(ctx, createdBy) {
+		return &queries.NotFoundError{
+			Name:    "not_found",
+			Message: "saved query not found",
+			Code:    strPtr("NOT_FOUND"),
+		}
+	}
+	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.saved_queries WHERE id = $1 AND organization_id = $2`, payload.ID, p.OrgID)
 	if err != nil {
 		return err
 	}

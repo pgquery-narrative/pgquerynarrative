@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -173,7 +175,13 @@ func (s *SchedulesService) claimDueSchedules(ctx context.Context, workerID strin
 }
 
 func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID string, claim claimedScheduleRun) error {
-	runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: workerID, OrgID: claim.OrgID, Role: auth.RoleAdmin})
+	ownerUserID, ownerRole, err := s.resolveScheduleOwner(ctx, claim.ScheduleID, claim.OrgID)
+	if err != nil {
+		runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: workerID, OrgID: claim.OrgID, Role: auth.RoleTenantAdmin})
+		_ = s.disableSchedule(runCtx, claim.ScheduleID, err.Error())
+		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", err, "owner_unauthorized")
+	}
+	runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: ownerUserID, OrgID: claim.OrgID, Role: ownerRole})
 	if s.reportsSvc == nil {
 		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", errors.New("reports service not configured"), "misconfigured")
 	}
@@ -183,6 +191,10 @@ func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID strin
 	sc, err := s.getByIDForOrg(runCtx, claim.ScheduleID, claim.OrgID)
 	if err != nil {
 		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", err, "schedule_not_found")
+	}
+	if err := checkConnectionAccess(runCtx, s.authz, sc.ConnectionID, auth.ActionSchedule); err != nil {
+		_ = s.disableSchedule(runCtx, claim.ScheduleID, err.Error())
+		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", err, "owner_unauthorized")
 	}
 	reportID, deliveryStatus, runErr := s.runSchedule(runCtx, sc, claim.RunID)
 
@@ -222,6 +234,42 @@ func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID strin
 	default: // "completed" (log) or "delivered" (webhook resolved synchronously)
 		return s.finishScheduleRun(runCtx, claim.RunID, reportID, "completed", nil, "")
 	}
+}
+
+func (s *SchedulesService) resolveScheduleOwner(ctx context.Context, scheduleID, organizationID string) (userID, role string, err error) {
+	var createdBy sql.NullString
+	err = s.appPool.QueryRow(ctx, `
+		SELECT created_by FROM app.schedules WHERE id = $1 AND organization_id = $2
+	`, scheduleID, organizationID).Scan(&createdBy)
+	if err != nil {
+		return "", "", err
+	}
+	owner := strings.TrimSpace(createdBy.String)
+	if owner == "" {
+		return "", "", errors.New("schedule has no owner; re-create the schedule")
+	}
+	var memberRole string
+	err = s.appPool.QueryRow(ctx, `
+		SELECT role FROM app.organization_members
+		WHERE organization_id = $1::uuid AND user_id = $2
+	`, organizationID, owner).Scan(&memberRole)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", "", errors.New("schedule owner is no longer a member of the organisation")
+		}
+		return "", "", err
+	}
+	return owner, auth.NormalizeRole(memberRole), nil
+}
+
+func (s *SchedulesService) disableSchedule(ctx context.Context, scheduleID, reason string) error {
+	_, err := s.appPool.Exec(ctx, `
+		UPDATE app.schedules
+		SET enabled = false, last_status = 'disabled', last_error = NULLIF($2, ''),
+		    locked_by = NULL, locked_until = NULL, updated_at = NOW()
+		WHERE id = $1
+	`, scheduleID, SanitizeStoredError(errors.New(reason)))
+	return err
 }
 
 // finalizeScheduleRunAfterDelivery marks a schedule_run terminal once its webhook outbox

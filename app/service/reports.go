@@ -311,7 +311,12 @@ func (s *ReportsService) Get(ctx context.Context, payload *reports.GetPayload) (
 func (s *ReportsService) List(ctx context.Context, payload *reports.ListPayload) (*reports.ReportList, error) {
 	limit := int(payload.Limit)
 	offset := int(payload.Offset)
-	oid := orgID(ctx)
+	p := auth.PrincipalFromContext(ctx)
+	oid := p.OrgID
+	if oid == "" {
+		oid = orgID(ctx)
+	}
+	visPred := visibleResourcePredicate(1, 2, p.Role)
 
 	var rows pgx.Rows
 	var err error
@@ -321,35 +326,35 @@ func (s *ReportsService) List(ctx context.Context, payload *reports.ListPayload)
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, saved_query_id, sql, narrative_json, metrics, created_at, llm_model, llm_provider, connection_id
 			FROM app.reports
-			WHERE saved_query_id = $1 AND connection_id = $2 AND organization_id = $3
+			WHERE saved_query_id = $3 AND connection_id = $4 AND `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $4 OFFSET $5
-		`, *payload.SavedQueryID, *payload.ConnectionID, oid, limit, offset)
+			LIMIT $5 OFFSET $6
+		`, oid, p.UserID, *payload.SavedQueryID, *payload.ConnectionID, limit, offset)
 		} else {
 			rows, err = s.appPool.Query(ctx, `
 			SELECT id, saved_query_id, sql, narrative_json, metrics, created_at, llm_model, llm_provider, connection_id
 			FROM app.reports
-			WHERE saved_query_id = $1 AND organization_id = $2
+			WHERE saved_query_id = $3 AND `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $3 OFFSET $4
-		`, *payload.SavedQueryID, oid, limit, offset)
+			LIMIT $4 OFFSET $5
+		`, oid, p.UserID, *payload.SavedQueryID, limit, offset)
 		}
 	} else if payload.ConnectionID != nil && *payload.ConnectionID != "" {
 		rows, err = s.appPool.Query(ctx, `
 			SELECT id, saved_query_id, sql, narrative_json, metrics, created_at, llm_model, llm_provider, connection_id
 			FROM app.reports
-			WHERE connection_id = $1 AND organization_id = $2
+			WHERE connection_id = $3 AND `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $3 OFFSET $4
-		`, *payload.ConnectionID, oid, limit, offset)
+			LIMIT $4 OFFSET $5
+		`, oid, p.UserID, *payload.ConnectionID, limit, offset)
 	} else {
 		rows, err = s.appPool.Query(ctx, `
 			SELECT id, saved_query_id, sql, narrative_json, metrics, created_at, llm_model, llm_provider, connection_id
 			FROM app.reports
-			WHERE organization_id = $1
+			WHERE `+visPred+`
 			ORDER BY created_at DESC
-			LIMIT $2 OFFSET $3
-		`, oid, limit, offset)
+			LIMIT $3 OFFSET $4
+		`, oid, p.UserID, limit, offset)
 	}
 
 	if err != nil {
@@ -524,8 +529,8 @@ func (s *ReportsService) applySQLVisibility(ctx context.Context, report *reports
 		return
 	}
 	role := strings.ToLower(strings.TrimSpace(p.Role))
-	switch role {
-	case auth.RoleAdmin, auth.RoleAnalyst:
+	switch {
+	case auth.IsAdminRole(role), role == auth.RoleAnalyst:
 		if report.SQL != "" && s.auditStore != nil {
 			id := report.ID
 			_ = s.auditStore.Record(ctx, audit.Entry{

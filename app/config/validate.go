@@ -311,6 +311,14 @@ var alwaysForbiddenSchemas = map[string]struct{}{
 	"pg_toast_temp_1":    {},
 }
 
+// ValidateTenantAllowedSchemas rejects empty or forbidden schema allowlists for tenant DSNs.
+func ValidateTenantAllowedSchemas(schemas []string) error {
+	if len(schemas) == 0 {
+		return fmt.Errorf("allowed_schemas must be non-empty for organisation connection secrets")
+	}
+	return validateAllowedSchemas(schemas, true)
+}
+
 // validateAllowedSchemas rejects empty lists (in production) and forbidden schema names.
 func validateAllowedSchemas(schemas []string, strict bool) error {
 	if len(schemas) == 0 {

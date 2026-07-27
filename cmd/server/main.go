@@ -78,7 +78,7 @@ func main() {
 	defer client.Close()
 
 	if config.StrictMode() {
-		report := db.AuditSecurityBoundary(ctx, client.AppPool(), cfg.Database)
+		report := db.AuditSecurityBoundaryWithSecrets(ctx, client.AppPool(), cfg.Database, cfg.Security.DataEncryptionKey)
 		if !report.OK {
 			log.Fatalf("database security boundary check failed in production: %s", strings.Join(report.Issues, "; "))
 		}
@@ -197,6 +197,9 @@ func setupHTTPServer(
 	})
 	sessions := auth.NewSessionManager(cfg.Security.SessionSecret, cfg.Security.SessionTTL, config.StrictMode())
 	membership := auth.NewMembershipStore(client.AppPool(), cfg.Security.OIDCAutoJoinDefaultOrg)
+	if sessions != nil {
+		sessions.AttachSessionStore(auth.NewSessionStore(client.AppPool()))
+	}
 
 	combinedMux := http.NewServeMux()
 	combinedMux.HandleFunc("/health", healthHandler)
@@ -257,6 +260,7 @@ func setupHTTPServer(
 		sessions:   sessions,
 		encKey:     cfg.Security.DataEncryptionKey,
 		orgSecrets: orgSecrets,
+		pools:      client.PoolManager(),
 	})
 	mountMeAPI(combinedMux, meDeps{
 		membership: membership,
@@ -439,7 +443,7 @@ func dbPrivilegesHandler(cfg config.Config, client *narrative.Client) http.Handl
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if auth.RoleFromContext(r.Context()) != auth.RoleAdmin {
+		if !auth.IsPlatformAdminRole(auth.RoleFromContext(r.Context())) {
 			auth.WriteForbidden(w)
 			return
 		}
@@ -461,7 +465,7 @@ func webhookPolicyHandler(client *narrative.Client) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if auth.RoleFromContext(r.Context()) != auth.RoleAdmin {
+		if !auth.IsPlatformAdminRole(auth.RoleFromContext(r.Context())) {
 			auth.WriteForbidden(w)
 			return
 		}

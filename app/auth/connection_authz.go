@@ -91,7 +91,7 @@ func decideConnectionAuthz(orgHasAnyRows, connectionAssigned bool, role string, 
 	if !connectionAssigned {
 		return fmt.Errorf("%w: connection not assigned to organisation", ErrConnectionForbidden)
 	}
-	if normalizeRole(role) == RoleAdmin {
+	if IsAdminRole(role) {
 		return nil
 	}
 	if !principalGranted {
@@ -139,7 +139,7 @@ func (a *ConnectionAuthorizer) AuthorizeConnection(ctx context.Context, orgID, u
 	}
 
 	principalGranted := false
-	if role != RoleAdmin {
+	if !IsAdminRole(role) {
 		q := fmt.Sprintf(`
 			SELECT EXISTS (
 				SELECT 1 FROM app.connection_permissions

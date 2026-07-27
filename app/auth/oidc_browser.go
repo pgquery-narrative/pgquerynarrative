@@ -172,6 +172,10 @@ func (b *BrowserOIDC) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	if b.membership != nil {
 		p, resolveErr := b.membership.ResolveFromGroupClaims(r.Context(), sub, PreferredOrgFromRequest(r), role, roles)
 		if resolveErr != nil {
+			if errors.Is(resolveErr, ErrOrganizationSelectionRequired) {
+				http.Error(w, "organization selection required", http.StatusConflict)
+				return
+			}
 			http.Error(w, "no organization membership", http.StatusForbidden)
 			return
 		}
@@ -311,13 +315,13 @@ func (b *BrowserOIDC) refreshTokens(ctx context.Context, refreshToken string) (m
 	return out, nil
 }
 
-// LogoutHandler clears the browser session.
+// LogoutHandler clears and revokes the browser session.
 func (b *BrowserOIDC) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	if !b.Enabled() {
 		http.Error(w, "browser OIDC not configured", http.StatusNotFound)
 		return
 	}
-	b.session.Clear(w)
+	b.session.RevokeCurrent(r.Context(), w, r)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 

@@ -21,6 +21,7 @@ BEGIN
 END $$;
 ALTER ROLE pgquerynarrative_app WITH LOGIN PASSWORD 'pgquerynarrative_app' NOSUPERUSER NOBYPASSRLS;
 ALTER ROLE pgquerynarrative_readonly WITH LOGIN PASSWORD 'pgquerynarrative_readonly' NOSUPERUSER NOBYPASSRLS;
+ALTER ROLE pgquerynarrative_readonly SET default_transaction_read_only = on;
 CREATE SCHEMA IF NOT EXISTS app;
 CREATE SCHEMA IF NOT EXISTS demo;
 GRANT USAGE ON SCHEMA app TO pgquerynarrative_app;

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 )
 
@@ -122,7 +123,7 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 	if analyze && !r.allowExplainAnalyze {
 		return nil, apperrors.ErrExplainAnalyzeDisabled
 	}
-	if err := r.validator.Validate(sql); err != nil {
+	if err := r.activeValidator(ctx).Validate(sql); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
 
@@ -143,11 +144,19 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
 	var planText string
-	if err := pool.QueryRow(queryCtx, explainSQL).Scan(&planText); err != nil {
+	tx, err := pool.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, apperrors.ErrQueryExecutionFailed
+	}
+	defer func() { _ = tx.Rollback(queryCtx) }()
+	if err := tx.QueryRow(queryCtx, explainSQL).Scan(&planText); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
 		}
 		// Do not embed driver/Postgres detail in the returned error.
+		return nil, apperrors.ErrQueryExecutionFailed
+	}
+	if err := tx.Commit(queryCtx); err != nil {
 		return nil, apperrors.ErrQueryExecutionFailed
 	}
 

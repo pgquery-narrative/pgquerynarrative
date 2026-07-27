@@ -8,6 +8,8 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 )
 
 type adminDeps struct {
@@ -18,19 +20,16 @@ type adminDeps struct {
 	sessions   *auth.SessionManager
 	encKey     string
 	orgSecrets *auth.OrgConnectionSecretStore
+	pools      adminPoolInvalidator
 }
 
-func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if auth.RoleFromContext(r.Context()) != auth.RoleAdmin {
-		auth.WriteForbidden(w)
-		return false
-	}
-	return true
+type adminPoolInvalidator interface {
+	InvalidateOrgReadOnlyPool(orgID, connectionID string)
 }
 
 func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 	mux.HandleFunc("/api/v1/admin/api-keys", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequireAdmin(w, r) {
 			return
 		}
 		switch r.Method {
@@ -43,7 +42,7 @@ func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 		}
 	})
 	mux.HandleFunc("/api/v1/admin/api-keys/", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequireAdmin(w, r) {
 			return
 		}
 		path := strings.TrimPrefix(r.URL.Path, "/api/v1/admin/api-keys/")
@@ -55,7 +54,7 @@ func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 		http.NotFound(w, r)
 	})
 	mux.HandleFunc("/api/v1/admin/organizations", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequirePlatformAdmin(w, r) {
 			return
 		}
 		switch r.Method {
@@ -68,7 +67,7 @@ func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 		}
 	})
 	mux.HandleFunc("/api/v1/admin/memberships", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequireAdmin(w, r) {
 			return
 		}
 		switch r.Method {
@@ -83,7 +82,7 @@ func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 		}
 	})
 	mux.HandleFunc("/api/v1/admin/connection-assignments", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequireAdmin(w, r) {
 			return
 		}
 		switch r.Method {
@@ -98,7 +97,7 @@ func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 		}
 	})
 	mux.HandleFunc("/api/v1/admin/connection-permissions", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequireAdmin(w, r) {
 			return
 		}
 		switch r.Method {
@@ -111,7 +110,7 @@ func mountAdminAPI(mux *http.ServeMux, deps adminDeps) {
 		}
 	})
 	mux.HandleFunc("/api/v1/admin/connection-secrets", func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdmin(w, r) {
+		if !auth.RequireAdmin(w, r) {
 			return
 		}
 		switch r.Method {
@@ -174,6 +173,10 @@ func adminCreateAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps) {
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
+	if !auth.CanAssignRole(p.Role, body.Role) {
+		auth.WriteForbidden(w)
+		return
+	}
 	var expires time.Time
 	if strings.TrimSpace(body.ExpiresAt) != "" {
 		t, err := time.Parse(time.RFC3339, body.ExpiresAt)
@@ -188,16 +191,16 @@ func adminCreateAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if deps.auditStore != nil {
-		id := issued.ID
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventManagedKeyCreate,
-			EntityType: "api_key",
-			EntityID:   &id,
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details:    map[string]interface{}{"prefix": issued.Prefix, "role": issued.Role},
-		})
+	id := issued.ID
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventManagedKeyCreate,
+		EntityType: "api_key",
+		EntityID:   &id,
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details:    map[string]interface{}{"prefix": issued.Prefix, "role": issued.Role},
+	}) {
+		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":         issued.ID,
@@ -221,15 +224,15 @@ func adminRevokeAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps, k
 		http.Error(w, "api key not found or already revoked", http.StatusNotFound)
 		return
 	}
-	if deps.auditStore != nil {
-		id := keyID
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventManagedKeyRevoke,
-			EntityType: "api_key",
-			EntityID:   &id,
-			UserID:     p.UserID,
-			HighRisk:   true,
-		})
+	id := keyID
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventManagedKeyRevoke,
+		EntityType: "api_key",
+		EntityID:   &id,
+		UserID:     p.UserID,
+		HighRisk:   true,
+	}) {
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -245,26 +248,36 @@ func adminUpsertMembership(w http.ResponseWriter, r *http.Request, deps adminDep
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
+	}
+	if !auth.CanAssignRole(p.Role, body.Role) {
+		auth.WriteForbidden(w)
+		return
 	}
 	if err := deps.membership.UpsertMembership(r.Context(), body.UserID, orgID, body.Role); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventMembershipChange,
-			EntityType: "membership",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"target_user_id":  body.UserID,
-				"organization_id": orgID,
-				"role":            body.Role,
-			},
-		})
+	if deps.sessions != nil {
+		if store := deps.sessions.ServerStore(); store != nil {
+			_, _ = store.RevokeUserSessions(r.Context(), body.UserID, orgID)
+		}
+	}
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventMembershipChange,
+		EntityType: "membership",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"source_organization_id": p.OrgID,
+			"target_user_id":         body.UserID,
+			"organization_id":        orgID,
+			"role":                   body.Role,
+		},
+	}) {
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -279,26 +292,26 @@ func adminAssignConnection(w http.ResponseWriter, r *http.Request, deps adminDep
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
 	}
 	if err := deps.connAuthz.AssignConnection(r.Context(), orgID, body.ConnectionID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventConnectionAuthz,
-			EntityType: "connection_assignment",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"organization_id": orgID,
-				"connection_id":   body.ConnectionID,
-				"action":          "assign",
-			},
-		})
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventConnectionAuthz,
+		EntityType: "connection_assignment",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"organization_id": orgID,
+			"connection_id":   body.ConnectionID,
+			"action":          "assign",
+		},
+	}) {
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -315,27 +328,27 @@ func adminGrantConnectionPermission(w http.ResponseWriter, r *http.Request, deps
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
 	}
 	if err := deps.connAuthz.GrantPermission(r.Context(), orgID, body.ConnectionID, body.PrincipalID, body.Actions); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventConnectionAuthz,
-			EntityType: "connection_permission",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"organization_id": orgID,
-				"connection_id":   body.ConnectionID,
-				"principal_id":    body.PrincipalID,
-				"action":          "grant",
-			},
-		})
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventConnectionAuthz,
+		EntityType: "connection_permission",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"organization_id": orgID,
+			"connection_id":   body.ConnectionID,
+			"principal_id":    body.PrincipalID,
+			"action":          "grant",
+		},
+	}) {
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -351,27 +364,27 @@ func adminRevokeConnectionPermission(w http.ResponseWriter, r *http.Request, dep
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
 	}
 	if err := deps.connAuthz.RevokePermission(r.Context(), orgID, body.ConnectionID, body.PrincipalID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventConnectionAuthz,
-			EntityType: "connection_permission",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"organization_id": orgID,
-				"connection_id":   body.ConnectionID,
-				"principal_id":    body.PrincipalID,
-				"action":          "revoke",
-			},
-		})
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventConnectionAuthz,
+		EntityType: "connection_permission",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"organization_id": orgID,
+			"connection_id":   body.ConnectionID,
+			"principal_id":    body.PrincipalID,
+			"action":          "revoke",
+		},
+	}) {
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -403,27 +416,27 @@ func adminCreateOrganization(w http.ResponseWriter, r *http.Request, deps adminD
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventMembershipChange,
-			EntityType: "organization",
-			EntityID:   &id,
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"name":   body.Name,
-				"slug":   body.Slug,
-				"action": "create",
-			},
-		})
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventMembershipChange,
+		EntityType: "organization",
+		EntityID:   &id,
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"name":   body.Name,
+			"slug":   body.Slug,
+			"action": "create",
+		},
+	}) {
+		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": body.Name, "slug": body.Slug})
 }
 
 func adminListMemberships(w http.ResponseWriter, r *http.Request, deps adminDeps) {
-	orgID := strings.TrimSpace(r.URL.Query().Get("organization_id"))
-	if orgID == "" {
-		orgID = auth.PrincipalFromContext(r.Context()).OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, r.URL.Query().Get("organization_id"))
+	if !ok {
+		return
 	}
 	members, err := deps.membership.ListOrgMembers(r.Context(), orgID)
 	if err != nil {
@@ -446,34 +459,39 @@ func adminRevokeMembership(w http.ResponseWriter, r *http.Request, deps adminDep
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
 	}
 	if err := deps.membership.RevokeMembership(r.Context(), body.UserID, orgID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventMembershipChange,
-			EntityType: "membership",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"target_user_id":  body.UserID,
-				"organization_id": orgID,
-				"action":          "revoke",
-			},
-		})
+	if deps.sessions != nil {
+		if store := deps.sessions.ServerStore(); store != nil {
+			_, _ = store.RevokeUserSessions(r.Context(), body.UserID, orgID)
+		}
+	}
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventMembershipChange,
+		EntityType: "membership",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"target_user_id":  body.UserID,
+			"organization_id": orgID,
+			"action":          "revoke",
+		},
+	}) {
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func adminListConnectionAssignments(w http.ResponseWriter, r *http.Request, deps adminDeps) {
-	orgID := strings.TrimSpace(r.URL.Query().Get("organization_id"))
-	if orgID == "" {
-		orgID = auth.PrincipalFromContext(r.Context()).OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, r.URL.Query().Get("organization_id"))
+	if !ok {
+		return
 	}
 	ids, err := deps.connAuthz.ListAssignedConnections(r.Context(), orgID)
 	if err != nil {
@@ -496,26 +514,29 @@ func adminUnassignConnection(w http.ResponseWriter, r *http.Request, deps adminD
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
 	}
 	if err := deps.connAuthz.UnassignConnection(r.Context(), orgID, body.ConnectionID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventConnectionAuthz,
-			EntityType: "connection_assignment",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"organization_id": orgID,
-				"connection_id":   body.ConnectionID,
-				"action":          "unassign",
-			},
-		})
+	if deps.pools != nil {
+		deps.pools.InvalidateOrgReadOnlyPool(orgID, body.ConnectionID)
+	}
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventConnectionAuthz,
+		EntityType: "connection_assignment",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"organization_id": orgID,
+			"connection_id":   body.ConnectionID,
+			"action":          "unassign",
+		},
+	}) {
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -525,9 +546,9 @@ func adminListConnectionSecrets(w http.ResponseWriter, r *http.Request, deps adm
 		http.Error(w, "connection secrets store is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	orgID := strings.TrimSpace(r.URL.Query().Get("organization_id"))
-	if orgID == "" {
-		orgID = auth.PrincipalFromContext(r.Context()).OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, r.URL.Query().Get("organization_id"))
+	if !ok {
+		return
 	}
 	items, err := deps.orgSecrets.List(r.Context(), orgID)
 	if err != nil {
@@ -553,26 +574,40 @@ func adminUpsertConnectionSecret(w http.ResponseWriter, r *http.Request, deps ad
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
+	}
+	if err := db.VerifyTenantDSNWithOptions(r.Context(), body.DSN, db.TenantDSNVerifyOptions{
+		RequireTLS:     true,
+		AllowedSchemas: body.AllowedSchemas,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := config.ValidateTenantAllowedSchemas(body.AllowedSchemas); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	if err := deps.orgSecrets.Upsert(r.Context(), orgID, body.ConnectionID, body.DSN, body.AllowedSchemas); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventConnectionAuthz,
-			EntityType: "connection_secret",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"organization_id": orgID,
-				"connection_id":   body.ConnectionID,
-				"action":          "upsert_secret",
-			},
-		})
+	if deps.pools != nil {
+		deps.pools.InvalidateOrgReadOnlyPool(orgID, body.ConnectionID)
+	}
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventConnectionAuthz,
+		EntityType: "connection_secret",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"organization_id": orgID,
+			"connection_id":   body.ConnectionID,
+			"action":          "upsert_secret",
+		},
+	}) {
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -591,26 +626,29 @@ func adminDeleteConnectionSecret(w http.ResponseWriter, r *http.Request, deps ad
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
-	orgID := strings.TrimSpace(body.OrgID)
-	if orgID == "" {
-		orgID = p.OrgID
+	orgID, ok := auth.ResolveAdminOrgScope(w, r, body.OrgID)
+	if !ok {
+		return
 	}
 	if err := deps.orgSecrets.Delete(r.Context(), orgID, body.ConnectionID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if deps.auditStore != nil {
-		_ = deps.auditStore.Record(r.Context(), audit.Entry{
-			EventType:  audit.EventConnectionAuthz,
-			EntityType: "connection_secret",
-			UserID:     p.UserID,
-			HighRisk:   true,
-			Details: map[string]interface{}{
-				"organization_id": orgID,
-				"connection_id":   body.ConnectionID,
-				"action":          "delete_secret",
-			},
-		})
+	if deps.pools != nil {
+		deps.pools.InvalidateOrgReadOnlyPool(orgID, body.ConnectionID)
+	}
+	if !recordAdminAudit(w, r, deps, audit.Entry{
+		EventType:  audit.EventConnectionAuthz,
+		EntityType: "connection_secret",
+		UserID:     p.UserID,
+		HighRisk:   true,
+		Details: map[string]interface{}{
+			"organization_id": orgID,
+			"connection_id":   body.ConnectionID,
+			"action":          "delete_secret",
+		},
+	}) {
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

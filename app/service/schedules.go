@@ -184,7 +184,22 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 }
 
 func (s *SchedulesService) Delete(ctx context.Context, payload *schedules.DeletePayload) error {
-	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.schedules WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
+	p := auth.PrincipalFromContext(ctx)
+	var createdBy string
+	err := s.appPool.QueryRow(ctx, `
+		SELECT COALESCE(created_by, '') FROM app.schedules
+		WHERE id = $1 AND organization_id = $2
+	`, payload.ID, p.OrgID).Scan(&createdBy)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
+		}
+		return err
+	}
+	if !canMutateOwnedResource(ctx, createdBy) {
+		return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
+	}
+	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.schedules WHERE id = $1 AND organization_id = $2`, payload.ID, p.OrgID)
 	if err != nil {
 		return err
 	}
@@ -493,7 +508,7 @@ func (s *SchedulesService) validateScheduleSQL(ctx context.Context, in *schedule
 	if sqlText == "" {
 		return errors.New("sql or saved_query_id is required")
 	}
-	if err := s.queriesSvc.ValidateQuery(in.ConnectionID, sqlText); err != nil {
+	if err := s.queriesSvc.ValidateQuery(ctx, in.ConnectionID, sqlText); err != nil {
 		return err
 	}
 	return nil

@@ -18,12 +18,17 @@ import (
 type Loader struct {
 	pool           *pgxpool.Pool
 	poolResolver   poolResolver
+	schemaResolver schemaResolver
 	connectionID   string
 	allowedSchemas []string
 }
 
 type poolResolver interface {
 	ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
+}
+
+type schemaResolver interface {
+	AllowedSchemas(ctx context.Context, connectionID string) []string
 }
 
 // NewLoader creates a catalog loader that queries information_schema
@@ -34,7 +39,11 @@ func NewLoader(pool *pgxpool.Pool, allowedSchemas []string) *Loader {
 
 // NewLoaderForConnection resolves the read-only pool lazily when loading schema.
 func NewLoaderForConnection(resolver poolResolver, connectionID string, allowedSchemas []string) *Loader {
-	return &Loader{poolResolver: resolver, connectionID: connectionID, allowedSchemas: allowedSchemas}
+	l := &Loader{poolResolver: resolver, connectionID: connectionID, allowedSchemas: allowedSchemas}
+	if sr, ok := resolver.(schemaResolver); ok {
+		l.schemaResolver = sr
+	}
+	return l
 }
 
 func (l *Loader) activePool(ctx context.Context) *pgxpool.Pool {
@@ -64,7 +73,13 @@ const infoSchemaColumns = `
 // It uses the read-only pool so only objects visible to that user are included.
 // Views in allowed schemas (e.g. demo.sales_summary) are included automatically.
 func (l *Loader) Load(ctx context.Context) (*schema.SchemaResult, error) {
-	if len(l.allowedSchemas) == 0 {
+	allowedSchemas := l.allowedSchemas
+	if l.schemaResolver != nil {
+		if resolved := l.schemaResolver.AllowedSchemas(ctx, l.connectionID); resolved != nil {
+			allowedSchemas = resolved
+		}
+	}
+	if len(allowedSchemas) == 0 {
 		return &schema.SchemaResult{Schemas: []*schema.SchemaInfo{}}, nil
 	}
 	pool := l.activePool(ctx)
@@ -72,7 +87,7 @@ func (l *Loader) Load(ctx context.Context) (*schema.SchemaResult, error) {
 		return nil, fmt.Errorf("read-only pool unavailable")
 	}
 
-	rows, err := pool.Query(ctx, infoSchemaColumns, l.allowedSchemas)
+	rows, err := pool.Query(ctx, infoSchemaColumns, allowedSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +97,7 @@ func (l *Loader) Load(ctx context.Context) (*schema.SchemaResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildSchemaResult(l.allowedSchemas, raw), nil
+	return buildSchemaResult(allowedSchemas, raw), nil
 }
 
 type columnRow struct {

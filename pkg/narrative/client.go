@@ -3,6 +3,7 @@ package narrative
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -78,6 +79,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		LockTimeout:      cfg.Database.LockTimeout,
 		IdleTxTimeout:    cfg.Database.IdleTxTimeout,
 		DefaultID:        cfg.Database.DefaultID,
+		AllowedSchemas:   append([]string(nil), cfg.AllowedSchemas...),
 		Connections:      toAppConnections(cfg.Database.Connections),
 	}
 	pools, err := db.NewPools(ctx, dbCfg)
@@ -85,6 +87,17 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, err
 	}
 	orgSecrets := auth.NewOrgConnectionSecretStore(pools.App, cfg.Security.DataEncryptionKey)
+	if orgSecrets != nil {
+		n, err := orgSecrets.CountSecrets(ctx)
+		if err != nil {
+			pools.Close()
+			return nil, fmt.Errorf("count organisation connection secrets: %w", err)
+		}
+		if n > 0 && strings.TrimSpace(cfg.Security.DataEncryptionKey) == "" {
+			pools.Close()
+			return nil, fmt.Errorf("SECURITY_DATA_ENCRYPTION_KEY is required because organisation connection secrets exist")
+		}
+	}
 	pools.SetOrgDSNLookup(orgSecrets)
 
 	allowedSchemas := cfg.AllowedSchemas
@@ -361,6 +374,14 @@ func (c *Client) AppPool() *pgxpool.Pool {
 		return nil
 	}
 	return c.pools.App
+}
+
+// PoolManager returns the shared pool manager for server-side administrative invalidation.
+func (c *Client) PoolManager() *db.Pools {
+	if c == nil {
+		return nil
+	}
+	return c.pools
 }
 
 func toAppConnections(in []DataConnectionConfig) []appconfig.DataConnectionConfig {

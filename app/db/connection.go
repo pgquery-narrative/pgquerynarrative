@@ -2,13 +2,17 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -36,11 +40,17 @@ type Pools struct {
 
 	orgDSN  OrgDSNLookup
 	orgLazy map[string]*lazyReadOnlyPool // key: orgID + "\x00" + connectionID
+
+	maxOrgPools      int
+	globalMaxConns   int
+	perPoolMaxConns  int
+	staticPoolBudget int // app + static readonly configured max
+	orgPoolEvictions int64
 }
 
 // OrgDSNLookup resolves optional per-organisation encrypted analytics DSNs.
 type OrgDSNLookup interface {
-	OpenDSN(ctx context.Context, orgID, connectionID string) (dsn string, schemas []string, ok bool, err error)
+	Resolve(ctx context.Context, orgID, connectionID string) (auth.OrgConnectionResolution, error)
 }
 
 // SetOrgDSNLookup wires Phase 2 per-org DSN resolution. Nil disables org-owned pools.
@@ -62,8 +72,9 @@ type readonlySpec struct {
 }
 
 type lazyReadOnlyPool struct {
-	pool     *pgxpool.Pool
-	lastUsed time.Time
+	pool          *pgxpool.Pool
+	lastUsed      time.Time
+	policyVersion int64
 }
 
 type poolOptions struct {
@@ -118,7 +129,11 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 	readonlySpecs := make(map[string]readonlySpec, len(connections))
 	for _, conn := range connections {
 		opts := poolDefaults
-		opts.searchPath = append([]string(nil), conn.AllowedSchemas...)
+		schemas := conn.AllowedSchemas
+		if len(schemas) == 0 {
+			schemas = cfg.AllowedSchemas
+		}
+		opts.searchPath = append([]string(nil), schemas...)
 		opts.statementTimeout = conn.QueryTimeout
 		opts.lockTimeout = conn.LockTimeout
 		opts.idleTxTimeout = conn.IdleTxTimeout
@@ -142,6 +157,7 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 	}
 
 	evictCtx, stopEvict := context.WithCancel(context.Background())
+	maxOrgPools, staticBudget := maxOrgPoolsFromConfig(cfg)
 	p := &Pools{
 		ReadOnlyPools:       make(map[string]*pgxpool.Pool),
 		DefaultConnectionID: defaultID,
@@ -152,6 +168,10 @@ func NewPools(ctx context.Context, cfg config.DatabaseConfig) (*Pools, error) {
 		poolDefaults:        poolDefaults,
 		idleEvict:           defaultReadonlyIdleEvict,
 		stopEvict:           stopEvict,
+		maxOrgPools:         maxOrgPools,
+		globalMaxConns:      cfg.GlobalMaxConns,
+		perPoolMaxConns:     cfg.MaxConnections,
+		staticPoolBudget:    staticBudget,
 	}
 	go p.evictIdleReadonlyPools(evictCtx)
 	return p, nil
@@ -165,11 +185,34 @@ func enforceGlobalConnectionBudget(cfg config.DatabaseConfig) error {
 	if sourceCount == 0 {
 		sourceCount = 1
 	}
+	// Reserve headroom for at least one tenant pool when org DSNs are in use.
+	// Static budget is app + configured readonly sources; tenant pools consume the remainder at runtime.
 	total := cfg.MaxConnections * (sourceCount + 1)
 	if total > cfg.GlobalMaxConns {
 		return fmt.Errorf("database global connection budget exceeded: configured maximum %d across %d pools, budget %d", total, sourceCount+1, cfg.GlobalMaxConns)
 	}
 	return nil
+}
+
+func maxOrgPoolsFromConfig(cfg config.DatabaseConfig) (maxPools, staticBudget int) {
+	sourceCount := len(cfg.Connections)
+	if sourceCount == 0 {
+		sourceCount = 1
+	}
+	perPool := cfg.MaxConnections
+	if perPool <= 0 {
+		perPool = 5
+	}
+	staticBudget = perPool * (sourceCount + 1)
+	if cfg.GlobalMaxConns <= 0 {
+		// Soft default: allow a bounded number of tenant pools.
+		return 32, staticBudget
+	}
+	remaining := cfg.GlobalMaxConns - staticBudget
+	if remaining < perPool {
+		return 0, staticBudget
+	}
+	return remaining / perPool, staticBudget
 }
 
 func newPoolWithRetries(ctx context.Context, connURL string, opts poolOptions) (*pgxpool.Pool, error) {
@@ -336,7 +379,8 @@ type HealthStatus struct {
 	Error       string `json:"error,omitempty"`
 }
 
-// HealthReport returns readiness for the app pool and every configured read-only pool.
+// HealthReport returns readiness for the app pool, configured read-only pools,
+// and any initialized per-organisation tenant pools.
 func (p *Pools) HealthReport(ctx context.Context) []HealthStatus {
 	if p == nil {
 		return []HealthStatus{{Name: "client", Role: "client", Ready: false, Error: "not initialized"}}
@@ -363,6 +407,14 @@ func (p *Pools) HealthReport(ctx context.Context) []HealthStatus {
 			continue
 		}
 		st := poolHealth(ctx, id, "readonly", entry.pool, true, true)
+		out = append(out, st)
+	}
+	for key, entry := range p.orgLazy {
+		if entry == nil || entry.pool == nil {
+			continue
+		}
+		name := tenantPoolMetricName(key)
+		st := poolHealth(ctx, name, "tenant_readonly", entry.pool, true, true)
 		out = append(out, st)
 	}
 	p.readonlyMu.Unlock()
@@ -393,6 +445,7 @@ type NamedPool struct {
 }
 
 // NamedPools returns initialized pools with stable labels.
+// Tenant pools use a bounded label (hashed org id) to avoid unbounded Prometheus cardinality.
 func (p *Pools) NamedPools() []NamedPool {
 	if p == nil {
 		return nil
@@ -404,8 +457,22 @@ func (p *Pools) NamedPools() []NamedPool {
 			out = append(out, NamedPool{Name: id, Role: "readonly", Pool: entry.pool})
 		}
 	}
+	for key, entry := range p.orgLazy {
+		if entry != nil && entry.pool != nil {
+			out = append(out, NamedPool{Name: tenantPoolMetricName(key), Role: "tenant_readonly", Pool: entry.pool})
+		}
+	}
 	p.readonlyMu.Unlock()
 	return out
+}
+
+func tenantPoolMetricName(orgPoolKey string) string {
+	orgID, connID, ok := strings.Cut(orgPoolKey, "\x00")
+	if !ok {
+		return "tenant:unknown"
+	}
+	sum := sha256.Sum256([]byte(orgID))
+	return "tenant:" + hex.EncodeToString(sum[:4]) + ":" + connID
 }
 
 // ReadOnly returns the read-only pool for connectionID, lazily opening it when needed.
@@ -424,6 +491,7 @@ func (p *Pools) ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 	if orgID := auth.OrgIDFromContext(ctx); orgID != "" {
 		pool, err := p.ensureOrgReadOnlyPool(ctx, orgID, connectionID)
 		if err != nil {
+			log.Printf("org readonly pool unavailable (org=%s conn=%s): %v", orgID, connectionID, err)
 			return nil
 		}
 		if pool != nil {
@@ -432,9 +500,116 @@ func (p *Pools) ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 	}
 	pool, err := p.ensureReadOnlyPool(ctx, connectionID)
 	if err != nil {
+		log.Printf("readonly pool unavailable (conn=%s): %v", connectionID, err)
 		return nil
 	}
 	return pool
+}
+
+// AllowedSchemas returns the effective schemas for the selected connection in the
+// current request context, preferring per-organisation overrides when present.
+// A non-nil empty slice means the tenant override is authoritative and denies all schemas.
+// nil means no tenant override (use catalog schemas).
+func (p *Pools) AllowedSchemas(ctx context.Context, connectionID string) []string {
+	if p == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if connectionID == "" {
+		connectionID = p.DefaultConnectionID
+	}
+	if orgID := auth.OrgIDFromContext(ctx); orgID != "" && p.orgDSN != nil {
+		res, err := p.orgDSN.Resolve(ctx, orgID, connectionID)
+		if err == nil && res.Mode != auth.OrgConnectionNoOverride {
+			return append([]string(nil), res.Schemas...)
+		}
+	}
+	if spec, ok := p.readonlySpecs[connectionID]; ok {
+		return append([]string(nil), spec.opts.searchPath...)
+	}
+	return nil
+}
+
+// TenantConnectionPolicy is the authoritative per-request tenant analytics policy.
+type TenantConnectionPolicy struct {
+	OrganizationID string
+	ConnectionID   string
+	Mode           auth.OrgConnectionMode
+	Pool           *pgxpool.Pool
+	AllowedSchemas []string
+	ReadOnlyUser   string
+	QueryTimeout   time.Duration
+	LockTimeout    time.Duration
+	IdleTxTimeout  time.Duration
+	PolicyVersion  int64
+}
+
+// ResolveTenantConnectionPolicy returns the pool, schemas, and timeouts that every
+// query/catalog/stats path must use for the current organisation and connection.
+func (p *Pools) ResolveTenantConnectionPolicy(ctx context.Context, connectionID string) (*TenantConnectionPolicy, error) {
+	if p == nil {
+		return nil, fmt.Errorf("pools are not configured")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if connectionID == "" {
+		connectionID = p.DefaultConnectionID
+	}
+	policy := &TenantConnectionPolicy{
+		OrganizationID: auth.OrgIDFromContext(ctx),
+		ConnectionID:   connectionID,
+		Mode:           auth.OrgConnectionNoOverride,
+	}
+	if spec, ok := p.readonlySpecs[connectionID]; ok {
+		policy.AllowedSchemas = append([]string(nil), spec.opts.searchPath...)
+		policy.ReadOnlyUser = spec.conn.ReadOnlyUser
+		policy.QueryTimeout = spec.opts.statementTimeout
+		policy.LockTimeout = spec.opts.lockTimeout
+		policy.IdleTxTimeout = spec.opts.idleTxTimeout
+	}
+
+	if policy.OrganizationID != "" && p.orgDSN != nil {
+		res, err := p.orgDSN.Resolve(ctx, policy.OrganizationID, connectionID)
+		if err != nil {
+			return nil, err
+		}
+		policy.Mode = res.Mode
+		policy.PolicyVersion = res.Version
+		if res.FailClosed() {
+			return nil, res.Error()
+		}
+		if res.Mode == auth.OrgConnectionDedicated {
+			policy.AllowedSchemas = append([]string(nil), res.Schemas...)
+			if user := dsnUser(res.DSN); user != "" {
+				policy.ReadOnlyUser = user
+			}
+		}
+	}
+
+	pool := p.ReadOnly(ctx, connectionID)
+	if pool == nil {
+		return nil, fmt.Errorf("analytical pool unavailable for connection %q", connectionID)
+	}
+	policy.Pool = pool
+	return policy, nil
+}
+
+// InvalidateOrgReadOnlyPool closes and removes the cached tenant pool for one
+// organisation/connection pair so secret rotation and unassignment take effect immediately.
+func (p *Pools) InvalidateOrgReadOnlyPool(orgID, connectionID string) {
+	if p == nil {
+		return
+	}
+	key := orgPoolKey(strings.TrimSpace(orgID), strings.TrimSpace(connectionID))
+	p.readonlyMu.Lock()
+	defer p.readonlyMu.Unlock()
+	if entry := p.orgLazy[key]; entry != nil && entry.pool != nil {
+		entry.pool.Close()
+	}
+	delete(p.orgLazy, key)
 }
 
 func orgPoolKey(orgID, connectionID string) string {
@@ -446,46 +621,132 @@ func (p *Pools) ensureOrgReadOnlyPool(ctx context.Context, orgID, connectionID s
 		return nil, nil
 	}
 	key := orgPoolKey(orgID, connectionID)
-	p.readonlyMu.Lock()
-	entry := p.orgLazy[key]
-	if entry != nil && entry.pool != nil {
-		entry.lastUsed = time.Now()
-		pool := entry.pool
-		p.readonlyMu.Unlock()
-		return pool, nil
-	}
 	lookup := p.orgDSN
-	p.readonlyMu.Unlock()
 
-	dsn, schemas, ok, err := lookup.OpenDSN(ctx, orgID, connectionID)
+	res, err := lookup.Resolve(ctx, orgID, connectionID)
 	if err != nil {
 		return nil, err
 	}
-	if !ok || strings.TrimSpace(dsn) == "" {
+	if res.FailClosed() {
+		return nil, res.Error()
+	}
+	if res.Mode != auth.OrgConnectionDedicated || strings.TrimSpace(res.DSN) == "" {
 		return nil, nil
 	}
 
+	p.readonlyMu.Lock()
+	entry := p.orgLazy[key]
+	if entry != nil && entry.pool != nil {
+		if entry.policyVersion == res.Version {
+			entry.lastUsed = time.Now()
+			pool := entry.pool
+			p.readonlyMu.Unlock()
+			return pool, nil
+		}
+		// Policy changed (rotation / schema update): drop stale pool under lock.
+		entry.pool.Close()
+		delete(p.orgLazy, key)
+	}
+	p.readonlyMu.Unlock()
+
+	// Inherit timeouts from the static connection; only override search_path with tenant schemas.
 	opts := p.poolDefaults
-	if len(schemas) > 0 {
-		opts.searchPath = append([]string(nil), schemas...)
-	} else if spec, has := p.readonlySpecs[connectionID]; has {
+	if spec, has := p.readonlySpecs[connectionID]; has {
 		opts = spec.opts
 	}
+	if len(res.Schemas) > 0 {
+		opts.searchPath = append([]string(nil), res.Schemas...)
+	}
 
-	pool, err := newPoolWithRetries(ctx, dsn, opts)
+	verifyOpts := TenantDSNVerifyOptions{
+		RequireTLS:     config.StrictMode(),
+		AllowedSchemas: res.Schemas,
+	}
+	if err := VerifyTenantDSNWithOptions(ctx, res.DSN, verifyOpts); err != nil {
+		return nil, fmt.Errorf("tenant DSN security verification failed: %w", err)
+	}
+
+	pool, err := newPoolWithRetries(ctx, res.DSN, opts)
 	if err != nil {
 		return nil, fmt.Errorf("%w (org %s conn %s): %v", errors.ErrReadOnlyPoolFailed, orgID, connectionID, err)
 	}
 
 	p.readonlyMu.Lock()
 	defer p.readonlyMu.Unlock()
-	if existing := p.orgLazy[key]; existing != nil && existing.pool != nil {
+	if existing := p.orgLazy[key]; existing != nil && existing.pool != nil && existing.policyVersion == res.Version {
 		pool.Close()
 		existing.lastUsed = time.Now()
 		return existing.pool, nil
 	}
-	p.orgLazy[key] = &lazyReadOnlyPool{pool: pool, lastUsed: time.Now()}
+	if existing := p.orgLazy[key]; existing != nil && existing.pool != nil {
+		existing.pool.Close()
+		delete(p.orgLazy, key)
+	}
+	if err := p.reserveOrgPoolLocked(); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	p.orgLazy[key] = &lazyReadOnlyPool{pool: pool, lastUsed: time.Now(), policyVersion: res.Version}
 	return pool, nil
+}
+
+// reserveOrgPoolLocked evicts LRU tenant pools until under maxOrgPools. Caller must hold readonlyMu.
+func (p *Pools) reserveOrgPoolLocked() error {
+	if p.maxOrgPools <= 0 {
+		return fmt.Errorf("tenant pool budget exhausted: no capacity reserved for organisation pools")
+	}
+	for len(p.orgLazy) >= p.maxOrgPools {
+		var oldestKey string
+		var oldestTime time.Time
+		first := true
+		for key, entry := range p.orgLazy {
+			if entry == nil {
+				delete(p.orgLazy, key)
+				continue
+			}
+			if first || entry.lastUsed.Before(oldestTime) {
+				first = false
+				oldestKey = key
+				oldestTime = entry.lastUsed
+			}
+		}
+		if oldestKey == "" {
+			break
+		}
+		if entry := p.orgLazy[oldestKey]; entry != nil && entry.pool != nil {
+			entry.pool.Close()
+		}
+		delete(p.orgLazy, oldestKey)
+		atomic.AddInt64(&p.orgPoolEvictions, 1)
+	}
+	if len(p.orgLazy) >= p.maxOrgPools {
+		return fmt.Errorf("tenant pool budget exhausted: max %d organisation pools", p.maxOrgPools)
+	}
+	return nil
+}
+
+// OrgPoolEvictions returns how many tenant pools were LRU-evicted to stay within budget.
+func (p *Pools) OrgPoolEvictions() int64 {
+	if p == nil {
+		return 0
+	}
+	return atomic.LoadInt64(&p.orgPoolEvictions)
+}
+
+func dsnUser(dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	if u, err := url.Parse(dsn); err == nil && u.User != nil {
+		if name := u.User.Username(); name != "" {
+			return name
+		}
+	}
+	for _, field := range strings.Fields(dsn) {
+		key, val, ok := strings.Cut(field, "=")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "user") {
+			return strings.TrimSpace(val)
+		}
+	}
+	return ""
 }
 
 func (p *Pools) ensureReadOnlyPool(ctx context.Context, connectionID string) (*pgxpool.Pool, error) {

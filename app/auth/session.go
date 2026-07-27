@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -21,7 +22,10 @@ import (
 const sessionCookieName = "pgqn_session"
 
 // Session holds browser session state after OIDC login.
+// When a SessionStore is attached, the cookie contains only Session.ID and the
+// authoritative identity lives server-side.
 type Session struct {
+	ID           string    `json:"sid,omitempty"`
 	UserID       string    `json:"sub"`
 	OrgID        string    `json:"org_id"`
 	Role         string    `json:"role"`
@@ -34,6 +38,7 @@ type SessionManager struct {
 	secret []byte
 	ttl    time.Duration
 	secure bool
+	store  *SessionStore
 }
 
 // NewSessionManager creates a session manager when SECURITY_SESSION_SECRET is configured.
@@ -79,7 +84,8 @@ func (m *SessionManager) TTL() time.Duration {
 	return m.ttl
 }
 
-// Issue writes a signed session cookie.
+// Issue writes a signed session cookie. With a SessionStore, only the session ID
+// is placed in the cookie and identity is persisted server-side.
 func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 	if !m.Enabled() {
 		return errors.New("session manager not configured")
@@ -93,21 +99,51 @@ func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 	if s.ExpiresAt.IsZero() {
 		s.ExpiresAt = time.Now().UTC().Add(m.ttl)
 	}
-	if s.RefreshToken != "" {
-		sealed, err := sealSecret(m.secret, s.RefreshToken)
+
+	sealedRefresh := ""
+	plainRefresh := s.RefreshToken
+	if plainRefresh != "" {
+		sealed, err := sealSecret(m.secret, plainRefresh)
 		if err != nil {
 			return err
 		}
-		s.RefreshToken = sealed
+		sealedRefresh = sealed
 	}
-	// RefreshToken above is sealed (AES-GCM encrypted) before this point when
-	// present, so the marshaled JSON never contains the plaintext token.
-	payload, err := json.Marshal(s) // #nosec G117 -- RefreshToken is sealSecret()-encrypted above, not plaintext.
+
+	if m.store != nil && m.store.Enabled() {
+		ctx := context.Background()
+		if s.ID != "" {
+			if err := m.store.Update(ctx, s.ID, s, sealedRefresh); err != nil {
+				return err
+			}
+		} else {
+			id, err := m.store.Create(ctx, s, sealedRefresh)
+			if err != nil {
+				return err
+			}
+			s.ID = id
+		}
+		token := signPayload(m.secret, []byte(s.ID))
+		http.SetCookie(w, &http.Cookie{ // #nosec G124
+			Name:     sessionCookieName,
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   m.secure,
+			SameSite: http.SameSiteLaxMode,
+			Expires:  s.ExpiresAt,
+		})
+		return nil
+	}
+
+	// Legacy cookie-embedded session (no server store configured).
+	s.RefreshToken = sealedRefresh
+	payload, err := json.Marshal(s) // #nosec G117 -- RefreshToken is sealSecret()-encrypted above when present.
 	if err != nil {
 		return err
 	}
 	token := signPayload(m.secret, payload)
-	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is config-driven (m.secure); false only for local http:// dev via SECURITY_COOKIE_SECURE.
+	http.SetCookie(w, &http.Cookie{ // #nosec G124
 		Name:     sessionCookieName,
 		Value:    token,
 		Path:     "/",
@@ -121,7 +157,7 @@ func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 
 // Clear removes the session cookie.
 func (m *SessionManager) Clear(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- see Save above.
+	http.SetCookie(w, &http.Cookie{ // #nosec G124
 		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",
@@ -145,6 +181,28 @@ func (m *SessionManager) Read(r *http.Request) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if m.store != nil && m.store.Enabled() {
+		id := strings.TrimSpace(string(payload))
+		// Legacy cookies were JSON payloads; migrate by rejecting until re-login when store is required.
+		if strings.HasPrefix(id, "{") {
+			return nil, errors.New("legacy session cookie; re-authenticate")
+		}
+		s, err := m.store.Load(r.Context(), id)
+		if err != nil {
+			return nil, err
+		}
+		if s.RefreshToken != "" {
+			plain, openErr := openSecret(m.secret, s.RefreshToken)
+			if openErr == nil {
+				s.RefreshToken = plain
+			} else if strings.HasPrefix(s.RefreshToken, "v1:") {
+				return nil, errors.New("invalid refresh token envelope")
+			}
+		}
+		return s, nil
+	}
+
 	var s Session
 	if err := json.Unmarshal(payload, &s); err != nil {
 		return nil, err
@@ -161,9 +219,8 @@ func (m *SessionManager) Read(r *http.Request) (*Session, error) {
 	if s.RefreshToken != "" {
 		plain, err := openSecret(m.secret, s.RefreshToken)
 		if err != nil {
-			// Legacy cookies stored plaintext refresh tokens; keep readable until re-issue.
 			if !strings.HasPrefix(s.RefreshToken, "v1:") {
-				// leave as-is
+				// leave as-is (legacy plaintext)
 			} else {
 				return nil, errors.New("invalid refresh token envelope")
 			}
@@ -192,8 +249,6 @@ func (m *SessionManager) RefreshHandler(w http.ResponseWriter, r *http.Request) 
 		_, _ = w.Write([]byte(`{"refreshed":false}`))
 		return
 	}
-	// SessionManager refresh only extends a still-valid session; OIDC token renewal
-	// is handled by BrowserOIDC.RefreshHandler when browser OIDC is enabled.
 	s.ExpiresAt = time.Now().UTC().Add(m.ttl)
 	if err := m.Issue(w, *s); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -234,6 +289,18 @@ func NewPKCEVerifier() (verifier, challenge string, err error) {
 	sum := sha256.Sum256([]byte(verifier))
 	challenge = base64.RawURLEncoding.EncodeToString(sum[:])
 	return verifier, challenge, nil
+}
+
+func parseSessionCookieID(secret []byte, token string) (string, bool) {
+	payload, err := verifySignedPayload(secret, token)
+	if err != nil {
+		return "", false
+	}
+	id := strings.TrimSpace(string(payload))
+	if id == "" || strings.HasPrefix(id, "{") {
+		return "", false
+	}
+	return id, true
 }
 
 func signPayload(secret, payload []byte) string {

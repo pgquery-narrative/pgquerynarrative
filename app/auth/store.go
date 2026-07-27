@@ -12,9 +12,11 @@ import (
 
 // Role names for RBAC.
 const (
-	RoleAdmin   = "admin"
-	RoleAnalyst = "analyst"
-	RoleViewer  = "viewer"
+	RolePlatformAdmin = "platform_admin"
+	RoleTenantAdmin   = "tenant_admin"
+	RoleAdmin         = RolePlatformAdmin
+	RoleAnalyst       = "analyst"
+	RoleViewer        = "viewer"
 )
 
 // ContextKey is the type for auth identity in request context.
@@ -383,12 +385,52 @@ func bearerToken(r *http.Request) string {
 
 func normalizeRole(role string) string {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case RoleAdmin, "administrator":
-		return RoleAdmin
+	case RolePlatformAdmin, "platform_administrator", "global_admin", "superadmin":
+		// Explicit platform-wide administrators only. Legacy "admin" is tenant-scoped.
+		return RolePlatformAdmin
+	case RoleTenantAdmin, "admin", "administrator", "org_admin", "organization_admin", "organisation_admin":
+		return RoleTenantAdmin
 	case RoleViewer, "read", "readonly", "reader":
 		return RoleViewer
 	default:
 		return RoleAnalyst
+	}
+}
+
+// NormalizeRole maps configured role aliases onto canonical RBAC role names.
+func NormalizeRole(role string) string {
+	return normalizeRole(role)
+}
+
+// CanAssignRole reports whether actorRole may grant targetRole to a membership or API key.
+// Only platform admins may assign platform_admin.
+func CanAssignRole(actorRole, targetRole string) bool {
+	if !IsAdminRole(actorRole) {
+		return false
+	}
+	if IsPlatformAdminRole(targetRole) {
+		return IsPlatformAdminRole(actorRole)
+	}
+	return true
+}
+
+// IsPlatformAdminRole reports whether the normalized role is a platform-wide admin.
+func IsPlatformAdminRole(role string) bool {
+	return normalizeRole(role) == RolePlatformAdmin
+}
+
+// IsTenantAdminRole reports whether the normalized role is a tenant-scoped admin.
+func IsTenantAdminRole(role string) bool {
+	return normalizeRole(role) == RoleTenantAdmin
+}
+
+// IsAdminRole reports whether the role is any admin class.
+func IsAdminRole(role string) bool {
+	switch normalizeRole(role) {
+	case RolePlatformAdmin, RoleTenantAdmin:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -407,7 +449,7 @@ func RoleFromContext(ctx context.Context) string {
 // AllowsMethod reports whether role may use HTTP method on API path.
 func AllowsMethod(role, method, path string) bool {
 	method = strings.ToUpper(method)
-	if role == RoleAdmin {
+	if IsAdminRole(role) {
 		return true
 	}
 	if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {

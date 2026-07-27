@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -32,9 +33,14 @@ type poolResolver interface {
 	ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 }
 
+type schemaResolver interface {
+	AllowedSchemas(ctx context.Context, connectionID string) []string
+}
+
 type Runner struct {
 	pool                *pgxpool.Pool
 	poolResolver        poolResolver
+	schemaResolver      schemaResolver
 	connectionID        string
 	validator           *Validator
 	maxRows             int
@@ -92,6 +98,9 @@ func NewRunnerForConnection(resolver poolResolver, connectionID string, validato
 		maxCellBytes:   DefaultMaxCellBytes,
 		maxColumns:     DefaultMaxColumns,
 	}
+	if sr, ok := resolver.(schemaResolver); ok {
+		r.schemaResolver = sr
+	}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -101,6 +110,11 @@ func NewRunnerForConnection(resolver poolResolver, connectionID string, validato
 // StatsPool returns the analytical pool used for catalog/stats queries on this runner.
 func (r *Runner) StatsPool() *pgxpool.Pool {
 	return r.activePool(context.Background())
+}
+
+// StatsPoolFor returns the analytical pool for the request context.
+func (r *Runner) StatsPoolFor(ctx context.Context) *pgxpool.Pool {
+	return r.activePool(ctx)
 }
 
 func (r *Runner) activePool(ctx context.Context) *pgxpool.Pool {
@@ -113,8 +127,38 @@ func (r *Runner) activePool(ctx context.Context) *pgxpool.Pool {
 	return nil
 }
 
+func (r *Runner) activeValidator(ctx context.Context) *Validator {
+	if r == nil || r.validator == nil {
+		return nil
+	}
+	if r.schemaResolver == nil {
+		return r.validator
+	}
+	schemas := r.schemaResolver.AllowedSchemas(ctx, r.connectionID)
+	if schemas == nil {
+		return r.validator
+	}
+	return r.validator.ValidateForSchemas(schemas)
+}
+
+func queryReadOnlyRows(ctx context.Context, pool *pgxpool.Pool, sql string, args ...any) (pgx.Rows, pgx.Tx, error) {
+	if pool == nil {
+		return nil, nil, nil
+	}
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, nil, err
+	}
+	return rows, tx, nil
+}
+
 func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error) {
-	if err := r.ValidateQuery(sql); err != nil {
+	if err := r.activeValidator(ctx).Validate(sql); err != nil {
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
 
@@ -141,7 +185,7 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	if pool == nil {
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
-	rows, err := pool.Query(queryCtx, wrappedSQL, rowCap)
+	rows, tx, err := queryReadOnlyRows(queryCtx, pool, wrappedSQL, rowCap)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 			return nil, fmt.Errorf("%s: query exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
@@ -150,6 +194,7 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 		return nil, apperrors.ErrQueryExecutionFailed
 	}
 	defer rows.Close()
+	defer func() { _ = tx.Rollback(queryCtx) }()
 
 	fieldDescs := rows.FieldDescriptions()
 	if r.maxColumns > 0 && len(fieldDescs) > r.maxColumns {
@@ -193,6 +238,9 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("row iteration error: %w", err)
 	}
+	if err := tx.Commit(queryCtx); err != nil {
+		return nil, apperrors.ErrQueryExecutionFailed
+	}
 
 	executionTime := time.Since(start)
 	debuglog.Log("query executed: %d rows in %s", len(resultRows), executionTime.Round(time.Millisecond))
@@ -209,7 +257,12 @@ func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error
 
 // ValidateQuery checks SQL safety without executing it.
 func (r *Runner) ValidateQuery(sql string) error {
-	return r.validator.Validate(sql)
+	return r.activeValidator(context.Background()).Validate(sql)
+}
+
+// ValidateQueryWithContext checks SQL safety using request-scoped connection policy.
+func (r *Runner) ValidateQueryWithContext(ctx context.Context, sql string) error {
+	return r.activeValidator(ctx).Validate(sql)
 }
 
 // QueryTimeout returns the per-query execution timeout configured for this runner.

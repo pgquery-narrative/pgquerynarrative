@@ -41,6 +41,29 @@ func TestOrgConnectionSecretStore_OpenDSNNilStore(t *testing.T) {
 	}
 }
 
+func TestOrgConnectionResolutionFailClosed(t *testing.T) {
+	cases := []OrgConnectionMode{
+		OrgConnectionDisabled,
+		OrgConnectionKeyUnavailable,
+		OrgConnectionDecryptFailed,
+	}
+	for _, mode := range cases {
+		res := OrgConnectionResolution{Mode: mode}
+		if !res.FailClosed() {
+			t.Fatalf("%s should fail closed", mode)
+		}
+		if res.Error() == nil {
+			t.Fatalf("%s should expose an error", mode)
+		}
+	}
+	if (OrgConnectionResolution{Mode: OrgConnectionNoOverride}).FailClosed() {
+		t.Fatal("no_override must allow shared fallback")
+	}
+	if (OrgConnectionResolution{Mode: OrgConnectionDedicated}).FailClosed() {
+		t.Fatal("dedicated must not be treated as fail-closed")
+	}
+}
+
 func TestOrgConnectionSecretStore_MutationsRequireConfig(t *testing.T) {
 	var store *OrgConnectionSecretStore
 	if err := store.Upsert(context.Background(), DefaultOrganizationID, "default", "postgres://x", nil); err == nil {
@@ -154,5 +177,32 @@ func TestAllowedConnectionsNilAuthorizer(t *testing.T) {
 	list, err := a.ListAllowedConnections(context.Background(), DefaultOrganizationID, "u", RoleAdmin, []string{"default"}, ActionQuery)
 	if err != nil || len(list) != 1 || list[0] != "default" {
 		t.Fatalf("ListAllowedConnections: list=%v err=%v", list, err)
+	}
+}
+
+func TestNormalizeRoleAdminClasses(t *testing.T) {
+	if got := normalizeRole("admin"); got != RoleTenantAdmin {
+		t.Fatalf("admin should normalize to tenant admin, got %q", got)
+	}
+	if got := normalizeRole("platform_admin"); got != RolePlatformAdmin {
+		t.Fatalf("platform_admin should normalize to platform admin, got %q", got)
+	}
+	if got := normalizeRole("tenant_admin"); got != RoleTenantAdmin {
+		t.Fatalf("tenant_admin should normalize to tenant admin, got %q", got)
+	}
+	if !IsAdminRole(RolePlatformAdmin) || !IsAdminRole(RoleTenantAdmin) {
+		t.Fatal("expected both admin roles to be recognized as admins")
+	}
+	if IsAdminRole(RoleAnalyst) {
+		t.Fatal("analyst should not be recognized as an admin")
+	}
+	if CanAssignRole(RoleTenantAdmin, RolePlatformAdmin) {
+		t.Fatal("tenant admin must not assign platform_admin")
+	}
+	if !CanAssignRole(RolePlatformAdmin, RolePlatformAdmin) {
+		t.Fatal("platform admin must be able to assign platform_admin")
+	}
+	if !CanAssignRole(RoleTenantAdmin, RoleAnalyst) {
+		t.Fatal("tenant admin must be able to assign analyst")
 	}
 }

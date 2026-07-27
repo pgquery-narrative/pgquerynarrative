@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check demo-bootstrap demo-smoke demo-multi-org
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -81,8 +81,8 @@ docker-start:
 	@echo "Step 2: Setting up database..."
 	@$(MAKE) db-init || true
 	@echo ""
-	@echo "Step 3: Running migrations..."
-	@docker compose run --rm --entrypoint /app/bin/migrate app -path /app/app/db/migrations -database "postgres://postgres:postgres@postgres:5432/pgquerynarrative?sslmode=disable" up
+	@echo "Step 3: Running migrations (host-mounted files via migrate-docker)..."
+	@$(MAKE) migrate-docker
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -c "ALTER ROLE pgquerynarrative_readonly SET default_transaction_read_only = on;" 2>/dev/null || true
 	@echo ""
 	@echo "Step 4: Seeding demo data..."
@@ -99,7 +99,8 @@ docker-start:
 	@echo ""
 	@echo "Press Ctrl+C to stop"
 	@echo ""
-	@docker compose up app
+	@docker compose up -d app
+	@echo "App started in background (docker compose up -d app). Logs: make docker-logs"
 
 # ============================================================================
 # Local PostgreSQL startup (no Docker)
@@ -216,7 +217,7 @@ test: test-unit test-integration
 
 test-unit:
 	@echo "🧪 Running unit tests..."
-	$(GO) test ./test/unit/... ./app/queryrunner/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... -v
+	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:
@@ -276,6 +277,19 @@ fmt:
 pilot-acceptance:
 	@chmod +x ./tools/ops/pilot_acceptance.sh
 	@DOCKER_API_VERSION=1.44 ./tools/ops/pilot_acceptance.sh
+
+# Solo product demo (see docs/DEMO_RUNBOOK.md)
+demo-bootstrap:
+	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/smoke_scenes.sh ./tools/demo/multi_org_demo.sh
+	@./tools/demo/bootstrap.sh
+
+demo-smoke:
+	@chmod +x ./tools/demo/smoke_scenes.sh
+	@./tools/demo/smoke_scenes.sh
+
+demo-multi-org:
+	@chmod +x ./tools/demo/multi_org_demo.sh
+	@./tools/demo/multi_org_demo.sh
 
 # Helm chart StrictMode gates (default values fail; ci-values render).
 helm-strict-check:

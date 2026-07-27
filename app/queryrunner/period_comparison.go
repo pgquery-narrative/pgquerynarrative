@@ -92,18 +92,23 @@ func (r *Runner) PeriodComparison(ctx context.Context, innerSQL, timeCol string,
 	if err != nil {
 		return nil, err
 	}
-	if err := r.validator.Validate(wrappedSQL); err != nil {
+	if err := r.activeValidator(ctx).Validate(wrappedSQL); err != nil {
 		return nil, fmt.Errorf("period comparison SQL validation failed: %w", err)
 	}
 
 	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
 	defer cancel()
 
-	rows, err := r.activePool(queryCtx).Query(queryCtx, wrappedSQL)
+	pool := r.activePool(queryCtx)
+	if pool == nil {
+		return nil, fmt.Errorf("period comparison pool unavailable")
+	}
+	rows, tx, err := queryReadOnlyRows(queryCtx, pool, wrappedSQL)
 	if err != nil {
 		return nil, fmt.Errorf("period comparison query failed: %w", err)
 	}
 	defer rows.Close()
+	defer func() { _ = tx.Rollback(queryCtx) }()
 
 	fieldDescs := rows.FieldDescriptions()
 	columns := make([]ColumnInfo, len(fieldDescs))
@@ -121,6 +126,9 @@ func (r *Runner) PeriodComparison(ctx context.Context, innerSQL, timeCol string,
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(queryCtx); err != nil {
+		return nil, fmt.Errorf("period comparison commit failed: %w", err)
 	}
 
 	return ParsePeriodComparisonRow(columns, resultRows, measureCols, trendThresholdPercent)

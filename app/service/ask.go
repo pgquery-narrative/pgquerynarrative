@@ -192,7 +192,11 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "LLM did not return any SQL", Code: strPtr("LLM_ERROR")}
 	}
 
-	if err := s.validator.Validate(sql); err != nil {
+	runner, err := s.connectionResolver.runnerFor(nil)
+	if err != nil {
+		return nil, askConnectionNotFoundError(err)
+	}
+	if err := runner.ValidateQueryWithContext(ctx, sql); err != nil {
 		return nil, askValidationError(err)
 	}
 
@@ -258,7 +262,11 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	if sqlText == "" {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "LLM did not return any SQL", Code: strPtr("LLM_ERROR")}
 	}
-	if err := s.validator.Validate(sqlText); err != nil {
+	runner, err := s.connectionResolver.runnerFor(nil)
+	if err != nil {
+		return nil, askConnectionNotFoundError(err)
+	}
+	if err := runner.ValidateQueryWithContext(ctx, sqlText); err != nil {
 		return nil, askValidationError(err)
 	}
 	report, err := s.reportsSvc.GenerateForAsk(ctx, &reports.GenerateReportPayload{SQL: sqlText, ConnectionID: payload.ConnectionID})
@@ -460,7 +468,11 @@ func (s *AskService) Explain(ctx context.Context, payload *suggestions.ExplainPa
 	}
 	sql = strings.TrimSuffix(sql, ";")
 	sql = strings.TrimSpace(sql)
-	if err := s.validator.Validate(sql); err != nil {
+	runner, err := s.connectionResolver.runnerFor(nil)
+	if err != nil {
+		return nil, askConnectionNotFoundError(err)
+	}
+	if err := runner.ValidateQueryWithContext(ctx, sql); err != nil {
 		return nil, askValidationError(err)
 	}
 	prompt := llm.BuildExplainPrompt(sql)
