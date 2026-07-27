@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"testing"
 )
 
@@ -22,13 +23,14 @@ func TestSessionStore_Enabled(t *testing.T) {
 
 func TestSessionStore_DisabledOperations(t *testing.T) {
 	var s SessionStore
-	if _, err := s.Create(nil, Session{}, ""); err == nil {
+	ctx := context.TODO()
+	if _, err := s.Create(ctx, Session{}, ""); err == nil {
 		t.Fatal("expected error when store disabled")
 	}
-	if err := s.Update(nil, "id", Session{}, ""); err == nil {
+	if err := s.Update(ctx, "id", Session{}, ""); err == nil {
 		t.Fatal("expected error when store disabled")
 	}
-	if _, err := s.Load(nil, "id"); err == nil {
+	if _, err := s.Load(ctx, "id"); err == nil {
 		t.Fatal("expected error when store disabled")
 	}
 }
