@@ -58,6 +58,40 @@ func TestRequirePlatformAdmin_RejectsTenantAdmin(t *testing.T) {
 	}
 }
 
+func TestRequireAdmin_AllowsAdminRoles(t *testing.T) {
+	for _, role := range []string{RoleTenantAdmin, RolePlatformAdmin} {
+		t.Run(role, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/v1/admin/memberships", nil)
+			req = req.WithContext(WithPrincipal(req.Context(), Principal{Role: role}))
+			rec := httptest.NewRecorder()
+			if !RequireAdmin(rec, req) {
+				t.Fatalf("expected %s to pass RequireAdmin", role)
+			}
+		})
+	}
+}
+
+func TestRequireAdmin_RejectsAnalyst(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/admin/memberships", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), Principal{Role: RoleAnalyst}))
+	rec := httptest.NewRecorder()
+	if RequireAdmin(rec, req) {
+		t.Fatal("expected analyst to be rejected")
+	}
+	if rec.Code != 403 {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestResolveAdminOrgScope_RejectsNonAdmin(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/v1/admin/memberships", nil)
+	req = req.WithContext(WithPrincipal(req.Context(), Principal{Role: RoleAnalyst, OrgID: "org-a"}))
+	rec := httptest.NewRecorder()
+	if _, ok := ResolveAdminOrgScope(rec, req, "org-a"); ok {
+		t.Fatal("expected non-admin to be rejected")
+	}
+}
+
 func TestRequirePlatformAdmin_AllowsPlatformAdmin(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v1/admin/organizations", nil)
 	req = req.WithContext(WithPrincipal(req.Context(), Principal{
