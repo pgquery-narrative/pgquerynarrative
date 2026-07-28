@@ -5,6 +5,8 @@ const recordVideo = process.env.DEMO_CAPTURE === "1";
 
 export default defineConfig({
   testDir: ".",
+  // Marketing capture only — run via: DEMO_CAPTURE=1 npx playwright test demo-workflow.spec.ts
+  testIgnore: recordVideo ? [] : ["**/demo-workflow.spec.ts"],
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
