@@ -4,6 +4,8 @@ Run read-only SQL against PostgreSQL, compute metrics and chart suggestions, and
 
 **Recommended path:** [Quick start](getting-started/quickstart.md) → [LLM setup](getting-started/llm-setup.md) (for reports) → [Configuration](configuration.md).
 
+**Local preview:** run `make docs` from the repo root, then open **http://localhost:8000** (MkDocs Material with search and navigation).
+
 ---
 
 ## Docs index
