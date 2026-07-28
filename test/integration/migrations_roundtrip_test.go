@@ -73,18 +73,18 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
-	var sessionsExists bool
+	var pollsExists bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'browser_sessions'
+			WHERE table_schema = 'app' AND table_name = 'stat_statement_polls'
 		)
-	`).Scan(&sessionsExists)
+	`).Scan(&pollsExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sessionsExists {
-		t.Fatal("app.browser_sessions still exists after rolling back migration 46")
+	if pollsExists {
+		t.Fatal("app.stat_statement_polls still exists after rolling back migration 48")
 	}
 
 	if err := m.Steps(1); err != nil {
@@ -104,27 +104,27 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'browser_sessions'
+			WHERE table_schema = 'app' AND table_name = 'stat_statement_polls'
 		)
-	`).Scan(&sessionsExists)
+	`).Scan(&pollsExists)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sessionsExists {
-		t.Fatal("app.browser_sessions missing after re-applying migration 46")
+	if !pollsExists {
+		t.Fatal("app.stat_statement_polls missing after re-applying migration 48")
 	}
 
-	var visibilityCol bool
+	var queryidCol bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM information_schema.columns
-			WHERE table_schema = 'app' AND table_name = 'saved_queries' AND column_name = 'visibility'
+			WHERE table_schema = 'app' AND table_name = 'regression_alerts' AND column_name = 'queryid'
 		)
-	`).Scan(&visibilityCol)
+	`).Scan(&queryidCol)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !visibilityCol {
-		t.Fatal("saved_queries.visibility missing after migration 46")
+	if !queryidCol {
+		t.Fatal("regression_alerts.queryid missing after migration 48")
 	}
 }
