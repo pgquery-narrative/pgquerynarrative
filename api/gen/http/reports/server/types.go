@@ -232,6 +232,9 @@ type MetricsDataResponseBody struct {
 	DataQuality map[string]*ColumnQualityDataResponseBody `form:"data_quality,omitempty" json:"data_quality,omitempty" xml:"data_quality,omitempty"`
 	// Performance suggestions from execution time/row count
 	PerfSuggestions []string `form:"perf_suggestions,omitempty" json:"perf_suggestions,omitempty" xml:"perf_suggestions,omitempty"`
+	// Structured Query Investigation report payload when a report was generated
+	// from an investigation
+	Investigation any `form:"investigation,omitempty" json:"investigation,omitempty" xml:"investigation,omitempty"`
 }
 
 // AggregateDataResponseBody is used to define fields on response body types.

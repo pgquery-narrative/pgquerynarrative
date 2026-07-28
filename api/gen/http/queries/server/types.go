@@ -36,6 +36,19 @@ type ExplainPlanRequestBody struct {
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 }
 
+// ComparePlansRequestBody is the type of the "queries" service "compare_plans"
+// endpoint HTTP request body.
+type ComparePlansRequestBody struct {
+	// Original SQL to explain
+	BeforeSQL *string `form:"before_sql,omitempty" json:"before_sql,omitempty" xml:"before_sql,omitempty"`
+	// Candidate SQL to explain
+	AfterSQL *string `form:"after_sql,omitempty" json:"after_sql,omitempty" xml:"after_sql,omitempty"`
+	// Run EXPLAIN ANALYZE when enabled server-side
+	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+	// Optional connection ID
+	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+}
+
 // SaveRequestBody is the type of the "queries" service "save" endpoint HTTP
 // request body.
 type SaveRequestBody struct {
@@ -88,6 +101,17 @@ type ExplainPlanResponseBody struct {
 	Findings []*PlanFindingResponseBody `form:"findings" json:"findings" xml:"findings"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
+}
+
+// ComparePlansResponseBody is the type of the "queries" service
+// "compare_plans" endpoint HTTP response body.
+type ComparePlansResponseBody struct {
+	Before  *ExplainQueryResultResponseBody     `form:"before" json:"before" xml:"before"`
+	After   *ExplainQueryResultResponseBody     `form:"after" json:"after" xml:"after"`
+	Metrics []*PlanComparisonMetricResponseBody `form:"metrics" json:"metrics" xml:"metrics"`
+	Diff    *PlanComparisonDiffResponseBody     `form:"diff" json:"diff" xml:"diff"`
+	// True when row checksums match (when computable)
+	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
 }
 
 // ListSavedResponseBody is the type of the "queries" service "list_saved"
@@ -144,6 +168,14 @@ type StatStatementsValidationErrorResponseBody struct {
 // ExplainPlanValidationErrorResponseBody is the type of the "queries" service
 // "explain_plan" endpoint HTTP response body for the "validation_error" error.
 type ExplainPlanValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// ComparePlansValidationErrorResponseBody is the type of the "queries" service
+// "compare_plans" endpoint HTTP response body for the "validation_error" error.
+type ComparePlansValidationErrorResponseBody struct {
 	Name    string  `form:"name" json:"name" xml:"name"`
 	Message string  `form:"message" json:"message" xml:"message"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -234,6 +266,45 @@ type PlanFindingResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 	// Raw plan metrics backing this finding (e.g. Plan Rows=8000)
 	Evidence []string `form:"evidence,omitempty" json:"evidence,omitempty" xml:"evidence,omitempty"`
+}
+
+// ExplainQueryResultResponseBody is used to define fields on response body
+// types.
+type ExplainQueryResultResponseBody struct {
+	// The inner read-only SQL that was explained
+	SQL string `form:"sql" json:"sql" xml:"sql"`
+	// Estimated total cost from the root plan node
+	TotalCost float64 `form:"total_cost" json:"total_cost" xml:"total_cost"`
+	// Raw EXPLAIN (FORMAT JSON) output
+	Plan any `form:"plan" json:"plan" xml:"plan"`
+	// Notable plan nodes (seq scans, high-cost operators)
+	Findings []*PlanFindingResponseBody `form:"findings" json:"findings" xml:"findings"`
+	// Time to run EXPLAIN and parse the plan
+	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
+}
+
+// PlanComparisonMetricResponseBody is used to define fields on response body
+// types.
+type PlanComparisonMetricResponseBody struct {
+	// Metric name (e.g. Execution time)
+	Evidence string `form:"evidence" json:"evidence" xml:"evidence"`
+	// Before value
+	Before string `form:"before" json:"before" xml:"before"`
+	// After value
+	After string `form:"after" json:"after" xml:"after"`
+	// Change summary (e.g. −96.3%)
+	Change string `form:"change" json:"change" xml:"change"`
+}
+
+// PlanComparisonDiffResponseBody is used to define fields on response body
+// types.
+type PlanComparisonDiffResponseBody struct {
+	// Plan nodes removed
+	Removed []string `form:"removed,omitempty" json:"removed,omitempty" xml:"removed,omitempty"`
+	// Plan nodes added
+	Added []string `form:"added,omitempty" json:"added,omitempty" xml:"added,omitempty"`
+	// Improvements detected
+	Improved []string `form:"improved,omitempty" json:"improved,omitempty" xml:"improved,omitempty"`
 }
 
 // SavedQueryResponseBody is used to define fields on response body types.
@@ -350,6 +421,36 @@ func NewExplainPlanResponseBody(res *queries.ExplainQueryResult) *ExplainPlanRes
 	return body
 }
 
+// NewComparePlansResponseBody builds the HTTP response body from the result of
+// the "compare_plans" endpoint of the "queries" service.
+func NewComparePlansResponseBody(res *queries.ComparePlansResult) *ComparePlansResponseBody {
+	body := &ComparePlansResponseBody{
+		ResultChecksumEqual: res.ResultChecksumEqual,
+	}
+	if res.Before != nil {
+		body.Before = marshalQueriesExplainQueryResultToExplainQueryResultResponseBody(res.Before)
+	}
+	if res.After != nil {
+		body.After = marshalQueriesExplainQueryResultToExplainQueryResultResponseBody(res.After)
+	}
+	if res.Metrics != nil {
+		body.Metrics = make([]*PlanComparisonMetricResponseBody, len(res.Metrics))
+		for i, val := range res.Metrics {
+			if val == nil {
+				body.Metrics[i] = nil
+				continue
+			}
+			body.Metrics[i] = marshalQueriesPlanComparisonMetricToPlanComparisonMetricResponseBody(val)
+		}
+	} else {
+		body.Metrics = []*PlanComparisonMetricResponseBody{}
+	}
+	if res.Diff != nil {
+		body.Diff = marshalQueriesPlanComparisonDiffToPlanComparisonDiffResponseBody(res.Diff)
+	}
+	return body
+}
+
 // NewListSavedResponseBody builds the HTTP response body from the result of
 // the "list_saved" endpoint of the "queries" service.
 func NewListSavedResponseBody(res *queries.SavedQueryList) *ListSavedResponseBody {
@@ -447,6 +548,17 @@ func NewExplainPlanValidationErrorResponseBody(res *queries.ValidationError) *Ex
 	return body
 }
 
+// NewComparePlansValidationErrorResponseBody builds the HTTP response body
+// from the result of the "compare_plans" endpoint of the "queries" service.
+func NewComparePlansValidationErrorResponseBody(res *queries.ValidationError) *ComparePlansValidationErrorResponseBody {
+	body := &ComparePlansValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
 // NewGetSavedNotFoundResponseBody builds the HTTP response body from the
 // result of the "get_saved" endpoint of the "queries" service.
 func NewGetSavedNotFoundResponseBody(res *queries.NotFoundError) *GetSavedNotFoundResponseBody {
@@ -501,6 +613,24 @@ func NewStatStatementsPayload(orderBy string, limit int32, connectionID *string)
 func NewExplainPlanExplainQueryPayload(body *ExplainPlanRequestBody) *queries.ExplainQueryPayload {
 	v := &queries.ExplainQueryPayload{
 		SQL:          *body.SQL,
+		ConnectionID: body.ConnectionID,
+	}
+	if body.Analyze != nil {
+		v.Analyze = *body.Analyze
+	}
+	if body.Analyze == nil {
+		v.Analyze = false
+	}
+
+	return v
+}
+
+// NewComparePlansPayload builds a queries service compare_plans endpoint
+// payload.
+func NewComparePlansPayload(body *ComparePlansRequestBody) *queries.ComparePlansPayload {
+	v := &queries.ComparePlansPayload{
+		BeforeSQL:    *body.BeforeSQL,
+		AfterSQL:     *body.AfterSQL,
 		ConnectionID: body.ConnectionID,
 	}
 	if body.Analyze != nil {
@@ -606,6 +736,44 @@ func ValidateExplainPlanRequestBody(body *ExplainPlanRequestBody) (err error) {
 	if body.SQL != nil {
 		if utf8.RuneCountInString(*body.SQL) > 10000 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", *body.SQL, utf8.RuneCountInString(*body.SQL), 10000, false))
+		}
+	}
+	return
+}
+
+// ValidateComparePlansRequestBody runs the validations defined on
+// compare_plans_request_body
+func ValidateComparePlansRequestBody(body *ComparePlansRequestBody) (err error) {
+	if body.BeforeSQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("before_sql", "body"))
+	}
+	if body.AfterSQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("after_sql", "body"))
+	}
+	if body.BeforeSQL != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", *body.BeforeSQL, "^[^;]+$"))
+	}
+	if body.BeforeSQL != nil {
+		if utf8.RuneCountInString(*body.BeforeSQL) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.before_sql", *body.BeforeSQL, utf8.RuneCountInString(*body.BeforeSQL), 1, true))
+		}
+	}
+	if body.BeforeSQL != nil {
+		if utf8.RuneCountInString(*body.BeforeSQL) > 10000 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.before_sql", *body.BeforeSQL, utf8.RuneCountInString(*body.BeforeSQL), 10000, false))
+		}
+	}
+	if body.AfterSQL != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.after_sql", *body.AfterSQL, "^[^;]+$"))
+	}
+	if body.AfterSQL != nil {
+		if utf8.RuneCountInString(*body.AfterSQL) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.after_sql", *body.AfterSQL, utf8.RuneCountInString(*body.AfterSQL), 1, true))
+		}
+	}
+	if body.AfterSQL != nil {
+		if utf8.RuneCountInString(*body.AfterSQL) > 10000 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.after_sql", *body.AfterSQL, utf8.RuneCountInString(*body.AfterSQL), 10000, false))
 		}
 	}
 	return

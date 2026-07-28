@@ -833,6 +833,7 @@ func unmarshalMetricsDataResponseBodyToReportsMetricsData(v *MetricsDataResponse
 	res := &reports.MetricsData{
 		PeriodCurrentLabel:  v.PeriodCurrentLabel,
 		PeriodPreviousLabel: v.PeriodPreviousLabel,
+		Investigation:       v.Investigation,
 	}
 	if v.Aggregates != nil {
 		res.Aggregates = make(map[string]*reports.AggregateData, len(v.Aggregates))

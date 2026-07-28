@@ -19,6 +19,8 @@ type Service interface {
 	StatStatements(context.Context, *StatStatementsPayload) (res *StatStatementsResult, err error)
 	// Run EXPLAIN (FORMAT JSON) on a read-only query and return plan analysis
 	ExplainPlan(context.Context, *ExplainQueryPayload) (res *ExplainQueryResult, err error)
+	// Compare before and after execution plans for a query rewrite or index change
+	ComparePlans(context.Context, *ComparePlansPayload) (res *ComparePlansResult, err error)
 	// List saved queries
 	ListSaved(context.Context, *ListSavedPayload) (res *SavedQueryList, err error)
 	// Save a query
@@ -43,7 +45,7 @@ const ServiceName = "queries"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [7]string{"run", "stat_statements", "explain_plan", "list_saved", "save", "get_saved", "delete_saved"}
+var MethodNames = [8]string{"run", "stat_statements", "explain_plan", "compare_plans", "list_saved", "save", "get_saved", "delete_saved"}
 
 type ChartSuggestion struct {
 	// Chart type identifier: bar, line, pie, area, table
@@ -57,6 +59,30 @@ type ChartSuggestion struct {
 type ColumnInfo struct {
 	Name string
 	Type string
+}
+
+// ComparePlansPayload is the payload type of the queries service compare_plans
+// method.
+type ComparePlansPayload struct {
+	// Original SQL to explain
+	BeforeSQL string
+	// Candidate SQL to explain
+	AfterSQL string
+	// Run EXPLAIN ANALYZE when enabled server-side
+	Analyze bool
+	// Optional connection ID
+	ConnectionID *string
+}
+
+// ComparePlansResult is the result type of the queries service compare_plans
+// method.
+type ComparePlansResult struct {
+	Before  *ExplainQueryResult
+	After   *ExplainQueryResult
+	Metrics []*PlanComparisonMetric
+	Diff    *PlanComparisonDiff
+	// True when row checksums match (when computable)
+	ResultChecksumEqual *bool
 }
 
 // DeleteSavedPayload is the payload type of the queries service delete_saved
@@ -124,6 +150,26 @@ type PeriodComparisonItem struct {
 	ChangePercentage *float64
 	// up, down, or flat
 	Trend string
+}
+
+type PlanComparisonDiff struct {
+	// Plan nodes removed
+	Removed []string
+	// Plan nodes added
+	Added []string
+	// Improvements detected
+	Improved []string
+}
+
+type PlanComparisonMetric struct {
+	// Metric name (e.g. Execution time)
+	Evidence string
+	// Before value
+	Before string
+	// After value
+	After string
+	// Change summary (e.g. −96.3%)
+	Change string
 }
 
 type PlanFinding struct {

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -291,6 +292,12 @@ func FormatReportHTML(report *reports.Report) string {
 	}
 	sb.WriteString("</div>")
 
+	if report.Metrics != nil && report.Metrics.Investigation != nil {
+		sb.WriteString(formatInvestigationHTML(report.Metrics.Investigation))
+		sb.WriteString("</div>")
+		return sb.String()
+	}
+
 	if len(report.ChartSuggestions) > 0 {
 		sb.WriteString("<div class=\"chart-suggestions\"><h4 class=\"report-section-title\">Suggested charts</h4><ul class=\"suggestion-list report-list\">")
 		for _, s := range report.ChartSuggestions {
@@ -573,4 +580,230 @@ func FormatReportHTML(report *reports.Report) string {
 
 	sb.WriteString("</div>")
 	return sb.String()
+}
+
+func formatInvestigationHTML(payload any) string {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	var inv map[string]any
+	if err := json.Unmarshal(raw, &inv); err != nil {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("<div class=\"investigation-report\">")
+	if summary := mapString(inv, "executive_summary"); summary != "" {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Executive summary</h4><p>")
+		sb.WriteString(template.HTMLEscapeString(summary))
+		sb.WriteString("</p></div>")
+	}
+	if impact := mapAny(inv, "impact"); impact != nil {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Impact</h4>")
+		if severity := mapString(impact, "severity"); severity != "" {
+			sb.WriteString("<p><strong>Severity:</strong> ")
+			sb.WriteString(template.HTMLEscapeString(severity))
+			sb.WriteString("</p>")
+		}
+		if impactSummary := mapString(impact, "summary"); impactSummary != "" {
+			sb.WriteString("<p>")
+			sb.WriteString(template.HTMLEscapeString(impactSummary))
+			sb.WriteString("</p>")
+		}
+		sb.WriteString("</div>")
+	}
+	if sql := mapString(inv, "source_query"); sql != "" {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Source query</h4><pre>")
+		sb.WriteString(template.HTMLEscapeString(sql))
+		sb.WriteString("</pre></div>")
+	}
+	writeEscapedList(&sb, "PostgreSQL evidence", mapStrings(inv, "postgresql_evidence"))
+
+	if findings := mapSlice(inv, "plan_findings"); len(findings) > 0 {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Execution-plan findings</h4><ul class=\"report-list\">")
+		for _, item := range findings {
+			sb.WriteString("<li>")
+			if category := mapString(item, "category"); category != "" {
+				sb.WriteString("<strong>")
+				sb.WriteString(template.HTMLEscapeString(category))
+				sb.WriteString(":</strong> ")
+			}
+			sb.WriteString(template.HTMLEscapeString(mapString(item, "message")))
+			evidence := mapStrings(item, "evidence")
+			if len(evidence) > 0 {
+				sb.WriteString("<ul class=\"report-list\">")
+				for _, detail := range evidence {
+					sb.WriteString("<li>")
+					sb.WriteString(template.HTMLEscapeString(detail))
+					sb.WriteString("</li>")
+				}
+				sb.WriteString("</ul>")
+			}
+			sb.WriteString("</li>")
+		}
+		sb.WriteString("</ul></div>")
+	}
+
+	if candidates := mapSlice(inv, "candidate_improvements"); len(candidates) > 0 {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Candidate improvements</h4><ul class=\"report-list\">")
+		for _, item := range candidates {
+			sb.WriteString("<li>")
+			if proposed := mapString(item, "proposed_change"); proposed != "" {
+				sb.WriteString("<pre>")
+				sb.WriteString(template.HTMLEscapeString(proposed))
+				sb.WriteString("</pre>")
+			}
+			if why := mapString(item, "why_it_might_help"); why != "" {
+				sb.WriteString("<p>")
+				sb.WriteString(template.HTMLEscapeString(why))
+				sb.WriteString("</p>")
+			}
+			if verification := mapStrings(item, "required_verification"); len(verification) > 0 {
+				sb.WriteString("<p><strong>Required verification</strong></p><ul class=\"report-list\">")
+				for _, step := range verification {
+					sb.WriteString("<li>")
+					sb.WriteString(template.HTMLEscapeString(step))
+					sb.WriteString("</li>")
+				}
+				sb.WriteString("</ul>")
+			}
+			sb.WriteString("</li>")
+		}
+		sb.WriteString("</ul></div>")
+	}
+
+	if controlled := mapAny(inv, "controlled_test_results"); controlled != nil {
+		if metricsRows := mapSlice(controlled, "metrics"); len(metricsRows) > 0 {
+			sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Controlled test results</h4><table class=\"data-quality-table\"><thead><tr><th>Evidence</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>")
+			for _, row := range metricsRows {
+				sb.WriteString("<tr><td>")
+				sb.WriteString(template.HTMLEscapeString(mapString(row, "evidence")))
+				sb.WriteString("</td><td>")
+				sb.WriteString(template.HTMLEscapeString(mapString(row, "before")))
+				sb.WriteString("</td><td>")
+				sb.WriteString(template.HTMLEscapeString(mapString(row, "after")))
+				sb.WriteString("</td><td>")
+				sb.WriteString(template.HTMLEscapeString(mapString(row, "change")))
+				sb.WriteString("</td></tr>")
+			}
+			sb.WriteString("</tbody></table></div>")
+		}
+		writeEscapedList(&sb, "Improved metrics", mapStrings(controlled, "improved"))
+	}
+
+	if eq := mapAny(inv, "equivalence_validation"); eq != nil {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Result-equivalence validation</h4>")
+		if status := mapString(eq, "status"); status != "" {
+			sb.WriteString("<p><strong>Status:</strong> ")
+			sb.WriteString(template.HTMLEscapeString(status))
+			sb.WriteString("</p>")
+		}
+		if notes := mapString(eq, "notes"); notes != "" {
+			sb.WriteString("<p>")
+			sb.WriteString(template.HTMLEscapeString(notes))
+			sb.WriteString("</p>")
+		}
+		sb.WriteString("</div>")
+	}
+
+	writeEscapedList(&sb, "Risks and tradeoffs", mapStrings(inv, "risks_and_tradeoffs"))
+	if next := mapString(inv, "recommended_next_action"); next != "" {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Recommended next action</h4><p>")
+		sb.WriteString(template.HTMLEscapeString(next))
+		sb.WriteString("</p></div>")
+	}
+	if provenance := mapAny(inv, "provenance"); provenance != nil {
+		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Environment and provenance</h4><table class=\"data-quality-table\"><tbody>")
+		for _, key := range []string{"connection_type", "query_fingerprint", "analysis_timestamp", "generated_by"} {
+			value := mapString(provenance, key)
+			if value == "" {
+				continue
+			}
+			sb.WriteString("<tr><th>")
+			sb.WriteString(template.HTMLEscapeString(strings.ReplaceAll(key, "_", " ")))
+			sb.WriteString("</th><td>")
+			sb.WriteString(template.HTMLEscapeString(value))
+			sb.WriteString("</td></tr>")
+		}
+		sb.WriteString("</tbody></table></div>")
+	}
+	sb.WriteString("</div>")
+	return sb.String()
+}
+
+func writeEscapedList(sb *strings.Builder, title string, items []string) {
+	if len(items) == 0 {
+		return
+	}
+	sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">")
+	sb.WriteString(template.HTMLEscapeString(title))
+	sb.WriteString("</h4><ul class=\"report-list\">")
+	for _, item := range items {
+		sb.WriteString("<li>")
+		sb.WriteString(template.HTMLEscapeString(item))
+		sb.WriteString("</li>")
+	}
+	sb.WriteString("</ul></div>")
+}
+
+func mapAny(v any, key string) map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	child, ok := m[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return child
+}
+
+func mapSlice(v any, key string) []map[string]any {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	rawItems, ok := m[key].([]any)
+	if !ok {
+		return nil
+	}
+	items := make([]map[string]any, 0, len(rawItems))
+	for _, raw := range rawItems {
+		item, ok := raw.(map[string]any)
+		if ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func mapStrings(v any, key string) []string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	rawItems, ok := m[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(rawItems))
+	for _, raw := range rawItems {
+		if s, ok := raw.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func mapString(v any, key string) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	s, ok := m[key].(string)
+	if !ok {
+		return ""
+	}
+	return s
 }

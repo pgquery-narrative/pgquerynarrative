@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:18088";
+const recordVideo = process.env.DEMO_CAPTURE === "1";
 
 export default defineConfig({
   testDir: ".",
@@ -12,6 +13,7 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "on-first-retry",
+    video: recordVideo ? "on" : "off",
     ...devices["Desktop Chrome"],
   },
 });

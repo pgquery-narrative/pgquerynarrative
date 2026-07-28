@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
@@ -179,6 +181,26 @@ func ConvertMetrics(m *metrics.Metrics) *reports.MetricsData {
 	}
 	if m.PreviousPeriodLabel != "" {
 		out.PeriodPreviousLabel = &m.PreviousPeriodLabel
+	}
+	return out
+}
+
+// ConvertStoredMetrics preserves typed report metrics and any structured extras.
+func ConvertStoredMetrics(raw []byte) *reports.MetricsData {
+	var calc metrics.Metrics
+	if err := json.Unmarshal(raw, &calc); err != nil {
+		return nil
+	}
+	out := ConvertMetrics(&calc)
+	if out == nil {
+		out = &reports.MetricsData{}
+	}
+
+	var rawMap map[string]any
+	if err := json.Unmarshal(raw, &rawMap); err == nil {
+		if investigation, ok := rawMap["investigation"]; ok {
+			out.Investigation = investigation
+		}
 	}
 	return out
 }

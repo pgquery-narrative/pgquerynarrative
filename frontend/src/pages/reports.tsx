@@ -8,6 +8,7 @@ import { api, type Report, type SimilarReportItem, type ConnectionInfo, type Rep
 import { FileText, Download, Clock, Cpu, ArrowLeft, BarChart3, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { buttonVariants } from "@/components/ui/button";
+import { InvestigationReportView, parseInvestigationReport } from "@/components/investigation-report";
 import { cn, truncate } from "@/lib/utils";
 
 type TimeSeriesEntry = {
@@ -119,6 +120,8 @@ function ReportDetail() {
       setRevokeId(null);
     }
   };
+
+  const investigationReport = parseInvestigationReport(report.metrics as Record<string, unknown>);
 
   return (
     <div className="space-y-6">
@@ -250,6 +253,9 @@ function ReportDetail() {
           {rewriteError && <p className="text-xs text-destructive">{rewriteError}</p>}
         </CardContent>
       </Card>}
+      {investigationReport ? (
+        <InvestigationReportView report={investigationReport} />
+      ) : (
       <Card className="border-primary/20">
         <CardContent className="p-6 space-y-5">
           {narrative?.headline && <h2 className="text-xl font-semibold">{narrative.headline}</h2>}
@@ -268,6 +274,7 @@ function ReportDetail() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {report.chart_suggestions && report.chart_suggestions.length > 0 && (
         <Card>

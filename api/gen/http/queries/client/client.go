@@ -28,6 +28,10 @@ type Client struct {
 	// explain_plan endpoint.
 	ExplainPlanDoer goahttp.Doer
 
+	// ComparePlans Doer is the HTTP client used to make requests to the
+	// compare_plans endpoint.
+	ComparePlansDoer goahttp.Doer
+
 	// ListSaved Doer is the HTTP client used to make requests to the list_saved
 	// endpoint.
 	ListSavedDoer goahttp.Doer
@@ -66,6 +70,7 @@ func NewClient(
 		RunDoer:             doer,
 		StatStatementsDoer:  doer,
 		ExplainPlanDoer:     doer,
+		ComparePlansDoer:    doer,
 		ListSavedDoer:       doer,
 		SaveDoer:            doer,
 		GetSavedDoer:        doer,
@@ -145,6 +150,30 @@ func (c *Client) ExplainPlan() goa.Endpoint {
 		resp, err := c.ExplainPlanDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("queries", "explain_plan", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ComparePlans returns an endpoint that makes HTTP requests to the queries
+// service compare_plans server.
+func (c *Client) ComparePlans() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeComparePlansRequest(c.encoder)
+		decodeResponse = DecodeComparePlansResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildComparePlansRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ComparePlansDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("queries", "compare_plans", err)
 		}
 		return decodeResponse(resp)
 	}

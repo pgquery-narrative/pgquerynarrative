@@ -515,6 +515,7 @@ func marshalSuggestionsMetricsDataToMetricsDataResponseBody(v *suggestions.Metri
 	res := &MetricsDataResponseBody{
 		PeriodCurrentLabel:  v.PeriodCurrentLabel,
 		PeriodPreviousLabel: v.PeriodPreviousLabel,
+		Investigation:       v.Investigation,
 	}
 	if v.Aggregates != nil {
 		res.Aggregates = make(map[string]*AggregateDataResponseBody, len(v.Aggregates))

@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/contexts/theme-context";
-import { LayoutDashboard, Terminal, Bookmark, FileText, Settings, PanelLeftClose, PanelLeft, Moon, Sun, PanelsTopLeft, CalendarClock, Activity } from "lucide-react";
+import { LayoutDashboard, Terminal, Bookmark, FileText, Settings, PanelLeftClose, PanelLeft, Moon, Sun, PanelsTopLeft, CalendarClock, Activity, Search, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   fetchMe,
@@ -13,13 +13,15 @@ import {
 } from "@/api/auth";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/query", icon: Terminal, label: "Query Runner" },
+  { to: "/", icon: LayoutDashboard, label: "Home" },
+  { to: "/investigate", icon: Search, label: "Investigate" },
+  { to: "/query", icon: Terminal, label: "Workbench" },
   { to: "/stats", icon: Activity, label: "Query Stats" },
   { to: "/saved", icon: Bookmark, label: "Saved Queries" },
   { to: "/reports", icon: FileText, label: "Reports" },
   { to: "/dashboards", icon: PanelsTopLeft, label: "Dashboards" },
   { to: "/schedules", icon: CalendarClock, label: "Schedules" },
+  { to: "/security", icon: Shield, label: "Security" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
@@ -87,7 +89,7 @@ export default function Layout() {
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-sm font-semibold tracking-tight truncate">PgQueryNarrative</p>
-              <p className="text-[11px] text-muted-foreground truncate">Postgres query intelligence</p>
+              <p className="text-[11px] text-muted-foreground truncate">Query investigation workbench</p>
             </div>
           )}
         </div>

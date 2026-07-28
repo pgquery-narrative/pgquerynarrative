@@ -83,7 +83,8 @@ services:
       LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
       LLM_MODEL: ${LLM_MODEL:-llama3.2}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434}
+      # Default: in-compose Ollama (see ollama service). Host Ollama: LLM_BASE_URL=http://host.docker.internal:11434
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434}
       LOG_DEBUG: ${LOG_DEBUG:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -93,6 +94,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/ready"]
       interval: 10s
@@ -103,6 +106,24 @@ services:
       resources:
         limits:
           memory: 256M
+
+  # Local LLM for Ask / natural language in the workbench. Model pull: tools/demo/ensure_ollama.sh
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pgquerynarrative-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          # llama3.2 needs headroom; raise Docker Desktop memory if pull/run fails.
+          memory: 6G
 
   cli:
     build:
@@ -123,3 +144,4 @@ services:
 
 volumes:
   pgquerynarrative_data:
+  ollama_data:

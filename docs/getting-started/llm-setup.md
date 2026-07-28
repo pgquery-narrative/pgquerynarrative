@@ -4,11 +4,11 @@ Report generation requires an LLM. Supported providers: **Ollama** (local), **Ge
 
 ## Ollama (local)
 
-No API key. Runs on your machine.
+No API key. **Docker Compose (default):** `make demo` or `make ollama-up` starts in-compose Ollama and pulls `llama3.2`. App uses `LLM_BASE_URL=http://ollama:11434`.
 
-- **Install:** [ollama.ai](https://ollama.ai) or `brew install ollama` (macOS). Start: `ollama serve` (API: http://localhost:11434).
-- **Model:** `ollama pull llama3.2` (default). Others: `mistral`, `llama2`. Verify: `curl http://localhost:11434/api/tags`.
-- **Config:** Defaults `LLM_PROVIDER=ollama`, `LLM_MODEL=llama3.2`, `LLM_BASE_URL=http://localhost:11434`. App in Docker, Ollama on host: `LLM_BASE_URL=http://host.docker.internal:11434` (see [Deployment](../reference/deployment.md)).
+**Host install (optional):** [ollama.ai](https://ollama.ai) or `brew install ollama` (macOS). Start: `ollama serve` (API: http://localhost:11434). Set `LLM_BASE_URL=http://host.docker.internal:11434` when the app runs in Docker.
+
+- **Model:** `llama3.2` (default). Others: `mistral`, `llama2`. Verify in compose: `docker compose exec ollama ollama list`.
 
 ## Gemini (Google)
 

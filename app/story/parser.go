@@ -54,6 +54,20 @@ func ParseNarrative(response string, metricsJSON string) (*NarrativeContent, err
 	groundNumericalClaims(&narrative, metricsJSON)
 
 	if len(narrative.Takeaways) == 0 {
+		// Small local models often invent figures; if grounding emptied takeaways,
+		// keep prose-only bullets from the original parse instead of failing hard.
+		var raw NarrativeContent
+		if err := json.Unmarshal([]byte(jsonStr), &raw); err == nil {
+			for _, t := range raw.Takeaways {
+				t = strings.TrimSpace(t)
+				if t == "" || len(extractNumbers(t)) > 0 {
+					continue
+				}
+				narrative.Takeaways = append(narrative.Takeaways, t)
+			}
+		}
+	}
+	if len(narrative.Takeaways) == 0 {
 		return nil, fmt.Errorf("narrative has no takeaways left after grounding validation")
 	}
 

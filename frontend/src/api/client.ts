@@ -59,6 +59,98 @@ export interface ExplainQueryResult {
   execution_time_ms: number;
 }
 
+export interface PlanComparisonMetric {
+  evidence: string;
+  before: string;
+  after: string;
+  change: string;
+}
+
+export interface PlanComparisonDiff {
+  removed?: string[];
+  added?: string[];
+  improved?: string[];
+}
+
+export interface ComparePlansResult {
+  before: ExplainQueryResult;
+  after: ExplainQueryResult;
+  metrics: PlanComparisonMetric[];
+  diff: PlanComparisonDiff;
+  result_checksum_equal?: boolean;
+}
+
+export interface StatSnapshot {
+  queryid?: string;
+  calls?: number;
+  mean_time_ms?: number;
+  total_time_ms?: number;
+  rows?: number;
+}
+
+export interface Investigation {
+  id: string;
+  title: string;
+  status: string;
+  sql: string;
+  connection_id: string;
+  query_fingerprint?: string;
+  stat_snapshot?: StatSnapshot;
+  explain?: ExplainQueryResult;
+  candidate_sql?: string;
+  candidate_explain?: ExplainQueryResult;
+  comparison?: ComparePlansResult;
+  report_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceOverview {
+  queries_observed: number;
+  database_time_hours: number;
+  queries_attention: number;
+  largest_regression_pct: number;
+  temp_data_written_gb: number;
+  sequential_scans_detected: number;
+  investigations_open: number;
+  reports_generated: number;
+}
+
+export interface RegressionAlert {
+  id: string;
+  title: string;
+  query: string;
+  change_type: string;
+  change_summary: string;
+  impact: string;
+  first_detected_at: string;
+  acknowledged: boolean;
+  connection_id: string;
+}
+
+export interface DemoScenario {
+  id: string;
+  title: string;
+  problem: string;
+  sql: string;
+  candidate_sql?: string;
+  expected_improvement: string;
+  category: string;
+}
+
+export interface SecurityTrust {
+  authentication: string;
+  connection_mode: string;
+  allowed_schemas: string[];
+  tenant_isolation: string;
+  tls: string;
+  audit_mode: string;
+  query_timeout_seconds: number;
+  result_limit: number;
+  explain_analyze: string;
+  external_llm_data: string;
+}
+
 export interface SavedQuery {
   id: string;
   name: string;
@@ -304,6 +396,59 @@ export const api = {
       // ANALYZE can run as long as the query itself; keep headroom for large scans.
       signal: AbortSignal.timeout(analyze ? 120_000 : 60_000),
     }),
+
+  comparePlans: (beforeSql: string, afterSql: string, analyze = false, connectionId?: string) =>
+    request<ComparePlansResult>("/queries/explain/compare", {
+      method: "POST",
+      body: JSON.stringify({
+        before_sql: normalizeSql(beforeSql),
+        after_sql: normalizeSql(afterSql),
+        analyze,
+        connection_id: connectionId,
+      }),
+      signal: AbortSignal.timeout(analyze ? 120_000 : 90_000),
+    }),
+
+  listInvestigations: (limit = 20, offset = 0) =>
+    request<{ items: Investigation[]; limit: number; offset: number }>(
+      `/investigations?limit=${limit}&offset=${offset}`
+    ),
+
+  getInvestigation: (id: string) => request<Investigation>(`/investigations/${id}`),
+
+  createInvestigation: (body: {
+    title: string;
+    sql: string;
+    connection_id?: string;
+    queryid?: string;
+    calls?: number;
+    mean_time_ms?: number;
+    total_time_ms?: number;
+    rows?: number;
+  }) => request<Investigation>("/investigations", { method: "POST", body: JSON.stringify(body) }),
+
+  addInvestigationCandidate: (id: string, candidateSql: string, analyze = false) =>
+    request<Investigation>(`/investigations/${id}/candidate`, {
+      method: "POST",
+      body: JSON.stringify({ candidate_sql: candidateSql, analyze }),
+    }),
+
+  generateInvestigationReport: (id: string) =>
+    request<Investigation>(`/investigations/${id}/report`, { method: "POST" }),
+
+  getWorkspaceOverview: () => request<WorkspaceOverview>("/workspace/overview"),
+
+  getRegressions: (limit = 10, includeAcknowledged = false) =>
+    request<{ items: RegressionAlert[] }>(
+      `/workspace/regressions?limit=${limit}&include_acknowledged=${includeAcknowledged}`
+    ),
+
+  acknowledgeRegression: (id: string) =>
+    request<void>(`/workspace/regressions/${id}/acknowledge`, { method: "POST" }),
+
+  getDemoScenarios: () => request<{ items: DemoScenario[] }>("/demo/scenarios"),
+
+  getSecurityTrust: () => request<SecurityTrust>("/trust"),
 
   listSaved: (limit = 50, offset = 0, connectionId?: string) =>
     request<{ items: SavedQuery[]; limit: number; offset: number }>(`/queries/saved?limit=${limit}&offset=${offset}${connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ""}`),

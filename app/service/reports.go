@@ -74,7 +74,6 @@ func (s *ReportsService) SetDataEncryptionKey(key []byte) {
 // reportGenOpts toggles optional stages inside report generation.
 type reportGenOpts struct {
 	// skipNarrativeLLM skips the story LLM and RAG/embedding work tied to narrative quality.
-	// Used for Ask + Ollama so only the NL→SQL call hits the local model (second call was often minutes or appeared hung).
 	skipNarrativeLLM bool
 	// scheduleRunID, when set, is persisted on the stored report so a schedule run's report
 	// is reused (not regenerated with a new report_id) across worker retries/crash-recovery.
@@ -207,15 +206,10 @@ func (s *ReportsService) Generate(ctx context.Context, payload *reports.Generate
 	return s.generateReport(ctx, payload, reportGenOpts{})
 }
 
-// GenerateForAsk is like Generate but, when the LLM provider is Ollama, skips the
-// narrative LLM and embedding/RAG steps so Ask returns after a single local model
-// round-trip (NL→SQL). Use Generate Report on the SQL for a full narrative.
+// GenerateForAsk generates the Ask report including the narrative LLM pass.
+// Local Ollama is slower (NL→SQL then narrative), but Ask promises a story, not a stub.
 func (s *ReportsService) GenerateForAsk(ctx context.Context, payload *reports.GenerateReportPayload) (*reports.Report, error) {
-	opts := reportGenOpts{}
-	if s.llmClient != nil && s.llmClient.Name() == "ollama" {
-		opts.skipNarrativeLLM = true
-	}
-	return s.generateReport(ctx, payload, opts)
+	return s.generateReport(ctx, payload, reportGenOpts{})
 }
 
 // GenerateForScheduleRun generates a report for a durable schedule run, reusing the report
@@ -298,9 +292,8 @@ func (s *ReportsService) Get(ctx context.Context, payload *reports.GetPayload) (
 		}
 	}
 
-	var calcMetrics metrics.Metrics
-	if err := json.Unmarshal(metricsJSON, &calcMetrics); err == nil {
-		report.Metrics = ConvertMetrics(&calcMetrics)
+	if converted := ConvertStoredMetrics(metricsJSON); converted != nil {
+		report.Metrics = converted
 	}
 
 	report.CreatedAt = createdAt.Format(time.RFC3339)
@@ -389,9 +382,8 @@ func (s *ReportsService) List(ctx context.Context, payload *reports.ListPayload)
 			}
 		}
 
-		var calcMetrics metrics.Metrics
-		if err := json.Unmarshal(metricsJSON, &calcMetrics); err == nil {
-			report.Metrics = ConvertMetrics(&calcMetrics)
+		if converted := ConvertStoredMetrics(metricsJSON); converted != nil {
+			report.Metrics = converted
 		}
 
 		report.CreatedAt = createdAt.Format(time.RFC3339)

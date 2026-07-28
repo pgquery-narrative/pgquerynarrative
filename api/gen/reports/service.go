@@ -169,6 +169,9 @@ type MetricsData struct {
 	DataQuality map[string]*ColumnQualityData
 	// Performance suggestions from execution time/row count
 	PerfSuggestions []string
+	// Structured Query Investigation report payload when a report was generated
+	// from an investigation
+	Investigation any
 }
 
 // NarrativeContent is the result type of the reports service rewrite method.
