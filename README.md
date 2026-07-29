@@ -111,7 +111,7 @@ Report generation is **optional**. When configured, PgQueryNarrative can turn qu
 
 ## Documentation
 
-Full documentation in **[docs/](docs/README.md)**:
+Full documentation in **[docs/](docs/README.md)**. Preview locally with **`make docs`** → http://localhost:8000.
 
 | Section | Links |
 |---------|--------|
