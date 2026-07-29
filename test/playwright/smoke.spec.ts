@@ -17,6 +17,6 @@ test.describe("UI smoke", () => {
 
   test("query runner page renders", async ({ page }) => {
     await page.goto("/query");
-    await expect(page.getByRole("heading", { name: "Query Runner" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "PostgreSQL Analytics Workbench" })).toBeVisible();
   });
 });

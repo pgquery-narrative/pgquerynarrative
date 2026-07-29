@@ -251,6 +251,76 @@ func EncodeExplainPlanError(encoder func(context.Context, http.ResponseWriter) g
 	}
 }
 
+// EncodeComparePlansResponse returns an encoder for responses returned by the
+// queries compare_plans endpoint.
+func EncodeComparePlansResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*queries.ComparePlansResult)
+		enc := encoder(ctx, w)
+		body := NewComparePlansResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeComparePlansRequest returns a decoder for requests sent to the queries
+// compare_plans endpoint.
+func DecodeComparePlansRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*queries.ComparePlansPayload, error) {
+	return func(r *http.Request) (*queries.ComparePlansPayload, error) {
+		var (
+			body ComparePlansRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateComparePlansRequestBody(&body)
+		if err != nil {
+			return nil, err
+		}
+		payload := NewComparePlansPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeComparePlansError returns an encoder for errors returned by the
+// compare_plans queries endpoint.
+func EncodeComparePlansError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "validation_error":
+			var res *queries.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewComparePlansValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeListSavedResponse returns an encoder for responses returned by the
 // queries list_saved endpoint.
 func EncodeListSavedResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -561,6 +631,73 @@ func marshalQueriesPlanFindingToPlanFindingResponseBody(v *queries.PlanFinding) 
 		res.Evidence = make([]string, len(v.Evidence))
 		for i, val := range v.Evidence {
 			res.Evidence[i] = val
+		}
+	}
+
+	return res
+}
+
+// marshalQueriesExplainQueryResultToExplainQueryResultResponseBody builds a
+// value of type *ExplainQueryResultResponseBody from a value of type
+// *queries.ExplainQueryResult.
+func marshalQueriesExplainQueryResultToExplainQueryResultResponseBody(v *queries.ExplainQueryResult) *ExplainQueryResultResponseBody {
+	res := &ExplainQueryResultResponseBody{
+		SQL:             v.SQL,
+		TotalCost:       v.TotalCost,
+		Plan:            v.Plan,
+		ExecutionTimeMs: v.ExecutionTimeMs,
+	}
+	if v.Findings != nil {
+		res.Findings = make([]*PlanFindingResponseBody, len(v.Findings))
+		for i, val := range v.Findings {
+			if val == nil {
+				res.Findings[i] = nil
+				continue
+			}
+			res.Findings[i] = marshalQueriesPlanFindingToPlanFindingResponseBody(val)
+		}
+	} else {
+		res.Findings = []*PlanFindingResponseBody{}
+	}
+
+	return res
+}
+
+// marshalQueriesPlanComparisonMetricToPlanComparisonMetricResponseBody builds
+// a value of type *PlanComparisonMetricResponseBody from a value of type
+// *queries.PlanComparisonMetric.
+func marshalQueriesPlanComparisonMetricToPlanComparisonMetricResponseBody(v *queries.PlanComparisonMetric) *PlanComparisonMetricResponseBody {
+	res := &PlanComparisonMetricResponseBody{
+		Evidence: v.Evidence,
+		Before:   v.Before,
+		After:    v.After,
+		Change:   v.Change,
+	}
+
+	return res
+}
+
+// marshalQueriesPlanComparisonDiffToPlanComparisonDiffResponseBody builds a
+// value of type *PlanComparisonDiffResponseBody from a value of type
+// *queries.PlanComparisonDiff.
+func marshalQueriesPlanComparisonDiffToPlanComparisonDiffResponseBody(v *queries.PlanComparisonDiff) *PlanComparisonDiffResponseBody {
+	res := &PlanComparisonDiffResponseBody{}
+	if v.Removed != nil {
+		res.Removed = make([]string, len(v.Removed))
+		for i, val := range v.Removed {
+			res.Removed[i] = val
+		}
+	}
+	if v.Added != nil {
+		res.Added = make([]string, len(v.Added))
+		for i, val := range v.Added {
+			res.Added[i] = val
+		}
+	}
+	if v.Improved != nil {
+		res.Improved = make([]string, len(v.Improved))
+		for i, val := range v.Improved {
+			res.Improved[i] = val
 		}
 	}
 

@@ -286,6 +286,94 @@ func DecodeExplainPlanResponse(decoder func(*http.Response) goahttp.Decoder, res
 	}
 }
 
+// BuildComparePlansRequest instantiates a HTTP request object with method and
+// path set to call the "queries" service "compare_plans" endpoint
+func (c *Client) BuildComparePlansRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ComparePlansQueriesPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("queries", "compare_plans", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeComparePlansRequest returns an encoder for requests sent to the
+// queries compare_plans server.
+func EncodeComparePlansRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*queries.ComparePlansPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("queries", "compare_plans", "*queries.ComparePlansPayload", v)
+		}
+		body := NewComparePlansRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("queries", "compare_plans", err)
+		}
+		return nil
+	}
+}
+
+// DecodeComparePlansResponse returns a decoder for responses returned by the
+// queries compare_plans endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeComparePlansResponse may return the following errors:
+//   - "validation_error" (type *queries.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeComparePlansResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ComparePlansResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "compare_plans", err)
+			}
+			err = ValidateComparePlansResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "compare_plans", err)
+			}
+			res := NewComparePlansResultOK(&body)
+			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body ComparePlansValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "compare_plans", err)
+			}
+			err = ValidateComparePlansValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "compare_plans", err)
+			}
+			return nil, NewComparePlansValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("queries", "compare_plans", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildListSavedRequest instantiates a HTTP request object with method and
 // path set to call the "queries" service "list_saved" endpoint
 func (c *Client) BuildListSavedRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -664,6 +752,69 @@ func unmarshalPlanFindingResponseBodyToQueriesPlanFinding(v *PlanFindingResponse
 		res.Evidence = make([]string, len(v.Evidence))
 		for i, val := range v.Evidence {
 			res.Evidence[i] = val
+		}
+	}
+
+	return res
+}
+
+// unmarshalExplainQueryResultResponseBodyToQueriesExplainQueryResult builds a
+// value of type *queries.ExplainQueryResult from a value of type
+// *ExplainQueryResultResponseBody.
+func unmarshalExplainQueryResultResponseBodyToQueriesExplainQueryResult(v *ExplainQueryResultResponseBody) *queries.ExplainQueryResult {
+	res := &queries.ExplainQueryResult{
+		SQL:             *v.SQL,
+		TotalCost:       *v.TotalCost,
+		Plan:            v.Plan,
+		ExecutionTimeMs: *v.ExecutionTimeMs,
+	}
+	res.Findings = make([]*queries.PlanFinding, len(v.Findings))
+	for i, val := range v.Findings {
+		if val == nil {
+			res.Findings[i] = nil
+			continue
+		}
+		res.Findings[i] = unmarshalPlanFindingResponseBodyToQueriesPlanFinding(val)
+	}
+
+	return res
+}
+
+// unmarshalPlanComparisonMetricResponseBodyToQueriesPlanComparisonMetric
+// builds a value of type *queries.PlanComparisonMetric from a value of type
+// *PlanComparisonMetricResponseBody.
+func unmarshalPlanComparisonMetricResponseBodyToQueriesPlanComparisonMetric(v *PlanComparisonMetricResponseBody) *queries.PlanComparisonMetric {
+	res := &queries.PlanComparisonMetric{
+		Evidence: *v.Evidence,
+		Before:   *v.Before,
+		After:    *v.After,
+		Change:   *v.Change,
+	}
+
+	return res
+}
+
+// unmarshalPlanComparisonDiffResponseBodyToQueriesPlanComparisonDiff builds a
+// value of type *queries.PlanComparisonDiff from a value of type
+// *PlanComparisonDiffResponseBody.
+func unmarshalPlanComparisonDiffResponseBodyToQueriesPlanComparisonDiff(v *PlanComparisonDiffResponseBody) *queries.PlanComparisonDiff {
+	res := &queries.PlanComparisonDiff{}
+	if v.Removed != nil {
+		res.Removed = make([]string, len(v.Removed))
+		for i, val := range v.Removed {
+			res.Removed[i] = val
+		}
+	}
+	if v.Added != nil {
+		res.Added = make([]string, len(v.Added))
+		for i, val := range v.Added {
+			res.Added[i] = val
+		}
+	}
+	if v.Improved != nil {
+		res.Improved = make([]string, len(v.Improved))
+		for i, val := range v.Improved {
+			res.Improved[i] = val
 		}
 	}
 

@@ -26,6 +26,11 @@ func ExplainPlanQueriesPath() string {
 	return "/api/v1/queries/explain"
 }
 
+// ComparePlansQueriesPath returns the URL path to the queries service compare_plans HTTP endpoint.
+func ComparePlansQueriesPath() string {
+	return "/api/v1/queries/explain/compare"
+}
+
 // ListSavedQueriesPath returns the URL path to the queries service list_saved HTTP endpoint.
 func ListSavedQueriesPath() string {
 	return "/api/v1/queries/saved"

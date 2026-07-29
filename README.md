@@ -5,23 +5,66 @@
 <h1 align="center">PgQueryNarrative</h1>
 
 <p align="center">
-Postgres-native query intelligence: secure read-only SQL, plan analysis, and analytics at scale.<br>
-Run queries against a partitioned 10M-row demo dataset, inspect plans with EXPLAIN, and optionally layer on AI-generated narratives.
+<strong>PostgreSQL Query Intelligence That Shows Its Evidence</strong><br>
+Find expensive queries, investigate execution plans, compare improvements,<br>
+and produce engineering-ready reports.
 </p>
+
+<p align="center">
+  <a href="https://github.com/pgquerynarrative/pgquerynarrative/actions"><img src="https://img.shields.io/github/actions/workflow/status/pgquerynarrative/pgquerynarrative/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white" alt="Go 1.25+">
+  <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791?logo=postgresql&logoColor=white" alt="PostgreSQL 16+">
+  <img src="https://img.shields.io/github/license/pgquerynarrative/pgquerynarrative" alt="License MIT">
+  <a href="https://github.com/pgquerynarrative/pgquerynarrative/pkgs/container/pgquerynarrative"><img src="https://img.shields.io/badge/container-ghcr.io-2496ED" alt="Container"></a>
+  <a href="https://github.com/pgquerynarrative/pgquerynarrative/releases"><img src="https://img.shields.io/github/v/release/pgquerynarrative/pgquerynarrative?label=release" alt="Latest release"></a>
+  <a href=".github/SECURITY.md"><img src="https://img.shields.io/badge/security-policy-blue" alt="Security policy"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start"><strong>Try the guided demo</strong></a> ·
+  <a href="docs/README.md">Documentation</a> ·
+  <a href="docs/development/runbook.md">Architecture</a> ·
+  <a href=".github/SECURITY.md">Security</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/demo-workflow.svg" alt="Query Investigation workflow: regression inbox → inspect SQL → EXPLAIN plan → compare → engineering report" width="720">
+</p>
+
+<p align="center"><sub>Animated workflow preview. Record a GIF from a live demo with <code>make demo-gif</code> (requires Playwright + ffmpeg).</sub></p>
 
 ---
 
 ## Overview
 
-PgQueryNarrative is a Go application built around **PostgreSQL as the source of truth**. It executes read-only SQL through a dedicated database role, enforces single-statement and schema rules at the app layer, and surfaces query intelligence — metrics, chart suggestions, and **EXPLAIN (FORMAT JSON)** plan analysis with seq-scan detection and index hints.
+PgQueryNarrative is a **PostgreSQL investigation workbench** that turns workload statistics, SQL, query results, and execution plans into evidence-backed explanations and engineering-ready reports.
 
-The demo dataset (`demo.sales`) is **range-partitioned by month** and seeded to **~10M rows** for realistic partition pruning and optimization work. See **[docs/DATASET.md](docs/DATASET.md)** for schema layout, measured sizes, and pruning evidence.
+The flagship **Query Investigation** workflow guides you from expensive query → plan evidence → candidate comparison → verified report. The React workbench includes an interactive plan tree, before/after plan comparison, regression inbox, and a Security & Trust page that makes hardening visible.
 
-The [React SPA](frontend/) provides a query editor (schema browser, suggestions), saved queries, reports, and export (HTML/PDF). The REST API and [CLI](docs/usage/cli-usage.md) support automation.
+The optional LLM narrative layer sits on top — the core value is safe SQL execution and plan analysis, not the LLM.
 
 ## Quick start
 
-**Docker-first** (PostgreSQL + app; no host Go or psql required):
+**One-command guided demo** (PostgreSQL + app + small seed; ready in ~2 minutes):
+
+```bash
+make demo
+```
+
+Open **http://localhost:8080** and use the guided path:
+
+1. Click **Start guided demo** or open **Investigate**
+2. Choose **Slow dashboard query**
+3. Review the bad predicate: `DATE_TRUNC('month', date) = '2024-01-01'`
+4. Click **Compare plans** to test the range-predicate rewrite
+5. Click **Generate report** to open the engineering investigation report
+
+The guided investigation report is evidence-backed and works without the LLM.
+`make demo` also starts **Ollama in Docker** and pulls `llama3.2` so the workbench
+**Ask in natural language** flow works out of the box (first run may take a few
+minutes while the model downloads).
+
+**Docker-first** (full control):
 
 ```bash
 # 1. Start Postgres
@@ -30,12 +73,17 @@ make postgres-up
 # 2. Apply migrations (includes monthly range partitions on demo.sales)
 make migrate-docker
 
-# 3. Seed ~10M rows (several minutes; see docs/DATASET.md for measured numbers)
-make seed-large-docker
-
-# 4. Start the full stack (app + Postgres)
+# 3. Start the full stack (app + Postgres; uses small seed by default)
 make start-docker
 ```
+
+**Advanced benchmark** (~10M rows for partition pruning and optimization work; several minutes):
+
+```bash
+make seed-large-docker
+```
+
+See [docs/DATASET.md](docs/DATASET.md) for schema layout, measured sizes, and pruning evidence.
 
 Open **http://localhost:8080** for the web UI, or call the API directly ([API examples](docs/api/examples.md)):
 
@@ -85,6 +133,8 @@ Report generation is **optional**. When configured, PgQueryNarrative can turn qu
 
 | Action | Command |
 |--------|--------|
+| **Guided demo (recommended)** | `make demo` |
+| Record README demo GIF | `make demo-gif` |
 | Start Postgres only | `make postgres-up` |
 | Migrate (Docker) | `make migrate-docker` |
 | Seed 10M rows (Docker) | `make seed-large-docker` |
@@ -129,11 +179,11 @@ Full documentation in **[docs/](docs/README.md)**. Preview locally with **`make 
 
 | Branch / tag | Purpose |
 |--------------|---------|
-| [`main`](https://github.com/pgquerynarative/pgquerynarrative/tree/main) | Latest development (Postgres-first query intelligence) |
-| [`stable-v2.0.0`](https://github.com/pgquerynarative/pgquerynarrative/tree/stable-v2.0.0) | v2 release line — EXPLAIN API, 10M-row benchmark, parser validation, RLS/pgvector |
-| [`stable-v1.0.0`](https://github.com/pgquerynarative/pgquerynarrative/tree/stable-v1.0.0) | v1 release line — AI narrative focus, pre-Postgres pivot |
-| Tag [`v2.0.0`](https://github.com/pgquerynarative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release snapshot |
-| Tag [`v1.0.0`](https://github.com/pgquerynarative/pgquerynarrative/releases/tag/v1.0.0) | v1.0.0 release snapshot |
+| [`main`](https://github.com/pgquerynarrative/pgquerynarrative/tree/main) | Latest development (Postgres-first query intelligence) |
+| [`stable-v2.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/tree/stable-v2.0.0) | v2 release line — EXPLAIN API, 10M-row benchmark, parser validation, RLS/pgvector |
+| [`stable-v1.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/tree/stable-v1.0.0) | v1 release line — AI narrative focus, pre-Postgres pivot |
+| Tag [`v2.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release snapshot |
+| Tag [`v1.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/releases/tag/v1.0.0) | v1.0.0 release snapshot |
 
 ## License
 

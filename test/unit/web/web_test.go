@@ -187,4 +187,45 @@ func TestFormatReportHTML_ReportMeta(t *testing.T) {
 	}
 }
 
+func TestFormatReportHTML_InvestigationReport(t *testing.T) {
+	r := &reports.Report{
+		ID:  "investigation-1",
+		SQL: "SELECT * FROM demo.orders",
+		Metrics: &reports.MetricsData{
+			Investigation: map[string]any{
+				"executive_summary": "Seq scan dominates a hot query.",
+				"impact": map[string]any{
+					"severity": "high",
+					"summary":  "Affected workload: mean 2200ms per call, 40 calls observed.",
+				},
+				"postgresql_evidence": []any{"pg_stat_statements mean execution time: 2200.0ms"},
+				"plan_findings": []any{
+					map[string]any{
+						"category": "scan",
+						"message":  "Sequential scan on demo.orders.",
+						"evidence": []any{"Rows Removed by Filter: 120000"},
+					},
+				},
+				"recommended_next_action": "Validate an index on customer_id in staging.",
+			},
+		},
+		CreatedAt:   "2025-01-01T00:00:00Z",
+		LlmModel:    "evidence-template",
+		LlmProvider: "pgquerynarrative",
+	}
+	html := web.FormatReportHTML(r)
+	if !strings.Contains(html, "Executive summary") {
+		t.Error("expected investigation executive summary section")
+	}
+	if !strings.Contains(html, "Seq scan dominates a hot query") {
+		t.Error("expected investigation summary content")
+	}
+	if !strings.Contains(html, "Execution-plan findings") {
+		t.Error("expected investigation findings section")
+	}
+	if !strings.Contains(html, "Validate an index on customer_id in staging") {
+		t.Error("expected next action in investigation HTML")
+	}
+}
+
 func strPtr(s string) *string { return &s }

@@ -23,7 +23,9 @@ import (
 	pkgsuggestions "github.com/pgquerynarrative/pgquerynarrative/app/suggestions"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/connections"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
+	"github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	"github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
 )
 
 // Client provides access to narrative capabilities: running queries, generating
@@ -32,16 +34,18 @@ import (
 // is propagated to the underlying operations. Call Close when done to release
 // database connection pools; Close is idempotent and safe to call multiple times.
 type Client struct {
-	pools              *db.Pools
-	queriesService     *service.QueriesService
-	reportsService     *service.ReportsService
-	dashboardsService  *service.DashboardsService
-	schedulesService   *service.SchedulesService
-	schemaService      *service.SchemaService
-	connectionsService *service.ConnectionsService
-	suggestionsService suggestions.Service
-	budgetStore        *llm.BudgetStore
-	auditStore         *audit.Store
+	pools                 *db.Pools
+	queriesService        *service.QueriesService
+	reportsService        *service.ReportsService
+	dashboardsService     *service.DashboardsService
+	schedulesService      *service.SchedulesService
+	investigationsService *service.InvestigationsService
+	workspaceService      *service.WorkspaceService
+	schemaService         *service.SchemaService
+	connectionsService    *service.ConnectionsService
+	suggestionsService    suggestions.Service
+	budgetStore           *llm.BudgetStore
+	auditStore            *audit.Store
 }
 
 // NewClient builds a narrative client from the given config. It creates
@@ -223,6 +227,14 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	connectionsService := service.NewConnectionsService(connectionItems)
 	dashboardsService := service.NewDashboardsService(appDB, reportsService, queriesService)
 	schedulesService := service.NewSchedulesService(appDB, queriesService, reportsService)
+	investigationsService := service.NewInvestigationsService(appDB, queriesService, reportsService)
+	workspaceService := service.NewWorkspaceService(
+		appDB, queriesService,
+		cfg.Security.AuthEnabled, cfg.Security.AllowInsecureNoAuth, cfg.Security.ExplainAnalyzeEnabled,
+		int32(cfg.Database.QueryTimeout.Seconds()),
+		cfg.Database.SSLMode, cfg.Security.AuditMode,
+		cfg.LLM.AllowExternalData, allowedSchemas,
+	)
 	schedulesService.SetRawPool(pools.App)
 	schedulesService.ConfigureWebhook(cfg.Security.WebhookSigningSecret, cfg.Security.WebhookAllowedHosts)
 
@@ -244,16 +256,18 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	reportsService.SetDataEncryptionKey(encKey)
 
 	return &Client{
-		pools:              pools,
-		queriesService:     queriesService,
-		reportsService:     reportsService,
-		dashboardsService:  dashboardsService,
-		schedulesService:   schedulesService,
-		schemaService:      schemaService,
-		connectionsService: connectionsService,
-		suggestionsService: suggestionsService,
-		budgetStore:        budgetStore,
-		auditStore:         secAuditStore,
+		pools:                 pools,
+		queriesService:        queriesService,
+		reportsService:        reportsService,
+		dashboardsService:     dashboardsService,
+		schedulesService:      schedulesService,
+		investigationsService: investigationsService,
+		workspaceService:      workspaceService,
+		schemaService:         schemaService,
+		connectionsService:    connectionsService,
+		suggestionsService:    suggestionsService,
+		budgetStore:           budgetStore,
+		auditStore:            secAuditStore,
 	}, nil
 }
 
@@ -281,6 +295,16 @@ func (c *Client) DashboardsService() dashboards.Service {
 // SchedulesService returns the schedules service for use with Goa endpoints.
 func (c *Client) SchedulesService() schedules.Service {
 	return c.schedulesService
+}
+
+// InvestigationsService returns the investigations service for use with Goa endpoints.
+func (c *Client) InvestigationsService() investigations.Service {
+	return c.investigationsService
+}
+
+// WorkspaceService returns the workspace service for use with Goa endpoints.
+func (c *Client) WorkspaceService() workspace.Service {
+	return c.workspaceService
 }
 
 // SchedulesRunner returns the concrete schedules service for background
@@ -340,6 +364,14 @@ func (c *Client) NamedPools() []db.NamedPool {
 		return nil
 	}
 	return c.pools.NamedPools()
+}
+
+// QueriesRunner returns the concrete queries service for background workers.
+func (c *Client) QueriesRunner() *service.QueriesService {
+	if c == nil {
+		return nil
+	}
+	return c.queriesService
 }
 
 // QueriesService returns the queries service for use with Goa endpoints or direct calls.

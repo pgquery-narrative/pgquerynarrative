@@ -17,6 +17,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/charts"
 	"github.com/pgquerynarrative/pgquerynarrative/app/debuglog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/embedding"
+	"github.com/pgquerynarrative/pgquerynarrative/app/format"
 	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
@@ -105,7 +106,7 @@ func (s *ReportsService) generateReport(ctx context.Context, payload *reports.Ge
 		if errGen != nil {
 			llmMsg := errGen.Error()
 			apilog.LLMError(llmMsg)
-			narrative = buildFallbackNarrative(queryResult.RowCount, calcMetrics.PerfSuggestions)
+			narrative = buildMetricsNarrative(queryResult.RowCount, calcMetrics)
 		}
 	}
 
@@ -318,6 +319,13 @@ func (s *ReportsService) storeReportEmbedding(ctx context.Context, reportID stri
 	_ = s.embeddingStore.UpsertReport(ctx, reportID, vec, modelName)
 }
 
+func formatFloatPtr(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return format.FloatWithCommas(*v)
+}
+
 func buildFallbackNarrative(rowCount int, perfSuggestions []string) *story.NarrativeContent {
 	n := &story.NarrativeContent{
 		Headline: "Report generated without LLM narrative",
@@ -330,6 +338,58 @@ func buildFallbackNarrative(rowCount int, perfSuggestions []string) *story.Narra
 	}
 	if len(perfSuggestions) > 0 {
 		n.Recommendations = append(n.Recommendations, perfSuggestions...)
+	}
+	return n
+}
+
+// buildMetricsNarrative builds an evidence-based narrative from calculated metrics
+// when the LLM narrative pass fails or is skipped. Prefer this over the stub fallback.
+func buildMetricsNarrative(rowCount int, m *metrics.Metrics) *story.NarrativeContent {
+	if m == nil {
+		return buildFallbackNarrative(rowCount, nil)
+	}
+	n := &story.NarrativeContent{
+		Headline:    "Query results — key metrics",
+		Takeaways:   []string{"Query executed successfully and returned " + strconv.Itoa(rowCount) + " rows."},
+		Limitations: []string{"Full LLM story could not be parsed; this narrative is grounded only in calculated metrics."},
+	}
+
+	// Prefer category breakdowns when present (most Ask demos).
+	for measure, cats := range m.TopCategories {
+		if len(cats) == 0 {
+			continue
+		}
+		top := cats[0]
+		n.Headline = top.Category + " leads on " + measure
+		n.Takeaways = []string{
+			fmt.Sprintf("%s accounts for %.1f%% of %s (value %s).", top.Category, top.Percentage, measure, format.FloatWithCommas(top.Value)),
+			fmt.Sprintf("Query returned %d rows with a clear category ranking.", rowCount),
+		}
+		drivers := make([]string, 0, len(cats))
+		for i, c := range cats {
+			if i >= 5 {
+				break
+			}
+			drivers = append(drivers, fmt.Sprintf("%s: %s (%.1f%%)", c.Category, format.FloatWithCommas(c.Value), c.Percentage))
+		}
+		n.Drivers = drivers
+		break
+	}
+
+	if len(n.Drivers) == 0 {
+		for col, agg := range m.Aggregates {
+			n.Takeaways = append(n.Takeaways,
+				fmt.Sprintf("%s — sum %s, avg %s, min %s, max %s across %d values.",
+					col, formatFloatPtr(agg.Sum), formatFloatPtr(agg.Avg),
+					formatFloatPtr(agg.Min), formatFloatPtr(agg.Max), agg.Count))
+			break
+		}
+	}
+
+	if len(m.PerfSuggestions) > 0 {
+		n.Recommendations = append(n.Recommendations, m.PerfSuggestions...)
+	} else {
+		n.Recommendations = append(n.Recommendations, "Review the SQL and charts below; regenerate with a cloud LLM for a richer prose narrative if needed.")
 	}
 	return n
 }

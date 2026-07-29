@@ -167,3 +167,195 @@ var PlanFinding = Type("PlanFinding", func() {
 	Attribute("evidence", ArrayOf(String), "Raw plan metrics backing this finding (e.g. Plan Rows=8000)")
 	Required("node_type", "is_seq_scan", "message")
 })
+
+// ComparePlansPayload compares before and after EXPLAIN plans.
+var ComparePlansPayload = Type("ComparePlansPayload", func() {
+	Attribute("before_sql", String, "Original SQL to explain", func() {
+		MinLength(1)
+		MaxLength(10000)
+		Pattern("^[^;]+$")
+	})
+	Attribute("after_sql", String, "Candidate SQL to explain", func() {
+		MinLength(1)
+		MaxLength(10000)
+		Pattern("^[^;]+$")
+	})
+	Attribute("analyze", Boolean, "Run EXPLAIN ANALYZE when enabled server-side", func() {
+		Default(false)
+	})
+	Attribute("connection_id", String, "Optional connection ID")
+	Required("before_sql", "after_sql")
+})
+
+// PlanComparisonMetric is one row in a before/after comparison table.
+var PlanComparisonMetric = Type("PlanComparisonMetric", func() {
+	Attribute("evidence", String, "Metric name (e.g. Execution time)")
+	Attribute("before", String, "Before value")
+	Attribute("after", String, "After value")
+	Attribute("change", String, "Change summary (e.g. −96.3%)")
+	Required("evidence", "before", "after", "change")
+})
+
+// PlanComparisonDiff summarizes structural plan changes.
+var PlanComparisonDiff = Type("PlanComparisonDiff", func() {
+	Attribute("removed", ArrayOf(String), "Plan nodes removed")
+	Attribute("added", ArrayOf(String), "Plan nodes added")
+	Attribute("improved", ArrayOf(String), "Improvements detected")
+})
+
+// ComparePlansResult is the outcome of comparing two execution plans.
+var ComparePlansResult = Type("ComparePlansResult", func() {
+	Attribute("before", ExplainQueryResult)
+	Attribute("after", ExplainQueryResult)
+	Attribute("metrics", ArrayOf(PlanComparisonMetric))
+	Attribute("diff", PlanComparisonDiff)
+	Attribute("result_checksum_equal", Boolean, "True when row checksums match (when computable)")
+	Required("before", "after", "metrics", "diff")
+})
+
+// StatSnapshot captures pg_stat_statements context for an investigation.
+var StatSnapshot = Type("StatSnapshot", func() {
+	Attribute("queryid", String)
+	Attribute("calls", Int64)
+	Attribute("mean_time_ms", Float64)
+	Attribute("total_time_ms", Float64)
+	Attribute("rows", Int64)
+})
+
+// Investigation is a Query Investigation workflow artifact.
+var Investigation = Type("Investigation", func() {
+	Attribute("id", String, func() {
+		Format(FormatUUID)
+	})
+	Attribute("title", String)
+	Attribute("status", String, "open, analyzing, comparing, or complete")
+	Attribute("sql", String)
+	Attribute("connection_id", String)
+	Attribute("query_fingerprint", String)
+	Attribute("stat_snapshot", StatSnapshot)
+	Attribute("explain", ExplainQueryResult)
+	Attribute("candidate_sql", String)
+	Attribute("candidate_explain", ExplainQueryResult)
+	Attribute("comparison", ComparePlansResult)
+	Attribute("report_id", String)
+	Attribute("created_at", String, func() {
+		Format(FormatDateTime)
+	})
+	Attribute("updated_at", String, func() {
+		Format(FormatDateTime)
+	})
+	Required("id", "title", "status", "sql", "connection_id", "created_at", "updated_at")
+})
+
+var InvestigationList = Type("InvestigationList", func() {
+	Attribute("items", ArrayOf(Investigation))
+	Attribute("limit", Int32)
+	Attribute("offset", Int32)
+	Required("items", "limit", "offset")
+})
+
+var CreateInvestigationPayload = Type("CreateInvestigationPayload", func() {
+	Attribute("title", String, func() {
+		MinLength(1)
+		MaxLength(200)
+	})
+	Attribute("sql", String, func() {
+		MinLength(1)
+		MaxLength(10000)
+		Pattern("^[^;]+$")
+	})
+	Attribute("connection_id", String)
+	Attribute("queryid", String, "Optional pg_stat_statements queryid for context")
+	Attribute("calls", Int64)
+	Attribute("mean_time_ms", Float64)
+	Attribute("total_time_ms", Float64)
+	Attribute("rows", Int64)
+	Required("title", "sql")
+})
+
+var AddCandidatePayload = Type("AddCandidatePayload", func() {
+	Attribute("id", String, func() {
+		Format(FormatUUID)
+	})
+	Attribute("candidate_sql", String, func() {
+		MinLength(1)
+		MaxLength(10000)
+		Pattern("^[^;]+$")
+	})
+	Attribute("analyze", Boolean, func() {
+		Default(false)
+	})
+	Required("id", "candidate_sql")
+})
+
+// WorkspaceOverview is PostgreSQL evidence for the landing dashboard.
+var WorkspaceOverview = Type("WorkspaceOverview", func() {
+	Attribute("queries_observed", Int64)
+	Attribute("database_time_hours", Float64)
+	Attribute("queries_attention", Int32)
+	Attribute("largest_regression_pct", Float64)
+	Attribute("temp_data_written_gb", Float64)
+	Attribute("sequential_scans_detected", Int32)
+	Attribute("investigations_open", Int32)
+	Attribute("reports_generated", Int32)
+	Required("queries_observed", "database_time_hours", "queries_attention",
+		"largest_regression_pct", "temp_data_written_gb", "sequential_scans_detected",
+		"investigations_open", "reports_generated")
+})
+
+// RegressionAlert is one entry in the regression inbox.
+var RegressionAlert = Type("RegressionAlert", func() {
+	Attribute("id", String, func() {
+		Format(FormatUUID)
+	})
+	Attribute("title", String)
+	Attribute("query", String)
+	Attribute("change_type", String)
+	Attribute("change_summary", String)
+	Attribute("impact", String, "critical, high, medium, or low")
+	Attribute("first_detected_at", String, func() {
+		Format(FormatDateTime)
+	})
+	Attribute("acknowledged", Boolean)
+	Attribute("connection_id", String)
+	Required("id", "title", "query", "change_type", "change_summary", "impact", "first_detected_at", "acknowledged", "connection_id")
+})
+
+var RegressionInbox = Type("RegressionInbox", func() {
+	Attribute("items", ArrayOf(RegressionAlert))
+	Required("items")
+})
+
+// DemoScenario is a guided investigation scenario.
+var DemoScenario = Type("DemoScenario", func() {
+	Attribute("id", String)
+	Attribute("title", String)
+	Attribute("problem", String, "Short business problem")
+	Attribute("sql", String, "Reproducible query")
+	Attribute("candidate_sql", String, "Verified improvement query")
+	Attribute("expected_improvement", String, "e.g. 8.4s → 310ms")
+	Attribute("category", String, "e.g. function_wrap, partition_pruning, cardinality")
+	Required("id", "title", "problem", "sql", "expected_improvement", "category")
+})
+
+var DemoScenarioList = Type("DemoScenarioList", func() {
+	Attribute("items", ArrayOf(DemoScenario))
+	Required("items")
+})
+
+// SecurityTrust documents the security posture.
+var SecurityTrust = Type("SecurityTrust", func() {
+	Attribute("authentication", String)
+	Attribute("connection_mode", String)
+	Attribute("allowed_schemas", ArrayOf(String))
+	Attribute("tenant_isolation", String)
+	Attribute("tls", String)
+	Attribute("audit_mode", String)
+	Attribute("query_timeout_seconds", Int32)
+	Attribute("result_limit", Int32)
+	Attribute("explain_analyze", String)
+	Attribute("external_llm_data", String)
+	Required("authentication", "connection_mode", "allowed_schemas", "tenant_isolation",
+		"tls", "audit_mode", "query_timeout_seconds", "result_limit",
+		"explain_analyze", "external_llm_data")
+})

@@ -466,6 +466,7 @@ func marshalDashboardsMetricsDataToMetricsDataResponseBody(v *dashboards.Metrics
 	res := &MetricsDataResponseBody{
 		PeriodCurrentLabel:  v.PeriodCurrentLabel,
 		PeriodPreviousLabel: v.PeriodPreviousLabel,
+		Investigation:       v.Investigation,
 	}
 	if v.Aggregates != nil {
 		res.Aggregates = make(map[string]*AggregateDataResponseBody, len(v.Aggregates))

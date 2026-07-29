@@ -627,6 +627,7 @@ func unmarshalMetricsDataResponseBodyToSuggestionsMetricsData(v *MetricsDataResp
 	res := &suggestions.MetricsData{
 		PeriodCurrentLabel:  v.PeriodCurrentLabel,
 		PeriodPreviousLabel: v.PeriodPreviousLabel,
+		Investigation:       v.Investigation,
 	}
 	if v.Aggregates != nil {
 		res.Aggregates = make(map[string]*suggestions.AggregateData, len(v.Aggregates))

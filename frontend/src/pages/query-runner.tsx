@@ -10,6 +10,10 @@ import { SchemaBrowser } from "@/components/schema-browser";
 import { useAnnounce } from "@/contexts/announce-context";
 import { cn, formatFloat } from "@/lib/utils";
 import { ResultChart, type ChartType } from "@/components/result-chart";
+import { TrustBar } from "@/components/trust-bar";
+import { PlanExplorer } from "@/components/plan-explorer";
+import { PlanCompare } from "@/components/plan-compare";
+import type { ComparePlansResult } from "@/api/client";
 
 const QUERY_HISTORY_KEY = "pgquerynarrative_query_history";
 const MAX_HISTORY = 10;
@@ -45,6 +49,10 @@ export default function QueryRunner() {
   const [explainLoading, setExplainLoading] = useState(false);
   const [explainAnalyze, setExplainAnalyze] = useState(false);
   const [showPlanJson, setShowPlanJson] = useState(false);
+  const [workbenchTab, setWorkbenchTab] = useState<"results" | "plan" | "evidence" | "compare" | "narrative" | "report">("results");
+  const [compareSql, setCompareSql] = useState("");
+  const [compareResult, setCompareResult] = useState<ComparePlansResult | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [askLoading, setAskLoading] = useState(false);
   const [error, setError] = useState("");
@@ -119,6 +127,7 @@ export default function QueryRunner() {
     try {
       const r = await api.runQuery(toRun, Math.max(1, Math.min(1000, Number(limit) || 100)), connectionId || undefined);
       setResult(r);
+      setWorkbenchTab("results");
       setHistory((prev) => {
         const rest = prev.filter((h) => h.trim() !== toRun);
         return [toRun, ...rest];
@@ -146,6 +155,7 @@ export default function QueryRunner() {
     try {
       const r = await api.explainQuery(toExplain, explainAnalyze, connectionId || undefined);
       setExplainResult(r);
+      setWorkbenchTab("plan");
       setHistory((prev) => {
         const rest = prev.filter((h) => h.trim() !== toExplain);
         return [toExplain, ...rest];
@@ -170,6 +180,7 @@ export default function QueryRunner() {
     try {
       const r = await api.generateReport(sql, connectionId || undefined);
       setReport(r);
+      setWorkbenchTab("report");
       announce("Report generated.", "polite");
     } catch (e) {
       const msg = e instanceof ApiError
@@ -233,6 +244,7 @@ export default function QueryRunner() {
       setChatSessionId(r.session_id || chatSessionId);
       setChatTurns(r.history || []);
       setChatFollowUps(r.follow_ups || []);
+      setWorkbenchTab("report");
       announce("Answer and report generated.", "polite");
     } catch (e) {
       const msg = e instanceof ApiError
@@ -255,9 +267,11 @@ export default function QueryRunner() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Query Runner</h1>
-        <p className="text-muted-foreground mt-1">Run read-only SQL, visualize results, and save reusable queries.</p>
+        <h1 className="text-2xl font-bold tracking-tight">PostgreSQL Analytics Workbench</h1>
+        <p className="text-muted-foreground mt-1">Run read-only SQL, inspect execution plans, compare improvements, and generate reports.</p>
       </div>
+
+      <TrustBar connectionName={connections.find((c) => c.id === connectionId)?.name} />
 
       <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4 xl:gap-6">
         <aside className="xl:sticky xl:top-4 xl:self-start shrink-0">
@@ -272,7 +286,7 @@ export default function QueryRunner() {
             <Sparkles className="h-4 w-4 text-primary" />
             Ask in natural language
           </CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">Describe what you want in plain English; the app will generate SQL and a narrative report.</p>
+          <p className="text-xs text-muted-foreground mt-1">Describe what you want in plain English; the app will generate SQL and a narrative report. With local Ollama this can take 30–90 seconds.</p>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
           {connections.length > 0 && (
@@ -290,7 +304,7 @@ export default function QueryRunner() {
           />
           <Button onClick={() => { void ask(); }} disabled={askLoading}>
             {askLoading ? <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" /> : <Sparkles className="h-4 w-4" />}
-            Ask
+            {askLoading ? "Generating…" : "Ask"}
           </Button>
         </CardContent>
         {questionSuggestions.length > 0 && (
@@ -500,60 +514,51 @@ export default function QueryRunner() {
         </Card>
       )}
 
-      {/* EXPLAIN plan findings + query results share one scroll target */}
-      {((explainResult && !explainLoading) || (result && !loading)) && (
-        <div ref={resultsRef} className="space-y-6">
-      {explainResult && !explainLoading && (
+      {((explainResult && !explainLoading) || (result && !loading) || report) && (
+        <div ref={resultsRef} className="space-y-4">
+          <div className="flex flex-wrap gap-1 border-b border-border/70 pb-1">
+            {([
+              ["results", "Results", !!result],
+              ["plan", "Plan", !!explainResult],
+              ["evidence", "Evidence", !!explainResult],
+              ["compare", "Compare", !!sql.trim()],
+              ["narrative", "Narrative", !!report],
+              ["report", "Report", !!report],
+            ] as const).map(([tab, label, enabled]) => (
+              enabled && (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setWorkbenchTab(tab)}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors",
+                    workbenchTab === tab
+                      ? "bg-primary/10 text-primary border-b-2 border-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {label}
+                </button>
+              )
+            ))}
+          </div>
+
+      {workbenchTab === "plan" && explainResult && !explainLoading && (
           <Card className="panel-accent-top panel-corner-accent border-primary/20">
-            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-base">Query plan</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1 font-mono truncate max-w-[48rem]" title={explainResult.sql}>
-                  {explainResult.sql}
-                </p>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-foreground/85">
-                <span>Total cost {formatFloat(explainResult.total_cost)}</span>
-                <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{explainResult.execution_time_ms}ms</span>
-                <span>{explainResult.findings?.length ?? 0} findings</span>
-              </div>
+            <CardHeader>
+              <CardTitle className="text-base">Execution plan</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Total cost {formatFloat(explainResult.total_cost)} · {explainResult.findings?.length ?? 0} findings
+              </p>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {(explainResult.findings ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">No seq-scan or high-cost findings. Plan looks fine for the heuristics we check.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {(explainResult.findings ?? []).map((f, i) => (
-                    <li
-                      key={i}
-                      className={cn(
-                        "rounded-md border px-3 py-2 text-sm",
-                        f.is_seq_scan ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-secondary/40"
-                      )}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-                        <span>{f.node_type}</span>
-                        {f.is_seq_scan && <span className="text-amber-600 dark:text-amber-400">Seq Scan</span>}
-                        {(f.schema || f.relation) && (
-                          <span className="font-mono normal-case tracking-normal text-foreground/80">
-                            {[f.schema, f.relation].filter(Boolean).join(".")}
-                          </span>
-                        )}
-                        {f.estimated_cost != null && (
-                          <span className="normal-case tracking-normal font-normal">cost {formatFloat(f.estimated_cost)}</span>
-                        )}
-                      </div>
-                      <p className="text-sm leading-relaxed text-foreground/95">{f.message}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div>
+            <CardContent>
+              <PlanExplorer plan={explainResult.plan} findings={explainResult.findings} />
+              <div className="mt-4">
                 <Button variant="ghost" size="sm" onClick={() => setShowPlanJson((v) => !v)}>
                   {showPlanJson ? "Hide raw plan JSON" : "Show raw plan JSON"}
                 </Button>
                 {showPlanJson && (
-                  <pre className="mt-2 max-h-[360px] overflow-auto rounded-md border border-border bg-background/60 p-3 text-[11px] font-mono leading-relaxed">
+                  <pre className="mt-2 max-h-[360px] overflow-auto rounded-md border border-border bg-background/60 p-3 text-[11px] font-mono">
                     {JSON.stringify(explainResult.plan, null, 2)}
                   </pre>
                 )}
@@ -562,8 +567,58 @@ export default function QueryRunner() {
           </Card>
       )}
 
-      {/* Results: chart view or table */}
-      {result && !loading && (
+      {workbenchTab === "evidence" && explainResult && !explainLoading && (
+          <Card className="panel-accent-top">
+            <CardHeader><CardTitle className="text-base">Plan evidence</CardTitle></CardHeader>
+            <CardContent>
+              {(explainResult.findings ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No notable findings.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {(explainResult.findings ?? []).map((f, i) => (
+                    <li key={i} className={cn("rounded-md border px-3 py-2 text-sm", f.is_seq_scan ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-secondary/40")}>
+                      <div className="flex flex-wrap items-center gap-2 text-xs mb-1">
+                        <span className="font-semibold">{f.node_type}</span>
+                        {f.confidence && <span className="text-muted-foreground">Confidence: {f.confidence}</span>}
+                      </div>
+                      <p>{f.message}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+      )}
+
+      {workbenchTab === "compare" && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">Compare plans</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <Textarea value={compareSql} onChange={(e) => setCompareSql(e.target.value)} placeholder="Candidate SQL rewrite..." className="font-mono text-xs min-h-[80px]" />
+              <Button
+                variant="outline"
+                disabled={!sql.trim() || !compareSql.trim() || compareLoading}
+                onClick={async () => {
+                  setCompareLoading(true);
+                  try {
+                    const r = await api.comparePlans(sql, compareSql, explainAnalyze, connectionId || undefined);
+                    setCompareResult(r);
+                    setWorkbenchTab("compare");
+                  } catch (e) {
+                    setError(e instanceof ApiError ? e.message : "Compare failed");
+                  } finally {
+                    setCompareLoading(false);
+                  }
+                }}
+              >
+                {compareLoading ? "Comparing…" : "Compare before / after"}
+              </Button>
+              {compareResult && <PlanCompare comparison={compareResult} />}
+            </CardContent>
+          </Card>
+      )}
+
+      {workbenchTab === "results" && result && !loading && (
         <div className="space-y-6">
           {/* Suggested charts: click to visualize */}
           {result.chart_suggestions && result.chart_suggestions.length > 0 && (
@@ -673,11 +728,8 @@ export default function QueryRunner() {
           </Card>
         </div>
       )}
-        </div>
-      )}
 
-      {/* Report narrative — HUD accent: small top border gradient */}
-      {report && (
+      {(workbenchTab === "narrative" || workbenchTab === "report") && report && (
         <Card className="border-primary/20 panel-accent-top">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -716,6 +768,10 @@ export default function QueryRunner() {
           </CardContent>
         </Card>
       )}
+        </div>
+      )}
+
+      {/* Legacy report block removed — shown in workbench tabs */}
         </div>
       </div>
     </div>

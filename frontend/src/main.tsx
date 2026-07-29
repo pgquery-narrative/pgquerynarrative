@@ -16,6 +16,8 @@ const SettingsPage = lazy(() => import("@/pages/settings"));
 const DashboardsPage = lazy(() => import("@/pages/dashboards"));
 const SchedulesPage = lazy(() => import("@/pages/schedules"));
 const QueryStatsPage = lazy(() => import("@/pages/query-stats"));
+const InvestigatePage = lazy(() => import("@/pages/investigate"));
+const SecurityPage = lazy(() => import("@/pages/security"));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -47,6 +49,30 @@ createRoot(document.getElementById("root")!).render(
                   element={
                     <Suspense fallback={<RouteFallback />}>
                       <QueryRunner />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="investigate"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <InvestigatePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="investigate/:id"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <InvestigatePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="security"
+                  element={
+                    <Suspense fallback={<RouteFallback />}>
+                      <SecurityPage />
                     </Suspense>
                   }
                 />

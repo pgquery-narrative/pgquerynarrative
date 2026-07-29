@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -118,6 +119,7 @@ export default function QueryStats() {
                     <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Total ms</th>
                     <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Mean ms</th>
                     <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Rows</th>
+                    <th className="px-3 py-2 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
@@ -130,6 +132,14 @@ export default function QueryStats() {
                       <td className="px-3 py-2 text-right tabular-nums">{formatFloat(row.total_time_ms)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatFloat(row.mean_time_ms)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{row.rows.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          to={`/investigate?title=${encodeURIComponent("Query investigation")}&sql=${encodeURIComponent(row.query)}&calls=${row.calls}&mean_time_ms=${row.mean_time_ms}&total_time_ms=${row.total_time_ms}&rows=${row.rows}`}
+                          className="text-xs text-primary hover:underline whitespace-nowrap"
+                        >
+                          Investigate
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

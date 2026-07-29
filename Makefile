@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check demo-bootstrap demo-smoke demo-multi-org docs
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check demo demo-gif demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -88,10 +88,13 @@ docker-start:
 	@echo "Step 4: Seeding demo data..."
 	@docker compose exec -T postgres psql -U postgres -d pgquerynarrative -f - < tools/db/seed.sql || echo "⚠️  Seed data already exists or database not accessible"
 	@echo ""
-	@echo "Step 5: Building application image (Docker; avoids host CGO/macOS SDK issues)..."
+	@echo "Step 5: Starting Ollama (local LLM for Ask / natural language)..."
+	@docker compose up -d ollama || (echo "⚠️  Ollama failed to start; Ask/narrative need ./tools/demo/ensure_ollama.sh" && true)
+	@echo ""
+	@echo "Step 6: Building application image (Docker; avoids host CGO/macOS SDK issues)..."
 	@docker compose build app
 	@echo ""
-	@echo "Step 6: Starting application..."
+	@echo "Step 7: Starting application..."
 	@echo "✅ PgQueryNarrative is starting!"
 	@echo ""
 	@echo "🌐 Open http://localhost:8080 (React UI + API)"
@@ -279,6 +282,28 @@ pilot-acceptance:
 	@DOCKER_API_VERSION=1.44 ./tools/ops/pilot_acceptance.sh
 
 # Solo product demo (see docs/DEMO_RUNBOOK.md)
+# One-command guided demo: starts Postgres + app with small seed (no 10M wait).
+demo:
+	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/smoke_scenes.sh ./tools/demo/ensure_ollama.sh
+	@SEED_LARGE=0 ./tools/demo/bootstrap.sh
+	@echo ""
+	@echo "🎯 Guided demo ready at http://localhost:8080"
+	@echo "   → Home: Start guided demo"
+	@echo "   → Investigate: Query Investigation workflow"
+	@echo "   → Workbench Ask: natural language → SQL + report (Ollama included)"
+	@echo "   → For 10M-row benchmark: make seed-large-docker"
+
+ollama-up:
+	@chmod +x ./tools/demo/ensure_ollama.sh
+	@./tools/demo/ensure_ollama.sh
+
+ollama-pull:
+	@docker compose exec -T ollama ollama pull $${LLM_MODEL:-llama3.2}
+
+demo-gif:
+	@chmod +x ./tools/demo/capture_readme_gif.sh
+	@./tools/demo/capture_readme_gif.sh
+
 demo-bootstrap:
 	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/smoke_scenes.sh ./tools/demo/multi_org_demo.sh
 	@./tools/demo/bootstrap.sh

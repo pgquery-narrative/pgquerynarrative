@@ -4,163 +4,193 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Report, type SavedQuery } from "@/api/client";
-import { Terminal, FileText, Bookmark, Database, Zap, Clock } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
-import { cn, truncate } from "@/lib/utils";
+import { api, type RegressionAlert, type WorkspaceOverview } from "@/api/client";
+import {
+  Search, Compass, FileText, Shield, GitBranch, Database, Clock,
+  AlertTriangle, HardDrive, ScanLine, Play, ArrowRight,
+} from "lucide-react";
+import { cn, truncate, timeAgo } from "@/lib/utils";
+
+const ENTRY_POINTS = [
+  {
+    to: "/investigate",
+    icon: Search,
+    title: "Investigate",
+    description: "Find expensive or regressed queries",
+    accent: "border-primary/30 hover:border-primary/50",
+  },
+  {
+    to: "/query",
+    icon: Compass,
+    title: "Explore",
+    description: "Run safe read-only PostgreSQL analysis",
+    accent: "border-brand-blue/30 hover:border-brand-blue/50",
+  },
+  {
+    to: "/query",
+    icon: GitBranch,
+    title: "Explain",
+    description: "Understand an execution plan",
+    accent: "border-brand-violet/30 hover:border-brand-violet/50",
+  },
+  {
+    to: "/reports",
+    icon: FileText,
+    title: "Report",
+    description: "Convert PostgreSQL evidence into a shareable report",
+    accent: "border-success/30 hover:border-success/50",
+  },
+];
 
 export default function Dashboard() {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [saved, setSaved] = useState<SavedQuery[]>([]);
-  const [schemaCount, setSchemaCount] = useState<number | null>(null);
+  const [overview, setOverview] = useState<WorkspaceOverview | null>(null);
+  const [regressions, setRegressions] = useState<RegressionAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.allSettled([
-      api.listReports(5, 0),
-      api.listSaved(5, 0),
-      api.getSchema(),
-    ]).then(([r, s, sc]) => {
-      if (r.status === "fulfilled") setReports(r.value.items || []);
-      if (s.status === "fulfilled") setSaved(s.value.items || []);
-      if (sc.status === "fulfilled") {
-        const tables = sc.value.schemas.reduce((n, s) => n + s.tables.length, 0);
-        setSchemaCount(tables);
-      }
+    Promise.allSettled([api.getWorkspaceOverview(), api.getRegressions(5)]).then(([o, r]) => {
+      if (o.status === "fulfilled") setOverview(o.value);
+      if (r.status === "fulfilled") setRegressions(r.value.items ?? []);
       setLoading(false);
     });
   }, []);
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Overview of system health, activity, and quick actions.</p>
+      <div className="relative">
+        <Badge variant="outline" className="mb-3">PostgreSQL Query Intelligence</Badge>
+        <h1 className="text-3xl font-bold tracking-tight max-w-2xl">
+          Investigate queries using the evidence that produced them
+        </h1>
+        <p className="text-muted-foreground mt-2 max-w-2xl">
+          Workload statistics, SQL, query results, and execution plans — combined into
+          evidence-backed explanations and engineering-ready reports.
+        </p>
+        <div className="flex flex-wrap gap-3 mt-5">
+          <Link to="/investigate">
+            <Button size="lg"><Play className="h-4 w-4" /> Start guided demo</Button>
+          </Link>
+          <Link to="/security">
+            <Button variant="secondary" size="lg"><Shield className="h-4 w-4" /> Security & Trust</Button>
+          </Link>
+        </div>
       </div>
 
-      <Card className="panel-accent-top">
-        <CardContent className="p-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">System status</p>
-            <p className="text-xs text-muted-foreground mt-1">App and API are running. Use Query Runner for execution and Reports for narratives.</p>
-          </div>
-          <Badge variant="success">Operational</Badge>
+      {/* Entry points */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {ENTRY_POINTS.map(({ to, icon: Icon, title, description, accent }) => (
+          <Link key={title} to={to} className="group">
+            <Card className={cn("h-full transition-all duration-200 hover:shadow-md panel-accent-top", accent)}>
+              <CardContent className="p-5">
+                <Icon className="h-6 w-6 text-primary mb-3 group-hover:scale-110 transition-transform" />
+                <p className="font-semibold">{title}</p>
+                <p className="text-xs text-muted-foreground mt-1">{description}</p>
+                <ArrowRight className="h-4 w-4 text-muted-foreground mt-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+
+      {/* Evidence metrics */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">PostgreSQL evidence</CardTitle>
+          <CardDescription>Workload intelligence from your connected database</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+              <EvidenceMetric icon={Database} label="Queries observed" value={overview?.queries_observed?.toLocaleString() ?? "—"} />
+              <EvidenceMetric icon={Clock} label="Database time analyzed" value={overview ? `${overview.database_time_hours.toFixed(1)} hours` : "—"} />
+              <EvidenceMetric icon={AlertTriangle} label="Queries requiring attention" value={String(overview?.queries_attention ?? "—")} highlight />
+              <EvidenceMetric icon={GitBranch} label="Largest regression" value={overview ? `+${overview.largest_regression_pct.toFixed(0)}%` : "—"} highlight />
+              <EvidenceMetric icon={HardDrive} label="Temporary data written" value={overview ? `${overview.temp_data_written_gb} GB` : "—"} />
+              <EvidenceMetric icon={ScanLine} label="Sequential scans detected" value={String(overview?.sequential_scans_detected ?? "—")} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Status cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Database</CardTitle>
-            <Database className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-6 w-24" /> : (
-              <>
-                <div className="text-2xl font-bold">{schemaCount ?? "—"} tables</div>
-                <Badge variant="success" className="mt-1">Connected</Badge>
-              </>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Reports</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-6 w-16" /> : <div className="text-2xl font-bold">{reports.length}</div>}
-            <p className="text-xs text-muted-foreground mt-1">recent</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Saved Queries</CardTitle>
-            <Bookmark className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-6 w-16" /> : <div className="text-2xl font-bold">{saved.length}</div>}
-            <p className="text-xs text-muted-foreground mt-1">total</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Regression inbox */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Regression inbox</CardTitle>
+            <CardDescription>Queries with significant performance changes</CardDescription>
+          </div>
+          <Link to="/investigate">
+            <Button variant="secondary" size="sm">View all</Button>
+          </Link>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+          ) : regressions.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No regressions detected. Your workload looks healthy.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border/70 text-left text-xs text-muted-foreground">
+                    <th className="pb-2 font-medium">Query</th>
+                    <th className="pb-2 font-medium">Change</th>
+                    <th className="pb-2 font-medium">Impact</th>
+                    <th className="pb-2 font-medium">First detected</th>
+                    <th className="pb-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {regressions.map((r) => (
+                    <tr key={r.id} className="border-b border-border/30 last:border-0">
+                      <td className="py-3 font-medium">{r.title}</td>
+                      <td className="py-3 text-muted-foreground">{r.change_summary}</td>
+                      <td className="py-3">
+                        <Badge variant={r.impact === "critical" ? "destructive" : r.impact === "high" ? "warning" : "secondary"} className="text-[10px] capitalize">
+                          {r.impact}
+                        </Badge>
+                      </td>
+                      <td className="py-3 text-muted-foreground text-xs">{timeAgo(r.first_detected_at)}</td>
+                      <td className="py-3 text-right">
+                        <Link
+                          to={`/investigate?title=${encodeURIComponent(r.title)}&sql=${encodeURIComponent(r.query)}`}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Investigate
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
-      {/* Quick actions */}
-      <div className="flex flex-wrap gap-3">
-        <Link to="/query"><Button><Terminal className="h-4 w-4" /> Run Query</Button></Link>
-        <Link to="/reports"><Button variant="secondary"><FileText className="h-4 w-4" /> View Reports</Button></Link>
-        <Link to="/saved"><Button variant="secondary"><Bookmark className="h-4 w-4" /> Saved Queries</Button></Link>
-      </div>
-
-      {/* Recent activity */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Reports</CardTitle>
-            <CardDescription>Last generated reports</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
-            ) : reports.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <p className="text-sm text-muted-foreground">No reports yet.</p>
-                <Link to="/query" className={cn(buttonVariants({ size: "sm" }), "!text-white hover:!text-white dark:!text-black dark:hover:!text-black")}>Run a query</Link>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {reports.map(r => (
-                  <Link key={r.id} to={`/reports/${r.id}`} className="flex items-center justify-between p-3 rounded-md border border-border hover:bg-secondary/50 transition-colors">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{r.narrative?.headline || truncate(r.sql, 50)}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Clock className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</span>
-                        <Badge variant="secondary" className="text-[10px]">{r.llm_provider}</Badge>
-                        <Badge variant="outline" className="text-[10px]">{r.connection_id}</Badge>
-                      </div>
-                    </div>
-                    <Zap className="h-4 w-4 text-brand-cyan flex-shrink-0" />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Saved Queries</CardTitle>
-            <CardDescription>Your bookmarked queries</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
-            ) : saved.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 py-4 text-center">
-                <p className="text-sm text-muted-foreground">No saved queries yet.</p>
-                <Link to="/query" className={cn(buttonVariants({ size: "sm" }), "!text-white hover:!text-white dark:!text-black dark:hover:!text-black")}>Go to Query Runner</Link>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {saved.map(q => (
-                  <div key={q.id} className="flex items-center justify-between p-3 rounded-md border border-border">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{q.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">{truncate(q.sql, 60)}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-[10px]">{q.connection_id}</Badge>
-                      {q.tags && q.tags.length > 0 && <Badge variant="outline" className="ml-2 text-[10px]">{q.tags[0]}</Badge>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+function EvidenceMetric({
+  icon: Icon,
+  label,
+  value,
+  highlight,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className={cn("rounded-lg border p-3", highlight ? "border-warning/30 bg-warning/5" : "border-border/50")}>
+      <Icon className="h-4 w-4 text-muted-foreground mb-1" />
+      <p className="text-lg font-bold tracking-tight">{value}</p>
+      <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
     </div>
   );
 }

@@ -179,7 +179,7 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 		}
 		return nil, askLLMError("SCHEMA_ERROR", "failed to load schema", err)
 	}
-	schemaText := llm.FormatSchemaForPrompt(schemaResult)
+	schemaText := llm.FormatSchemaForNL2SQL(schemaResult)
 	prompt := llm.BuildNL2SQLPrompt(question, schemaText)
 
 	response, err := s.invokeLLM(ctx, "nl2sql", prompt, question)
@@ -249,7 +249,7 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 		}
 		return nil, askLLMError("SCHEMA_ERROR", "failed to load schema", err)
 	}
-	schemaText := llm.FormatSchemaForPrompt(schemaResult)
+	schemaText := llm.FormatSchemaForNL2SQL(schemaResult)
 	prompt := llm.BuildNL2SQLPrompt(question, schemaText)
 	if historyCtx != "" {
 		prompt += "\n\nConversation context:\n" + historyCtx + "\nUse this context to refine the next SQL."
@@ -503,7 +503,7 @@ func (s *AskService) Questions(ctx context.Context, payload *suggestions.Questio
 	if err != nil {
 		return &suggestions.SuggestedQuestionsResult{Questions: defaultQuestions()}, nil
 	}
-	schemaText := llm.FormatSchemaForPrompt(schemaResult)
+	schemaText := llm.FormatSchemaForNL2SQL(schemaResult)
 	limit := int(payload.Limit)
 	if limit <= 0 {
 		limit = 8

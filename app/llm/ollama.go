@@ -78,8 +78,8 @@ func (c *OllamaClient) GenerateMessages(ctx context.Context, messages []ChatMess
 		"stream": false,
 		"options": map[string]interface{}{
 			"temperature": 0.7,
-			// Keep response size bounded to reduce end-to-end latency for Ask/Explain.
-			"num_predict": 768,
+			// Narrative JSON needs more headroom than short Ask SQL.
+			"num_predict": 1536,
 		},
 	}
 

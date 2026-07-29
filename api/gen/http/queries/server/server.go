@@ -22,6 +22,7 @@ type Server struct {
 	Run            http.Handler
 	StatStatements http.Handler
 	ExplainPlan    http.Handler
+	ComparePlans   http.Handler
 	ListSaved      http.Handler
 	Save           http.Handler
 	GetSaved       http.Handler
@@ -58,6 +59,7 @@ func New(
 			{"Run", "POST", "/api/v1/queries/run"},
 			{"StatStatements", "GET", "/api/v1/queries/stats"},
 			{"ExplainPlan", "POST", "/api/v1/queries/explain"},
+			{"ComparePlans", "POST", "/api/v1/queries/explain/compare"},
 			{"ListSaved", "GET", "/api/v1/queries/saved"},
 			{"Save", "POST", "/api/v1/queries/saved"},
 			{"GetSaved", "GET", "/api/v1/queries/saved/{id}"},
@@ -66,6 +68,7 @@ func New(
 		Run:            NewRunHandler(e.Run, mux, decoder, encoder, errhandler, formatter),
 		StatStatements: NewStatStatementsHandler(e.StatStatements, mux, decoder, encoder, errhandler, formatter),
 		ExplainPlan:    NewExplainPlanHandler(e.ExplainPlan, mux, decoder, encoder, errhandler, formatter),
+		ComparePlans:   NewComparePlansHandler(e.ComparePlans, mux, decoder, encoder, errhandler, formatter),
 		ListSaved:      NewListSavedHandler(e.ListSaved, mux, decoder, encoder, errhandler, formatter),
 		Save:           NewSaveHandler(e.Save, mux, decoder, encoder, errhandler, formatter),
 		GetSaved:       NewGetSavedHandler(e.GetSaved, mux, decoder, encoder, errhandler, formatter),
@@ -81,6 +84,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Run = m(s.Run)
 	s.StatStatements = m(s.StatStatements)
 	s.ExplainPlan = m(s.ExplainPlan)
+	s.ComparePlans = m(s.ComparePlans)
 	s.ListSaved = m(s.ListSaved)
 	s.Save = m(s.Save)
 	s.GetSaved = m(s.GetSaved)
@@ -95,6 +99,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountRunHandler(mux, h.Run)
 	MountStatStatementsHandler(mux, h.StatStatements)
 	MountExplainPlanHandler(mux, h.ExplainPlan)
+	MountComparePlansHandler(mux, h.ComparePlans)
 	MountListSavedHandler(mux, h.ListSaved)
 	MountSaveHandler(mux, h.Save)
 	MountGetSavedHandler(mux, h.GetSaved)
@@ -242,6 +247,59 @@ func NewExplainPlanHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "explain_plan")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "queries")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountComparePlansHandler configures the mux to serve the "queries" service
+// "compare_plans" endpoint.
+func MountComparePlansHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/api/v1/queries/explain/compare", f)
+}
+
+// NewComparePlansHandler creates a HTTP handler which loads the HTTP request
+// and calls the "queries" service "compare_plans" endpoint.
+func NewComparePlansHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeComparePlansRequest(mux, decoder)
+		encodeResponse = EncodeComparePlansResponse(encoder)
+		encodeError    = EncodeComparePlansError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "compare_plans")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "queries")
 		payload, err := decodeRequest(r)
 		if err != nil {

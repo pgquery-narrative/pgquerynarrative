@@ -18,6 +18,7 @@ type Client struct {
 	RunEndpoint            goa.Endpoint
 	StatStatementsEndpoint goa.Endpoint
 	ExplainPlanEndpoint    goa.Endpoint
+	ComparePlansEndpoint   goa.Endpoint
 	ListSavedEndpoint      goa.Endpoint
 	SaveEndpoint           goa.Endpoint
 	GetSavedEndpoint       goa.Endpoint
@@ -25,11 +26,12 @@ type Client struct {
 }
 
 // NewClient initializes a "queries" service client given the endpoints.
-func NewClient(run, statStatements, explainPlan, listSaved, save, getSaved, deleteSaved goa.Endpoint) *Client {
+func NewClient(run, statStatements, explainPlan, comparePlans, listSaved, save, getSaved, deleteSaved goa.Endpoint) *Client {
 	return &Client{
 		RunEndpoint:            run,
 		StatStatementsEndpoint: statStatements,
 		ExplainPlanEndpoint:    explainPlan,
+		ComparePlansEndpoint:   comparePlans,
 		ListSavedEndpoint:      listSaved,
 		SaveEndpoint:           save,
 		GetSavedEndpoint:       getSaved,
@@ -74,6 +76,19 @@ func (c *Client) ExplainPlan(ctx context.Context, p *ExplainQueryPayload) (res *
 		return
 	}
 	return ires.(*ExplainQueryResult), nil
+}
+
+// ComparePlans calls the "compare_plans" endpoint of the "queries" service.
+// ComparePlans may return the following errors:
+//   - "validation_error" (type *ValidationError)
+//   - error: internal error
+func (c *Client) ComparePlans(ctx context.Context, p *ComparePlansPayload) (res *ComparePlansResult, err error) {
+	var ires any
+	ires, err = c.ComparePlansEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ComparePlansResult), nil
 }
 
 // ListSaved calls the "list_saved" endpoint of the "queries" service.

@@ -636,6 +636,23 @@ Defense in depth: validator → role separation → RLS (rep demo) or permissive
       and never superuser.
 - [ ] Audit extensions (`pgcrypto`, `pg_stat_statements`) — minimal attack surface; stats view is read-only via `pg_read_all_stats`.
 
+### Query regression inbox knobs
+
+When `SECURITY_STAT_STATEMENTS_ENABLED=true`, PgQueryNarrative can poll
+`pg_stat_statements` and open regression alerts in the workspace inbox.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `REGRESSION_POLLER_ENABLED` | mirrors `SECURITY_STAT_STATEMENTS_ENABLED` | Turn background polling on or off |
+| `REGRESSION_POLLER_INTERVAL` | `15m` | Snapshot interval |
+| `REGRESSION_MEAN_THRESHOLD_PCT` | `50` | Minimum mean-latency increase for a regression |
+| `REGRESSION_HIGH_THRESHOLD_PCT` | `100` | Threshold for high-severity alerts |
+| `REGRESSION_CRITICAL_THRESHOLD_PCT` | `200` | Threshold for critical alerts |
+| `REGRESSION_SNAPSHOT_RETENTION_DAYS` | `7` | Retain snapshot history for comparisons |
+
+After enabling the poller on an existing environment, run the new migrations and
+allow at least two poll intervals before expecting non-demo regressions to appear.
+
 ---
 
 ## Isolation MVP checklist (trusted internal multi-org)

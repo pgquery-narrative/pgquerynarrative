@@ -59,6 +59,18 @@ var _ = Service("queries", func() {
 		})
 	})
 
+	Method("compare_plans", func() {
+		Description("Compare before and after execution plans for a query rewrite or index change")
+		Payload(ComparePlansPayload)
+		Result(ComparePlansResult)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/queries/explain/compare")
+			Response(StatusOK)
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
 	Method("list_saved", func() {
 		Description("List saved queries")
 		Payload(func() {

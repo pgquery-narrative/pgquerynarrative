@@ -18,6 +18,7 @@ type Endpoints struct {
 	Run            goa.Endpoint
 	StatStatements goa.Endpoint
 	ExplainPlan    goa.Endpoint
+	ComparePlans   goa.Endpoint
 	ListSaved      goa.Endpoint
 	Save           goa.Endpoint
 	GetSaved       goa.Endpoint
@@ -30,6 +31,7 @@ func NewEndpoints(s Service) *Endpoints {
 		Run:            NewRunEndpoint(s),
 		StatStatements: NewStatStatementsEndpoint(s),
 		ExplainPlan:    NewExplainPlanEndpoint(s),
+		ComparePlans:   NewComparePlansEndpoint(s),
 		ListSaved:      NewListSavedEndpoint(s),
 		Save:           NewSaveEndpoint(s),
 		GetSaved:       NewGetSavedEndpoint(s),
@@ -42,6 +44,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Run = m(e.Run)
 	e.StatStatements = m(e.StatStatements)
 	e.ExplainPlan = m(e.ExplainPlan)
+	e.ComparePlans = m(e.ComparePlans)
 	e.ListSaved = m(e.ListSaved)
 	e.Save = m(e.Save)
 	e.GetSaved = m(e.GetSaved)
@@ -72,6 +75,15 @@ func NewExplainPlanEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ExplainQueryPayload)
 		return s.ExplainPlan(ctx, p)
+	}
+}
+
+// NewComparePlansEndpoint returns an endpoint function that calls the method
+// "compare_plans" of service "queries".
+func NewComparePlansEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ComparePlansPayload)
+		return s.ComparePlans(ctx, p)
 	}
 }
 

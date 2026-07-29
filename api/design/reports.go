@@ -264,6 +264,7 @@ var MetricsData = Type("MetricsData", func() {
 	Attribute("period_previous_label", String, "Label for previous period")
 	Attribute("data_quality", MapOf(String, ColumnQualityData), "Per-column data quality (nulls, distinct)")
 	Attribute("perf_suggestions", ArrayOf(String), "Performance suggestions from execution time/row count")
+	Attribute("investigation", Any, "Structured Query Investigation report payload when a report was generated from an investigation")
 })
 
 var AggregateData = Type("AggregateData", func() {

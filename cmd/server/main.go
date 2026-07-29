@@ -39,8 +39,12 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
 	connectionsServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/connections/server"
 	dashboardsServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/dashboards/server"
+	investigationsServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/investigations/server"
 	schedulesServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/schedules/server"
+	workspaceServer "github.com/pgquerynarrative/pgquerynarrative/gen/http/workspace/server"
+	"github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	"github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
 	"github.com/pgquerynarrative/pgquerynarrative/internal/logger"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	"github.com/pgquerynarrative/pgquerynarrative/web"
@@ -94,6 +98,8 @@ func main() {
 	schedulesEndpoints := schedules.NewEndpoints(client.SchedulesService())
 	schemaEndpoints := schema.NewEndpoints(client.SchemaService())
 	suggestionsEndpoints := suggestions.NewEndpoints(client.SuggestionsService())
+	investigationsEndpoints := investigations.NewEndpoints(client.InvestigationsService())
+	workspaceEndpoints := workspace.NewEndpoints(client.WorkspaceService())
 
 	if cfg.Security.ScheduleRunnerEnabled {
 		// Webhook secret + allowlist are configured once in narrative.NewClient via ConfigureWebhook.
@@ -103,7 +109,7 @@ func main() {
 	}
 
 	// Configure HTTP server
-	httpServer, auditStore := setupHTTPServer(ctx, cfg, client, queriesEndpoints, connectionsEndpoints, reportsEndpoints, dashboardsEndpoints, schedulesEndpoints, schemaEndpoints, suggestionsEndpoints, appLogger)
+	httpServer, auditStore := setupHTTPServer(ctx, cfg, client, queriesEndpoints, connectionsEndpoints, reportsEndpoints, dashboardsEndpoints, schedulesEndpoints, schemaEndpoints, suggestionsEndpoints, investigationsEndpoints, workspaceEndpoints, appLogger)
 	if auditStore != nil {
 		defer auditStore.Close()
 	}
@@ -150,6 +156,8 @@ func setupHTTPServer(
 	schedulesEndpoints *schedules.Endpoints,
 	schemaEndpoints *schema.Endpoints,
 	suggestionsEndpoints *suggestions.Endpoints,
+	investigationsEndpoints *investigations.Endpoints,
+	workspaceEndpoints *workspace.Endpoints,
 	appLogger *logger.Logger,
 ) (*http.Server, *audit.Store) {
 	var auditStore *audit.Store
@@ -186,6 +194,10 @@ func setupHTTPServer(
 	schemaServer.Mount(mux, schemaHTTP)
 	suggestionsHTTP := suggestionsServer.New(suggestionsEndpoints, mux, dec, enc, errHandler, nil)
 	suggestionsServer.Mount(mux, suggestionsHTTP)
+	investigationsHTTP := investigationsServer.New(investigationsEndpoints, mux, dec, enc, errHandler, nil)
+	investigationsServer.Mount(mux, investigationsHTTP)
+	workspaceHTTP := workspaceServer.New(workspaceEndpoints, mux, dec, enc, errHandler, nil)
+	workspaceServer.Mount(mux, workspaceHTTP)
 
 	webHandlers := web.NewHandlers(queriesEndpoints, reportsEndpoints)
 
@@ -278,6 +290,15 @@ func setupHTTPServer(
 	// Bound how long redacted EXPLAIN snapshots (sql_text, plan JSON) are retained at rest.
 	// ExplainSnapshotRetentionDays <= 0 disables the loop and keeps snapshots forever.
 	service.StartExplainSnapshotCleanupLoop(ctx, client.AppPool(), 6*time.Hour, cfg.Security.ExplainSnapshotRetentionDays)
+	regressionPoller := service.NewRegressionPoller(client.AppPool(), client.QueriesRunner(), service.RegressionPollerConfig{
+		Enabled:              cfg.Security.RegressionPollerEnabled && cfg.Security.StatStatementsEnabled,
+		Interval:             cfg.Security.RegressionPollerInterval,
+		MeanTimeThresholdPct: cfg.Security.RegressionMeanThresholdPct,
+		CriticalThresholdPct: cfg.Security.RegressionCriticalThresholdPct,
+		HighThresholdPct:     cfg.Security.RegressionHighThresholdPct,
+		RetentionDays:        cfg.Security.RegressionSnapshotRetentionDays,
+	})
+	service.StartRegressionPollerLoop(ctx, regressionPoller)
 	// Reclaim abandoned LLM budget reservations left by crashed workers.
 	llm.StartReservationCleanupLoop(ctx, client.BudgetStore(), 5*time.Minute)
 	trusted := newTrustedProxyMatcher(cfg.Security.TrustedProxies)
