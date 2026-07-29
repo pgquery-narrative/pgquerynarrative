@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check demo demo-gif demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check demo demo-gif demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -582,3 +582,11 @@ install-extension:
 
 install-extension-docker:
 	@sh ./tools/db/install-extension-docker.sh
+
+# ============================================================================
+# Documentation (MkDocs Material — local preview at http://localhost:8000)
+# ============================================================================
+
+docs:
+	docker build -t pgquerynarrative-docs ./docs
+	docker run --rm -it -p 8000:8000 -v ${PWD}:/docs pgquerynarrative-docs

@@ -1,0 +1,85 @@
+site_name: PgQueryNarrative
+site_description: PostgreSQL query intelligence — safe read-only SQL, plan analysis, and evidence-backed reports.
+site_url: https://github.com/pgquerynarrative/pgquerynarrative
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - toc.follow
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+extra:
+  generator: false
+  repo_url: https://github.com/pgquerynarrative/pgquerynarrative
+
+nav:
+  - Overview: index.md
+  - Getting started:
+      - Quick start: getting-started/quickstart.md
+      - Installation: getting-started/installation.md
+      - LLM setup: getting-started/llm-setup.md
+      - Embedded integration: getting-started/embedded.md
+  - User guides:
+      - UI overview: ui-overview.md
+      - CLI usage: usage/cli-usage.md
+      - Demo runbook: DEMO_RUNBOOK.md
+  - Configuration: configuration.md
+  - API:
+      - API reference: api/README.md
+      - Examples: api/examples.md
+  - Reference:
+      - Deployment: reference/deployment.md
+      - Operations: reference/operations.md
+      - Troubleshooting: reference/troubleshooting.md
+      - PostgreSQL extension: reference/postgres-extension.md
+      - Semantic search (pgvector): reference/semantic-search-pgvector.md
+      - Versioning and releases: reference/versioning-and-releases.md
+      - Dataset and schema: DATASET.md
+  - Operations:
+      - Production checklist: ops/PRODUCTION.md
+      - Incident runbooks: ops/INCIDENT_RUNBOOKS.md
+      - RLS demo: ops/rls-demo.md
+  - Development:
+      - Setup: development/setup.md
+      - Testing: development/testing.md
+      - Runbook: development/runbook.md
+  - Case studies:
+      - Query optimization: case-studies/01-query-optimization.md
