@@ -6,7 +6,21 @@ This repo ships a **Docker Compose dev stack** (`postgres:16-alpine`, volume
 schema `demo` with partitioned `demo.sales`). The sections below map directly to
 those artifacts — adapt hostnames, credentials, and retention to your environment.
 
-**Related:** [Demo dataset](../DATASET.md) · [Query optimization case study](../case-studies/01-query-optimization.md) · [Migrations](../../app/db/migrations/)
+**Related:** [Trust model](../trust-model.md) · [Connect your PostgreSQL](../getting-started/connect-postgres.md) · [Demo dataset](../DATASET.md) · [Query optimization case study](../case-studies/01-query-optimization.md) · [Migrations](../../app/db/migrations/)
+
+---
+
+## Start here {#start-here}
+
+Use this page when leaving the laptop demo. Suggested order:
+
+1. Confirm scope fits an **internal** deployment on a **replica** + **read-only role** — [§0 Supported production scope](#0-supported-production-scope) and [Trust model](../trust-model.md)
+2. Wire credentials and `DATABASE_ALLOWED_SCHEMAS` — [Connect your PostgreSQL](../getting-started/connect-postgres.md)
+3. Skim [§4 Security model](#4-security-model-defense-in-depth) and enable StrictMode expectations for your environment
+4. Set backups / migrations / alerts — [§1](#1-backup-and-restore), [§2](#2-migration-strategy-expandcontract--golang-migrate), [§3](#3-monitoring-and-alerts)
+5. Run the [Internal pilot acceptance checklist](#internal-pilot-acceptance-checklist) before wider rollout
+
+Still exploring locally? Prefer [Quick start](../getting-started/quickstart.md) (`make demo`) instead of this document.
 
 ---
 

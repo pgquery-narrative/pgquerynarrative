@@ -1,44 +1,69 @@
 # Quick start
 
-Minimal steps to run PgQueryNarrative.
+Get a guided **Query Investigation** running in minutes.
 
 ## Prerequisites
 
-- **Docker:** Docker and Docker Compose, or  
-- **Local:** PostgreSQL 16+ and Go 1.25+ (see [Installation](installation.md) for full prerequisites).
+- **Docker** and Docker Compose (recommended), or  
+- **Local:** PostgreSQL 16+ and Go 1.25+ — see [Installation](installation.md)
 
-## Docker
-
-```bash
-git clone <repository-url>
-cd pgquerynarrative
-make start-docker
-```
-
-Uses root [docker-compose.yml](../../docker-compose.yml) (PostgreSQL + app). App at **http://localhost:8080**. For production image and Compose: [Deployment](../reference/deployment.md).
-
-For multi-database setups, configure `DATABASE_CONNECTIONS_JSON` and `DATABASE_DEFAULT_CONNECTION_ID` before starting (see [Configuration – Multiple database connections](../configuration.md#multiple-database-connections)).
-
-## Local PostgreSQL
+## Guided demo (recommended)
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/pgquery-narrative/pgquerynarrative.git
 cd pgquerynarrative
-pg_isready   # ensure Postgres is running
-make start-local
+make demo
 ```
 
-Requires [Installation](installation.md) steps (setup, generate, build, db-init, migrate, seed) to have been run once.
+Open **http://localhost:8080**:
+
+1. Click **Start guided demo** or open **Investigate**
+2. Choose **Slow dashboard query**
+3. Review plan findings (e.g. function-wrapped date → blocked partition pruning)
+4. Click **Compare plans** on the range-predicate rewrite
+5. Click **Generate report**
+
+Vocabulary: [Concepts](../concepts.md). Scene timing: [Demo runbook](../DEMO_RUNBOOK.md).
+
+For large-seed partition counts (≈10M rows, 50→1 style proof):
+
+```bash
+make demo-bootstrap
+```
+
+## Other ways to run
+
+=== "Docker Compose"
+
+    ```bash
+    make start-docker
+    ```
+
+    App: **http://localhost:8080**. Production-oriented images: [Deployment](../reference/deployment.md).
+
+=== "Local app + existing Postgres"
+
+    ```bash
+    pg_isready
+    make start-local
+    ```
+
+    Requires [Installation](installation.md) (setup, generate, build, db-init, migrate, seed) once.
+
+## Connect your own database
+
+Leaving the `demo` schema: [Connect your PostgreSQL](connect-postgres.md) and [Trust model](../trust-model.md).
 
 ## Next steps
 
 | Action | Link |
 |--------|------|
-| **Web UI (React SPA)** | http://localhost:8080 — query editor, saved queries, reports, export |
-| **CLI** | `make cli CMD='query "SELECT * FROM demo.sales LIMIT 5"'` — [CLI usage](../usage/cli-usage.md) |
-| **API** | [API example](../api/examples.md) |
-| **Reports** | Configure an [LLM](llm-setup.md) for narrative generation |
+| Understand the loop | [Concepts](../concepts.md) |
+| UI map | [UI overview](../ui-overview.md) |
+| API investigation flow | [API examples](../api/examples.md) |
+| Optional narratives | [LLM setup](llm-setup.md) |
+| Production | [Production — start here](../ops/PRODUCTION.md#start-here) |
 
 ## See also
 
-- [Installation](installation.md) · [LLM setup](llm-setup.md) · [Configuration](../configuration.md) · [Documentation index](../README.md)
+[Installation](installation.md) · [Configuration](../configuration.md) · [Docs overview](../index.md)

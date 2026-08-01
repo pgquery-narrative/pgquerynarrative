@@ -1,14 +1,23 @@
 # PgQueryNarrative
 
-**PostgreSQL query intelligence that shows its evidence.** Run read-only SQL against PostgreSQL, analyze execution plans, compare improvements, and produce engineering-ready reports — with an optional LLM narrative layer on top.
+**PostgreSQL query intelligence that shows its evidence.** Investigate expensive queries with plan findings, compare rewrites, and produce engineering-ready reports — with an optional LLM narrative layer on top.
 
-Web UI: [UI overview](ui-overview.md) · Automation: [REST API](api/README.md) and [CLI](usage/cli-usage.md).
+| Path | Link |
+|------|------|
+| Try the demo | [Quick start](getting-started/quickstart.md) |
+| Connect your database | [Connect your PostgreSQL](getting-started/connect-postgres.md) |
+| Ship to production | [Production — start here](ops/PRODUCTION.md#start-here) |
+| Trust & scope | [Trust model](trust-model.md) |
+| How the product thinks | [Concepts](concepts.md) |
+
+Web UI: [UI overview](ui-overview.md) · API: [Reference](api/README.md) · [Examples](api/examples.md) · CLI: [CLI usage](usage/cli-usage.md)
 
 ## Recommended path
 
-1. [Quick start](getting-started/quickstart.md)
-2. [LLM setup](getting-started/llm-setup.md) (for narrative reports)
-3. [Configuration](configuration.md)
+1. [Concepts](concepts.md) — investigation, evidence, what compare proves  
+2. [Quick start](getting-started/quickstart.md) — `make demo`  
+3. [Trust model](trust-model.md) — then [Connect your PostgreSQL](getting-started/connect-postgres.md) when leaving the demo schema  
+4. [LLM setup](getting-started/llm-setup.md) — only if you want narratives / Ask  
 
 ## One-command demo
 
@@ -16,26 +25,31 @@ Web UI: [UI overview](ui-overview.md) · Automation: [REST API](api/README.md) a
 make demo
 ```
 
-Open **http://localhost:8080** and follow the guided Query Investigation workflow. See [Demo runbook](DEMO_RUNBOOK.md) for scene-by-scene details.
+Open **http://localhost:8080** → **Investigate** → **Slow dashboard query** → **Compare plans** → **Generate report**.
+
+Scene-by-scene: [Demo runbook](DEMO_RUNBOOK.md). Large seed: `make demo-bootstrap`.
 
 ## Documentation map
 
 | Topic | Document |
 |-------|----------|
-| Architecture & daily dev | [Development runbook](development/runbook.md) |
+| Concepts & trust | [Concepts](concepts.md) · [Trust model](trust-model.md) |
+| Getting started | [Quick start](getting-started/quickstart.md) · [Installation](getting-started/installation.md) · [Connect Postgres](getting-started/connect-postgres.md) |
+| Product guides | [UI overview](ui-overview.md) · [Demo runbook](DEMO_RUNBOOK.md) · [Configuration](configuration.md) |
 | API | [API reference](api/README.md) · [Examples](api/examples.md) |
-| Deployment | [Deployment](reference/deployment.md) · [Production checklist](ops/PRODUCTION.md) |
-| Operations | [Operations](reference/operations.md) · [Incident runbooks](ops/INCIDENT_RUNBOOKS.md) |
+| Deployment & ops | [Deployment](reference/deployment.md) · [Production](ops/PRODUCTION.md) · [Operations](reference/operations.md) · [Incidents](ops/INCIDENT_RUNBOOKS.md) |
 | Troubleshooting | [Troubleshooting](reference/troubleshooting.md) |
+| Dataset & case study | [Dataset](DATASET.md) · [Query optimization](case-studies/01-query-optimization.md) |
+| Development | [Setup](development/setup.md) · [Testing](development/testing.md) · [Dev runbook](development/runbook.md) |
 
 ## Local preview
-
-Browse this site with search and navigation at **http://localhost:8000**:
 
 ```bash
 make docs
 ```
 
+Then open **http://localhost:8000**.
+
 ---
 
-**Contributing & security:** [CONTRIBUTING.md](https://github.com/pgquerynarrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md) · [SECURITY.md](https://github.com/pgquerynarrative/pgquerynarrative/blob/main/.github/SECURITY.md) · **Changelog:** [CHANGELOG.md](https://github.com/pgquerynarrative/pgquerynarrative/blob/main/CHANGELOG.md)
+**Contributing & security:** [CONTRIBUTING.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md) · [SECURITY.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/SECURITY.md) · **Changelog:** [CHANGELOG.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/CHANGELOG.md)

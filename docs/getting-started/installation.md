@@ -2,6 +2,8 @@
 
 Prerequisites and run methods for PgQueryNarrative: Docker (recommended) or local build from source.
 
+**First time?** Prefer [Quick start](quickstart.md) (`make demo`) — it is the supported guided path. Use this page when you need prerequisites detail, a from-source build, or non-demo wiring. Connecting a real database: [Connect your PostgreSQL](connect-postgres.md).
+
 ## Prerequisites
 
 | Context | Requirements |
@@ -10,20 +12,26 @@ Prerequisites and run methods for PgQueryNarrative: Docker (recommended) or loca
 | **Local build & run** | Go 1.25+, PostgreSQL 16+ (or Docker for DB only). |
 | **Full web UI from source** | Node.js and npm (to build the [React SPA](../development/setup.md)). |
 
-Report generation requires an LLM. See [LLM setup](llm-setup.md) and [Configuration – LLM](../configuration.md#llm).
+Optional narratives require an LLM — [LLM setup](llm-setup.md). Investigation compare/report work without one.
 
 ## Docker (recommended)
 
-Single command starts PostgreSQL, runs migrations and seed, then the application.
+Guided demo (Postgres + app + seed):
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/pgquery-narrative/pgquerynarrative.git
 cd pgquerynarrative
+make demo
+```
+
+Compose without the demo helper:
+
+```bash
 make start-docker
 ```
 
 - **Stack:** Root [docker-compose.yml](../../docker-compose.yml) (PostgreSQL + app). App image from root [Dockerfile](../../Dockerfile).
-- **Endpoints:** Web UI (React SPA) and API at **http://localhost:8080**. Health: [GET /health](../reference/operations.md#health-checks), [GET /ready](../reference/operations.md#health-checks).
+- **Endpoints:** Web UI and API at **http://localhost:8080**. Health: [GET /health](../reference/operations.md#health-checks), [GET /ready](../reference/operations.md#health-checks).
 
 For production-style image and Compose, see [Deployment – Docker](../reference/deployment.md#docker).
 
@@ -33,7 +41,7 @@ For production-style image and Compose, see [Deployment – Docker](../reference
 
 2. **Clone and setup:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/pgquery-narrative/pgquerynarrative.git
    cd pgquerynarrative
    make setup
    make generate
@@ -53,14 +61,15 @@ For production-style image and Compose, see [Deployment – Docker](../reference
 ## Verify
 
 - **Readiness (DB):** `curl -s http://localhost:8080/ready`
-- **API:** `curl http://localhost:8080/api/v1/queries/saved`
+- **API:** `curl -s http://localhost:8080/api/v1/demo/scenarios | head`
 
 See [Operations – Health checks](../reference/operations.md#health-checks) for probe endpoints.
 
 ## PostgreSQL versions
 
+
 Supported: 16, 17, 18. Docker default image: `postgres:18-alpine`. Override: `POSTGRES_IMAGE=postgres:17-alpine make start-docker`.
 
 ## See also
 
-- [Quick start](quickstart.md) · [Configuration](../configuration.md) · [Deployment](../reference/deployment.md) · [Documentation index](../README.md)
+- [Quick start](quickstart.md) · [Connect your PostgreSQL](connect-postgres.md) · [Configuration](../configuration.md) · [Docs overview](../index.md)

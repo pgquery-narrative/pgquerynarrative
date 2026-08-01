@@ -1,6 +1,8 @@
 # LLM setup
 
-Report generation requires an LLM. Supported providers: **Ollama** (local), **Gemini**, **Claude**, **OpenAI**, **Groq**. Set [Configuration – LLM](../configuration.md#llm) variables: `LLM_PROVIDER`, `LLM_MODEL`, and for cloud providers `LLM_API_KEY`.
+Optional **narrative** and **Ask** flows require an LLM. **Query Investigation** (plan findings, compare, engineering report from evidence) works without one.
+
+Supported providers: **Ollama** (local), **Gemini**, **Claude**, **OpenAI**, **Groq**. Set [Configuration – LLM](../configuration.md#llm) variables: `LLM_PROVIDER`, `LLM_MODEL`, and for cloud providers `LLM_API_KEY`.
 
 ## Ollama (local)
 

@@ -1,6 +1,6 @@
 site_name: PgQueryNarrative
 site_description: PostgreSQL query intelligence — safe read-only SQL, plan analysis, and evidence-backed reports.
-site_url: https://github.com/pgquerynarrative/pgquerynarrative
+site_url: https://github.com/pgquery-narrative/pgquerynarrative
 
 extra_css:
   - stylesheets/extra.css
@@ -48,13 +48,16 @@ theme:
 
 extra:
   generator: false
-  repo_url: https://github.com/pgquerynarrative/pgquerynarrative
+  repo_url: https://github.com/pgquery-narrative/pgquerynarrative
 
 nav:
   - Overview: index.md
+  - Concepts: concepts.md
+  - Trust model: trust-model.md
   - Getting started:
       - Quick start: getting-started/quickstart.md
       - Installation: getting-started/installation.md
+      - Connect your PostgreSQL: getting-started/connect-postgres.md
       - LLM setup: getting-started/llm-setup.md
       - Embedded integration: getting-started/embedded.md
   - User guides:
@@ -80,6 +83,6 @@ nav:
   - Development:
       - Setup: development/setup.md
       - Testing: development/testing.md
-      - Runbook: development/runbook.md
+      - Dev runbook: development/runbook.md
   - Case studies:
       - Query optimization: case-studies/01-query-optimization.md

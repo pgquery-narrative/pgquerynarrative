@@ -1,8 +1,77 @@
 # API examples
 
-Base URL: `http://localhost:8080` (or set port via [Configuration](../configuration.md)). Full endpoint list: [API reference](README.md).
+Base URL: `http://localhost:8080` (see [Configuration](../configuration.md)). Full endpoint list: [API reference](README.md).
 
-**Example — run query:**
+Product vocabulary: [Concepts](../concepts.md).
+
+---
+
+## Query Investigation (flagship)
+
+Create an investigation from SQL, attach a candidate rewrite (plan compare), then generate a report.
+
+```bash
+# 1) Create — returns id, explain findings, status
+INV=$(curl -s -X POST http://localhost:8080/api/v1/investigations \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Slow dashboard query",
+    "sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('\''month'\'', date) = DATE '\''2025-01-01'\'' GROUP BY product_category ORDER BY revenue DESC"
+  }')
+echo "$INV" | jq '{id, status, findings: [.explain.findings[]?.message][:3]}'
+ID=$(echo "$INV" | jq -r .id)
+
+# 2) Candidate rewrite + compare (set "analyze": true when server allows EXPLAIN ANALYZE)
+curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/candidate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "candidate_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE date >= '\''2025-01-01'\'' AND date < '\''2025-02-01'\'' GROUP BY product_category ORDER BY revenue DESC",
+    "analyze": true
+  }' | jq '{status, comparison: .comparison.metrics}'
+
+# 3) Engineering report
+curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/report" \
+  -H "Content-Type: application/json" \
+  -d "{}" | jq '{status, report_id}'
+```
+
+List / fetch:
+
+```bash
+curl -s 'http://localhost:8080/api/v1/investigations?limit=5' | jq .
+curl -s "http://localhost:8080/api/v1/investigations/${ID}" | jq '{id, status, candidate_sql, report_id}'
+```
+
+Workspace helpers (landing / inbox / guided scenarios / trust):
+
+```bash
+curl -s http://localhost:8080/api/v1/workspace/overview | jq .
+curl -s http://localhost:8080/api/v1/demo/scenarios | jq .
+curl -s http://localhost:8080/api/v1/trust | jq .
+```
+
+---
+
+## Compare plans (standalone)
+
+Same before/after proof without an investigation record:
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/queries/explain/compare \
+  -H "Content-Type: application/json" \
+  -d '{
+    "before_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('\''month'\'', date) = DATE '\''2025-01-01'\'' GROUP BY product_category ORDER BY revenue DESC",
+    "after_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE date >= '\''2025-01-01'\'' AND date < '\''2025-02-01'\'' GROUP BY product_category ORDER BY revenue DESC",
+    "analyze": true,
+    "connection_id": "default"
+  }' | jq .
+```
+
+On the 10M-row seed, expect a **Partitions scanned** style metric moving from many partitions toward **1**.
+
+---
+
+## Run query
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/queries/run \
@@ -12,11 +81,11 @@ curl -s -X POST http://localhost:8080/api/v1/queries/run \
 
 Response: `columns`, `rows`, `row_count`, `execution_time_ms`, optional `chart_suggestions`, `period_comparison` (when result has a time column and measures).
 
-**Example — explain query plan (seq scan detection):**
+---
 
-Requires a running stack (`make start-docker` or `make postgres-up` + app on port 8080). On the
-10M-row partitioned `demo.sales` dataset, filtering on `region` (no btree index on that column)
-produces sequential scans across partitions — one finding per scanned partition.
+## Explain query plan
+
+Requires a running stack (`make demo` / `make start-docker`). On the 10M-row partitioned `demo.sales` dataset, filtering on `region` (no btree index) produces sequential scans across partitions.
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/queries/explain \
@@ -24,41 +93,9 @@ curl -s -X POST http://localhost:8080/api/v1/queries/explain \
   -d '{"sql":"SELECT product_category, SUM(total_amount) FROM demo.sales WHERE region = '\''North'\'' GROUP BY product_category","connection_id":"default"}'
 ```
 
-Expected response (truncated; `plan` is the full `EXPLAIN (FORMAT JSON)` array; costs vary with row count):
+Set `"analyze": true` to run `EXPLAIN (ANALYZE, FORMAT JSON)` when enabled server-side (executes the query; timeout-guarded).
 
-```json
-{
-  "sql": "SELECT product_category, SUM(total_amount) FROM demo.sales WHERE region = 'North' GROUP BY product_category",
-  "total_cost": 153486.8,
-  "execution_time_ms": 81,
-  "findings": [
-    {
-      "node_type": "Seq Scan",
-      "relation": "sales_2023_06",
-      "estimated_cost": 0,
-      "is_seq_scan": true,
-      "message": "Sequential scan on sales_2023_06 (estimated cost 0.00) — filter: (region = 'North'::text) — consider a btree index on filtered or joined columns"
-    },
-    {
-      "node_type": "Seq Scan",
-      "relation": "sales_2023_07",
-      "estimated_cost": 0,
-      "is_seq_scan": true,
-      "message": "Sequential scan on sales_2023_07 (estimated cost 0.00) — filter: (region = 'North'::text) — consider a btree index on filtered or joined columns"
-    },
-    {
-      "node_type": "Gather Merge",
-      "estimated_cost": 153486.66,
-      "is_seq_scan": false,
-      "message": "High-cost Gather Merge on unknown relation (estimated cost 153486.66, ≥50% of plan total)"
-    }
-  ],
-  "plan": [ { "Plan": { "Node Type": "Aggregate", "Total Cost": 153486.8, "…": "…" } } ]
-}
-```
-
-Findings order follows plan-tree traversal (high-cost parents like `Gather Merge` may appear
-before partition seq scans). Check seq-scan count:
+Seq-scan count check:
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/queries/explain \
@@ -67,42 +104,32 @@ curl -s -X POST http://localhost:8080/api/v1/queries/explain \
   | jq '[.findings[] | select(.is_seq_scan)] | length'
 ```
 
-Expect **25** on the 10M-row partitioned dataset (`make seed-large-docker`); **1** on the small
-`make seed` dataset (single `demo.sales` seq scan).
+Expect many partition seq scans on `make seed-large-docker`; fewer on the small `make seed` / `make demo` dataset.
 
-Set `"analyze": true` to run `EXPLAIN (ANALYZE, FORMAT JSON)` (executes the query; timeout-guarded).
-On the same query, `execution_time_ms` is higher (~1s on 10M rows) but `total_cost` and findings
-shape match the estimate-only path.
+---
 
-**Example — semantic search over saved queries (pgvector):**
+## Semantic search over saved queries (pgvector)
 
-Requires embeddings enabled (`EMBEDDING_BASE_URL` + `EMBEDDING_MODEL` in `.env`) and at least
-one saved query. With `POSTGRES_IMAGE=pgvector/pgvector:pg16`, vectors are stored in
-`app.query_embeddings.embedding_vector` and ranked in Postgres via HNSW.
+Requires embeddings (`EMBEDDING_BASE_URL` + `EMBEDDING_MODEL`) and at least one saved query. See [Semantic search (pgvector)](../reference/semantic-search-pgvector.md).
 
 ```bash
-# Save a query (triggers embed + upsert)
 curl -s -X POST http://localhost:8080/api/v1/queries/saved \
   -H "Content-Type: application/json" \
   -d '{"name":"North rollup","sql":"SELECT region, SUM(total_amount) FROM demo.sales WHERE region = '\''North'\'' GROUP BY region"}'
 
-# Find similar saved queries
 curl -s 'http://localhost:8080/api/v1/suggestions/similar?text=regional%20revenue%20breakdown&limit=5' | jq .
 ```
 
-Response shape: `{ "suggestions": [ { "sql", "title", "source": "similar" }, ... ] }`.
-See [Semantic search (pgvector)](../reference/semantic-search-pgvector.md) for the full flow.
+---
 
-**Example — list connections:**
+## List connections
 
 ```bash
 curl -s http://localhost:8080/api/v1/connections
 ```
 
-Response:
-
 ```json
 {"items":[{"id":"default","name":"Default"},{"id":"prod","name":"Production"}]}
 ```
 
-**See also:** [API reference](README.md) · [Configuration](../configuration.md) · [Documentation index](../README.md)
+**See also:** [API reference](README.md) · [Connect your PostgreSQL](../getting-started/connect-postgres.md) · [Docs overview](../index.md)
