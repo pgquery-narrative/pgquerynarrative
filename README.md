@@ -11,12 +11,12 @@ and produce engineering-ready reports.
 </p>
 
 <p align="center">
-  <a href="https://github.com/pgquerynarrative/pgquerynarrative/actions"><img src="https://img.shields.io/github/actions/workflow/status/pgquerynarrative/pgquerynarrative/ci.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://github.com/pgquery-narrative/pgquerynarrative/actions"><img src="https://img.shields.io/github/actions/workflow/status/pgquery-narrative/pgquerynarrative/ci.yml?branch=main&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white" alt="Go 1.25+">
   <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791?logo=postgresql&logoColor=white" alt="PostgreSQL 16+">
-  <img src="https://img.shields.io/github/license/pgquerynarrative/pgquerynarrative" alt="License MIT">
-  <a href="https://github.com/pgquerynarrative/pgquerynarrative/pkgs/container/pgquerynarrative"><img src="https://img.shields.io/badge/container-ghcr.io-2496ED" alt="Container"></a>
-  <a href="https://github.com/pgquerynarrative/pgquerynarrative/releases"><img src="https://img.shields.io/github/v/release/pgquerynarrative/pgquerynarrative?label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/github/license/pgquery-narrative/pgquerynarrative" alt="License MIT">
+  <a href="https://github.com/pgquery-narrative/pgquerynarrative/pkgs/container/pgquerynarrative"><img src="https://img.shields.io/badge/container-ghcr.io-2496ED" alt="Container"></a>
+  <a href="https://github.com/pgquery-narrative/pgquerynarrative/releases"><img src="https://img.shields.io/github/v/release/pgquery-narrative/pgquerynarrative?label=release" alt="Latest release"></a>
   <a href=".github/SECURITY.md"><img src="https://img.shields.io/badge/security-policy-blue" alt="Security policy"></a>
 </p>
 
@@ -28,10 +28,10 @@ and produce engineering-ready reports.
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-workflow.svg" alt="Query Investigation workflow: regression inbox → inspect SQL → EXPLAIN plan → compare → engineering report" width="720">
+  <img src="docs/assets/demo-workflow.gif" alt="Query Investigation workflow: regression inbox → inspect SQL → EXPLAIN plan → compare → engineering report" width="720">
 </p>
 
-<p align="center"><sub>Animated workflow preview. Record a GIF from a live demo with <code>make demo-gif</code> (requires Playwright + ffmpeg).</sub></p>
+<p align="center"><sub>Animated workflow preview. Re-record from a live demo with <code>make demo-gif</code> (Playwright + ffmpeg).</sub></p>
 
 ---
 
@@ -179,11 +179,11 @@ Full documentation in **[docs/](docs/README.md)**. Preview locally with **`make 
 
 | Branch / tag | Purpose |
 |--------------|---------|
-| [`main`](https://github.com/pgquerynarrative/pgquerynarrative/tree/main) | Latest development (Postgres-first query intelligence) |
-| [`stable-v2.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/tree/stable-v2.0.0) | v2 release line — EXPLAIN API, 10M-row benchmark, parser validation, RLS/pgvector |
-| [`stable-v1.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/tree/stable-v1.0.0) | v1 release line — AI narrative focus, pre-Postgres pivot |
-| Tag [`v2.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release snapshot |
-| Tag [`v1.0.0`](https://github.com/pgquerynarrative/pgquerynarrative/releases/tag/v1.0.0) | v1.0.0 release snapshot |
+| [`main`](https://github.com/pgquery-narrative/pgquerynarrative/tree/main) | Latest development (Postgres-first query intelligence) |
+| [`stable-v2.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/tree/stable-v2.0.0) | v2 release line — EXPLAIN API, 10M-row benchmark, parser validation, RLS/pgvector |
+| [`stable-v1.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/tree/stable-v1.0.0) | v1 release line — AI narrative focus, pre-Postgres pivot |
+| Tag [`v2.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release snapshot |
+| Tag [`v1.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v1.0.0) | v1.0.0 release snapshot |
 
 ## License
 
