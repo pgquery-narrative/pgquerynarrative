@@ -15,6 +15,7 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "on-first-retry",
+    // Capture at 1280×720; encode script downscales to 720px GIF for README load time.
     video: recordVideo ? { mode: "on", size: { width: 1280, height: 720 } } : "off",
     ...devices["Desktop Chrome"],
     ...(recordVideo ? { viewport: { width: 1280, height: 720 } } : {}),

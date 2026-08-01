@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Capture a README demo GIF from a running PgQueryNarrative instance.
+# Capture a compact README demo GIF from a running PgQueryNarrative instance.
 # Prerequisites:
 #   - App running with 10M-row demo.sales (make demo-bootstrap or make seed-large-docker)
 #   - SECURITY_EXPLAIN_ANALYZE_ENABLED=true (compose default for local demo)
 #   - Node/npm, Playwright browsers, ffmpeg
 #
-# The Playwright walkthrough injects on-page captions and uses longer dwells so
-# the GIF is readable on GitHub without separate subtitle timing.
+# Capture script deep-links the investigation, zooms key evidence, uses top captions,
+# and encodes a smaller GIF suitable for GitHub README load times.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -38,13 +38,12 @@ if (( ROW_COUNT < MIN_ROWS )); then
 fi
 echo "    demo.sales rows=$ROW_COUNT"
 
-echo "==> Running paced Playwright walkthrough with on-page captions"
+echo "==> Running tight Playwright walkthrough (zoom + top captions)"
 cd "$ROOT/test/playwright"
 if [[ ! -d node_modules/@playwright/test ]]; then
   npm install @playwright/test --no-save 2>/dev/null || true
 fi
 rm -rf test-results
-# Prefer the user Playwright cache when Cursor/sandbox overrides the default path.
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/Library/Caches/ms-playwright}"
 PLAYWRIGHT_BASE_URL="$BASE_URL" DEMO_CAPTURE=1 npx playwright test demo-workflow.spec.ts --config playwright.config.ts
 
@@ -59,20 +58,23 @@ if ! command -v ffmpeg >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Converting captioned video to GIF with ffmpeg"
-# Captions are already burned into frames by Playwright; ffmpeg only remuxes/resamples.
-ffmpeg -y -i "$VIDEO" -vf "fps=10,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" "$OUT_GIF"
+echo "==> Encoding compact README GIF (720px @ 6fps, mild speed-up)"
+# README-friendly: slight speed-up + lower fps/width + smaller palette.
+ffmpeg -y -i "$VIDEO" \
+  -filter_complex "[0:v]setpts=0.82*PTS,fps=6,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+  "$OUT_GIF"
 
-# Static PNG fallback from a mid/late captioned frame
-FRAME_N="$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$OUT_GIF" 2>/dev/null || echo 80)"
-if [[ "$FRAME_N" =~ ^[0-9]+$ ]] && (( FRAME_N > 20 )); then
+FRAME_N="$(ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of csv=p=0 "$OUT_GIF" 2>/dev/null || echo 60)"
+if [[ "$FRAME_N" =~ ^[0-9]+$ ]] && (( FRAME_N > 12 )); then
   PICK=$(( FRAME_N * 2 / 3 ))
 else
-  PICK=80
+  PICK=40
 fi
 ffmpeg -y -i "$OUT_GIF" -vf "select=eq(n\\,${PICK})" -vframes 1 "$OUT_DIR/demo-workflow.png" >/dev/null 2>&1 || true
 
 DUR="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$OUT_GIF" 2>/dev/null || true)"
 SIZE="$(wc -c < "$OUT_GIF" | tr -d ' ')"
 echo "✅ Wrote $OUT_GIF (duration=${DUR:-?}s size=${SIZE} bytes)"
-echo "    Captions + pacing come from test/playwright/demo-workflow.spec.ts"
+if [[ "$SIZE" =~ ^[0-9]+$ ]] && (( SIZE > 3500000 )); then
+  echo "WARN: GIF is still >3.5MB; tighten dwells or lower fps further." >&2
+fi
