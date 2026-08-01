@@ -24,7 +24,7 @@ PLAYWRIGHT_BASE_URL="$BASE_URL" DEMO_CAPTURE=1 npx playwright test demo-workflow
 
 VIDEO="$(find test-results -name 'video.webm' 2>/dev/null | head -1 || true)"
 if [[ -z "$VIDEO" ]]; then
-  echo "WARN: No Playwright video captured. Use docs/assets/demo-workflow.svg in README."
+  echo "WARN: No Playwright video captured. README uses docs/assets/demo-workflow.png (GitHub-safe static preview)."
   exit 0
 fi
 
@@ -32,6 +32,7 @@ if command -v ffmpeg >/dev/null 2>&1; then
   echo "==> Converting video to GIF with ffmpeg"
   ffmpeg -y -i "$VIDEO" -vf "fps=10,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$OUT_GIF"
   echo "✅ Wrote $OUT_GIF"
+  echo "Tip: point README <img> at docs/assets/demo-workflow.gif to use the live capture."
 else
   echo "WARN: ffmpeg not found; copy $VIDEO manually or install ffmpeg"
 fi

@@ -8,14 +8,10 @@
       <stop offset="0%" stop-color="#00f5ff"/>
       <stop offset="100%" stop-color="#8a5cff"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
   </defs>
   <rect width="960" height="420" fill="url(#bg)" rx="16"/>
   <text x="480" y="42" text-anchor="middle" fill="#e2e8f0" font-family="system-ui,sans-serif" font-size="22" font-weight="700">Query Investigation</text>
-  <text x="480" y="68" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="13">PostgreSQL evidence � plan analysis � verified report</text>
+  <text x="480" y="68" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="13">PostgreSQL evidence - plan analysis - verified report</text>
 
   <!-- Steps -->
   <g font-family="ui-monospace,monospace" font-size="11">
@@ -40,40 +36,33 @@
     <text x="860" y="158" text-anchor="middle" fill="#94a3b8">engineering</text>
   </g>
 
-  <!-- Animated flow arrow -->
-  <path d="M 190 146 L 230 146" stroke="url(#accent)" stroke-width="2" fill="none" stroke-dasharray="6 4">
-    <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.2s" repeatCount="indefinite"/>
-  </path>
-  <path d="M 380 146 L 420 146" stroke="url(#accent)" stroke-width="2" fill="none" stroke-dasharray="6 4">
-    <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.2s" repeatCount="indefinite"/>
-  </path>
-  <path d="M 570 146 L 610 146" stroke="url(#accent)" stroke-width="2" fill="none" stroke-dasharray="6 4">
-    <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.2s" repeatCount="indefinite"/>
-  </path>
-  <path d="M 760 146 L 800 146" stroke="url(#accent)" stroke-width="2" fill="none" stroke-dasharray="6 4">
-    <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.2s" repeatCount="indefinite"/>
-  </path>
+  <!-- Flow arrows (static; GitHub Camo strips SMIL animate) -->
+  <path d="M 190 146 L 222 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="222,140 234,146 222,152" fill="#8a5cff"/>
+  <path d="M 380 146 L 412 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="412,140 424,146 412,152" fill="#8a5cff"/>
+  <path d="M 570 146 L 602 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="602,140 614,146 602,152" fill="#8a5cff"/>
+  <path d="M 760 146 L 792 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="792,140 804,146 792,152" fill="#f59e0b"/>
 
   <!-- Mock UI panel -->
   <rect x="40" y="220" width="880" height="170" rx="12" fill="#0f1629" stroke="#1e293b" stroke-width="1"/>
   <rect x="56" y="236" width="200" height="138" rx="8" fill="#05060b" stroke="#334155"/>
   <text x="68" y="258" fill="#64748b" font-size="10" font-family="system-ui">Regression inbox</text>
-  <rect x="68" y="268" width="176" height="22" rx="4" fill="#1e293b">
-    <animate attributeName="opacity" values="1;0.5;1" dur="2.5s" repeatCount="indefinite"/>
-  </rect>
+  <rect x="68" y="268" width="176" height="22" rx="4" fill="#1e293b"/>
+  <text x="76" y="283" fill="#e2e8f0" font-size="10" font-family="system-ui">Slow dashboard query</text>
   <rect x="68" y="298" width="176" height="22" rx="4" fill="#1e293b" opacity="0.6"/>
   <rect x="68" y="328" width="176" height="22" rx="4" fill="#1e293b" opacity="0.4"/>
 
   <rect x="272" y="236" width="632" height="138" rx="8" fill="#05060b" stroke="#334155"/>
   <text x="288" y="258" fill="#64748b" font-size="10" font-family="system-ui">Plan explorer</text>
   <text x="300" y="286" fill="#00f5ff" font-size="11" font-family="ui-monospace">Aggregate</text>
-  <text x="320" y="308" fill="#94a3b8" font-size="10" font-family="ui-monospace"> Sort</text>
-  <text x="340" y="328" fill="#f59e0b" font-size="10" font-family="ui-monospace">   Seq Scan: demo.sales</text>
-  <rect x="500" y="276" width="180" height="80" rx="6" fill="#0a0f1f" stroke="#00f5ff" stroke-width="1" filter="url(#glow)">
-    <animate attributeName="stroke-opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
-  </rect>
+  <text x="320" y="308" fill="#94a3b8" font-size="10" font-family="ui-monospace">- Sort</text>
+  <text x="340" y="328" fill="#f59e0b" font-size="10" font-family="ui-monospace">  - Seq Scan: demo.sales</text>
+  <rect x="500" y="276" width="180" height="80" rx="6" fill="#0a0f1f" stroke="#00f5ff" stroke-width="1"/>
   <text x="512" y="296" fill="#e2e8f0" font-size="10" font-family="system-ui">Evidence</text>
-  <text x="512" y="314" fill="#94a3b8" font-size="9" font-family="system-ui">146� row underestimate</text>
+  <text x="512" y="314" fill="#94a3b8" font-size="9" font-family="system-ui">146x row underestimate</text>
   <text x="512" y="330" fill="#94a3b8" font-size="9" font-family="system-ui">Confidence: High</text>
   <text x="512" y="346" fill="#64748b" font-size="9" font-family="system-ui">Investigate: statistics</text>
 </svg>
