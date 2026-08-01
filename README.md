@@ -28,10 +28,10 @@ and produce engineering-ready reports.
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-workflow.gif" alt="Query Investigation workflow: regression inbox → inspect SQL → EXPLAIN plan → compare → engineering report" width="720">
+  <img src="docs/assets/demo-workflow.gif" alt="Query Investigation: finding blocked partition pruning, comparing a rewrite (50→1 partitions), then generating a report" width="720">
 </p>
 
-<p align="center"><sub>Live UI walkthrough (10M-row seed): <code>DATE_TRUNC</code> → finding → range rewrite → compare (partitions 50→1).</sub></p>
+<p align="center"><sub>From blocked partition pruning to a verified rewrite (50→1 partitions).</sub></p>
 
 ---
 

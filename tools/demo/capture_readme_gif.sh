@@ -5,8 +5,8 @@
 #   - SECURITY_EXPLAIN_ANALYZE_ENABLED=true (compose default for local demo)
 #   - Node/npm, Playwright browsers, ffmpeg
 #
-# Capture script deep-links the investigation, zooms key evidence, uses top captions,
-# and encodes a smaller GIF suitable for GitHub README load times.
+# Capture warms the investigation off-camera, then records finding → compare → report
+# with scroll/highlight captions. Encodes a compact GIF for GitHub README load times.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -38,7 +38,7 @@ if (( ROW_COUNT < MIN_ROWS )); then
 fi
 echo "    demo.sales rows=$ROW_COUNT"
 
-echo "==> Running tight Playwright walkthrough (zoom + top captions)"
+echo "==> Running Playwright walkthrough (finding → compare → report)"
 cd "$ROOT/test/playwright"
 if [[ ! -d node_modules/@playwright/test ]]; then
   npm install @playwright/test --no-save 2>/dev/null || true
