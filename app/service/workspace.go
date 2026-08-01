@@ -186,17 +186,17 @@ func (s *WorkspaceService) AcknowledgeRegression(ctx context.Context, payload *w
 func (s *WorkspaceService) DemoScenarios(_ context.Context) (*workspace.DemoScenarioList, error) {
 	candidate1 := `SELECT product_category, SUM(total_amount) AS revenue
 FROM demo.sales
-WHERE date >= '2024-01-01' AND date < '2024-02-01'
+WHERE date >= '2025-01-01' AND date < '2025-02-01'
 GROUP BY product_category
 ORDER BY revenue DESC`
 	candidate2 := `SELECT product_category, SUM(total_amount) AS revenue
 FROM demo.sales
-WHERE date >= DATE '2024-01-01' AND date < DATE '2024-02-01'
+WHERE date >= DATE '2025-01-01' AND date < DATE '2025-02-01'
 GROUP BY product_category
 ORDER BY revenue DESC`
 	candidate3 := `SELECT product_category, SUM(total_amount) AS revenue
 FROM demo.sales
-WHERE date >= '2024-06-01' AND date < '2024-07-01'
+WHERE date >= '2025-06-01' AND date < '2025-07-01'
 GROUP BY product_category`
 
 	return &workspace.DemoScenarioList{
@@ -204,28 +204,28 @@ GROUP BY product_category`
 			{
 				ID:                  "slow-dashboard",
 				Title:               "Slow dashboard query",
-				Problem:             "Revenue dashboard takes 8+ seconds due to a function-wrapped indexed column preventing index use.",
-				SQL:                 `SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('month', date) = '2024-01-01' GROUP BY product_category ORDER BY revenue DESC`,
+				Problem:             "Revenue rollup uses DATE_TRUNC on the partition key, so PostgreSQL cannot prune partitions or use a date index.",
+				SQL:                 `SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '2025-01-01' GROUP BY product_category ORDER BY revenue DESC`,
 				CandidateSQL:        &candidate1,
-				ExpectedImprovement: "8.4s → 310ms",
+				ExpectedImprovement: "Many partitions → 1 month (range rewrite)",
 				Category:            "function_wrap",
 			},
 			{
 				ID:                  "partition-pruning",
 				Title:               "Partition pruning failure",
-				Problem:             "Monthly report scans all 49 partitions instead of the target month.",
-				SQL:                 `SELECT COUNT(*), SUM(total_amount) FROM demo.sales WHERE date >= '2024-01-01'`,
+				Problem:             "Open-ended date predicate still scans far more partitions than a closed month range.",
+				SQL:                 `SELECT COUNT(*), SUM(total_amount) FROM demo.sales WHERE date >= '2025-01-01'`,
 				CandidateSQL:        &candidate2,
-				ExpectedImprovement: "49 partitions → 1 partition",
+				ExpectedImprovement: "Open range → single-month prune",
 				Category:            "partition_pruning",
 			},
 			{
 				ID:                  "cardinality-misestimate",
 				Title:               "Cardinality misestimate",
-				Problem:             "Planner estimated 2,000 rows but the join returned 480,000 — investigate statistics.",
-				SQL:                 `SELECT s.product_category, COUNT(*) FROM demo.sales s WHERE s.region = 'North' AND s.date >= '2024-06-01' GROUP BY s.product_category`,
+				Problem:             "Planner row estimates disagree with ANALYZE reality — investigate statistics and predicate selectivity.",
+				SQL:                 `SELECT s.product_category, COUNT(*) FROM demo.sales s WHERE s.region = 'North' AND s.date >= '2025-06-01' GROUP BY s.product_category`,
 				CandidateSQL:        &candidate3,
-				ExpectedImprovement: "146× row estimate error",
+				ExpectedImprovement: "EXPLAIN ANALYZE row estimate check",
 				Category:            "cardinality",
 			},
 		},

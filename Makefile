@@ -304,6 +304,13 @@ demo-gif:
 	@chmod +x ./tools/demo/capture_readme_gif.sh
 	@./tools/demo/capture_readme_gif.sh
 
+# Credible README GIF path: 10M-row seed + EXPLAIN ANALYZE (compose) + capture.
+demo-gif-credible:
+	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/capture_readme_gif.sh ./tools/demo/ensure_ollama.sh
+	@echo "==> Bootstrapping with SEED_LARGE=1 (10M rows; several minutes)"
+	@SEED_LARGE=1 ./tools/demo/bootstrap.sh
+	@./tools/demo/capture_readme_gif.sh
+
 demo-bootstrap:
 	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/smoke_scenes.sh ./tools/demo/multi_org_demo.sh
 	@./tools/demo/bootstrap.sh

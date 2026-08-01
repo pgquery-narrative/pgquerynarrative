@@ -67,6 +67,10 @@ services:
       # Explicit open-admin opt-in for local compose only (forbidden when APP_ENV=production).
       SECURITY_AUTH_ENABLED: "false"
       SECURITY_ALLOW_INSECURE_NO_AUTH: "true"
+      # Local demo: allow EXPLAIN ANALYZE so investigation compare shows real timings.
+      SECURITY_EXPLAIN_ANALYZE_ENABLED: "true"
+      # 10M-row DATE_TRUNC scans need headroom beyond the default 30s role timeout.
+      QUERY_TIMEOUT: ${QUERY_TIMEOUT:-120s}
       DATABASE_HOST: ${DATABASE_HOST:-postgres}
       DATABASE_PORT: ${DATABASE_PORT:-5432}
       DATABASE_NAME: ${DATABASE_NAME:-pgquerynarrative}

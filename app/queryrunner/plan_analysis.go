@@ -122,17 +122,20 @@ func detectPlanSignals(node map[string]interface{}, nodeType, schema, relation s
 
 	// Partition pruning report on Append/Merge Append nodes.
 	if nodeType == "Append" || nodeType == "Merge Append" {
-		if removed, ok := asFloat64(node["Subplans Removed"]); ok {
-			children, _ := node["Plans"].([]interface{})
-			scanned := float64(len(children))
-			if removed == 0 && scanned >= 8 {
-				out = append(out, base(CategoryPartitionPruning, "medium",
-					fmt.Sprintf("%s scans all %.0f partitions with no pruning — add a predicate on the partition key to prune partitions", nodeType, scanned),
-					[]string{
-						"Subplans Removed=0",
-						fmt.Sprintf("child subplans=%.0f", scanned),
-					}))
+		children, _ := node["Plans"].([]interface{})
+		scanned := float64(len(children))
+		removed, hasRemoved := asFloat64(node["Subplans Removed"])
+		if scanned >= 3 && (!hasRemoved || removed == 0) {
+			confidence := "medium"
+			if scanned >= 8 {
+				confidence = "high"
 			}
+			out = append(out, base(CategoryPartitionPruning, confidence,
+				fmt.Sprintf("%s scans %.0f partitions with no pruning — predicate on the partition key is missing or non-sargable (e.g. DATE_TRUNC on the key)", nodeType, scanned),
+				[]string{
+					fmt.Sprintf("Subplans Removed=%.0f", removed),
+					fmt.Sprintf("child subplans=%.0f", scanned),
+				}))
 		}
 	}
 

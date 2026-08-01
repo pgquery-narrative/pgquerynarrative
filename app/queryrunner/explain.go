@@ -300,21 +300,26 @@ func planFindingMessage(nodeType, schema, relation, filter string, cost float64,
 	}
 
 	if isSeqScan {
+		filterLower := strings.ToLower(filter)
 		confidence := "medium"
-		if planRows, ok := asFloat64(node["Plan Rows"]); ok && planRows > 0 && planRows < 1000 {
-			confidence = "low"
-		}
-		if filter == "" {
-			confidence = "low"
-		}
 		msg := fmt.Sprintf("Sequential scan on %s (estimated cost %.2f)", target, cost)
 		if filter != "" {
 			msg += fmt.Sprintf(" — filter: %s", filter)
 		}
-		if confidence == "medium" {
-			msg += " — consider a btree index on filtered or joined columns"
-		} else {
+		switch {
+		case strings.Contains(filterLower, "date_trunc"):
+			confidence = "high"
+			msg += " — function-wrapped partition/index key blocks pruning and index use; rewrite as a sargable range predicate"
+		case filter == "":
+			confidence = "low"
 			msg += " — likely acceptable for small or unfiltered scans"
+		default:
+			if planRows, ok := asFloat64(node["Plan Rows"]); ok && planRows > 0 && planRows < 1000 {
+				confidence = "low"
+				msg += " — likely acceptable for small or unfiltered scans"
+			} else {
+				msg += " — consider a btree index on filtered or joined columns"
+			}
 		}
 		return msg, confidence
 	}

@@ -31,7 +31,7 @@ and produce engineering-ready reports.
   <img src="docs/assets/demo-workflow.gif" alt="Query Investigation workflow: regression inbox → inspect SQL → EXPLAIN plan → compare → engineering report" width="720">
 </p>
 
-<p align="center"><sub>Animated workflow preview. Re-record from a live demo with <code>make demo-gif</code> (Playwright + ffmpeg).</sub></p>
+<p align="center"><sub>Animated workflow preview captured from the live guided demo on the 10M-row seed (<code>make demo-gif-credible</code>).</sub></p>
 
 ---
 
@@ -55,9 +55,15 @@ Open **http://localhost:8080** and use the guided path:
 
 1. Click **Start guided demo** or open **Investigate**
 2. Choose **Slow dashboard query**
-3. Review the bad predicate: `DATE_TRUNC('month', date) = '2024-01-01'`
-4. Click **Compare plans** to test the range-predicate rewrite
+3. Review the bad predicate: `DATE_TRUNC('month', date) = DATE '2025-01-01'` (blocks partition pruning)
+4. Click **Compare plans** to test the range-predicate rewrite (`date >= … AND date < …`)
 5. Click **Generate report** to open the engineering investigation report
+
+For README-quality timings and partition counts, use the 10M-row seed:
+
+```bash
+make demo-bootstrap   # or: make demo && make seed-large-docker
+```
 
 The guided investigation report is evidence-backed and works without the LLM.
 `make demo` also starts **Ollama in Docker** and pulls `llama3.2` so the workbench
@@ -134,7 +140,9 @@ Report generation is **optional**. When configured, PgQueryNarrative can turn qu
 | Action | Command |
 |--------|--------|
 | **Guided demo (recommended)** | `make demo` |
-| Record README demo GIF | `make demo-gif` |
+| Guided demo + 10M-row seed | `make demo-bootstrap` |
+| Record README demo GIF (requires 10M seed) | `make demo-gif` |
+| Bootstrap 10M seed + record GIF | `make demo-gif-credible` |
 | Start Postgres only | `make postgres-up` |
 | Migrate (Docker) | `make migrate-docker` |
 | Seed 10M rows (Docker) | `make seed-large-docker` |
