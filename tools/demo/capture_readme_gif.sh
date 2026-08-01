@@ -30,7 +30,7 @@ fi
 
 if command -v ffmpeg >/dev/null 2>&1; then
   echo "==> Converting video to GIF with ffmpeg"
-  ffmpeg -y -i "$VIDEO" -vf "fps=10,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$OUT_GIF"
+  ffmpeg -y -i "$VIDEO" -vf "fps=12,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=3" "$OUT_GIF"
   echo "✅ Wrote $OUT_GIF"
   echo "Tip: point README <img> at docs/assets/demo-workflow.gif to use the live capture."
 else
