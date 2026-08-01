@@ -40,9 +40,17 @@ func (s *InvestigationsService) Create(ctx context.Context, payload *investigati
 
 	explainResult, err := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
 		SQL:          payload.SQL,
-		Analyze:      false,
+		Analyze:      true,
 		ConnectionID: &connID,
 	})
+	if err != nil {
+		// Fall back to estimate-only when EXPLAIN ANALYZE is disabled server-side.
+		explainResult, err = s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
+			SQL:          payload.SQL,
+			Analyze:      false,
+			ConnectionID: &connID,
+		})
+	}
 	if err != nil {
 		return nil, normalizeInvestigationError(err)
 	}
@@ -198,12 +206,21 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 		return nil, err
 	}
 
+	// Prefer EXPLAIN ANALYZE for credible before/after timings; fall back if disabled.
 	cmp, err := s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
 		BeforeSQL:    inv.SQL,
 		AfterSQL:     payload.CandidateSQL,
-		Analyze:      payload.Analyze,
+		Analyze:      true,
 		ConnectionID: &inv.ConnectionID,
 	})
+	if err != nil {
+		cmp, err = s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
+			BeforeSQL:    inv.SQL,
+			AfterSQL:     payload.CandidateSQL,
+			Analyze:      false,
+			ConnectionID: &inv.ConnectionID,
+		})
+	}
 	if err != nil {
 		return nil, normalizeInvestigationError(err)
 	}

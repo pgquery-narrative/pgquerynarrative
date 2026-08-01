@@ -65,7 +65,7 @@ Compose defaults: auth **off** (local only), `LLM_PROVIDER=ollama`, `LLM_BASE_UR
 ```sql
 SELECT product_category, SUM(total_amount) AS revenue
 FROM demo.sales
-WHERE DATE_TRUNC('month', date) = '2024-01-01'
+WHERE DATE_TRUNC('month', date) = DATE '2025-01-01'
 GROUP BY product_category
 ORDER BY revenue DESC
 ```

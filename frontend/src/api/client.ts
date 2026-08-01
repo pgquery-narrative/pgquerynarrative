@@ -427,7 +427,7 @@ export const api = {
     rows?: number;
   }) => request<Investigation>("/investigations", { method: "POST", body: JSON.stringify(body) }),
 
-  addInvestigationCandidate: (id: string, candidateSql: string, analyze = false) =>
+  addInvestigationCandidate: (id: string, candidateSql: string, analyze = true) =>
     request<Investigation>(`/investigations/${id}/candidate`, {
       method: "POST",
       body: JSON.stringify({ candidate_sql: candidateSql, analyze }),

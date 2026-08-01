@@ -10,13 +10,17 @@ import (
 
 // PlanMetrics summarizes measurable plan evidence.
 type PlanMetrics struct {
-	ExecutionTimeMs  float64
-	TotalCost        float64
-	RowsScanned      float64
-	TempWrittenBytes float64
-	RootNodeType     string
-	HasSeqScan       bool
-	NodeTypes        []string
+	ExecutionTimeMs    float64
+	TotalCost          float64
+	RowsScanned        float64
+	TempWrittenBytes   float64
+	PartitionsScanned  float64
+	PartitionsRemoved  float64
+	HasPartitionAppend bool
+	RootNodeType       string
+	HasSeqScan         bool
+	NodeTypes          []string
+	HasActualTiming    bool
 }
 
 // ComparisonMetric is one row in a before/after comparison table.
@@ -56,9 +60,10 @@ func ComparePlans(beforePlan, afterPlan json.RawMessage) (*PlanComparison, error
 	am := collectPlanMetrics(afterRoot)
 
 	metrics := []ComparisonMetric{
-		formatMetric("Execution time", bm.ExecutionTimeMs, am.ExecutionTimeMs, "ms", true),
-		formatMetric("Total cost", bm.TotalCost, am.TotalCost, "", true),
-		formatMetric("Rows scanned", bm.RowsScanned, am.RowsScanned, "", true),
+		formatTimingMetric(bm, am),
+		formatMetric("Total cost", bm.TotalCost, am.TotalCost, "cost", true),
+		formatMetric("Rows scanned", bm.RowsScanned, am.RowsScanned, "rows", true),
+		formatPartitionsMetric(bm, am),
 		formatMetric("Temp written", bm.TempWrittenBytes, am.TempWrittenBytes, "bytes", true),
 		{
 			Evidence: "Plan type",
@@ -96,13 +101,41 @@ func collectPlanMetrics(root map[string]interface{}) PlanMetrics {
 	m.TotalCost, _ = asFloat64(root["Total Cost"])
 	if exec, ok := asFloat64(root["Actual Total Time"]); ok {
 		m.ExecutionTimeMs = exec
+		m.HasActualTiming = true
 	}
 	m.RootNodeType, _ = root["Node Type"].(string)
 	m.NodeTypes = collectNodeTypes(root)
 	m.RowsScanned = sumPlanRows(root)
 	m.TempWrittenBytes = sumTempBytes(root)
 	m.HasSeqScan = containsNodeType(m.NodeTypes, "Seq Scan")
+	m.PartitionsScanned, m.PartitionsRemoved, m.HasPartitionAppend = collectPartitionStats(root)
 	return m
+}
+
+// collectPartitionStats walks Append/Merge Append nodes and returns scanned child
+// subplans plus Subplans Removed (partition pruning). Values come from the
+// largest Append-like node in the tree (typical parent partition Append).
+func collectPartitionStats(root map[string]interface{}) (scanned, removed float64, ok bool) {
+	var walk func(map[string]interface{})
+	walk = func(n map[string]interface{}) {
+		nodeType, _ := n["Node Type"].(string)
+		if nodeType == "Append" || nodeType == "Merge Append" {
+			children, _ := n["Plans"].([]interface{})
+			childCount := float64(len(children))
+			rem, _ := asFloat64(n["Subplans Removed"])
+			if !ok || childCount+rem > scanned+removed {
+				scanned, removed, ok = childCount, rem, true
+			}
+		}
+		children, _ := n["Plans"].([]interface{})
+		for _, child := range children {
+			if cm, okChild := child.(map[string]interface{}); okChild {
+				walk(cm)
+			}
+		}
+	}
+	walk(root)
+	return scanned, removed, ok
 }
 
 func collectNodeTypes(node map[string]interface{}) []string {
@@ -184,11 +217,83 @@ func formatMetric(name string, before, after float64, unit string, lowerIsBetter
 	return ComparisonMetric{Evidence: name, Before: bStr, After: aStr, Change: change}
 }
 
+func formatTimingMetric(before, after PlanMetrics) ComparisonMetric {
+	if !before.HasActualTiming && !after.HasActualTiming {
+		return ComparisonMetric{
+			Evidence: "Execution time",
+			Before:   "n/a",
+			After:    "n/a",
+			Change:   "estimate-only",
+		}
+	}
+	return formatMetric("Execution time", before.ExecutionTimeMs, after.ExecutionTimeMs, "ms", true)
+}
+
+func formatPartitionsMetric(before, after PlanMetrics) ComparisonMetric {
+	bLabel := formatPartitionCount(before)
+	aLabel := formatPartitionCount(after)
+	// When the after plan fully prunes to a single-partition scan, PostgreSQL may
+	// omit the Append node — treat that as 1 partition scanned.
+	bCount, bOK := partitionCountForDisplay(before)
+	aCount, aOK := partitionCountForDisplay(after)
+	if !bOK && !aOK {
+		return ComparisonMetric{
+			Evidence: "Partitions scanned",
+			Before:   "n/a",
+			After:    "n/a",
+			Change:   "n/a",
+		}
+	}
+	if bOK {
+		bLabel = formatValue(bCount, "rows")
+		if before.HasPartitionAppend && before.PartitionsRemoved > 0 {
+			bLabel = fmt.Sprintf("%s (%s pruned)", bLabel, formatValue(before.PartitionsRemoved, "rows"))
+		}
+	}
+	if aOK {
+		aLabel = formatValue(aCount, "rows")
+		if after.HasPartitionAppend && after.PartitionsRemoved > 0 {
+			aLabel = fmt.Sprintf("%s (%s pruned)", aLabel, formatValue(after.PartitionsRemoved, "rows"))
+		}
+	}
+	change := "Same"
+	if bOK && aOK && bCount != aCount {
+		change = fmt.Sprintf("%s → %s", formatValue(bCount, "rows"), formatValue(aCount, "rows"))
+	}
+	return ComparisonMetric{Evidence: "Partitions scanned", Before: bLabel, After: aLabel, Change: change}
+}
+
+func partitionCountForDisplay(m PlanMetrics) (float64, bool) {
+	if m.HasPartitionAppend {
+		return m.PartitionsScanned, true
+	}
+	// No Append: if the plan only touches one base relation partition-style name,
+	// still report 1 so before/after comparisons stay meaningful.
+	if m.HasSeqScan || containsNodeType(m.NodeTypes, "Index Scan") || containsNodeType(m.NodeTypes, "Index Only Scan") || containsNodeType(m.NodeTypes, "Bitmap") {
+		return 1, true
+	}
+	return 0, false
+}
+
+func formatPartitionCount(m PlanMetrics) string {
+	if !m.HasPartitionAppend {
+		return "n/a"
+	}
+	label := formatValue(m.PartitionsScanned, "rows")
+	if m.PartitionsRemoved > 0 {
+		return fmt.Sprintf("%s (%s pruned)", label, formatValue(m.PartitionsRemoved, "rows"))
+	}
+	return label
+}
+
 func formatValue(v float64, unit string) string {
 	switch unit {
 	case "ms":
 		if v >= 1000 {
 			return fmt.Sprintf("%.2fs", v/1000)
+		}
+		if v > 0 && v < 1 {
+			return fmt.Sprintf("%.2fms", v)
 		}
 		return fmt.Sprintf("%.0fms", v)
 	case "bytes":
@@ -202,7 +307,21 @@ func formatValue(v float64, unit string) string {
 			return fmt.Sprintf("%.0f KB", v/1024)
 		}
 		return "0"
-	default:
+	case "cost":
+		if v <= 0 {
+			return "0.00"
+		}
+		if v < 10 {
+			return fmt.Sprintf("%.2f", v)
+		}
+		if v >= 1_000_000 {
+			return fmt.Sprintf("%.2fM", v/1_000_000)
+		}
+		if v >= 1000 {
+			return fmt.Sprintf("%.1fk", v/1000)
+		}
+		return fmt.Sprintf("%.1f", v)
+	default: // rows / generic counts
 		if v >= 1_000_000 {
 			return fmt.Sprintf("%.1fM", v/1_000_000)
 		}
@@ -215,25 +334,46 @@ func formatValue(v float64, unit string) string {
 
 func formatChange(before, after float64, lowerIsBetter bool) string {
 	if before == 0 && after == 0 {
-		return "Equal"
+		return "equal"
 	}
 	if before == 0 {
 		return "New"
 	}
+	// Avoid claiming −100% when the after value rounded to zero or is missing.
+	if after <= 0 {
+		if lowerIsBetter {
+			return "≈ eliminated"
+		}
+		return "New"
+	}
+	ratio := before / after
 	pct := ((after - before) / before) * 100
 	if math.Abs(pct) < 0.5 {
-		return "Equal"
+		return "equal"
 	}
-	improved := (lowerIsBetter && after < before) || (!lowerIsBetter && after > before)
+	// Prefer fold-change for large improvements (credible vs −100.0%).
+	if lowerIsBetter && ratio >= 10 {
+		if ratio >= 100 {
+			return fmt.Sprintf("−%.0f×", ratio)
+		}
+		return fmt.Sprintf("−%.1f×", ratio)
+	}
+	if !lowerIsBetter && after/before >= 10 {
+		mult := after / before
+		if mult >= 100 {
+			return fmt.Sprintf("+%.0f×", mult)
+		}
+		return fmt.Sprintf("+%.1f×", mult)
+	}
 	sign := "+"
 	if pct < 0 {
 		sign = "−"
 	}
-	label := fmt.Sprintf("%s%.1f%%", sign, math.Abs(pct))
-	if improved {
-		return label
+	absPct := math.Abs(pct)
+	if absPct > 99.9 {
+		absPct = 99.9
 	}
-	return label
+	return fmt.Sprintf("%s%.1f%%", sign, absPct)
 }
 
 func planTypeLabel(m PlanMetrics) string {
@@ -291,7 +431,7 @@ func detectImprovements(before, after PlanMetrics) []string {
 	if after.RowsScanned < before.RowsScanned && before.RowsScanned > 0 {
 		improved = append(improved, "Rows scanned")
 	}
-	if after.ExecutionTimeMs < before.ExecutionTimeMs && before.ExecutionTimeMs > 0 {
+	if after.HasActualTiming && before.HasActualTiming && after.ExecutionTimeMs < before.ExecutionTimeMs && before.ExecutionTimeMs > 0 {
 		improved = append(improved, "Execution time")
 	}
 	if before.HasSeqScan && !after.HasSeqScan {
@@ -299,6 +439,15 @@ func detectImprovements(before, after PlanMetrics) []string {
 	}
 	if after.TotalCost < before.TotalCost && before.TotalCost > 0 {
 		improved = append(improved, "Planner cost")
+	}
+	if before.HasPartitionAppend {
+		afterCount := after.PartitionsScanned
+		if !after.HasPartitionAppend {
+			afterCount = 1
+		}
+		if afterCount < before.PartitionsScanned {
+			improved = append(improved, "Partition pruning")
+		}
 	}
 	return improved
 }
