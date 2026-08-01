@@ -1,9 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Compact README GIF (~14–18s wall clock, then encode with a mild speed-up).
- * Deep-links the guided scenario, zooms/scrolls key evidence, top captions.
- * Requires ≥1M-row demo.sales (prefer 10M). Run: make demo-gif
+ * Compact README GIF. Scroll + highlight each beat; zoom only on compare
+ * (dense proof metrics). Requires ≥1M-row demo.sales. Run: make demo-gif
  */
 const BAD_SQL =
   "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '2025-01-01' GROUP BY product_category ORDER BY revenue DESC";
@@ -35,27 +34,30 @@ test.describe("Demo workflow capture", () => {
       timeout: 60_000,
     });
 
+    // Scroll + highlight only — SQL and findings are readable at full frame.
     await showCaption(page, "DATE_TRUNC on the partition key → no pruning");
-    await focusRegion(page, "source-sql", 1.28);
+    await focusRegion(page, "source-sql");
     await page.waitForTimeout(1100);
 
     await showCaption(page, "Plan evidence: function-wrapped key blocks pruning");
-    await focusRegion(page, "finding", 1.22);
+    await focusRegion(page, "finding");
     await page.waitForTimeout(1400);
 
     await showCaption(page, "Candidate: sargable month range");
-    await focusRegion(page, "candidate", 1.2);
+    await focusRegion(page, "candidate");
     await page.waitForTimeout(1100);
 
-    await resetCamera(page);
+    await clearFocus(page);
     await page.getByRole("button", { name: /Compare plans/i }).click();
     await showCaption(page, "Running EXPLAIN ANALYZE compare…");
     await expect(page.getByRole("cell", { name: "Partitions scanned" })).toBeVisible({
       timeout: 120_000,
     });
     await expect(page.getByText("-100.0%")).toHaveCount(0);
+
+    // Zoom only here — compare metrics need to be readable in the GIF.
     await showCaption(page, "Proof: partitions 50 → 1 · ~18× faster");
-    await focusRegion(page, "compare", 1.38);
+    await focusRegion(page, "compare", 1.35);
     await page.waitForTimeout(2400);
 
     await resetCamera(page);
@@ -64,9 +66,9 @@ test.describe("Demo workflow capture", () => {
       timeout: 60_000,
     });
     await showCaption(page, "Engineering report with plan evidence");
-    await focusRegion(page, "report-sql", 1.15);
+    await focusRegion(page, "report-sql");
     await page.waitForTimeout(1100);
-    await resetCamera(page);
+    await clearFocus(page);
     await page.waitForTimeout(350);
   });
 });
@@ -135,7 +137,8 @@ async function resetCamera(page: Page): Promise<void> {
   await page.waitForTimeout(280);
 }
 
-async function focusRegion(page: Page, target: FocusTarget, zoom = 1.25): Promise<void> {
+/** Scroll + highlight a region. Pass zoom > 1 only when the GIF needs it (compare). */
+async function focusRegion(page: Page, target: FocusTarget, zoom = 1): Promise<void> {
   await clearFocus(page);
   const ok = await page.evaluate(
     ({ targetName, zoomLevel }) => {
@@ -179,15 +182,19 @@ async function focusRegion(page: Page, target: FocusTarget, zoom = 1.25): Promis
       el.classList.add("pqn-demo-focus");
       el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" as ScrollBehavior });
 
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-      const ox = Math.max(10, Math.min(90, (cx / window.innerWidth) * 100));
-      const oy = Math.max(15, Math.min(85, (cy / window.innerHeight) * 100));
       const html = document.documentElement;
-      html.classList.add("pqn-demo-zooming");
-      html.style.transformOrigin = `${ox}% ${oy}%`;
-      html.style.transform = `scale(${zoomLevel})`;
+      if (zoomLevel > 1.01) {
+        const r = el.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const ox = Math.max(10, Math.min(90, (cx / window.innerWidth) * 100));
+        const oy = Math.max(15, Math.min(85, (cy / window.innerHeight) * 100));
+        html.classList.add("pqn-demo-zooming");
+        html.style.transformOrigin = `${ox}% ${oy}%`;
+        html.style.transform = `scale(${zoomLevel})`;
+      } else {
+        html.style.transform = "none";
+      }
       return true;
     },
     { targetName: target, zoomLevel: zoom }
@@ -195,5 +202,5 @@ async function focusRegion(page: Page, target: FocusTarget, zoom = 1.25): Promis
   if (!ok) {
     await page.waitForTimeout(300);
   }
-  await page.waitForTimeout(380);
+  await page.waitForTimeout(zoom > 1.01 ? 380 : 200);
 }
