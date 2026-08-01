@@ -31,7 +31,7 @@ and produce engineering-ready reports.
   <img src="docs/assets/demo-workflow.gif" alt="Query Investigation workflow: regression inbox → inspect SQL → EXPLAIN plan → compare → engineering report" width="720">
 </p>
 
-<p align="center"><sub>Animated workflow preview captured from the live guided demo on the 10M-row seed (<code>make demo-gif-credible</code>).</sub></p>
+<p align="center"><sub>Animated workflow preview (paced + captions) from the live guided demo on the 10M-row seed — <code>make demo-gif-credible</code>.</sub></p>
 
 ---
 

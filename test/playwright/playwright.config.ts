@@ -7,8 +7,8 @@ export default defineConfig({
   testDir: ".",
   // Marketing capture only — run via: DEMO_CAPTURE=1 npx playwright test demo-workflow.spec.ts
   testIgnore: recordVideo ? [] : ["**/demo-workflow.spec.ts"],
-  timeout: 60_000,
-  expect: { timeout: 15_000 },
+  timeout: recordVideo ? 300_000 : 60_000,
+  expect: { timeout: recordVideo ? 30_000 : 15_000 },
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
