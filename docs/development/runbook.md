@@ -1,6 +1,8 @@
-# Runbook (personal)
+# Dev runbook
 
-One-place reference for running, testing, and shipping PgQueryNarrative. See also [Setup](setup.md) and [Testing](testing.md).
+Daily developer workflow for running, testing, and shipping PgQueryNarrative. This is **not** a system architecture overview — for product vocabulary see [Concepts](../concepts.md); for structure see the [root README](../../README.md#project-structure).
+
+Also: [Setup](setup.md) · [Testing](testing.md).
 
 ---
 

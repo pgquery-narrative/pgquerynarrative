@@ -1,58 +1,82 @@
 # PgQueryNarrative documentation
 
-Run read-only SQL against PostgreSQL, compute metrics and chart suggestions, and generate narrative reports via a configurable LLM. Web UI: [React SPA](ui-overview.md); automation: [REST API](api/README.md) and [CLI](usage/cli-usage.md).
+PostgreSQL **Query Investigation** workbench: safe read-only SQL, plan evidence, before/after compare, and engineering reports. Optional LLM narratives sit on top — they are not required for the core loop.
 
-**Recommended path:** [Quick start](getting-started/quickstart.md) → [LLM setup](getting-started/llm-setup.md) (for reports) → [Configuration](configuration.md).
+**Audience paths**
 
-**Local preview:** run `make docs` from the repo root, then open **http://localhost:8000** (MkDocs Material with search and navigation).
+| Path | Start |
+|------|--------|
+| Try in minutes | [Quick start](getting-started/quickstart.md) (`make demo`) |
+| Connect your DB | [Connect your PostgreSQL](getting-started/connect-postgres.md) |
+| Ship to prod | [Production — start here](ops/PRODUCTION.md#start-here) |
+| Trust & scope | [Trust model](trust-model.md) |
+
+**Recommended reading order:** [Concepts](concepts.md) → [Quick start](getting-started/quickstart.md) → [Trust model](trust-model.md) → [Configuration](configuration.md).
+
+**Local preview:** `make docs` from the repo root → **http://localhost:8000**.
+
+This file mirrors the MkDocs home page ([index.md](index.md)). Prefer **[index.md](index.md)** when browsing the docs site.
 
 ---
 
 ## Docs index
 
-| Section | Links |
-|--------|--------|
-| **Architecture** | [Project structure](../README.md#project-structure) (root README) — entrypoint, `app/`, API design, frontend, web handlers |
-| **API reference** | [API reference](api/README.md) — endpoints, request/response, errors · [Examples](api/examples.md) |
-| **UI overview** | [UI overview](ui-overview.md) — Query editor, saved queries, reports, Settings → Analytics |
-| **Configuration** | [Configuration](configuration.md) — Environment variables (server, DB, LLM, embeddings, metrics, security) |
-| **Analytics / Phases** | [Configuration – Metrics](configuration.md#metrics) — Trend, anomaly, forecast, correlation, smoothing; read-only in UI at Settings → Analytics |
-| **Deployment / Production** | [Deployment](reference/deployment.md) — Docker, Compose, Kubernetes, Helm · [Operations](reference/operations.md) — Health, monitoring |
-| **Troubleshooting** | [Troubleshooting](reference/troubleshooting.md) — Common issues and fixes |
+### Product
 
----
+| Document | Description |
+|----------|-------------|
+| [Concepts](concepts.md) | Investigation loop, evidence, EXPLAIN vs ANALYZE, what compare proves |
+| [Trust model](trust-model.md) | Readonly role, allowlists, what the app will not do |
+| [UI overview](ui-overview.md) | Investigate, compare, reports, Security & Trust |
+| [Demo runbook](DEMO_RUNBOOK.md) | Solo demo scenes + README GIF capture notes |
+| [Configuration](configuration.md) | Environment variables |
 
 ### Getting started
 
 | Document | Description |
 |----------|-------------|
-| [Installation](getting-started/installation.md) | Prerequisites, Docker and local run, verification |
-| [Quick start](getting-started/quickstart.md) | Minimal steps to run |
-| [LLM setup](getting-started/llm-setup.md) | LLM providers (Ollama, Gemini, Claude, OpenAI, Groq) and MCP |
-| [Embedded integration](getting-started/embedded.md) | Go library and HTTP middleware (Chi, Gin, Echo) |
+| [Quick start](getting-started/quickstart.md) | `make demo` and first investigation |
+| [Installation](getting-started/installation.md) | Docker and local prerequisites |
+| [Connect your PostgreSQL](getting-started/connect-postgres.md) | Readonly role, schemas, verify |
+| [LLM setup](getting-started/llm-setup.md) | Optional providers (Ollama, cloud) |
+| [Embedded integration](getting-started/embedded.md) | Go library / middleware |
 
-### User guides
-
-| Document | Description |
-|----------|-------------|
-| [CLI usage](usage/cli-usage.md) | Command-line interface for queries and reports |
-
-### Reference
+### API & automation
 
 | Document | Description |
 |----------|-------------|
-| [PostgreSQL extension](reference/postgres-extension.md) | Call the API from SQL |
-| [Semantic search (pgvector)](reference/semantic-search-pgvector.md) | Embeddings, similar-query search, RAG |
-| [Versioning and releases](reference/versioning-and-releases.md) | Versioning, changelog, release build |
+| [API reference](api/README.md) | Endpoints and errors |
+| [API examples](api/examples.md) | Investigation, compare, explain, run |
+| [CLI usage](usage/cli-usage.md) | Command-line workflows |
+
+### Operations
+
+| Document | Description |
+|----------|-------------|
+| [Deployment](reference/deployment.md) | Docker, Compose, Kubernetes, Helm |
+| [Production ops](ops/PRODUCTION.md) | Start-here checklist, security, monitoring |
+| [Operations](reference/operations.md) | Health, monitoring day-2 |
+| [Incident runbooks](ops/INCIDENT_RUNBOOKS.md) | Incident response |
+| [Troubleshooting](reference/troubleshooting.md) | Common failures |
+
+### Reference & evidence
+
+| Document | Description |
+|----------|-------------|
+| [Dataset](DATASET.md) | `demo.sales` partitions and 10M seed |
+| [Case study](case-studies/01-query-optimization.md) | Optimization walkthrough |
+| [PostgreSQL extension](reference/postgres-extension.md) | Call API from SQL |
+| [Semantic search (pgvector)](reference/semantic-search-pgvector.md) | Similar queries / RAG |
+| [Versioning](reference/versioning-and-releases.md) | Releases and changelog |
 
 ### Development
 
 | Document | Description |
 |----------|-------------|
-| [Development setup](development/setup.md) | Build, test, codegen, frontend |
-| [Testing](development/testing.md) | Unit, integration, E2E tests |
-| [Runbook](development/runbook.md) | Daily dev, before commit, tests, build & release |
+| [Development setup](development/setup.md) | Build, codegen, frontend |
+| [Testing](development/testing.md) | Unit, integration, E2E |
+| [Dev runbook](development/runbook.md) | Daily developer workflow |
 
 ---
 
-**Contributing & security:** [.github/CONTRIBUTING.md](../.github/CONTRIBUTING.md) · [.github/SECURITY.md](../.github/SECURITY.md). **Changelog:** [CHANGELOG.md](../CHANGELOG.md).
+**Contributing & security:** [.github/CONTRIBUTING.md](../.github/CONTRIBUTING.md) · [.github/SECURITY.md](../.github/SECURITY.md). **Changelog:** [CHANGELOG.md](../CHANGELOG.md). **Root README:** [../README.md](../README.md).

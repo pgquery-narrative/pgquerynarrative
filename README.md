@@ -5,9 +5,9 @@
 <h1 align="center">PgQueryNarrative</h1>
 
 <p align="center">
-<strong>PostgreSQL Query Intelligence That Shows Its Evidence</strong><br>
-Find expensive queries, investigate execution plans, compare improvements,<br>
-and produce engineering-ready reports.
+<strong>PostgreSQL query intelligence that shows its evidence</strong><br>
+Investigate expensive queries, compare rewrites with plan proof,<br>
+and ship engineering-ready reports.
 </p>
 
 <p align="center">
@@ -21,9 +21,10 @@ and produce engineering-ready reports.
 </p>
 
 <p align="center">
-  <a href="#quick-start"><strong>Try the guided demo</strong></a> ·
-  <a href="docs/README.md">Documentation</a> ·
-  <a href="docs/development/runbook.md">Architecture</a> ·
+  <a href="#try-it-5-minutes"><strong>Try the demo</strong></a> ·
+  <a href="docs/getting-started/connect-postgres.md">Connect your Postgres</a> ·
+  <a href="docs/ops/PRODUCTION.md#start-here">Ship to production</a> ·
+  <a href="docs/index.md">Documentation</a> ·
   <a href=".github/SECURITY.md">Security</a>
 </p>
 
@@ -35,163 +36,132 @@ and produce engineering-ready reports.
 
 ---
 
-## Overview
+## What it is
 
-PgQueryNarrative is a **PostgreSQL investigation workbench** that turns workload statistics, SQL, query results, and execution plans into evidence-backed explanations and engineering-ready reports.
+PgQueryNarrative is a **PostgreSQL investigation workbench**. The flagship loop is:
 
-The flagship **Query Investigation** workflow guides you from expensive query → plan evidence → candidate comparison → verified report. The React workbench includes an interactive plan tree, before/after plan comparison, regression inbox, and a Security & Trust page that makes hardening visible.
+**expensive query → plan findings → candidate rewrite → measured compare → engineering report**
 
-The optional LLM narrative layer sits on top — the core value is safe SQL execution and plan analysis, not the LLM.
+Safe read-only SQL and plan analysis are the core. An optional LLM can narrate; it is not required for investigation reports. Start with [Concepts](docs/concepts.md) if you want the vocabulary (evidence, EXPLAIN vs ANALYZE, what compare proves).
 
-## Quick start
+## Choose your path
 
-**One-command guided demo** (PostgreSQL + app + small seed; ready in ~2 minutes):
+| You want to… | Start here |
+|--------------|------------|
+| **Try it in ~5 minutes** | [Try it](#try-it-5-minutes) — `make demo` + guided Investigate |
+| **Connect your PostgreSQL** | [Connect your Postgres](docs/getting-started/connect-postgres.md) — readonly role + schema allowlist |
+| **Ship to production** | [Production — start here](docs/ops/PRODUCTION.md#start-here) — StrictMode, replicas, checklists |
+| **Understand trust & scope** | [Trust model](docs/trust-model.md) — what the app will and will not do |
+
+---
+
+## Try it (5 minutes)
+
+Requires Docker. Starts Postgres + app + small seed (~2 minutes):
 
 ```bash
 make demo
 ```
 
-Open **http://localhost:8080** and use the guided path:
+Open **http://localhost:8080**:
 
-1. Click **Start guided demo** or open **Investigate**
+1. **Start guided demo** or open **Investigate**
 2. Choose **Slow dashboard query**
-3. Review the bad predicate: `DATE_TRUNC('month', date) = DATE '2025-01-01'` (blocks partition pruning)
-4. Click **Compare plans** to test the range-predicate rewrite (`date >= … AND date < …`)
-5. Click **Generate report** to open the engineering investigation report
+3. Review the finding (e.g. `DATE_TRUNC` blocking partition pruning)
+4. **Compare plans** on the range-predicate rewrite
+5. **Generate report**
 
-For README-quality timings and partition counts, use the 10M-row seed:
-
-```bash
-make demo-bootstrap   # or: make demo && make seed-large-docker
-```
-
-The guided investigation report is evidence-backed and works without the LLM.
-`make demo` also starts **Ollama in Docker** and pulls `llama3.2` so the workbench
-**Ask in natural language** flow works out of the box (first run may take a few
-minutes while the model downloads).
-
-**Docker-first** (full control):
+For README-scale partition counts (50→1 on ~10M rows):
 
 ```bash
-# 1. Start Postgres
-make postgres-up
-
-# 2. Apply migrations (includes monthly range partitions on demo.sales)
-make migrate-docker
-
-# 3. Start the full stack (app + Postgres; uses small seed by default)
-make start-docker
+make demo-bootstrap
 ```
 
-**Advanced benchmark** (~10M rows for partition pruning and optimization work; several minutes):
+`make demo` also starts **Ollama** and pulls `llama3.2` so **Ask in natural language** works locally (first run may download the model). Investigation still works if you skip the LLM.
 
-```bash
-make seed-large-docker
-```
+More detail: [Quick start](docs/getting-started/quickstart.md) · [Demo runbook](docs/DEMO_RUNBOOK.md)
 
-See [docs/DATASET.md](docs/DATASET.md) for schema layout, measured sizes, and pruning evidence.
+---
 
-Open **http://localhost:8080** for the web UI, or call the API directly ([API examples](docs/api/examples.md)):
+## Trust model (short)
 
-```bash
-# Run a read-only query
-curl -X POST http://localhost:8080/api/v1/queries/run \
-  -H "Content-Type: application/json" \
-  -d '{"sql": "SELECT product_category, SUM(total_amount) AS total FROM demo.sales GROUP BY product_category", "limit": 10}'
+- User SQL runs as a **dedicated read-only role**, not the app migration user
+- Schemas are **allowlisted** (`DATABASE_ALLOWED_SCHEMAS`, default `demo`)
+- **Writes and DDL are blocked** in the query validator
+- Cloud LLM row egress is **off unless you explicitly enable it**
 
-# Analyze the query plan (seq scans, cost, index suggestions)
-curl -X POST http://localhost:8080/api/v1/queries/explain \
-  -H "Content-Type: application/json" \
-  -d '{"sql": "SELECT product_category, SUM(total_amount) FROM demo.sales WHERE region = '\''North'\'' GROUP BY product_category"}'
-```
+Full write-up: [Trust model](docs/trust-model.md)
 
-**Local PostgreSQL** (app on host; Postgres must already be running):
+---
 
-```bash
-make start-local
-```
+## Capabilities
 
-See [Configuration](docs/configuration.md) for all environment variables.
+| Area | What you get |
+|------|----------------|
+| **Query Investigation** | Findings from EXPLAIN, candidate compare, engineering report |
+| **Secure read-only access** | Readonly pool, statement limits, timeouts, schema allowlist |
+| **Plan analysis** | Seq-scan / cost findings; optional `EXPLAIN ANALYZE` when enabled |
+| **Workbench** | Plan tree, compare table, regression inbox, Security & Trust page |
+| **Scale demo** | Partitioned `demo.sales`; 10M-row seed — [Dataset](docs/DATASET.md) |
 
-## Postgres capabilities
+Optional narratives: [LLM setup](docs/getting-started/llm-setup.md) · library embed: [Embedded integration](docs/getting-started/embedded.md)
 
-| Area | What PgQueryNarrative does |
-|------|----------------------------|
-| **Secure read-only access** | Queries run on a dedicated `pgquerynarrative_readonly` role; results wrapped in `SELECT * FROM (<sql>) LIMIT $1`; per-query timeout (30s default). |
-| **Query validation** | Single-statement enforcement, `demo` schema allowlist, write/DDL blocklist. |
-| **EXPLAIN integration** | `POST /api/v1/queries/explain` runs `EXPLAIN (FORMAT JSON [, ANALYZE, BUFFERS])`, parses the plan tree, flags seq scans and high-cost nodes, suggests indexes. |
-| **Scale & partitioning** | `demo.sales` is range-partitioned by month (~49 partitions); reproducible 10M-row seed via `make seed-large-docker`. [docs/DATASET.md](docs/DATASET.md) documents sizes and partition-pruning evidence. |
-| **Analytics in SQL** | Period-over-period comparison via window functions (`LAG`, `DATE_TRUNC`); metrics and chart suggestions from result shape. |
-
-## Optional: AI narrative layer
-
-Report generation is **optional**. When configured, PgQueryNarrative can turn query results into business narratives using your choice of LLM (Ollama, OpenAI, Claude, Gemini, Groq). This sits on top of the Postgres query layer — the core value is safe SQL execution and plan analysis, not the LLM.
-
-- [LLM setup](docs/getting-started/llm-setup.md) — provider configuration
-- [Embedded integration](docs/getting-started/embedded.md) — use as a library via `pkg/narrative/`
-
-## Requirements
-
-- **Docker** (for `make start-docker` and the Docker-first workflow above), or **PostgreSQL 16+** and **Go 1.25+** (for `make start-local` and building).
-- For the full web UI from source: **Node.js** and **npm** (to build the [frontend](frontend/)).
+---
 
 ## Commands
 
 | Action | Command |
-|--------|--------|
-| **Guided demo (recommended)** | `make demo` |
+|--------|---------|
+| **Guided demo** | `make demo` |
 | Guided demo + 10M-row seed | `make demo-bootstrap` |
-| Record README demo GIF (requires 10M seed) | `make demo-gif` |
-| Bootstrap 10M seed + record GIF | `make demo-gif-credible` |
-| Start Postgres only | `make postgres-up` |
+| Start / stop stack | `make start-docker` / `make stop` |
 | Migrate (Docker) | `make migrate-docker` |
 | Seed 10M rows (Docker) | `make seed-large-docker` |
-| Start full stack (Docker) | `make start-docker` |
-| Start (local) | `make start-local` |
-| Stop | `make stop` |
-| Build | `make build` (frontend + server) |
-| Test | `make test` |
+| Local app (Postgres already up) | `make start-local` |
+| Build / test | `make build` / `make test` |
 | CLI | `make cli CMD='query "SELECT * FROM demo.sales LIMIT 5"'` |
+
+Maintainer GIF capture lives in the [Demo runbook](docs/DEMO_RUNBOOK.md#readme-gif-capture).
+
+---
 
 ## Project structure
 
 | Path | Purpose |
 |------|---------|
-| [`cmd/server`](cmd/server) | Application entrypoint; serves API, health/ready, web export, React SPA |
-| [`app/`](app/) | Core logic: config, DB, [query runner](app/queryrunner), [metrics](app/metrics), [LLM](app/llm), [narrative](app/story), [service](app/service) |
-| [`api/design/`](api/design/) | [Goa](https://goa.design/) API design; generated code in `api/gen/` and root `gen/` |
-| [`frontend/`](frontend/) | React SPA (Vite, Tailwind CSS, shadcn/ui); built to `frontend/dist`, served by Go at `/` |
-| [`web/`](web/) | Server-side web handlers (report export: [HTML](web/handlers.go), [PDF](web/pdf.go)) |
-| [`pkg/narrative/`](pkg/narrative/) | Library client and middleware for [embedded integration](docs/getting-started/embedded.md) |
-| [`docs/`](docs/README.md) | Documentation |
-| [`test/unit/`](test/unit/), [`test/integration/`](test/integration/), [`test/e2e/`](test/e2e/) | Tests |
-| [`changelog/`](changelog/) | Release history |
+| [`cmd/server`](cmd/server) | API, health/ready, SPA |
+| [`app/`](app/) | Config, DB, query runner, investigations, LLM, reports |
+| [`api/design/`](api/design/) | Goa API design → `api/gen/` |
+| [`frontend/`](frontend/) | React workbench |
+| [`docs/`](docs/index.md) | Documentation (preview: `make docs`) |
+| [`pkg/narrative/`](pkg/narrative/) | Embeddable client |
+
+---
 
 ## Documentation
 
-Full documentation in **[docs/](docs/README.md)**. Preview locally with **`make docs`** → http://localhost:8000.
+Preview: **`make docs`** → http://localhost:8000
 
 | Section | Links |
 |---------|--------|
-| **Getting started** | [Installation](docs/getting-started/installation.md) · [Quick start](docs/getting-started/quickstart.md) · [LLM setup](docs/getting-started/llm-setup.md) · [Embedded integration](docs/getting-started/embedded.md) |
-| **User guides** | [Configuration](docs/configuration.md) · [UI overview](docs/ui-overview.md) · [CLI usage](docs/usage/cli-usage.md) |
+| **Start here** | [Docs overview](docs/index.md) · [Concepts](docs/concepts.md) · [Trust model](docs/trust-model.md) |
+| **Getting started** | [Quick start](docs/getting-started/quickstart.md) · [Installation](docs/getting-started/installation.md) · [Connect Postgres](docs/getting-started/connect-postgres.md) · [LLM setup](docs/getting-started/llm-setup.md) |
+| **Product** | [UI overview](docs/ui-overview.md) · [Demo runbook](docs/DEMO_RUNBOOK.md) · [Configuration](docs/configuration.md) |
 | **API** | [Reference](docs/api/README.md) · [Examples](docs/api/examples.md) |
-| **Reference** | [Deployment](docs/reference/deployment.md) · [Operations](docs/reference/operations.md) · [Troubleshooting](docs/reference/troubleshooting.md) · [PostgreSQL extension](docs/reference/postgres-extension.md) · [Semantic search (pgvector)](docs/reference/semantic-search-pgvector.md) |
-| **Development** | [Setup](docs/development/setup.md) · [Testing](docs/development/testing.md) · [Runbook](docs/development/runbook.md) |
-| **Dataset & case studies** | [10M-row benchmark & partition pruning](docs/DATASET.md) · [Query optimization case study](docs/case-studies/01-query-optimization.md) |
-| **Operations** | [Production ops](docs/ops/PRODUCTION.md) · [RLS demo](docs/ops/rls-demo.md) |
+| **Ops** | [Deployment](docs/reference/deployment.md) · [Production](docs/ops/PRODUCTION.md) · [Troubleshooting](docs/reference/troubleshooting.md) |
+| **Develop** | [Setup](docs/development/setup.md) · [Testing](docs/development/testing.md) · [Dev runbook](docs/development/runbook.md) |
+| **Evidence** | [Dataset](docs/DATASET.md) · [Case study](docs/case-studies/01-query-optimization.md) |
 
-**Contributing & security:** [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) · [.github/SECURITY.md](.github/SECURITY.md). **Changelog:** [CHANGELOG.md](CHANGELOG.md).
+**Contributing & security:** [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) · [.github/SECURITY.md](.github/SECURITY.md) · **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
 ## Branches & releases
 
 | Branch / tag | Purpose |
 |--------------|---------|
-| [`main`](https://github.com/pgquery-narrative/pgquerynarrative/tree/main) | Latest development (Postgres-first query intelligence) |
-| [`stable-v2.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/tree/stable-v2.0.0) | v2 release line — EXPLAIN API, 10M-row benchmark, parser validation, RLS/pgvector |
-| [`stable-v1.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/tree/stable-v1.0.0) | v1 release line — AI narrative focus, pre-Postgres pivot |
-| Tag [`v2.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release snapshot |
-| Tag [`v1.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v1.0.0) | v1.0.0 release snapshot |
+| [`main`](https://github.com/pgquery-narrative/pgquerynarrative/tree/main) | Latest development |
+| [`stable-v2.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/tree/stable-v2.0.0) | v2 line — EXPLAIN, benchmark dataset, validation |
+| [`stable-v1.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/tree/stable-v1.0.0) | v1 line — earlier AI-narrative focus |
+| Tag [`v2.0.0`](https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.0.0) | v2.0.0 release |
 
 ## License
 

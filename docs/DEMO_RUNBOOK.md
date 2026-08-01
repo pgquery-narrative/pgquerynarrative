@@ -4,7 +4,7 @@ Timed walkthrough for a **solo portfolio / hiring demo** (15–20 min core + dee
 Postgres is the hero; AI is optional and governed.
 
 **One-line open:**  
-“PgQueryNarrative is Postgres-native query intelligence — safe read-only SQL, EXPLAIN triage, and optional AI narratives — so analytics teams don’t paste production credentials into a chatbot.”
+“PgQueryNarrative is Postgres-native query intelligence — safe read-only SQL, EXPLAIN triage, verified rewrite compare, and optional AI narratives — so analytics teams don’t paste production credentials into a chatbot.”
 
 ---
 
@@ -230,3 +230,17 @@ Expect validation error.
 | NYC relation missing | Migrate + `seed-nyc-docker` + allowlist `demo,opendata` + recreate app |
 | Multi-org script fails | `make migrate-docker` (need version ≥ 44) |
 | Port busy | `make stop` then bootstrap again |
+
+---
+
+## README GIF capture {#readme-gif-capture}
+
+Maintainer-only. Re-records `docs/assets/demo-workflow.gif` from a live UI walkthrough (finding → compare → report). Requires the **10M-row** seed and `EXPLAIN ANALYZE` enabled (Compose demo defaults).
+
+```bash
+make demo-bootstrap   # or: make seed-large-docker on an existing demo stack
+make demo-gif         # app must be up on http://127.0.0.1:8080
+```
+
+`make demo-gif-credible` bootstraps the large seed then records. Needs Playwright browsers + `ffmpeg`. Not part of the normal user Commands table in the root README.
+
