@@ -15,7 +15,8 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "on-first-retry",
-    video: recordVideo ? "on" : "off",
+    video: recordVideo ? { mode: "on", size: { width: 1280, height: 720 } } : "off",
     ...devices["Desktop Chrome"],
+    ...(recordVideo ? { viewport: { width: 1280, height: 720 } } : {}),
   },
 });
