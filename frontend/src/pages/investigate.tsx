@@ -11,7 +11,7 @@ import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
 import { api, type Investigation, ApiError } from "@/api/client";
 import {
-  Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2,
+  Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles,
 } from "lucide-react";
 import { cn, formatFloat, truncate } from "@/lib/utils";
 
@@ -32,6 +32,7 @@ export default function InvestigatePage() {
   const [loading, setLoading] = useState(!!id);
   const [error, setError] = useState("");
   const [candidateSql, setCandidateSql] = useState("");
+  const [suggestRationale, setSuggestRationale] = useState("");
   const [actionLoading, setActionLoading] = useState("");
 
   const load = useCallback(async (investigationId: string, candidateHint?: string) => {
@@ -95,6 +96,27 @@ export default function InvestigatePage() {
       setInvestigation(inv);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to compare plans");
+    } finally {
+      setActionLoading("");
+    }
+  };
+
+  const suggestRewrite = async () => {
+    if (!investigation) return;
+    setActionLoading("suggest");
+    setError("");
+    try {
+      const res = await api.suggestInvestigationRewrite(investigation.id);
+      const top = res.candidates?.[0];
+      if (!top?.sql) {
+        setError("No rewrite suggestions for this query yet. Supported pattern: DATE_TRUNC equality on a column.");
+        setSuggestRationale("");
+        return;
+      }
+      setCandidateSql(top.sql);
+      setSuggestRationale(top.rationale || "");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to suggest rewrite");
     } finally {
       setActionLoading("");
     }
@@ -258,14 +280,30 @@ export default function InvestigatePage() {
         <CardContent className="space-y-4">
           <Textarea
             value={candidateSql}
-            onChange={(e) => setCandidateSql(e.target.value)}
-            placeholder="Paste candidate SQL rewrite..."
+            onChange={(e) => {
+              setCandidateSql(e.target.value);
+              setSuggestRationale("");
+            }}
+            placeholder="Paste candidate SQL rewrite, or click Suggest rewrite…"
             className="font-mono text-xs min-h-[100px]"
           />
-          <Button onClick={() => void addCandidate()} disabled={!candidateSql.trim() || actionLoading === "candidate"}>
-            {actionLoading === "candidate" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompare className="h-4 w-4" />}
-            Compare plans
-          </Button>
+          {suggestRationale && (
+            <p className="text-xs text-muted-foreground">{suggestRationale}</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void suggestRewrite()}
+              disabled={actionLoading === "suggest" || actionLoading === "candidate"}
+            >
+              {actionLoading === "suggest" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Suggest rewrite
+            </Button>
+            <Button onClick={() => void addCandidate()} disabled={!candidateSql.trim() || actionLoading === "candidate"}>
+              {actionLoading === "candidate" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompare className="h-4 w-4" />}
+              Compare plans
+            </Button>
+          </div>
           {investigation.comparison && (
             <PlanCompare comparison={investigation.comparison} />
           )}

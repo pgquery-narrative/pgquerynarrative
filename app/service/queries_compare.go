@@ -87,29 +87,7 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 func explainResultToAPI(result *queryrunner.ExplainResult) *queries.ExplainQueryResult {
 	findings := make([]*queries.PlanFinding, 0, len(result.Findings))
 	for _, f := range result.Findings {
-		cost := f.EstimatedCost
-		pf := &queries.PlanFinding{
-			NodeType:      f.NodeType,
-			EstimatedCost: &cost,
-			IsSeqScan:     f.IsSeqScan,
-			Message:       f.Message,
-		}
-		if f.Schema != "" {
-			pf.Schema = &f.Schema
-		}
-		if f.Relation != "" {
-			pf.Relation = &f.Relation
-		}
-		if f.Category != "" {
-			pf.Category = &f.Category
-		}
-		if f.Confidence != "" {
-			pf.Confidence = &f.Confidence
-		}
-		if len(f.Evidence) > 0 {
-			pf.Evidence = f.Evidence
-		}
-		findings = append(findings, pf)
+		findings = append(findings, planFindingToAPI(f))
 	}
 	var plan any
 	if len(result.Plan) > 0 {
@@ -122,6 +100,107 @@ func explainResultToAPI(result *queryrunner.ExplainResult) *queries.ExplainQuery
 		Findings:        findings,
 		ExecutionTimeMs: result.ExecutionTimeMs,
 	}
+}
+
+// planFindingToAPI maps an internal PlanFinding (including IndexAdvice) to the
+// Goa API type. IndexAdvice was previously dropped at this boundary.
+func planFindingToAPI(f queryrunner.PlanFinding) *queries.PlanFinding {
+	cost := f.EstimatedCost
+	pf := &queries.PlanFinding{
+		NodeType:      f.NodeType,
+		EstimatedCost: &cost,
+		IsSeqScan:     f.IsSeqScan,
+		Message:       f.Message,
+	}
+	if f.Schema != "" {
+		pf.Schema = &f.Schema
+	}
+	if f.Relation != "" {
+		pf.Relation = &f.Relation
+	}
+	if f.Category != "" {
+		pf.Category = &f.Category
+	}
+	if f.Confidence != "" {
+		pf.Confidence = &f.Confidence
+	}
+	if len(f.Evidence) > 0 {
+		pf.Evidence = f.Evidence
+	}
+	if len(f.RelatedColumns) > 0 {
+		pf.RelatedColumns = append([]string(nil), f.RelatedColumns...)
+	}
+	if f.IndexAdvice != nil {
+		pf.IndexAdvice = indexAdviceToAPI(f.IndexAdvice)
+	}
+	return pf
+}
+
+func indexAdviceToAPI(a *queryrunner.IndexAdvice) *queries.IndexAdvice {
+	if a == nil {
+		return nil
+	}
+	out := &queries.IndexAdvice{}
+	if len(a.RelatedColumns) > 0 {
+		out.RelatedColumns = append([]string(nil), a.RelatedColumns...)
+	}
+	if len(a.Issues) > 0 {
+		out.Issues = append([]string(nil), a.Issues...)
+	}
+	if a.PotentialBenefit != "" {
+		v := a.PotentialBenefit
+		out.PotentialBenefit = &v
+	}
+	if a.WriteCost != "" {
+		v := a.WriteCost
+		out.WriteCost = &v
+	}
+	if a.StorageCost != "" {
+		v := a.StorageCost
+		out.StorageCost = &v
+	}
+	if a.CandidateDDL != "" {
+		v := a.CandidateDDL
+		out.CandidateDdl = &v
+	}
+	if len(a.RelatedIndexes) > 0 {
+		out.RelatedIndexes = make([]*queries.IndexDefinition, 0, len(a.RelatedIndexes))
+		for _, idx := range a.RelatedIndexes {
+			out.RelatedIndexes = append(out.RelatedIndexes, indexDefinitionToAPI(idx))
+		}
+	}
+	return out
+}
+
+func indexDefinitionToAPI(idx queryrunner.IndexDefinition) *queries.IndexDefinition {
+	out := &queries.IndexDefinition{
+		Name:       idx.Name,
+		Definition: idx.Definition,
+		IsUnique:   idx.IsUnique,
+		IsPrimary:  idx.IsPrimary,
+		IsValid:    idx.IsValid,
+	}
+	if len(idx.KeyColumns) > 0 {
+		out.KeyColumns = append([]string(nil), idx.KeyColumns...)
+	}
+	if len(idx.IncludeColumns) > 0 {
+		out.IncludeColumns = append([]string(nil), idx.IncludeColumns...)
+	}
+	if idx.Predicate != "" {
+		v := idx.Predicate
+		out.Predicate = &v
+	}
+	if idx.SizeBytes != 0 {
+		v := idx.SizeBytes
+		out.SizeBytes = &v
+	}
+	vScans := idx.IndexScans
+	out.IndexScans = &vScans
+	vRead := idx.TuplesRead
+	out.TuplesRead = &vRead
+	vFetched := idx.TuplesFetched
+	out.TuplesFetched = &vFetched
+	return out
 }
 
 func compareResultChecksums(ctx context.Context, runner *queryrunner.Runner, beforeSQL, afterSQL string) bool {

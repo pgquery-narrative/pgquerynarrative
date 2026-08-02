@@ -101,6 +101,12 @@ type AddCandidateResponseBody struct {
 	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
+// SuggestRewriteResponseBody is the type of the "investigations" service
+// "suggest_rewrite" endpoint HTTP response body.
+type SuggestRewriteResponseBody struct {
+	Candidates []*RewriteCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+}
+
 // GenerateReportResponseBody is the type of the "investigations" service
 // "generate_report" endpoint HTTP response body.
 type GenerateReportResponseBody struct {
@@ -150,6 +156,15 @@ type AddCandidateNotFoundResponseBody struct {
 // service "add_candidate" endpoint HTTP response body for the
 // "validation_error" error.
 type AddCandidateValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// SuggestRewriteNotFoundResponseBody is the type of the "investigations"
+// service "suggest_rewrite" endpoint HTTP response body for the "not_found"
+// error.
+type SuggestRewriteNotFoundResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -217,6 +232,49 @@ type PlanFindingResponseBody struct {
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	// Raw plan metrics backing this finding (e.g. Plan Rows=8000)
 	Evidence []string `form:"evidence,omitempty" json:"evidence,omitempty" xml:"evidence,omitempty"`
+	// Filter/join/sort columns implicated by this finding
+	RelatedColumns []string `form:"related_columns,omitempty" json:"related_columns,omitempty" xml:"related_columns,omitempty"`
+	// Structured index advice when catalog enrichment produced it
+	IndexAdvice *IndexAdviceResponseBody `form:"index_advice,omitempty" json:"index_advice,omitempty" xml:"index_advice,omitempty"`
+}
+
+// IndexAdviceResponseBody is used to define fields on response body types.
+type IndexAdviceResponseBody struct {
+	// Columns implicated by the finding
+	RelatedColumns []string `form:"related_columns,omitempty" json:"related_columns,omitempty" xml:"related_columns,omitempty"`
+	// Existing indexes evaluated
+	RelatedIndexes []*IndexDefinitionResponseBody `form:"related_indexes,omitempty" json:"related_indexes,omitempty" xml:"related_indexes,omitempty"`
+	// Issue codes (e.g. no_covering_index, already_covered)
+	Issues []string `form:"issues,omitempty" json:"issues,omitempty" xml:"issues,omitempty"`
+	// Plain-language benefit if advice is followed
+	PotentialBenefit *string `form:"potential_benefit,omitempty" json:"potential_benefit,omitempty" xml:"potential_benefit,omitempty"`
+	// Write-amplification cost of the recommended change
+	WriteCost *string `form:"write_cost,omitempty" json:"write_cost,omitempty" xml:"write_cost,omitempty"`
+	// On-disk storage cost of the recommended change
+	StorageCost *string `form:"storage_cost,omitempty" json:"storage_cost,omitempty" xml:"storage_cost,omitempty"`
+	// Draft DDL for expert review only; never auto-applied
+	CandidateDdl *string `form:"candidate_ddl,omitempty" json:"candidate_ddl,omitempty" xml:"candidate_ddl,omitempty"`
+}
+
+// IndexDefinitionResponseBody is used to define fields on response body types.
+type IndexDefinitionResponseBody struct {
+	// Index name
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// pg_get_indexdef text
+	Definition *string `form:"definition,omitempty" json:"definition,omitempty" xml:"definition,omitempty"`
+	// Key columns in position order
+	KeyColumns []string `form:"key_columns,omitempty" json:"key_columns,omitempty" xml:"key_columns,omitempty"`
+	// INCLUDE columns
+	IncludeColumns []string `form:"include_columns,omitempty" json:"include_columns,omitempty" xml:"include_columns,omitempty"`
+	// Partial-index predicate when present
+	Predicate     *string `form:"predicate,omitempty" json:"predicate,omitempty" xml:"predicate,omitempty"`
+	IsUnique      *bool   `form:"is_unique,omitempty" json:"is_unique,omitempty" xml:"is_unique,omitempty"`
+	IsPrimary     *bool   `form:"is_primary,omitempty" json:"is_primary,omitempty" xml:"is_primary,omitempty"`
+	IsValid       *bool   `form:"is_valid,omitempty" json:"is_valid,omitempty" xml:"is_valid,omitempty"`
+	SizeBytes     *int64  `form:"size_bytes,omitempty" json:"size_bytes,omitempty" xml:"size_bytes,omitempty"`
+	IndexScans    *int64  `form:"index_scans,omitempty" json:"index_scans,omitempty" xml:"index_scans,omitempty"`
+	TuplesRead    *int64  `form:"tuples_read,omitempty" json:"tuples_read,omitempty" xml:"tuples_read,omitempty"`
+	TuplesFetched *int64  `form:"tuples_fetched,omitempty" json:"tuples_fetched,omitempty" xml:"tuples_fetched,omitempty"`
 }
 
 // ComparePlansResultResponseBody is used to define fields on response body
@@ -271,6 +329,18 @@ type InvestigationResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+}
+
+// RewriteCandidateResponseBody is used to define fields on response body types.
+type RewriteCandidateResponseBody struct {
+	// Candidate rewrite SQL
+	SQL *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	// Short explanation of the rewrite
+	Rationale *string `form:"rationale,omitempty" json:"rationale,omitempty" xml:"rationale,omitempty"`
+	// Rewrite category (e.g. function_wrap)
+	Category *string `form:"category,omitempty" json:"category,omitempty" xml:"category,omitempty"`
+	// Suggestion confidence: low, medium, or high
+	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
 }
 
 // NewCreateRequestBody builds the HTTP request body from the payload of the
@@ -456,6 +526,34 @@ func NewAddCandidateNotFound(body *AddCandidateNotFoundResponseBody) *investigat
 // endpoint validation_error error.
 func NewAddCandidateValidationError(body *AddCandidateValidationErrorResponseBody) *investigations.ValidationError {
 	v := &investigations.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewSuggestRewriteRewriteSuggestionListOK builds a "investigations" service
+// "suggest_rewrite" endpoint result from a HTTP "OK" response.
+func NewSuggestRewriteRewriteSuggestionListOK(body *SuggestRewriteResponseBody) *investigations.RewriteSuggestionList {
+	v := &investigations.RewriteSuggestionList{}
+	v.Candidates = make([]*investigations.RewriteCandidate, len(body.Candidates))
+	for i, val := range body.Candidates {
+		if val == nil {
+			v.Candidates[i] = nil
+			continue
+		}
+		v.Candidates[i] = unmarshalRewriteCandidateResponseBodyToInvestigationsRewriteCandidate(val)
+	}
+
+	return v
+}
+
+// NewSuggestRewriteNotFound builds a investigations service suggest_rewrite
+// endpoint not_found error.
+func NewSuggestRewriteNotFound(body *SuggestRewriteNotFoundResponseBody) *investigations.NotFoundError {
+	v := &investigations.NotFoundError{
 		Name:    *body.Name,
 		Message: *body.Message,
 		Code:    body.Code,
@@ -691,6 +789,22 @@ func ValidateAddCandidateResponseBody(body *AddCandidateResponseBody) (err error
 	return
 }
 
+// ValidateSuggestRewriteResponseBody runs the validations defined on
+// suggest_rewrite_response_body
+func ValidateSuggestRewriteResponseBody(body *SuggestRewriteResponseBody) (err error) {
+	if body.Candidates == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidates", "body"))
+	}
+	for _, e := range body.Candidates {
+		if e != nil {
+			if err2 := ValidateRewriteCandidateResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateGenerateReportResponseBody runs the validations defined on
 // generate_report_response_body
 func ValidateGenerateReportResponseBody(body *GenerateReportResponseBody) (err error) {
@@ -790,6 +904,18 @@ func ValidateAddCandidateValidationErrorResponseBody(body *AddCandidateValidatio
 	return
 }
 
+// ValidateSuggestRewriteNotFoundResponseBody runs the validations defined on
+// suggest_rewrite_not_found_response_body
+func ValidateSuggestRewriteNotFoundResponseBody(body *SuggestRewriteNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
 // ValidateGenerateReportNotFoundResponseBody runs the validations defined on
 // generate_report_not_found_response_body
 func ValidateGenerateReportNotFoundResponseBody(body *GenerateReportNotFoundResponseBody) (err error) {
@@ -853,6 +979,45 @@ func ValidatePlanFindingResponseBody(body *PlanFindingResponseBody) (err error) 
 	}
 	if body.Message == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.IndexAdvice != nil {
+		if err2 := ValidateIndexAdviceResponseBody(body.IndexAdvice); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateIndexAdviceResponseBody runs the validations defined on
+// IndexAdviceResponseBody
+func ValidateIndexAdviceResponseBody(body *IndexAdviceResponseBody) (err error) {
+	for _, e := range body.RelatedIndexes {
+		if e != nil {
+			if err2 := ValidateIndexDefinitionResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateIndexDefinitionResponseBody runs the validations defined on
+// IndexDefinitionResponseBody
+func ValidateIndexDefinitionResponseBody(body *IndexDefinitionResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Definition == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("definition", "body"))
+	}
+	if body.IsUnique == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("is_unique", "body"))
+	}
+	if body.IsPrimary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("is_primary", "body"))
+	}
+	if body.IsValid == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("is_valid", "body"))
 	}
 	return
 }
@@ -957,6 +1122,18 @@ func ValidateInvestigationResponseBody(body *InvestigationResponseBody) (err err
 	}
 	if body.UpdatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.updated_at", *body.UpdatedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateRewriteCandidateResponseBody runs the validations defined on
+// RewriteCandidateResponseBody
+func ValidateRewriteCandidateResponseBody(body *RewriteCandidateResponseBody) (err error) {
+	if body.SQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
+	}
+	if body.Rationale == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("rationale", "body"))
 	}
 	return
 }

@@ -253,29 +253,7 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 
 	findings := make([]*queries.PlanFinding, 0, len(result.Findings))
 	for _, f := range result.Findings {
-		cost := f.EstimatedCost
-		pf := &queries.PlanFinding{
-			NodeType:      f.NodeType,
-			EstimatedCost: &cost,
-			IsSeqScan:     f.IsSeqScan,
-			Message:       f.Message,
-		}
-		if f.Schema != "" {
-			pf.Schema = &f.Schema
-		}
-		if f.Relation != "" {
-			pf.Relation = &f.Relation
-		}
-		if f.Category != "" {
-			pf.Category = &f.Category
-		}
-		if f.Confidence != "" {
-			pf.Confidence = &f.Confidence
-		}
-		if len(f.Evidence) > 0 {
-			pf.Evidence = f.Evidence
-		}
-		findings = append(findings, pf)
+		findings = append(findings, planFindingToAPI(f))
 	}
 
 	var plan any

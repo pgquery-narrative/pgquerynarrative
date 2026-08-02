@@ -373,6 +373,88 @@ func DecodeAddCandidateResponse(decoder func(*http.Response) goahttp.Decoder, re
 	}
 }
 
+// BuildSuggestRewriteRequest instantiates a HTTP request object with method
+// and path set to call the "investigations" service "suggest_rewrite" endpoint
+func (c *Client) BuildSuggestRewriteRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		id string
+	)
+	{
+		p, ok := v.(*investigations.SuggestRewritePayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("investigations", "suggest_rewrite", "*investigations.SuggestRewritePayload", v)
+		}
+		id = p.ID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: SuggestRewriteInvestigationsPath(id)}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("investigations", "suggest_rewrite", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeSuggestRewriteResponse returns a decoder for responses returned by the
+// investigations suggest_rewrite endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeSuggestRewriteResponse may return the following errors:
+//   - "not_found" (type *investigations.NotFoundError): http.StatusNotFound
+//   - error: internal error
+func DecodeSuggestRewriteResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body SuggestRewriteResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "suggest_rewrite", err)
+			}
+			err = ValidateSuggestRewriteResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "suggest_rewrite", err)
+			}
+			res := NewSuggestRewriteRewriteSuggestionListOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body SuggestRewriteNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "suggest_rewrite", err)
+			}
+			err = ValidateSuggestRewriteNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "suggest_rewrite", err)
+			}
+			return nil, NewSuggestRewriteNotFound(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("investigations", "suggest_rewrite", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildGenerateReportRequest instantiates a HTTP request object with method
 // and path set to call the "investigations" service "generate_report" endpoint
 func (c *Client) BuildGenerateReportRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -533,6 +615,89 @@ func unmarshalPlanFindingResponseBodyToInvestigationsPlanFinding(v *PlanFindingR
 			res.Evidence[i] = val
 		}
 	}
+	if v.RelatedColumns != nil {
+		res.RelatedColumns = make([]string, len(v.RelatedColumns))
+		for i, val := range v.RelatedColumns {
+			res.RelatedColumns[i] = val
+		}
+	}
+	if v.IndexAdvice != nil {
+		res.IndexAdvice = unmarshalIndexAdviceResponseBodyToInvestigationsIndexAdvice(v.IndexAdvice)
+	}
+
+	return res
+}
+
+// unmarshalIndexAdviceResponseBodyToInvestigationsIndexAdvice builds a value
+// of type *investigations.IndexAdvice from a value of type
+// *IndexAdviceResponseBody.
+func unmarshalIndexAdviceResponseBodyToInvestigationsIndexAdvice(v *IndexAdviceResponseBody) *investigations.IndexAdvice {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.IndexAdvice{
+		PotentialBenefit: v.PotentialBenefit,
+		WriteCost:        v.WriteCost,
+		StorageCost:      v.StorageCost,
+		CandidateDdl:     v.CandidateDdl,
+	}
+	if v.RelatedColumns != nil {
+		res.RelatedColumns = make([]string, len(v.RelatedColumns))
+		for i, val := range v.RelatedColumns {
+			res.RelatedColumns[i] = val
+		}
+	}
+	if v.RelatedIndexes != nil {
+		res.RelatedIndexes = make([]*investigations.IndexDefinition, len(v.RelatedIndexes))
+		for i, val := range v.RelatedIndexes {
+			if val == nil {
+				res.RelatedIndexes[i] = nil
+				continue
+			}
+			res.RelatedIndexes[i] = unmarshalIndexDefinitionResponseBodyToInvestigationsIndexDefinition(val)
+		}
+	}
+	if v.Issues != nil {
+		res.Issues = make([]string, len(v.Issues))
+		for i, val := range v.Issues {
+			res.Issues[i] = val
+		}
+	}
+
+	return res
+}
+
+// unmarshalIndexDefinitionResponseBodyToInvestigationsIndexDefinition builds a
+// value of type *investigations.IndexDefinition from a value of type
+// *IndexDefinitionResponseBody.
+func unmarshalIndexDefinitionResponseBodyToInvestigationsIndexDefinition(v *IndexDefinitionResponseBody) *investigations.IndexDefinition {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.IndexDefinition{
+		Name:          *v.Name,
+		Definition:    *v.Definition,
+		Predicate:     v.Predicate,
+		IsUnique:      *v.IsUnique,
+		IsPrimary:     *v.IsPrimary,
+		IsValid:       *v.IsValid,
+		SizeBytes:     v.SizeBytes,
+		IndexScans:    v.IndexScans,
+		TuplesRead:    v.TuplesRead,
+		TuplesFetched: v.TuplesFetched,
+	}
+	if v.KeyColumns != nil {
+		res.KeyColumns = make([]string, len(v.KeyColumns))
+		for i, val := range v.KeyColumns {
+			res.KeyColumns[i] = val
+		}
+	}
+	if v.IncludeColumns != nil {
+		res.IncludeColumns = make([]string, len(v.IncludeColumns))
+		for i, val := range v.IncludeColumns {
+			res.IncludeColumns[i] = val
+		}
+	}
 
 	return res
 }
@@ -630,6 +795,20 @@ func unmarshalInvestigationResponseBodyToInvestigationsInvestigation(v *Investig
 	}
 	if v.Comparison != nil {
 		res.Comparison = unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(v.Comparison)
+	}
+
+	return res
+}
+
+// unmarshalRewriteCandidateResponseBodyToInvestigationsRewriteCandidate builds
+// a value of type *investigations.RewriteCandidate from a value of type
+// *RewriteCandidateResponseBody.
+func unmarshalRewriteCandidateResponseBodyToInvestigationsRewriteCandidate(v *RewriteCandidateResponseBody) *investigations.RewriteCandidate {
+	res := &investigations.RewriteCandidate{
+		SQL:        *v.SQL,
+		Rationale:  *v.Rationale,
+		Category:   v.Category,
+		Confidence: v.Confidence,
 	}
 
 	return res

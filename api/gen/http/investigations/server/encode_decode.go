@@ -307,6 +307,68 @@ func EncodeAddCandidateError(encoder func(context.Context, http.ResponseWriter) 
 	}
 }
 
+// EncodeSuggestRewriteResponse returns an encoder for responses returned by
+// the investigations suggest_rewrite endpoint.
+func EncodeSuggestRewriteResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*investigations.RewriteSuggestionList)
+		enc := encoder(ctx, w)
+		body := NewSuggestRewriteResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeSuggestRewriteRequest returns a decoder for requests sent to the
+// investigations suggest_rewrite endpoint.
+func DecodeSuggestRewriteRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.SuggestRewritePayload, error) {
+	return func(r *http.Request) (*investigations.SuggestRewritePayload, error) {
+		var (
+			id  string
+			err error
+
+			params = mux.Vars(r)
+		)
+		id = params["id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewSuggestRewritePayload(id)
+
+		return payload, nil
+	}
+}
+
+// EncodeSuggestRewriteError returns an encoder for errors returned by the
+// suggest_rewrite investigations endpoint.
+func EncodeSuggestRewriteError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *investigations.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewSuggestRewriteNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeGenerateReportResponse returns an encoder for responses returned by
 // the investigations generate_report endpoint.
 func EncodeGenerateReportResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -449,6 +511,89 @@ func marshalInvestigationsPlanFindingToPlanFindingResponseBody(v *investigations
 			res.Evidence[i] = val
 		}
 	}
+	if v.RelatedColumns != nil {
+		res.RelatedColumns = make([]string, len(v.RelatedColumns))
+		for i, val := range v.RelatedColumns {
+			res.RelatedColumns[i] = val
+		}
+	}
+	if v.IndexAdvice != nil {
+		res.IndexAdvice = marshalInvestigationsIndexAdviceToIndexAdviceResponseBody(v.IndexAdvice)
+	}
+
+	return res
+}
+
+// marshalInvestigationsIndexAdviceToIndexAdviceResponseBody builds a value of
+// type *IndexAdviceResponseBody from a value of type
+// *investigations.IndexAdvice.
+func marshalInvestigationsIndexAdviceToIndexAdviceResponseBody(v *investigations.IndexAdvice) *IndexAdviceResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &IndexAdviceResponseBody{
+		PotentialBenefit: v.PotentialBenefit,
+		WriteCost:        v.WriteCost,
+		StorageCost:      v.StorageCost,
+		CandidateDdl:     v.CandidateDdl,
+	}
+	if v.RelatedColumns != nil {
+		res.RelatedColumns = make([]string, len(v.RelatedColumns))
+		for i, val := range v.RelatedColumns {
+			res.RelatedColumns[i] = val
+		}
+	}
+	if v.RelatedIndexes != nil {
+		res.RelatedIndexes = make([]*IndexDefinitionResponseBody, len(v.RelatedIndexes))
+		for i, val := range v.RelatedIndexes {
+			if val == nil {
+				res.RelatedIndexes[i] = nil
+				continue
+			}
+			res.RelatedIndexes[i] = marshalInvestigationsIndexDefinitionToIndexDefinitionResponseBody(val)
+		}
+	}
+	if v.Issues != nil {
+		res.Issues = make([]string, len(v.Issues))
+		for i, val := range v.Issues {
+			res.Issues[i] = val
+		}
+	}
+
+	return res
+}
+
+// marshalInvestigationsIndexDefinitionToIndexDefinitionResponseBody builds a
+// value of type *IndexDefinitionResponseBody from a value of type
+// *investigations.IndexDefinition.
+func marshalInvestigationsIndexDefinitionToIndexDefinitionResponseBody(v *investigations.IndexDefinition) *IndexDefinitionResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &IndexDefinitionResponseBody{
+		Name:          v.Name,
+		Definition:    v.Definition,
+		Predicate:     v.Predicate,
+		IsUnique:      v.IsUnique,
+		IsPrimary:     v.IsPrimary,
+		IsValid:       v.IsValid,
+		SizeBytes:     v.SizeBytes,
+		IndexScans:    v.IndexScans,
+		TuplesRead:    v.TuplesRead,
+		TuplesFetched: v.TuplesFetched,
+	}
+	if v.KeyColumns != nil {
+		res.KeyColumns = make([]string, len(v.KeyColumns))
+		for i, val := range v.KeyColumns {
+			res.KeyColumns[i] = val
+		}
+	}
+	if v.IncludeColumns != nil {
+		res.IncludeColumns = make([]string, len(v.IncludeColumns))
+		for i, val := range v.IncludeColumns {
+			res.IncludeColumns[i] = val
+		}
+	}
 
 	return res
 }
@@ -556,6 +701,20 @@ func marshalInvestigationsInvestigationToInvestigationResponseBody(v *investigat
 	}
 	if v.Comparison != nil {
 		res.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(v.Comparison)
+	}
+
+	return res
+}
+
+// marshalInvestigationsRewriteCandidateToRewriteCandidateResponseBody builds a
+// value of type *RewriteCandidateResponseBody from a value of type
+// *investigations.RewriteCandidate.
+func marshalInvestigationsRewriteCandidateToRewriteCandidateResponseBody(v *investigations.RewriteCandidate) *RewriteCandidateResponseBody {
+	res := &RewriteCandidateResponseBody{
+		SQL:        v.SQL,
+		Rationale:  v.Rationale,
+		Category:   v.Category,
+		Confidence: v.Confidence,
 	}
 
 	return res

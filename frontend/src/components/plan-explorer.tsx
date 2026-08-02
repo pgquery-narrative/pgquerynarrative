@@ -8,7 +8,20 @@ import { formatFloat } from "@/lib/utils";
 
 interface PlanExplorerProps {
   plan: unknown;
-  findings?: { node_type: string; message: string; confidence?: string; is_seq_scan: boolean }[];
+  findings?: {
+    node_type: string;
+    message: string;
+    confidence?: string;
+    category?: string;
+    is_seq_scan: boolean;
+    related_columns?: string[];
+    index_advice?: {
+      issues?: string[];
+      potential_benefit?: string;
+      candidate_ddl?: string;
+      related_columns?: string[];
+    };
+  }[];
   className?: string;
 }
 
@@ -67,13 +80,43 @@ export function PlanExplorer({ plan, findings, className }: PlanExplorerProps) {
         <div className="lg:col-span-2 space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Plan findings</p>
           {findings.map((f, i) => (
-            <div key={i} className="flex items-start gap-2 text-sm p-2 rounded-md border border-border/50">
-              <Badge variant={f.is_seq_scan ? "outline" : "secondary"} className="text-[10px] shrink-0">
-                {f.node_type}
-              </Badge>
-              <span className="flex-1">{f.message}</span>
-              {f.confidence && (
-                <Badge variant="secondary" className="text-[10px] capitalize shrink-0">{f.confidence}</Badge>
+            <div key={i} className="space-y-2 text-sm p-3 rounded-md border border-border/50">
+              <div className="flex items-start gap-2">
+                <Badge variant={f.is_seq_scan ? "outline" : "secondary"} className="text-[10px] shrink-0">
+                  {f.node_type}
+                </Badge>
+                {f.category && (
+                  <Badge variant="secondary" className="text-[10px] shrink-0">{f.category}</Badge>
+                )}
+                <span className="flex-1">{f.message}</span>
+                {f.confidence && (
+                  <Badge variant="secondary" className="text-[10px] capitalize shrink-0">{f.confidence}</Badge>
+                )}
+              </div>
+              {f.index_advice && (
+                <div className="rounded-md bg-muted/40 p-2 space-y-1.5 text-xs">
+                  <p className="font-medium text-muted-foreground uppercase tracking-wide">Index advice</p>
+                  {f.index_advice.issues && f.index_advice.issues.length > 0 && (
+                    <p>
+                      <span className="text-muted-foreground">Issues: </span>
+                      {f.index_advice.issues.join(", ")}
+                    </p>
+                  )}
+                  {f.index_advice.related_columns && f.index_advice.related_columns.length > 0 && (
+                    <p>
+                      <span className="text-muted-foreground">Columns: </span>
+                      {f.index_advice.related_columns.join(", ")}
+                    </p>
+                  )}
+                  {f.index_advice.potential_benefit && (
+                    <p>{f.index_advice.potential_benefit}</p>
+                  )}
+                  {f.index_advice.candidate_ddl && (
+                    <pre className="font-mono whitespace-pre-wrap break-all bg-background/60 rounded p-2 border border-border/40">
+                      {f.index_advice.candidate_ddl}
+                    </pre>
+                  )}
+                </div>
               )}
             </div>
           ))}

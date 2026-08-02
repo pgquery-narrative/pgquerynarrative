@@ -46,8 +46,44 @@ export interface PlanFinding {
   relation?: string;
   estimated_cost?: number;
   is_seq_scan: boolean;
+  category?: string;
   confidence?: string;
   message: string;
+  evidence?: string[];
+  related_columns?: string[];
+  index_advice?: IndexAdvice;
+}
+
+export interface IndexDefinition {
+  name: string;
+  definition: string;
+  key_columns?: string[];
+  include_columns?: string[];
+  predicate?: string;
+  is_unique: boolean;
+  is_primary: boolean;
+  is_valid: boolean;
+  size_bytes?: number;
+  index_scans?: number;
+  tuples_read?: number;
+  tuples_fetched?: number;
+}
+
+export interface IndexAdvice {
+  related_columns?: string[];
+  related_indexes?: IndexDefinition[];
+  issues?: string[];
+  potential_benefit?: string;
+  write_cost?: string;
+  storage_cost?: string;
+  candidate_ddl?: string;
+}
+
+export interface RewriteCandidate {
+  sql: string;
+  rationale: string;
+  category?: string;
+  confidence?: string;
 }
 
 /** Result of POST /queries/explain (EXPLAIN FORMAT JSON). */
@@ -431,6 +467,11 @@ export const api = {
     request<Investigation>(`/investigations/${id}/candidate`, {
       method: "POST",
       body: JSON.stringify({ candidate_sql: candidateSql, analyze }),
+    }),
+
+  suggestInvestigationRewrite: (id: string) =>
+    request<{ candidates: RewriteCandidate[] }>(`/investigations/${id}/suggest-rewrite`, {
+      method: "POST",
     }),
 
   generateInvestigationReport: (id: string) =>

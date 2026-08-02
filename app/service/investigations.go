@@ -14,6 +14,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/story"
 	"github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
 )
@@ -197,6 +198,75 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 		}
 	}
 	return &inv, nil
+}
+
+// SuggestRewrite proposes AST-based candidate rewrites from the investigation
+// SQL and stored plan findings. Does not require demo scenarios or a pasted rewrite.
+func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *investigations.SuggestRewritePayload) (*investigations.RewriteSuggestionList, error) {
+	inv, err := s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
+	if err != nil {
+		return nil, err
+	}
+
+	findings := queryrunnerFindingsFromInvestigation(inv.Explain)
+	cands := queryrunner.SuggestRewrites(inv.SQL, findings)
+	out := &investigations.RewriteSuggestionList{
+		Candidates: make([]*investigations.RewriteCandidate, 0, len(cands)),
+	}
+	for _, c := range cands {
+		cand := &investigations.RewriteCandidate{
+			SQL:       c.SQL,
+			Rationale: c.Rationale,
+		}
+		if c.Category != "" {
+			cat := c.Category
+			cand.Category = &cat
+		}
+		if c.Confidence != "" {
+			conf := c.Confidence
+			cand.Confidence = &conf
+		}
+		out.Candidates = append(out.Candidates, cand)
+	}
+	return out, nil
+}
+
+func queryrunnerFindingsFromInvestigation(exp *investigations.ExplainQueryResult) []queryrunner.PlanFinding {
+	if exp == nil {
+		return nil
+	}
+	out := make([]queryrunner.PlanFinding, 0, len(exp.Findings))
+	for _, f := range exp.Findings {
+		if f == nil {
+			continue
+		}
+		pf := queryrunner.PlanFinding{
+			NodeType:  f.NodeType,
+			IsSeqScan: f.IsSeqScan,
+			Message:   f.Message,
+			Evidence:  f.Evidence,
+		}
+		if f.Category != nil {
+			pf.Category = *f.Category
+		}
+		if f.Confidence != nil {
+			pf.Confidence = *f.Confidence
+		}
+		if f.Schema != nil {
+			pf.Schema = *f.Schema
+		}
+		if f.Relation != nil {
+			pf.Relation = *f.Relation
+		}
+		if f.EstimatedCost != nil {
+			pf.EstimatedCost = *f.EstimatedCost
+		}
+		if len(f.RelatedColumns) > 0 {
+			pf.RelatedColumns = append([]string(nil), f.RelatedColumns...)
+		}
+		out = append(out, pf)
+	}
+	return out
 }
 
 // AddCandidate adds a candidate rewrite and compares plans.

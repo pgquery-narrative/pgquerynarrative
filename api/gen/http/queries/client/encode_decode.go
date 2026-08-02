@@ -754,6 +754,88 @@ func unmarshalPlanFindingResponseBodyToQueriesPlanFinding(v *PlanFindingResponse
 			res.Evidence[i] = val
 		}
 	}
+	if v.RelatedColumns != nil {
+		res.RelatedColumns = make([]string, len(v.RelatedColumns))
+		for i, val := range v.RelatedColumns {
+			res.RelatedColumns[i] = val
+		}
+	}
+	if v.IndexAdvice != nil {
+		res.IndexAdvice = unmarshalIndexAdviceResponseBodyToQueriesIndexAdvice(v.IndexAdvice)
+	}
+
+	return res
+}
+
+// unmarshalIndexAdviceResponseBodyToQueriesIndexAdvice builds a value of type
+// *queries.IndexAdvice from a value of type *IndexAdviceResponseBody.
+func unmarshalIndexAdviceResponseBodyToQueriesIndexAdvice(v *IndexAdviceResponseBody) *queries.IndexAdvice {
+	if v == nil {
+		return nil
+	}
+	res := &queries.IndexAdvice{
+		PotentialBenefit: v.PotentialBenefit,
+		WriteCost:        v.WriteCost,
+		StorageCost:      v.StorageCost,
+		CandidateDdl:     v.CandidateDdl,
+	}
+	if v.RelatedColumns != nil {
+		res.RelatedColumns = make([]string, len(v.RelatedColumns))
+		for i, val := range v.RelatedColumns {
+			res.RelatedColumns[i] = val
+		}
+	}
+	if v.RelatedIndexes != nil {
+		res.RelatedIndexes = make([]*queries.IndexDefinition, len(v.RelatedIndexes))
+		for i, val := range v.RelatedIndexes {
+			if val == nil {
+				res.RelatedIndexes[i] = nil
+				continue
+			}
+			res.RelatedIndexes[i] = unmarshalIndexDefinitionResponseBodyToQueriesIndexDefinition(val)
+		}
+	}
+	if v.Issues != nil {
+		res.Issues = make([]string, len(v.Issues))
+		for i, val := range v.Issues {
+			res.Issues[i] = val
+		}
+	}
+
+	return res
+}
+
+// unmarshalIndexDefinitionResponseBodyToQueriesIndexDefinition builds a value
+// of type *queries.IndexDefinition from a value of type
+// *IndexDefinitionResponseBody.
+func unmarshalIndexDefinitionResponseBodyToQueriesIndexDefinition(v *IndexDefinitionResponseBody) *queries.IndexDefinition {
+	if v == nil {
+		return nil
+	}
+	res := &queries.IndexDefinition{
+		Name:          *v.Name,
+		Definition:    *v.Definition,
+		Predicate:     v.Predicate,
+		IsUnique:      *v.IsUnique,
+		IsPrimary:     *v.IsPrimary,
+		IsValid:       *v.IsValid,
+		SizeBytes:     v.SizeBytes,
+		IndexScans:    v.IndexScans,
+		TuplesRead:    v.TuplesRead,
+		TuplesFetched: v.TuplesFetched,
+	}
+	if v.KeyColumns != nil {
+		res.KeyColumns = make([]string, len(v.KeyColumns))
+		for i, val := range v.KeyColumns {
+			res.KeyColumns[i] = val
+		}
+	}
+	if v.IncludeColumns != nil {
+		res.IncludeColumns = make([]string, len(v.IncludeColumns))
+		for i, val := range v.IncludeColumns {
+			res.IncludeColumns[i] = val
+		}
+	}
 
 	return res
 }

@@ -136,7 +136,7 @@ func BuildAskPayload(suggestionsAskBody string) (*suggestions.AskPayload, error)
 	{
 		err = json.Unmarshal([]byte(suggestionsAskBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Nihil sapiente sit inventore autem.\",\n      \"question\": \"x4r\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Aperiam et consequuntur quae eius.\",\n      \"question\": \"ud\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Question) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.question", body.Question, utf8.RuneCountInString(body.Question), 1, true))
@@ -164,7 +164,7 @@ func BuildChatPayload(suggestionsChatBody string) (*suggestions.ChatPayload, err
 	{
 		err = json.Unmarshal([]byte(suggestionsChatBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Est harum et saepe consectetur eaque sed.\",\n      \"question\": \"g\",\n      \"session_id\": \"Ipsa voluptas.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Et a tenetur.\",\n      \"question\": \"0v\",\n      \"session_id\": \"Corporis rerum eum quisquam.\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Question) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.question", body.Question, utf8.RuneCountInString(body.Question), 1, true))
@@ -193,7 +193,7 @@ func BuildExplainPayload(suggestionsExplainBody string) (*suggestions.ExplainPay
 	{
 		err = json.Unmarshal([]byte(suggestionsExplainBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"sql\": \"u\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"sql\": \"d\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.SQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
