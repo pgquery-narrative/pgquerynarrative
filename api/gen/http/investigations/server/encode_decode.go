@@ -369,6 +369,96 @@ func EncodeSuggestRewriteError(encoder func(context.Context, http.ResponseWriter
 	}
 }
 
+// EncodeRankCandidatesResponse returns an encoder for responses returned by
+// the investigations rank_candidates endpoint.
+func EncodeRankCandidatesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*investigations.RankedCandidateList)
+		enc := encoder(ctx, w)
+		body := NewRankCandidatesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeRankCandidatesRequest returns a decoder for requests sent to the
+// investigations rank_candidates endpoint.
+func DecodeRankCandidatesRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.RankCandidatesPayload, error) {
+	return func(r *http.Request) (*investigations.RankCandidatesPayload, error) {
+		var (
+			body RankCandidatesRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+
+		var (
+			id string
+
+			params = mux.Vars(r)
+		)
+		id = params["id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewRankCandidatesPayload(&body, id)
+
+		return payload, nil
+	}
+}
+
+// EncodeRankCandidatesError returns an encoder for errors returned by the
+// rank_candidates investigations endpoint.
+func EncodeRankCandidatesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *investigations.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRankCandidatesNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "validation_error":
+			var res *investigations.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRankCandidatesValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeGenerateReportResponse returns an encoder for responses returned by
 // the investigations generate_report endpoint.
 func EncodeGenerateReportResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -715,6 +805,51 @@ func marshalInvestigationsRewriteCandidateToRewriteCandidateResponseBody(v *inve
 		Rationale:  v.Rationale,
 		Category:   v.Category,
 		Confidence: v.Confidence,
+	}
+
+	return res
+}
+
+// marshalInvestigationsRankedCandidateBaselineToRankedCandidateBaselineResponseBody
+// builds a value of type *RankedCandidateBaselineResponseBody from a value of
+// type *investigations.RankedCandidateBaseline.
+func marshalInvestigationsRankedCandidateBaselineToRankedCandidateBaselineResponseBody(v *investigations.RankedCandidateBaseline) *RankedCandidateBaselineResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &RankedCandidateBaselineResponseBody{
+		TotalCost:         v.TotalCost,
+		PartitionsScanned: v.PartitionsScanned,
+		ExecutionTimeMs:   v.ExecutionTimeMs,
+	}
+
+	return res
+}
+
+// marshalInvestigationsRankedCandidateToRankedCandidateResponseBody builds a
+// value of type *RankedCandidateResponseBody from a value of type
+// *investigations.RankedCandidate.
+func marshalInvestigationsRankedCandidateToRankedCandidateResponseBody(v *investigations.RankedCandidate) *RankedCandidateResponseBody {
+	res := &RankedCandidateResponseBody{
+		Kind:              v.Kind,
+		Rank:              v.Rank,
+		Rankable:          v.Rankable,
+		SQL:               v.SQL,
+		Ddl:               v.Ddl,
+		Rationale:         v.Rationale,
+		Category:          v.Category,
+		Confidence:        v.Confidence,
+		TotalCost:         v.TotalCost,
+		CostDelta:         v.CostDelta,
+		PartitionsScanned: v.PartitionsScanned,
+		PartitionsDelta:   v.PartitionsDelta,
+		ExecutionTimeMs:   v.ExecutionTimeMs,
+	}
+	if v.Improved != nil {
+		res.Improved = make([]string, len(v.Improved))
+		for i, val := range v.Improved {
+			res.Improved[i] = val
+		}
 	}
 
 	return res

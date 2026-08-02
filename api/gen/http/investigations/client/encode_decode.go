@@ -455,6 +455,119 @@ func DecodeSuggestRewriteResponse(decoder func(*http.Response) goahttp.Decoder, 
 	}
 }
 
+// BuildRankCandidatesRequest instantiates a HTTP request object with method
+// and path set to call the "investigations" service "rank_candidates" endpoint
+func (c *Client) BuildRankCandidatesRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		id string
+	)
+	{
+		p, ok := v.(*investigations.RankCandidatesPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("investigations", "rank_candidates", "*investigations.RankCandidatesPayload", v)
+		}
+		id = p.ID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: RankCandidatesInvestigationsPath(id)}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("investigations", "rank_candidates", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeRankCandidatesRequest returns an encoder for requests sent to the
+// investigations rank_candidates server.
+func EncodeRankCandidatesRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*investigations.RankCandidatesPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("investigations", "rank_candidates", "*investigations.RankCandidatesPayload", v)
+		}
+		body := NewRankCandidatesRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("investigations", "rank_candidates", err)
+		}
+		return nil
+	}
+}
+
+// DecodeRankCandidatesResponse returns a decoder for responses returned by the
+// investigations rank_candidates endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeRankCandidatesResponse may return the following errors:
+//   - "not_found" (type *investigations.NotFoundError): http.StatusNotFound
+//   - "validation_error" (type *investigations.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeRankCandidatesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body RankCandidatesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "rank_candidates", err)
+			}
+			err = ValidateRankCandidatesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "rank_candidates", err)
+			}
+			res := NewRankCandidatesRankedCandidateListOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body RankCandidatesNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "rank_candidates", err)
+			}
+			err = ValidateRankCandidatesNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "rank_candidates", err)
+			}
+			return nil, NewRankCandidatesNotFound(&body)
+		case http.StatusBadRequest:
+			var (
+				body RankCandidatesValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "rank_candidates", err)
+			}
+			err = ValidateRankCandidatesValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "rank_candidates", err)
+			}
+			return nil, NewRankCandidatesValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("investigations", "rank_candidates", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildGenerateReportRequest instantiates a HTTP request object with method
 // and path set to call the "investigations" service "generate_report" endpoint
 func (c *Client) BuildGenerateReportRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -809,6 +922,51 @@ func unmarshalRewriteCandidateResponseBodyToInvestigationsRewriteCandidate(v *Re
 		Rationale:  *v.Rationale,
 		Category:   v.Category,
 		Confidence: v.Confidence,
+	}
+
+	return res
+}
+
+// unmarshalRankedCandidateBaselineResponseBodyToInvestigationsRankedCandidateBaseline
+// builds a value of type *investigations.RankedCandidateBaseline from a value
+// of type *RankedCandidateBaselineResponseBody.
+func unmarshalRankedCandidateBaselineResponseBodyToInvestigationsRankedCandidateBaseline(v *RankedCandidateBaselineResponseBody) *investigations.RankedCandidateBaseline {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.RankedCandidateBaseline{
+		TotalCost:         v.TotalCost,
+		PartitionsScanned: v.PartitionsScanned,
+		ExecutionTimeMs:   v.ExecutionTimeMs,
+	}
+
+	return res
+}
+
+// unmarshalRankedCandidateResponseBodyToInvestigationsRankedCandidate builds a
+// value of type *investigations.RankedCandidate from a value of type
+// *RankedCandidateResponseBody.
+func unmarshalRankedCandidateResponseBodyToInvestigationsRankedCandidate(v *RankedCandidateResponseBody) *investigations.RankedCandidate {
+	res := &investigations.RankedCandidate{
+		Kind:              *v.Kind,
+		Rank:              v.Rank,
+		Rankable:          *v.Rankable,
+		SQL:               v.SQL,
+		Ddl:               v.Ddl,
+		Rationale:         *v.Rationale,
+		Category:          v.Category,
+		Confidence:        v.Confidence,
+		TotalCost:         v.TotalCost,
+		CostDelta:         v.CostDelta,
+		PartitionsScanned: v.PartitionsScanned,
+		PartitionsDelta:   v.PartitionsDelta,
+		ExecutionTimeMs:   v.ExecutionTimeMs,
+	}
+	if v.Improved != nil {
+		res.Improved = make([]string, len(v.Improved))
+		for i, val := range v.Improved {
+			res.Improved[i] = val
+		}
 	}
 
 	return res

@@ -9,9 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TrustBar } from "@/components/trust-bar";
 import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
-import { api, type Investigation, ApiError } from "@/api/client";
+import { api, type Investigation, type RankedCandidate, ApiError } from "@/api/client";
 import {
-  Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles,
+  Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered,
 } from "lucide-react";
 import { cn, formatFloat, truncate } from "@/lib/utils";
 
@@ -33,6 +33,7 @@ export default function InvestigatePage() {
   const [error, setError] = useState("");
   const [candidateSql, setCandidateSql] = useState("");
   const [suggestRationale, setSuggestRationale] = useState("");
+  const [rankedCandidates, setRankedCandidates] = useState<RankedCandidate[]>([]);
   const [actionLoading, setActionLoading] = useState("");
 
   const load = useCallback(async (investigationId: string, candidateHint?: string) => {
@@ -117,6 +118,28 @@ export default function InvestigatePage() {
       setSuggestRationale(top.rationale || "");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to suggest rewrite");
+    } finally {
+      setActionLoading("");
+    }
+  };
+
+  const rankCandidates = async () => {
+    if (!investigation) return;
+    setActionLoading("rank");
+    setError("");
+    try {
+      const res = await api.rankInvestigationCandidates(investigation.id);
+      const items = res.candidates ?? [];
+      setRankedCandidates(items);
+      const topRewrite = items.find((c) => c.rankable && c.sql);
+      if (topRewrite?.sql) {
+        setCandidateSql(topRewrite.sql);
+        setSuggestRationale(topRewrite.rationale || "");
+      } else if (items.length === 0) {
+        setError("No ranked candidates for this query yet.");
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to rank candidates");
     } finally {
       setActionLoading("");
     }
@@ -294,16 +317,72 @@ export default function InvestigatePage() {
             <Button
               variant="outline"
               onClick={() => void suggestRewrite()}
-              disabled={actionLoading === "suggest" || actionLoading === "candidate"}
+              disabled={actionLoading === "suggest" || actionLoading === "candidate" || actionLoading === "rank"}
             >
               {actionLoading === "suggest" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Suggest rewrite
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void rankCandidates()}
+              disabled={actionLoading === "rank" || actionLoading === "candidate" || actionLoading === "suggest"}
+            >
+              {actionLoading === "rank" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListOrdered className="h-4 w-4" />}
+              Rank candidates
             </Button>
             <Button onClick={() => void addCandidate()} disabled={!candidateSql.trim() || actionLoading === "candidate"}>
               {actionLoading === "candidate" ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompare className="h-4 w-4" />}
               Compare plans
             </Button>
           </div>
+          {rankedCandidates.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ranked candidates</p>
+              {rankedCandidates.map((c, i) => (
+                <div key={i} className="rounded-md border border-border/50 p-3 space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {c.rankable && c.rank != null ? (
+                      <Badge variant="secondary">#{c.rank}</Badge>
+                    ) : (
+                      <Badge variant="outline">review</Badge>
+                    )}
+                    <Badge variant="outline">{c.kind}</Badge>
+                    {c.category && <Badge variant="secondary">{c.category}</Badge>}
+                    <span className="text-muted-foreground flex-1">{c.rationale}</span>
+                  </div>
+                  {c.rankable && (
+                    <p className="text-muted-foreground">
+                      cost Δ {formatDelta(c.cost_delta)}
+                      {c.partitions_delta != null && <> · partitions Δ {formatDelta(c.partitions_delta)}</>}
+                      {c.improved && c.improved.length > 0 && <> · {c.improved.join(", ")}</>}
+                    </p>
+                  )}
+                  {c.sql && (
+                    <div className="flex flex-wrap gap-2 items-start">
+                      <pre className="flex-1 font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-28 overflow-auto">
+                        {c.sql}
+                      </pre>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setCandidateSql(c.sql || "");
+                          setSuggestRationale(c.rationale || "");
+                        }}
+                      >
+                        Use
+                      </Button>
+                    </div>
+                  )}
+                  {c.ddl && (
+                    <pre className="font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-28 overflow-auto">
+                      {c.ddl}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {investigation.comparison && (
             <PlanCompare comparison={investigation.comparison} />
           )}
@@ -336,6 +415,12 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="font-semibold">{value}</p>
     </div>
   );
+}
+
+function formatDelta(n?: number) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const rounded = Math.abs(n) >= 10 ? n.toFixed(0) : n.toFixed(2);
+  return n > 0 ? `+${rounded}` : rounded;
 }
 
 function InvestigateLanding() {

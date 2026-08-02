@@ -25,7 +25,7 @@ func BuildGeneratePayload(reportsGenerateBody string) (*reports.GenerateReportPa
 	{
 		err = json.Unmarshal([]byte(reportsGenerateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Est quam dicta sunt.\",\n      \"saved_query_id\": \"10c9128e-3c87-4f81-a7fa-2ce260f368b5\",\n      \"sql\": \"6j0\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Velit nam laudantium repudiandae.\",\n      \"saved_query_id\": \"d102d8c5-1284-4b36-ae50-697c91d1c071\",\n      \"sql\": \"3vl\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
@@ -193,7 +193,7 @@ func BuildRewritePayload(reportsRewriteBody string) (*reports.RewritePayload, er
 	{
 		err = json.Unmarshal([]byte(reportsRewriteBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"instruction\": \"1m7\",\n      \"report_id\": \"eef431b4-c2da-4574-a3d2-d0c43c731abd\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"instruction\": \"2\",\n      \"report_id\": \"473fc529-ea6d-42ff-9d42-23c6d70f8108\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.report_id", body.ReportID, goa.FormatUUID))
 		if utf8.RuneCountInString(body.Instruction) < 1 {
@@ -222,7 +222,7 @@ func BuildCreateSharePayload(reportsCreateShareBody string) (*reports.CreateShar
 	{
 		err = json.Unmarshal([]byte(reportsCreateShareBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"expires_in_hours\": 423,\n      \"report_id\": \"6f2a6b4e-a33a-40ce-80f6-7f801f48129b\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"expires_in_hours\": 343,\n      \"report_id\": \"1e719f6c-10a4-4684-bdcb-4edf73cea5bc\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.report_id", body.ReportID, goa.FormatUUID))
 		if body.ExpiresInHours != nil {

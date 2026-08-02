@@ -89,6 +89,28 @@ var _ = Service("investigations", func() {
 		})
 	})
 
+	Method("rank_candidates", func() {
+		Description("Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, and rank by cost/partitions (index DDL is review-only)")
+		Payload(func() {
+			Attribute("id", String, func() {
+				Format(FormatUUID)
+			})
+			Attribute("analyze", Boolean, "When true, dry-EXPLAIN uses ANALYZE for timing (slower)", func() {
+				Default(false)
+			})
+			Required("id")
+		})
+		Result(RankedCandidateList)
+		Error("not_found", NotFoundError)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/investigations/{id}/rank-candidates")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
 	Method("generate_report", func() {
 		Description("Generate an engineering investigation report")
 		Payload(func() {

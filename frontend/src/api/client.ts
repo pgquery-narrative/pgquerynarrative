@@ -86,6 +86,34 @@ export interface RewriteCandidate {
   confidence?: string;
 }
 
+export interface RankedCandidateBaseline {
+  total_cost?: number;
+  partitions_scanned?: number;
+  execution_time_ms?: number;
+}
+
+export interface RankedCandidate {
+  kind: string;
+  rank?: number;
+  rankable: boolean;
+  sql?: string;
+  ddl?: string;
+  rationale: string;
+  category?: string;
+  confidence?: string;
+  total_cost?: number;
+  cost_delta?: number;
+  partitions_scanned?: number;
+  partitions_delta?: number;
+  execution_time_ms?: number;
+  improved?: string[];
+}
+
+export interface RankedCandidateList {
+  baseline?: RankedCandidateBaseline;
+  candidates: RankedCandidate[];
+}
+
 /** Result of POST /queries/explain (EXPLAIN FORMAT JSON). */
 export interface ExplainQueryResult {
   sql: string;
@@ -472,6 +500,13 @@ export const api = {
   suggestInvestigationRewrite: (id: string) =>
     request<{ candidates: RewriteCandidate[] }>(`/investigations/${id}/suggest-rewrite`, {
       method: "POST",
+    }),
+
+  rankInvestigationCandidates: (id: string, analyze = false) =>
+    request<RankedCandidateList>(`/investigations/${id}/rank-candidates`, {
+      method: "POST",
+      body: JSON.stringify({ analyze }),
+      signal: AbortSignal.timeout(analyze ? 120_000 : 90_000),
     }),
 
   generateInvestigationReport: (id: string) =>

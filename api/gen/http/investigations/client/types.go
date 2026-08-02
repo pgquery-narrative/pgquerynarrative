@@ -33,6 +33,13 @@ type AddCandidateRequestBody struct {
 	Analyze      bool   `form:"analyze" json:"analyze" xml:"analyze"`
 }
 
+// RankCandidatesRequestBody is the type of the "investigations" service
+// "rank_candidates" endpoint HTTP request body.
+type RankCandidatesRequestBody struct {
+	// When true, dry-EXPLAIN uses ANALYZE for timing (slower)
+	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
+}
+
 // CreateResponseBody is the type of the "investigations" service "create"
 // endpoint HTTP response body.
 type CreateResponseBody struct {
@@ -107,6 +114,13 @@ type SuggestRewriteResponseBody struct {
 	Candidates []*RewriteCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 }
 
+// RankCandidatesResponseBody is the type of the "investigations" service
+// "rank_candidates" endpoint HTTP response body.
+type RankCandidatesResponseBody struct {
+	Baseline   *RankedCandidateBaselineResponseBody `form:"baseline,omitempty" json:"baseline,omitempty" xml:"baseline,omitempty"`
+	Candidates []*RankedCandidateResponseBody       `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+}
+
 // GenerateReportResponseBody is the type of the "investigations" service
 // "generate_report" endpoint HTTP response body.
 type GenerateReportResponseBody struct {
@@ -165,6 +179,24 @@ type AddCandidateValidationErrorResponseBody struct {
 // service "suggest_rewrite" endpoint HTTP response body for the "not_found"
 // error.
 type SuggestRewriteNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RankCandidatesNotFoundResponseBody is the type of the "investigations"
+// service "rank_candidates" endpoint HTTP response body for the "not_found"
+// error.
+type RankCandidatesNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RankCandidatesValidationErrorResponseBody is the type of the
+// "investigations" service "rank_candidates" endpoint HTTP response body for
+// the "validation_error" error.
+type RankCandidatesValidationErrorResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -343,6 +375,46 @@ type RewriteCandidateResponseBody struct {
 	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
 }
 
+// RankedCandidateBaselineResponseBody is used to define fields on response
+// body types.
+type RankedCandidateBaselineResponseBody struct {
+	// Baseline total cost
+	TotalCost *float64 `form:"total_cost,omitempty" json:"total_cost,omitempty" xml:"total_cost,omitempty"`
+	// Baseline partitions scanned when known
+	PartitionsScanned *float64 `form:"partitions_scanned,omitempty" json:"partitions_scanned,omitempty" xml:"partitions_scanned,omitempty"`
+	// Baseline execution time when ANALYZE was used
+	ExecutionTimeMs *float64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+}
+
+// RankedCandidateResponseBody is used to define fields on response body types.
+type RankedCandidateResponseBody struct {
+	// sql_rewrite or index_ddl
+	Kind *string `form:"kind,omitempty" json:"kind,omitempty" xml:"kind,omitempty"`
+	// 1-based rank among rankable candidates; 0 when not rankable
+	Rank *int32 `form:"rank,omitempty" json:"rank,omitempty" xml:"rank,omitempty"`
+	// True when dry-EXPLAIN metrics are available for ranking
+	Rankable *bool `form:"rankable,omitempty" json:"rankable,omitempty" xml:"rankable,omitempty"`
+	// Candidate rewrite SQL (sql_rewrite)
+	SQL *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	// Candidate DDL for expert review (index_ddl); never auto-applied
+	Ddl *string `form:"ddl,omitempty" json:"ddl,omitempty" xml:"ddl,omitempty"`
+	// Short explanation
+	Rationale  *string `form:"rationale,omitempty" json:"rationale,omitempty" xml:"rationale,omitempty"`
+	Category   *string `form:"category,omitempty" json:"category,omitempty" xml:"category,omitempty"`
+	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
+	// After-plan total cost for sql_rewrite
+	TotalCost *float64 `form:"total_cost,omitempty" json:"total_cost,omitempty" xml:"total_cost,omitempty"`
+	// after - baseline total cost (negative is better)
+	CostDelta         *float64 `form:"cost_delta,omitempty" json:"cost_delta,omitempty" xml:"cost_delta,omitempty"`
+	PartitionsScanned *float64 `form:"partitions_scanned,omitempty" json:"partitions_scanned,omitempty" xml:"partitions_scanned,omitempty"`
+	// after - baseline partitions (negative is better)
+	PartitionsDelta *float64 `form:"partitions_delta,omitempty" json:"partitions_delta,omitempty" xml:"partitions_delta,omitempty"`
+	// After-plan timing when ANALYZE was used
+	ExecutionTimeMs *float64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+	// Structural improvements vs baseline
+	Improved []string `form:"improved,omitempty" json:"improved,omitempty" xml:"improved,omitempty"`
+}
+
 // NewCreateRequestBody builds the HTTP request body from the payload of the
 // "create" endpoint of the "investigations" service.
 func NewCreateRequestBody(p *investigations.CreateInvestigationPayload) *CreateRequestBody {
@@ -365,6 +437,21 @@ func NewAddCandidateRequestBody(p *investigations.AddCandidatePayload) *AddCandi
 	body := &AddCandidateRequestBody{
 		CandidateSQL: p.CandidateSQL,
 		Analyze:      p.Analyze,
+	}
+	{
+		var zero bool
+		if body.Analyze == zero {
+			body.Analyze = false
+		}
+	}
+	return body
+}
+
+// NewRankCandidatesRequestBody builds the HTTP request body from the payload
+// of the "rank_candidates" endpoint of the "investigations" service.
+func NewRankCandidatesRequestBody(p *investigations.RankCandidatesPayload) *RankCandidatesRequestBody {
+	body := &RankCandidatesRequestBody{
+		Analyze: p.Analyze,
 	}
 	{
 		var zero bool
@@ -554,6 +641,49 @@ func NewSuggestRewriteRewriteSuggestionListOK(body *SuggestRewriteResponseBody) 
 // endpoint not_found error.
 func NewSuggestRewriteNotFound(body *SuggestRewriteNotFoundResponseBody) *investigations.NotFoundError {
 	v := &investigations.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewRankCandidatesRankedCandidateListOK builds a "investigations" service
+// "rank_candidates" endpoint result from a HTTP "OK" response.
+func NewRankCandidatesRankedCandidateListOK(body *RankCandidatesResponseBody) *investigations.RankedCandidateList {
+	v := &investigations.RankedCandidateList{}
+	if body.Baseline != nil {
+		v.Baseline = unmarshalRankedCandidateBaselineResponseBodyToInvestigationsRankedCandidateBaseline(body.Baseline)
+	}
+	v.Candidates = make([]*investigations.RankedCandidate, len(body.Candidates))
+	for i, val := range body.Candidates {
+		if val == nil {
+			v.Candidates[i] = nil
+			continue
+		}
+		v.Candidates[i] = unmarshalRankedCandidateResponseBodyToInvestigationsRankedCandidate(val)
+	}
+
+	return v
+}
+
+// NewRankCandidatesNotFound builds a investigations service rank_candidates
+// endpoint not_found error.
+func NewRankCandidatesNotFound(body *RankCandidatesNotFoundResponseBody) *investigations.NotFoundError {
+	v := &investigations.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewRankCandidatesValidationError builds a investigations service
+// rank_candidates endpoint validation_error error.
+func NewRankCandidatesValidationError(body *RankCandidatesValidationErrorResponseBody) *investigations.ValidationError {
+	v := &investigations.ValidationError{
 		Name:    *body.Name,
 		Message: *body.Message,
 		Code:    body.Code,
@@ -805,6 +935,22 @@ func ValidateSuggestRewriteResponseBody(body *SuggestRewriteResponseBody) (err e
 	return
 }
 
+// ValidateRankCandidatesResponseBody runs the validations defined on
+// rank_candidates_response_body
+func ValidateRankCandidatesResponseBody(body *RankCandidatesResponseBody) (err error) {
+	if body.Candidates == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidates", "body"))
+	}
+	for _, e := range body.Candidates {
+		if e != nil {
+			if err2 := ValidateRankedCandidateResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateGenerateReportResponseBody runs the validations defined on
 // generate_report_response_body
 func ValidateGenerateReportResponseBody(body *GenerateReportResponseBody) (err error) {
@@ -907,6 +1053,30 @@ func ValidateAddCandidateValidationErrorResponseBody(body *AddCandidateValidatio
 // ValidateSuggestRewriteNotFoundResponseBody runs the validations defined on
 // suggest_rewrite_not_found_response_body
 func ValidateSuggestRewriteNotFoundResponseBody(body *SuggestRewriteNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateRankCandidatesNotFoundResponseBody runs the validations defined on
+// rank_candidates_not_found_response_body
+func ValidateRankCandidatesNotFoundResponseBody(body *RankCandidatesNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateRankCandidatesValidationErrorResponseBody runs the validations
+// defined on rank_candidates_validation_error_response_body
+func ValidateRankCandidatesValidationErrorResponseBody(body *RankCandidatesValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -1131,6 +1301,21 @@ func ValidateInvestigationResponseBody(body *InvestigationResponseBody) (err err
 func ValidateRewriteCandidateResponseBody(body *RewriteCandidateResponseBody) (err error) {
 	if body.SQL == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
+	}
+	if body.Rationale == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("rationale", "body"))
+	}
+	return
+}
+
+// ValidateRankedCandidateResponseBody runs the validations defined on
+// RankedCandidateResponseBody
+func ValidateRankedCandidateResponseBody(body *RankedCandidateResponseBody) (err error) {
+	if body.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if body.Rankable == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("rankable", "body"))
 	}
 	if body.Rationale == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("rationale", "body"))

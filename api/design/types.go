@@ -214,6 +214,39 @@ var RewriteSuggestionList = Type("RewriteSuggestionList", func() {
 	Required("candidates")
 })
 
+// RankedCandidateBaseline is the original investigation plan metrics.
+var RankedCandidateBaseline = Type("RankedCandidateBaseline", func() {
+	Attribute("total_cost", Float64, "Baseline total cost")
+	Attribute("partitions_scanned", Float64, "Baseline partitions scanned when known")
+	Attribute("execution_time_ms", Float64, "Baseline execution time when ANALYZE was used")
+})
+
+// RankedCandidate is one scored rewrite or review-only index DDL suggestion.
+var RankedCandidate = Type("RankedCandidate", func() {
+	Attribute("kind", String, "sql_rewrite or index_ddl")
+	Attribute("rank", Int32, "1-based rank among rankable candidates; 0 when not rankable")
+	Attribute("rankable", Boolean, "True when dry-EXPLAIN metrics are available for ranking")
+	Attribute("sql", String, "Candidate rewrite SQL (sql_rewrite)")
+	Attribute("ddl", String, "Candidate DDL for expert review (index_ddl); never auto-applied")
+	Attribute("rationale", String, "Short explanation")
+	Attribute("category", String)
+	Attribute("confidence", String)
+	Attribute("total_cost", Float64, "After-plan total cost for sql_rewrite")
+	Attribute("cost_delta", Float64, "after - baseline total cost (negative is better)")
+	Attribute("partitions_scanned", Float64)
+	Attribute("partitions_delta", Float64, "after - baseline partitions (negative is better)")
+	Attribute("execution_time_ms", Float64, "After-plan timing when ANALYZE was used")
+	Attribute("improved", ArrayOf(String), "Structural improvements vs baseline")
+	Required("kind", "rankable", "rationale")
+})
+
+// RankedCandidateList is the result of rank_candidates.
+var RankedCandidateList = Type("RankedCandidateList", func() {
+	Attribute("baseline", RankedCandidateBaseline)
+	Attribute("candidates", ArrayOf(RankedCandidate))
+	Required("candidates")
+})
+
 // ComparePlansPayload compares before and after EXPLAIN plans.
 var ComparePlansPayload = Type("ComparePlansPayload", func() {
 	Attribute("before_sql", String, "Original SQL to explain", func() {
