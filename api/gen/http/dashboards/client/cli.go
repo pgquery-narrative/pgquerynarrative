@@ -24,7 +24,7 @@ func BuildCreatePayload(dashboardsCreateBody string) (*dashboards.CreatePayload,
 	{
 		err = json.Unmarshal([]byte(dashboardsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"i\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"s6t\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))
@@ -69,7 +69,7 @@ func BuildUpdatePayload(dashboardsUpdateBody string, dashboardsUpdateID string) 
 	{
 		err = json.Unmarshal([]byte(dashboardsUpdateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"e\",\n      \"widgets\": [\n         {\n            \"position\": 645419542,\n            \"refresh_seconds\": 584900475,\n            \"report_id\": \"3f2fe60f-9cdb-4d7a-9c40-fa2c7579626d\",\n            \"saved_query_id\": \"3972644d-f735-40d5-a04b-d4c7d6504589\",\n            \"title\": \"Itaque et in perspiciatis voluptatem aliquam.\",\n            \"widget_type\": \"Sed nam.\"\n         },\n         {\n            \"position\": 645419542,\n            \"refresh_seconds\": 584900475,\n            \"report_id\": \"3f2fe60f-9cdb-4d7a-9c40-fa2c7579626d\",\n            \"saved_query_id\": \"3972644d-f735-40d5-a04b-d4c7d6504589\",\n            \"title\": \"Itaque et in perspiciatis voluptatem aliquam.\",\n            \"widget_type\": \"Sed nam.\"\n         },\n         {\n            \"position\": 645419542,\n            \"refresh_seconds\": 584900475,\n            \"report_id\": \"3f2fe60f-9cdb-4d7a-9c40-fa2c7579626d\",\n            \"saved_query_id\": \"3972644d-f735-40d5-a04b-d4c7d6504589\",\n            \"title\": \"Itaque et in perspiciatis voluptatem aliquam.\",\n            \"widget_type\": \"Sed nam.\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"mw5\",\n      \"widgets\": [\n         {\n            \"position\": 1519200325,\n            \"refresh_seconds\": 988508067,\n            \"report_id\": \"f1d8385b-fbbd-4e19-a906-fdeb28d49b39\",\n            \"saved_query_id\": \"55c62d6c-ca49-4095-875a-ba24d2006d15\",\n            \"title\": \"Voluptate explicabo eligendi numquam illum excepturi.\",\n            \"widget_type\": \"Harum officia error reiciendis suscipit.\"\n         },\n         {\n            \"position\": 1519200325,\n            \"refresh_seconds\": 988508067,\n            \"report_id\": \"f1d8385b-fbbd-4e19-a906-fdeb28d49b39\",\n            \"saved_query_id\": \"55c62d6c-ca49-4095-875a-ba24d2006d15\",\n            \"title\": \"Voluptate explicabo eligendi numquam illum excepturi.\",\n            \"widget_type\": \"Harum officia error reiciendis suscipit.\"\n         }\n      ]\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))

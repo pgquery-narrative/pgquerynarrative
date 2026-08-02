@@ -46,6 +46,16 @@ type PlanComparison struct {
 	Diff          PlanDiff
 }
 
+// MetricsFromPlan extracts measurable evidence from an EXPLAIN (FORMAT JSON) blob.
+// Used by candidate ranking without building a full before/after comparison table.
+func MetricsFromPlan(plan json.RawMessage) (PlanMetrics, error) {
+	root, err := extractPlanRoot(plan)
+	if err != nil {
+		return PlanMetrics{}, err
+	}
+	return collectPlanMetrics(root), nil
+}
+
 // ComparePlans compares two EXPLAIN JSON plan outputs.
 func ComparePlans(beforePlan, afterPlan json.RawMessage) (*PlanComparison, error) {
 	beforeRoot, err := extractPlanRoot(beforePlan)

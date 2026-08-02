@@ -25,7 +25,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 	{
 		err = json.Unmarshal([]byte(investigationsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"calls\": 749312840170807379,\n      \"connection_id\": \"Odit perspiciatis nihil nemo corrupti modi.\",\n      \"mean_time_ms\": 0.33044438689978756,\n      \"queryid\": \"Sunt alias illum deleniti id quia illo.\",\n      \"rows\": 3012006019566254776,\n      \"sql\": \"5\",\n      \"title\": \"jqz\",\n      \"total_time_ms\": 0.9726486546114039\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"calls\": 2176376278295325889,\n      \"connection_id\": \"Reprehenderit eum.\",\n      \"mean_time_ms\": 0.9532712474588099,\n      \"queryid\": \"Velit quo fugit laborum libero natus.\",\n      \"rows\": 8366949064464247454,\n      \"sql\": \"e\",\n      \"title\": \"pe8\",\n      \"total_time_ms\": 0.12885448489566007\n   }'")
 		}
 		if utf8.RuneCountInString(body.Title) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 1, true))
@@ -132,7 +132,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 	{
 		err = json.Unmarshal([]byte(investigationsAddCandidateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"candidate_sql\": \"nib\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"candidate_sql\": \"9\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
@@ -181,6 +181,39 @@ func BuildSuggestRewritePayload(investigationsSuggestRewriteID string) (*investi
 		}
 	}
 	v := &investigations.SuggestRewritePayload{}
+	v.ID = id
+
+	return v, nil
+}
+
+// BuildRankCandidatesPayload builds the payload for the investigations
+// rank_candidates endpoint from CLI flags.
+func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investigationsRankCandidatesID string) (*investigations.RankCandidatesPayload, error) {
+	var err error
+	var body RankCandidatesRequestBody
+	{
+		err = json.Unmarshal([]byte(investigationsRankCandidatesBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true\n   }'")
+		}
+	}
+	var id string
+	{
+		id = investigationsRankCandidatesID
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &investigations.RankCandidatesPayload{
+		Analyze: body.Analyze,
+	}
+	{
+		var zero bool
+		if v.Analyze == zero {
+			v.Analyze = false
+		}
+	}
 	v.ID = id
 
 	return v, nil

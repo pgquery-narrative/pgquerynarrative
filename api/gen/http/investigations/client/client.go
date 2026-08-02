@@ -34,6 +34,10 @@ type Client struct {
 	// suggest_rewrite endpoint.
 	SuggestRewriteDoer goahttp.Doer
 
+	// RankCandidates Doer is the HTTP client used to make requests to the
+	// rank_candidates endpoint.
+	RankCandidatesDoer goahttp.Doer
+
 	// GenerateReport Doer is the HTTP client used to make requests to the
 	// generate_report endpoint.
 	GenerateReportDoer goahttp.Doer
@@ -64,6 +68,7 @@ func NewClient(
 		GetDoer:             doer,
 		AddCandidateDoer:    doer,
 		SuggestRewriteDoer:  doer,
+		RankCandidatesDoer:  doer,
 		GenerateReportDoer:  doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
@@ -178,6 +183,30 @@ func (c *Client) SuggestRewrite() goa.Endpoint {
 		resp, err := c.SuggestRewriteDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("investigations", "suggest_rewrite", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// RankCandidates returns an endpoint that makes HTTP requests to the
+// investigations service rank_candidates server.
+func (c *Client) RankCandidates() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeRankCandidatesRequest(c.encoder)
+		decodeResponse = DecodeRankCandidatesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildRankCandidatesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.RankCandidatesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("investigations", "rank_candidates", err)
 		}
 		return decodeResponse(resp)
 	}

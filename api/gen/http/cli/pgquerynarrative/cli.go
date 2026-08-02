@@ -38,7 +38,7 @@ func UsageCommands() []string {
 		"schedules (list|create|update|delete|run-now|list-runs|retry-run|list-deliveries)",
 		"dashboards (list|create|get|update|delete|resolve)",
 		"queries (run|stat-statements|explain-plan|compare-plans|list-saved|save|get-saved|delete-saved)",
-		"investigations (create|list|get|add-candidate|suggest-rewrite|generate-report)",
+		"investigations (create|list|get|add-candidate|suggest-rewrite|rank-candidates|generate-report)",
 		"workspace (overview|regressions|acknowledge-regression|demo-scenarios|security-trust)",
 	}
 }
@@ -46,9 +46,9 @@ func UsageCommands() []string {
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
 	return os.Args[0] + " " + "connections list" + "\n" +
-		os.Args[0] + " " + "schema get --connection-id \"Qui ut.\"" + "\n" +
-		os.Args[0] + " " + "suggestions queries --intent \"Voluptas et consequatur.\" --limit 17" + "\n" +
-		os.Args[0] + " " + "reports generate --body '{\n      \"connection_id\": \"Est quam dicta sunt.\",\n      \"saved_query_id\": \"10c9128e-3c87-4f81-a7fa-2ce260f368b5\",\n      \"sql\": \"6j0\"\n   }'" + "\n" +
+		os.Args[0] + " " + "schema get --connection-id \"Esse dolorem ad ad fuga dolores.\"" + "\n" +
+		os.Args[0] + " " + "suggestions queries --intent \"Voluptas aut rerum tenetur sit sed amet.\" --limit 7" + "\n" +
+		os.Args[0] + " " + "reports generate --body '{\n      \"connection_id\": \"Velit nam laudantium repudiandae.\",\n      \"saved_query_id\": \"d102d8c5-1284-4b36-ae50-697c91d1c071\",\n      \"sql\": \"3vl\"\n   }'" + "\n" +
 		os.Args[0] + " " + "schedules list" + "\n" +
 		""
 }
@@ -224,6 +224,10 @@ func ParseEndpoint(
 		investigationsSuggestRewriteFlags  = flag.NewFlagSet("suggest-rewrite", flag.ExitOnError)
 		investigationsSuggestRewriteIDFlag = investigationsSuggestRewriteFlags.String("id", "REQUIRED", "")
 
+		investigationsRankCandidatesFlags    = flag.NewFlagSet("rank-candidates", flag.ExitOnError)
+		investigationsRankCandidatesBodyFlag = investigationsRankCandidatesFlags.String("body", "REQUIRED", "")
+		investigationsRankCandidatesIDFlag   = investigationsRankCandidatesFlags.String("id", "REQUIRED", "")
+
 		investigationsGenerateReportFlags  = flag.NewFlagSet("generate-report", flag.ExitOnError)
 		investigationsGenerateReportIDFlag = investigationsGenerateReportFlags.String("id", "REQUIRED", "")
 
@@ -301,6 +305,7 @@ func ParseEndpoint(
 	investigationsGetFlags.Usage = investigationsGetUsage
 	investigationsAddCandidateFlags.Usage = investigationsAddCandidateUsage
 	investigationsSuggestRewriteFlags.Usage = investigationsSuggestRewriteUsage
+	investigationsRankCandidatesFlags.Usage = investigationsRankCandidatesUsage
 	investigationsGenerateReportFlags.Usage = investigationsGenerateReportUsage
 
 	workspaceFlags.Usage = workspaceUsage
@@ -520,6 +525,9 @@ func ParseEndpoint(
 			case "suggest-rewrite":
 				epf = investigationsSuggestRewriteFlags
 
+			case "rank-candidates":
+				epf = investigationsRankCandidatesFlags
+
 			case "generate-report":
 				epf = investigationsGenerateReportFlags
 
@@ -723,6 +731,9 @@ func ParseEndpoint(
 			case "suggest-rewrite":
 				endpoint = c.SuggestRewrite()
 				data, err = investigationsc.BuildSuggestRewritePayload(*investigationsSuggestRewriteIDFlag)
+			case "rank-candidates":
+				endpoint = c.RankCandidates()
+				data, err = investigationsc.BuildRankCandidatesPayload(*investigationsRankCandidatesBodyFlag, *investigationsRankCandidatesIDFlag)
 			case "generate-report":
 				endpoint = c.GenerateReport()
 				data, err = investigationsc.BuildGenerateReportPayload(*investigationsGenerateReportIDFlag)
@@ -804,7 +815,7 @@ func schemaGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schema get --connection-id \"Qui ut.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schema get --connection-id \"Esse dolorem ad ad fuga dolores.\"")
 }
 
 // suggestionsUsage displays the usage of the suggestions command and its
@@ -840,7 +851,7 @@ func suggestionsQueriesUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions queries --intent \"Voluptas et consequatur.\" --limit 17")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions queries --intent \"Voluptas aut rerum tenetur sit sed amet.\" --limit 7")
 }
 
 func suggestionsQuestionsUsage() {
@@ -860,7 +871,7 @@ func suggestionsQuestionsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions questions --connection-id \"Velit voluptatum fuga.\" --limit 5")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions questions --connection-id \"A animi.\" --limit 19")
 }
 
 func suggestionsSimilarUsage() {
@@ -880,7 +891,7 @@ func suggestionsSimilarUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions similar --text \"Ut tempora temporibus.\" --limit 2")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions similar --text \"Temporibus doloremque quod et nulla ratione.\" --limit 17")
 }
 
 func suggestionsAskUsage() {
@@ -898,7 +909,7 @@ func suggestionsAskUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions ask --body '{\n      \"connection_id\": \"Aperiam et consequuntur quae eius.\",\n      \"question\": \"ud\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions ask --body '{\n      \"connection_id\": \"Eligendi assumenda possimus.\",\n      \"question\": \"af\"\n   }'")
 }
 
 func suggestionsChatUsage() {
@@ -916,7 +927,7 @@ func suggestionsChatUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions chat --body '{\n      \"connection_id\": \"Et a tenetur.\",\n      \"question\": \"0v\",\n      \"session_id\": \"Corporis rerum eum quisquam.\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions chat --body '{\n      \"connection_id\": \"Sint cum illum labore cumque.\",\n      \"question\": \"q\",\n      \"session_id\": \"Cum in.\"\n   }'")
 }
 
 func suggestionsExplainUsage() {
@@ -934,7 +945,7 @@ func suggestionsExplainUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions explain --body '{\n      \"sql\": \"d\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "suggestions explain --body '{\n      \"sql\": \"4\"\n   }'")
 }
 
 // reportsUsage displays the usage of the reports command and its subcommands.
@@ -970,7 +981,7 @@ func reportsGenerateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports generate --body '{\n      \"connection_id\": \"Est quam dicta sunt.\",\n      \"saved_query_id\": \"10c9128e-3c87-4f81-a7fa-2ce260f368b5\",\n      \"sql\": \"6j0\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports generate --body '{\n      \"connection_id\": \"Velit nam laudantium repudiandae.\",\n      \"saved_query_id\": \"d102d8c5-1284-4b36-ae50-697c91d1c071\",\n      \"sql\": \"3vl\"\n   }'")
 }
 
 func reportsGetUsage() {
@@ -988,7 +999,7 @@ func reportsGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports get --id \"eb912a6a-4f8a-4df0-b48e-46602b42d0c6\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports get --id \"89c8feb7-5980-4db0-bc34-faf3b71cd25a\"")
 }
 
 func reportsListUsage() {
@@ -1012,7 +1023,7 @@ func reportsListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports list --saved-query-id \"e1528081-422f-4807-9a13-bb5230bfa5a5\" --connection-id \"Accusamus id.\" --limit 28 --offset 378537702")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports list --saved-query-id \"3aa72a29-aa3c-49a8-90c8-23768b7f2399\" --connection-id \"Illo eaque.\" --limit 35 --offset 1517438039")
 }
 
 func reportsSimilarUsage() {
@@ -1034,7 +1045,7 @@ func reportsSimilarUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports similar --text \"9nj\" --connection-id \"Fugiat magnam dignissimos labore dolorem ut nesciunt.\" --limit 19")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports similar --text \"kv3\" --connection-id \"Libero dolores enim voluptatum consequatur est.\" --limit 16")
 }
 
 func reportsRewriteUsage() {
@@ -1052,7 +1063,7 @@ func reportsRewriteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports rewrite --body '{\n      \"instruction\": \"1m7\",\n      \"report_id\": \"eef431b4-c2da-4574-a3d2-d0c43c731abd\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports rewrite --body '{\n      \"instruction\": \"2\",\n      \"report_id\": \"473fc529-ea6d-42ff-9d42-23c6d70f8108\"\n   }'")
 }
 
 func reportsCreateShareUsage() {
@@ -1070,7 +1081,7 @@ func reportsCreateShareUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports create-share --body '{\n      \"expires_in_hours\": 423,\n      \"report_id\": \"6f2a6b4e-a33a-40ce-80f6-7f801f48129b\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports create-share --body '{\n      \"expires_in_hours\": 343,\n      \"report_id\": \"1e719f6c-10a4-4684-bdcb-4edf73cea5bc\"\n   }'")
 }
 
 func reportsGetSharedUsage() {
@@ -1088,7 +1099,7 @@ func reportsGetSharedUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports get-shared --token \"or5\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports get-shared --token \"4bn\"")
 }
 
 func reportsListSharesUsage() {
@@ -1106,7 +1117,7 @@ func reportsListSharesUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports list-shares --report-id \"fbbf9d79-f670-40c0-a9cf-b0f6c4e9b3bc\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports list-shares --report-id \"70c06018-6b43-456c-81d9-7b1ca6de9a9f\"")
 }
 
 func reportsRevokeShareUsage() {
@@ -1124,7 +1135,7 @@ func reportsRevokeShareUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports revoke-share --id \"e9eddeed-45a7-49d6-96e4-dab4eb6a296a\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "reports revoke-share --id \"221b0be7-c027-476a-9d0a-a0965aead9ca\"")
 }
 
 // schedulesUsage displays the usage of the schedules command and its
@@ -1176,7 +1187,7 @@ func schedulesCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules create --body '{\n      \"connection_id\": \"Et impedit sunt tenetur est ab dolore.\",\n      \"destination_target\": \"Ipsa officiis voluptatem animi et numquam.\",\n      \"destination_type\": \"Nam possimus atque provident et perspiciatis voluptas.\",\n      \"enabled\": false,\n      \"interval_expr\": \"Adipisci est officiis.\",\n      \"name\": \"ul6\",\n      \"saved_query_id\": \"1fff7630-c4df-45a9-98f9-ff5852995251\",\n      \"sql\": \"xif\",\n      \"timezone\": \"Sapiente ut excepturi et voluptates ullam consequatur.\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules create --body '{\n      \"connection_id\": \"Quam aut et non in ut porro.\",\n      \"destination_target\": \"Quia consectetur placeat aut aut.\",\n      \"destination_type\": \"Officia adipisci eos quae.\",\n      \"enabled\": false,\n      \"interval_expr\": \"Tempora voluptas laboriosam beatae dolores ducimus eos.\",\n      \"name\": \"l8\",\n      \"saved_query_id\": \"324fc55a-af5f-4fb5-a92d-52881528ec79\",\n      \"sql\": \"7l2\",\n      \"timezone\": \"Sequi velit.\"\n   }'")
 }
 
 func schedulesUpdateUsage() {
@@ -1196,7 +1207,7 @@ func schedulesUpdateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules update --body '{\n      \"connection_id\": \"Explicabo eveniet inventore dolorem fuga.\",\n      \"destination_target\": \"Corporis id in eos.\",\n      \"destination_type\": \"Quaerat assumenda et ducimus rerum consequatur aut.\",\n      \"enabled\": false,\n      \"interval_expr\": \"Minus nobis corporis aut.\",\n      \"name\": \"cjg\",\n      \"saved_query_id\": \"80a57a9a-0c61-46f0-a4c8-659b6be04128\",\n      \"sql\": \"gv8\",\n      \"timezone\": \"Veniam et voluptas error et voluptate.\"\n   }' --id \"1a525d79-90c3-48b7-9b66-346ad67d4f7e\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules update --body '{\n      \"connection_id\": \"Et est quia occaecati.\",\n      \"destination_target\": \"Voluptas modi ab.\",\n      \"destination_type\": \"Corporis similique ipsum qui.\",\n      \"enabled\": false,\n      \"interval_expr\": \"Omnis sed ipsam.\",\n      \"name\": \"v\",\n      \"saved_query_id\": \"8dec9c7c-247c-44a3-a123-c9825d5a53d1\",\n      \"sql\": \"k37\",\n      \"timezone\": \"Aut repudiandae voluptatum incidunt animi et.\"\n   }' --id \"60aa262e-bdf9-4bcc-b08a-984a4eb47c7d\"")
 }
 
 func schedulesDeleteUsage() {
@@ -1214,7 +1225,7 @@ func schedulesDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules delete --id \"b0a03457-2220-4f69-99b4-932f632752b8\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules delete --id \"df739b8d-a203-40b6-a47e-14d4d31a816e\"")
 }
 
 func schedulesRunNowUsage() {
@@ -1232,7 +1243,7 @@ func schedulesRunNowUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules run-now --id \"22ab937b-9c86-4c45-9fc3-578b8af142bd\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules run-now --id \"dfd4cd40-5b9c-4f80-8261-89a094d042d5\"")
 }
 
 func schedulesListRunsUsage() {
@@ -1250,7 +1261,7 @@ func schedulesListRunsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules list-runs --id \"c96dfd39-ebf0-4c13-8f2b-c0a2f6e529ea\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules list-runs --id \"080c28d3-4e81-4ebe-93ba-7481a808e8ca\"")
 }
 
 func schedulesRetryRunUsage() {
@@ -1268,7 +1279,7 @@ func schedulesRetryRunUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules retry-run --run-id \"1d334c29-2866-46d4-8bc4-c3089438f4c9\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "schedules retry-run --run-id \"e724a3a1-fc92-44cf-9ddf-6e1f68a87835\"")
 }
 
 func schedulesListDeliveriesUsage() {
@@ -1334,7 +1345,7 @@ func dashboardsCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards create --body '{\n      \"name\": \"i\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards create --body '{\n      \"name\": \"s6t\"\n   }'")
 }
 
 func dashboardsGetUsage() {
@@ -1352,7 +1363,7 @@ func dashboardsGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards get --id \"daaab3b6-a11a-4be2-8b63-b2dfdd0112fb\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards get --id \"a37ab17f-3045-4627-a06a-1c27e371dae5\"")
 }
 
 func dashboardsUpdateUsage() {
@@ -1372,7 +1383,7 @@ func dashboardsUpdateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards update --body '{\n      \"name\": \"e\",\n      \"widgets\": [\n         {\n            \"position\": 645419542,\n            \"refresh_seconds\": 584900475,\n            \"report_id\": \"3f2fe60f-9cdb-4d7a-9c40-fa2c7579626d\",\n            \"saved_query_id\": \"3972644d-f735-40d5-a04b-d4c7d6504589\",\n            \"title\": \"Itaque et in perspiciatis voluptatem aliquam.\",\n            \"widget_type\": \"Sed nam.\"\n         },\n         {\n            \"position\": 645419542,\n            \"refresh_seconds\": 584900475,\n            \"report_id\": \"3f2fe60f-9cdb-4d7a-9c40-fa2c7579626d\",\n            \"saved_query_id\": \"3972644d-f735-40d5-a04b-d4c7d6504589\",\n            \"title\": \"Itaque et in perspiciatis voluptatem aliquam.\",\n            \"widget_type\": \"Sed nam.\"\n         },\n         {\n            \"position\": 645419542,\n            \"refresh_seconds\": 584900475,\n            \"report_id\": \"3f2fe60f-9cdb-4d7a-9c40-fa2c7579626d\",\n            \"saved_query_id\": \"3972644d-f735-40d5-a04b-d4c7d6504589\",\n            \"title\": \"Itaque et in perspiciatis voluptatem aliquam.\",\n            \"widget_type\": \"Sed nam.\"\n         }\n      ]\n   }' --id \"a54629ed-daf6-42d7-842d-6cca49509507\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards update --body '{\n      \"name\": \"mw5\",\n      \"widgets\": [\n         {\n            \"position\": 1519200325,\n            \"refresh_seconds\": 988508067,\n            \"report_id\": \"f1d8385b-fbbd-4e19-a906-fdeb28d49b39\",\n            \"saved_query_id\": \"55c62d6c-ca49-4095-875a-ba24d2006d15\",\n            \"title\": \"Voluptate explicabo eligendi numquam illum excepturi.\",\n            \"widget_type\": \"Harum officia error reiciendis suscipit.\"\n         },\n         {\n            \"position\": 1519200325,\n            \"refresh_seconds\": 988508067,\n            \"report_id\": \"f1d8385b-fbbd-4e19-a906-fdeb28d49b39\",\n            \"saved_query_id\": \"55c62d6c-ca49-4095-875a-ba24d2006d15\",\n            \"title\": \"Voluptate explicabo eligendi numquam illum excepturi.\",\n            \"widget_type\": \"Harum officia error reiciendis suscipit.\"\n         }\n      ]\n   }' --id \"f4281fdf-5433-4443-a41e-c860181b6152\"")
 }
 
 func dashboardsDeleteUsage() {
@@ -1390,7 +1401,7 @@ func dashboardsDeleteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards delete --id \"b9a1e6c1-d92c-4bc3-8b20-cd4d2db99710\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards delete --id \"1c97a9e3-820a-4115-a7a1-42a1d09c28a9\"")
 }
 
 func dashboardsResolveUsage() {
@@ -1408,7 +1419,7 @@ func dashboardsResolveUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards resolve --id \"ce3b372e-8255-45f7-995a-f801e5d6f51f\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "dashboards resolve --id \"d26a4640-5d04-4084-a305-21016fcf0a9a\"")
 }
 
 // queriesUsage displays the usage of the queries command and its subcommands.
@@ -1443,7 +1454,7 @@ func queriesRunUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries run --body '{\n      \"connection_id\": \"Et est ut laborum aspernatur.\",\n      \"limit\": 289,\n      \"sql\": \"7\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries run --body '{\n      \"connection_id\": \"Quo incidunt voluptate quod.\",\n      \"limit\": 584,\n      \"sql\": \"zjp\"\n   }'")
 }
 
 func queriesStatStatementsUsage() {
@@ -1465,7 +1476,7 @@ func queriesStatStatementsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries stat-statements --order-by \"mean_time\" --limit 24 --connection-id \"Est praesentium culpa deserunt ducimus.\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries stat-statements --order-by \"mean_time\" --limit 48 --connection-id \"Ut suscipit in sapiente.\"")
 }
 
 func queriesExplainPlanUsage() {
@@ -1483,7 +1494,7 @@ func queriesExplainPlanUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries explain-plan --body '{\n      \"analyze\": true,\n      \"connection_id\": \"Sit quaerat dolores.\",\n      \"sql\": \"fk\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries explain-plan --body '{\n      \"analyze\": true,\n      \"connection_id\": \"Dolor atque soluta.\",\n      \"sql\": \"c0\"\n   }'")
 }
 
 func queriesComparePlansUsage() {
@@ -1501,7 +1512,7 @@ func queriesComparePlansUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries compare-plans --body '{\n      \"after_sql\": \"8\",\n      \"analyze\": false,\n      \"before_sql\": \"0d\",\n      \"connection_id\": \"Non aspernatur totam.\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries compare-plans --body '{\n      \"after_sql\": \"26\",\n      \"analyze\": false,\n      \"before_sql\": \"kg0\",\n      \"connection_id\": \"Odit velit.\"\n   }'")
 }
 
 func queriesListSavedUsage() {
@@ -1525,7 +1536,7 @@ func queriesListSavedUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries list-saved --tags '[\n      \"Placeat provident labore consequatur numquam qui eos.\",\n      \"Cupiditate unde dolores ipsam voluptatibus autem.\",\n      \"Non debitis eos autem excepturi eligendi.\"\n   ]' --connection-id \"Quia sint tenetur consequatur id.\" --limit 85 --offset 1882202522")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries list-saved --tags '[\n      \"Ut dignissimos quia asperiores.\",\n      \"Assumenda sit temporibus non debitis perferendis.\",\n      \"Illo quia sunt voluptas harum vitae.\",\n      \"Voluptatem quis ab et cumque eum.\"\n   ]' --connection-id \"Mollitia aut dicta dolorum quidem.\" --limit 12 --offset 60018266")
 }
 
 func queriesSaveUsage() {
@@ -1543,7 +1554,7 @@ func queriesSaveUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries save --body '{\n      \"connection_id\": \"Consequatur sunt nisi exercitationem.\",\n      \"description\": \"oqh\",\n      \"name\": \"q\",\n      \"sql\": \"5\",\n      \"tags\": [\n         \"Quos explicabo similique ab quod eum voluptatem.\",\n         \"Quaerat est.\",\n         \"Nihil et ex aut velit molestias maxime.\",\n         \"Quia nostrum quasi et tempora odit.\"\n      ]\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries save --body '{\n      \"connection_id\": \"Et consectetur.\",\n      \"description\": \"ntr\",\n      \"name\": \"tf\",\n      \"sql\": \"hpl\",\n      \"tags\": [\n         \"Omnis cupiditate perspiciatis omnis porro.\",\n         \"Est quibusdam eligendi autem esse.\"\n      ]\n   }'")
 }
 
 func queriesGetSavedUsage() {
@@ -1561,7 +1572,7 @@ func queriesGetSavedUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries get-saved --id \"ceb72986-7904-4f87-8bf3-5e58d4db8258\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries get-saved --id \"b106de39-50dd-479d-8ee2-2fed37dfe10c\"")
 }
 
 func queriesDeleteSavedUsage() {
@@ -1579,7 +1590,7 @@ func queriesDeleteSavedUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries delete-saved --id \"8511a33d-aa92-412e-b484-91f45d3e68cf\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries delete-saved --id \"e9e76096-a4d0-403e-8769-0027e3903b10\"")
 }
 
 // investigationsUsage displays the usage of the investigations command and its
@@ -1593,6 +1604,7 @@ func investigationsUsage() {
 	fmt.Fprintln(os.Stderr, `    get: Get a query investigation with evidence`)
 	fmt.Fprintln(os.Stderr, `    add-candidate: Add a candidate rewrite and compare plans`)
 	fmt.Fprintln(os.Stderr, `    suggest-rewrite: Suggest candidate SQL rewrites from the investigation SQL and plan findings (AST-based; no demo scenarios required)`)
+	fmt.Fprintln(os.Stderr, `    rank-candidates: Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, and rank by cost/partitions (index DDL is review-only)`)
 	fmt.Fprintln(os.Stderr, `    generate-report: Generate an engineering investigation report`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
@@ -1613,7 +1625,7 @@ func investigationsCreateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations create --body '{\n      \"calls\": 749312840170807379,\n      \"connection_id\": \"Odit perspiciatis nihil nemo corrupti modi.\",\n      \"mean_time_ms\": 0.33044438689978756,\n      \"queryid\": \"Sunt alias illum deleniti id quia illo.\",\n      \"rows\": 3012006019566254776,\n      \"sql\": \"5\",\n      \"title\": \"jqz\",\n      \"total_time_ms\": 0.9726486546114039\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations create --body '{\n      \"calls\": 2176376278295325889,\n      \"connection_id\": \"Reprehenderit eum.\",\n      \"mean_time_ms\": 0.9532712474588099,\n      \"queryid\": \"Velit quo fugit laborum libero natus.\",\n      \"rows\": 8366949064464247454,\n      \"sql\": \"e\",\n      \"title\": \"pe8\",\n      \"total_time_ms\": 0.12885448489566007\n   }'")
 }
 
 func investigationsListUsage() {
@@ -1633,7 +1645,7 @@ func investigationsListUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations list --limit 85 --offset 1675453718")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations list --limit 34 --offset 1659102352")
 }
 
 func investigationsGetUsage() {
@@ -1651,7 +1663,7 @@ func investigationsGetUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations get --id \"d494e2b1-00ee-4a53-b085-7f10b281ac1d\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations get --id \"7e2d7711-186c-450f-8c28-8731893de148\"")
 }
 
 func investigationsAddCandidateUsage() {
@@ -1671,7 +1683,7 @@ func investigationsAddCandidateUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations add-candidate --body '{\n      \"analyze\": false,\n      \"candidate_sql\": \"nib\"\n   }' --id \"c584257a-ca89-4d98-9986-4582848216f7\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations add-candidate --body '{\n      \"analyze\": false,\n      \"candidate_sql\": \"9\"\n   }' --id \"94fe109d-b23c-47f9-8dd2-b77405c42ae7\"")
 }
 
 func investigationsSuggestRewriteUsage() {
@@ -1689,7 +1701,27 @@ func investigationsSuggestRewriteUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations suggest-rewrite --id \"c7b031e3-40b0-4a3b-9366-8a02d7d68dcc\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations suggest-rewrite --id \"0ef8f94c-f6ef-4576-8c62-d69345416d8d\"")
+}
+
+func investigationsRankCandidatesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] investigations rank-candidates", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprint(os.Stderr, " -id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, and rank by cost/partitions (index DDL is review-only)`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+	fmt.Fprintln(os.Stderr, `    -id STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations rank-candidates --body '{\n      \"analyze\": true\n   }' --id \"5df68675-009d-4fa1-8f6c-4c2518718553\"")
 }
 
 func investigationsGenerateReportUsage() {
@@ -1707,7 +1739,7 @@ func investigationsGenerateReportUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations generate-report --id \"2e0bb7d2-9036-4b89-89e2-03c1339c5584\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations generate-report --id \"814db76f-2d6d-45e2-a0d2-7ef1a3050486\"")
 }
 
 // workspaceUsage displays the usage of the workspace command and its
@@ -1758,7 +1790,7 @@ func workspaceRegressionsUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspace regressions --limit 46 --include-acknowledged false")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspace regressions --limit 22 --include-acknowledged true")
 }
 
 func workspaceAcknowledgeRegressionUsage() {
@@ -1776,7 +1808,7 @@ func workspaceAcknowledgeRegressionUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspace acknowledge-regression --id \"e215d833-b7bb-49db-8311-fc931ff5634b\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "workspace acknowledge-regression --id \"75279074-9e75-471e-836c-d18fa130a0ed\"")
 }
 
 func workspaceDemoScenariosUsage() {

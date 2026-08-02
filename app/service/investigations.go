@@ -264,9 +264,273 @@ func queryrunnerFindingsFromInvestigation(exp *investigations.ExplainQueryResult
 		if len(f.RelatedColumns) > 0 {
 			pf.RelatedColumns = append([]string(nil), f.RelatedColumns...)
 		}
+		if f.IndexAdvice != nil {
+			pf.IndexAdvice = indexAdviceFromAPI(f.IndexAdvice)
+		}
 		out = append(out, pf)
 	}
 	return out
+}
+
+func indexAdviceFromAPI(a *investigations.IndexAdvice) *queryrunner.IndexAdvice {
+	if a == nil {
+		return nil
+	}
+	out := &queryrunner.IndexAdvice{
+		RelatedColumns: append([]string(nil), a.RelatedColumns...),
+		Issues:         append([]string(nil), a.Issues...),
+	}
+	if a.PotentialBenefit != nil {
+		out.PotentialBenefit = *a.PotentialBenefit
+	}
+	if a.WriteCost != nil {
+		out.WriteCost = *a.WriteCost
+	}
+	if a.StorageCost != nil {
+		out.StorageCost = *a.StorageCost
+	}
+	if a.CandidateDdl != nil {
+		out.CandidateDDL = *a.CandidateDdl
+	}
+	return out
+}
+
+// RankCandidates generates rewrite + index-DDL candidates, dry-EXPLAINs rewrites,
+// and ranks them by cost / partitions (and timing when analyze is requested).
+func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *investigations.RankCandidatesPayload) (*investigations.RankedCandidateList, error) {
+	inv, err := s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
+	if err != nil {
+		return nil, err
+	}
+
+	analyze := payload.Analyze
+	baselineAPI, err := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
+		SQL:          inv.SQL,
+		Analyze:      analyze,
+		ConnectionID: &inv.ConnectionID,
+	})
+	if err != nil && analyze {
+		baselineAPI, err = s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
+			SQL:          inv.SQL,
+			Analyze:      false,
+			ConnectionID: &inv.ConnectionID,
+		})
+		analyze = false
+	}
+	if err != nil {
+		return nil, normalizeInvestigationError(err)
+	}
+
+	baselineMetrics, err := metricsFromExplainAPI(baselineAPI)
+	if err != nil {
+		return nil, &investigations.ValidationError{Name: "validation_error", Message: "could not read baseline plan metrics", Code: strPtr("VALIDATION_ERROR")}
+	}
+
+	findings := queryrunnerFindingsFromInvestigation(inv.Explain)
+	if len(findings) == 0 {
+		// Fall back to freshly explained findings (includes IndexAdvice).
+		findings = queryrunnerFindingsFromQueriesAPI(baselineAPI)
+	}
+
+	var scored []queryrunner.ScoredCandidate
+	for _, rewrite := range queryrunner.SuggestRewrites(inv.SQL, findings) {
+		afterAPI, explErr := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
+			SQL:          rewrite.SQL,
+			Analyze:      analyze,
+			ConnectionID: &inv.ConnectionID,
+		})
+		if explErr != nil {
+			continue
+		}
+		afterMetrics, mErr := metricsFromExplainAPI(afterAPI)
+		if mErr != nil {
+			continue
+		}
+		improved := []string{}
+		if beforePlan, afterPlan, ok := planBytesPair(baselineAPI, afterAPI); ok {
+			if cmp, cErr := queryrunner.ComparePlans(beforePlan, afterPlan); cErr == nil && cmp != nil {
+				improved = cmp.Diff.Improved
+			}
+		}
+		scored = append(scored, queryrunner.ScoreSQLRewrite(rewrite, baselineMetrics, afterMetrics, improved))
+	}
+	scored = append(scored, queryrunner.CollectIndexDDLCandidates(findings)...)
+	scored = queryrunner.RankScoredCandidates(scored)
+
+	out := &investigations.RankedCandidateList{
+		Candidates: make([]*investigations.RankedCandidate, 0, len(scored)),
+	}
+	base := &investigations.RankedCandidateBaseline{
+		TotalCost: &baselineMetrics.TotalCost,
+	}
+	parts := queryrunnerPartitionCount(baselineMetrics)
+	base.PartitionsScanned = &parts
+	if baselineMetrics.HasActualTiming {
+		t := baselineMetrics.ExecutionTimeMs
+		base.ExecutionTimeMs = &t
+	}
+	out.Baseline = base
+
+	for _, c := range scored {
+		out.Candidates = append(out.Candidates, scoredCandidateToAPI(c))
+	}
+	return out, nil
+}
+
+func scoredCandidateToAPI(c queryrunner.ScoredCandidate) *investigations.RankedCandidate {
+	out := &investigations.RankedCandidate{
+		Kind:      c.Kind,
+		Rankable:  c.Rankable,
+		Rationale: c.Rationale,
+	}
+	if c.Rank > 0 {
+		r := int32(c.Rank)
+		out.Rank = &r
+	}
+	if c.SQL != "" {
+		out.SQL = &c.SQL
+	}
+	if c.DDL != "" {
+		out.Ddl = &c.DDL
+	}
+	if c.Category != "" {
+		out.Category = &c.Category
+	}
+	if c.Confidence != "" {
+		out.Confidence = &c.Confidence
+	}
+	if c.Rankable {
+		tc, cd := c.TotalCost, c.CostDelta
+		ps, pd := c.PartitionsScanned, c.PartitionsDelta
+		out.TotalCost = &tc
+		out.CostDelta = &cd
+		out.PartitionsScanned = &ps
+		out.PartitionsDelta = &pd
+		if c.HasTiming {
+			t := c.ExecutionTimeMs
+			out.ExecutionTimeMs = &t
+		}
+	}
+	if len(c.Improved) > 0 {
+		out.Improved = append([]string(nil), c.Improved...)
+	}
+	return out
+}
+
+func metricsFromExplainAPI(exp *queries.ExplainQueryResult) (queryrunner.PlanMetrics, error) {
+	if exp == nil {
+		return queryrunner.PlanMetrics{}, errNoPlan
+	}
+	planBytes, err := json.Marshal(exp.Plan)
+	if err != nil {
+		return queryrunner.PlanMetrics{}, err
+	}
+	// Explain API returns the inner plan object; MetricsFromPlan expects the
+	// top-level EXPLAIN JSON array wrapping {"Plan": ...}.
+	if !isExplainRootArray(planBytes) {
+		wrapped, _ := json.Marshal([]map[string]any{{"Plan": exp.Plan}})
+		planBytes = wrapped
+	}
+	m, err := queryrunner.MetricsFromPlan(planBytes)
+	if err != nil {
+		return queryrunner.PlanMetrics{}, err
+	}
+	if m.TotalCost == 0 && exp.TotalCost > 0 {
+		m.TotalCost = exp.TotalCost
+	}
+	if exp.ExecutionTimeMs > 0 && !m.HasActualTiming {
+		m.ExecutionTimeMs = float64(exp.ExecutionTimeMs)
+		m.HasActualTiming = true
+	}
+	return m, nil
+}
+
+var errNoPlan = errors.New("no plan")
+
+func isExplainRootArray(b []byte) bool {
+	for _, c := range b {
+		if c == ' ' || c == '\n' || c == '\t' || c == '\r' {
+			continue
+		}
+		return c == '['
+	}
+	return false
+}
+
+func planBytesPair(before, after *queries.ExplainQueryResult) (json.RawMessage, json.RawMessage, bool) {
+	if before == nil || after == nil {
+		return nil, nil, false
+	}
+	bb, err1 := json.Marshal([]map[string]any{{"Plan": before.Plan}})
+	ab, err2 := json.Marshal([]map[string]any{{"Plan": after.Plan}})
+	if err1 != nil || err2 != nil {
+		return nil, nil, false
+	}
+	return bb, ab, true
+}
+
+func queryrunnerFindingsFromQueriesAPI(exp *queries.ExplainQueryResult) []queryrunner.PlanFinding {
+	if exp == nil {
+		return nil
+	}
+	out := make([]queryrunner.PlanFinding, 0, len(exp.Findings))
+	for _, f := range exp.Findings {
+		if f == nil {
+			continue
+		}
+		pf := queryrunner.PlanFinding{
+			NodeType:       f.NodeType,
+			IsSeqScan:      f.IsSeqScan,
+			Message:        f.Message,
+			Evidence:       f.Evidence,
+			RelatedColumns: append([]string(nil), f.RelatedColumns...),
+		}
+		if f.Category != nil {
+			pf.Category = *f.Category
+		}
+		if f.Confidence != nil {
+			pf.Confidence = *f.Confidence
+		}
+		if f.Schema != nil {
+			pf.Schema = *f.Schema
+		}
+		if f.Relation != nil {
+			pf.Relation = *f.Relation
+		}
+		if f.EstimatedCost != nil {
+			pf.EstimatedCost = *f.EstimatedCost
+		}
+		if f.IndexAdvice != nil {
+			pf.IndexAdvice = &queryrunner.IndexAdvice{
+				RelatedColumns: append([]string(nil), f.IndexAdvice.RelatedColumns...),
+				Issues:         append([]string(nil), f.IndexAdvice.Issues...),
+			}
+			if f.IndexAdvice.PotentialBenefit != nil {
+				pf.IndexAdvice.PotentialBenefit = *f.IndexAdvice.PotentialBenefit
+			}
+			if f.IndexAdvice.WriteCost != nil {
+				pf.IndexAdvice.WriteCost = *f.IndexAdvice.WriteCost
+			}
+			if f.IndexAdvice.StorageCost != nil {
+				pf.IndexAdvice.StorageCost = *f.IndexAdvice.StorageCost
+			}
+			if f.IndexAdvice.CandidateDdl != nil {
+				pf.IndexAdvice.CandidateDDL = *f.IndexAdvice.CandidateDdl
+			}
+		}
+		out = append(out, pf)
+	}
+	return out
+}
+
+func queryrunnerPartitionCount(m queryrunner.PlanMetrics) float64 {
+	if m.HasPartitionAppend {
+		return m.PartitionsScanned
+	}
+	if m.PartitionsScanned > 0 {
+		return m.PartitionsScanned
+	}
+	return 1
 }
 
 // AddCandidate adds a candidate rewrite and compares plans.

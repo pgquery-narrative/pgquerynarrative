@@ -35,6 +35,13 @@ type AddCandidateRequestBody struct {
 	Analyze      *bool   `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
 }
 
+// RankCandidatesRequestBody is the type of the "investigations" service
+// "rank_candidates" endpoint HTTP request body.
+type RankCandidatesRequestBody struct {
+	// When true, dry-EXPLAIN uses ANALYZE for timing (slower)
+	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+}
+
 // CreateResponseBody is the type of the "investigations" service "create"
 // endpoint HTTP response body.
 type CreateResponseBody struct {
@@ -109,6 +116,13 @@ type SuggestRewriteResponseBody struct {
 	Candidates []*RewriteCandidateResponseBody `form:"candidates" json:"candidates" xml:"candidates"`
 }
 
+// RankCandidatesResponseBody is the type of the "investigations" service
+// "rank_candidates" endpoint HTTP response body.
+type RankCandidatesResponseBody struct {
+	Baseline   *RankedCandidateBaselineResponseBody `form:"baseline,omitempty" json:"baseline,omitempty" xml:"baseline,omitempty"`
+	Candidates []*RankedCandidateResponseBody       `form:"candidates" json:"candidates" xml:"candidates"`
+}
+
 // GenerateReportResponseBody is the type of the "investigations" service
 // "generate_report" endpoint HTTP response body.
 type GenerateReportResponseBody struct {
@@ -167,6 +181,24 @@ type AddCandidateValidationErrorResponseBody struct {
 // service "suggest_rewrite" endpoint HTTP response body for the "not_found"
 // error.
 type SuggestRewriteNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RankCandidatesNotFoundResponseBody is the type of the "investigations"
+// service "rank_candidates" endpoint HTTP response body for the "not_found"
+// error.
+type RankCandidatesNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// RankCandidatesValidationErrorResponseBody is the type of the
+// "investigations" service "rank_candidates" endpoint HTTP response body for
+// the "validation_error" error.
+type RankCandidatesValidationErrorResponseBody struct {
 	Name    string  `form:"name" json:"name" xml:"name"`
 	Message string  `form:"message" json:"message" xml:"message"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -345,6 +377,46 @@ type RewriteCandidateResponseBody struct {
 	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
 }
 
+// RankedCandidateBaselineResponseBody is used to define fields on response
+// body types.
+type RankedCandidateBaselineResponseBody struct {
+	// Baseline total cost
+	TotalCost *float64 `form:"total_cost,omitempty" json:"total_cost,omitempty" xml:"total_cost,omitempty"`
+	// Baseline partitions scanned when known
+	PartitionsScanned *float64 `form:"partitions_scanned,omitempty" json:"partitions_scanned,omitempty" xml:"partitions_scanned,omitempty"`
+	// Baseline execution time when ANALYZE was used
+	ExecutionTimeMs *float64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+}
+
+// RankedCandidateResponseBody is used to define fields on response body types.
+type RankedCandidateResponseBody struct {
+	// sql_rewrite or index_ddl
+	Kind string `form:"kind" json:"kind" xml:"kind"`
+	// 1-based rank among rankable candidates; 0 when not rankable
+	Rank *int32 `form:"rank,omitempty" json:"rank,omitempty" xml:"rank,omitempty"`
+	// True when dry-EXPLAIN metrics are available for ranking
+	Rankable bool `form:"rankable" json:"rankable" xml:"rankable"`
+	// Candidate rewrite SQL (sql_rewrite)
+	SQL *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	// Candidate DDL for expert review (index_ddl); never auto-applied
+	Ddl *string `form:"ddl,omitempty" json:"ddl,omitempty" xml:"ddl,omitempty"`
+	// Short explanation
+	Rationale  string  `form:"rationale" json:"rationale" xml:"rationale"`
+	Category   *string `form:"category,omitempty" json:"category,omitempty" xml:"category,omitempty"`
+	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
+	// After-plan total cost for sql_rewrite
+	TotalCost *float64 `form:"total_cost,omitempty" json:"total_cost,omitempty" xml:"total_cost,omitempty"`
+	// after - baseline total cost (negative is better)
+	CostDelta         *float64 `form:"cost_delta,omitempty" json:"cost_delta,omitempty" xml:"cost_delta,omitempty"`
+	PartitionsScanned *float64 `form:"partitions_scanned,omitempty" json:"partitions_scanned,omitempty" xml:"partitions_scanned,omitempty"`
+	// after - baseline partitions (negative is better)
+	PartitionsDelta *float64 `form:"partitions_delta,omitempty" json:"partitions_delta,omitempty" xml:"partitions_delta,omitempty"`
+	// After-plan timing when ANALYZE was used
+	ExecutionTimeMs *float64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+	// Structural improvements vs baseline
+	Improved []string `form:"improved,omitempty" json:"improved,omitempty" xml:"improved,omitempty"`
+}
+
 // NewCreateResponseBody builds the HTTP response body from the result of the
 // "create" endpoint of the "investigations" service.
 func NewCreateResponseBody(res *investigations.Investigation) *CreateResponseBody {
@@ -476,6 +548,28 @@ func NewSuggestRewriteResponseBody(res *investigations.RewriteSuggestionList) *S
 	return body
 }
 
+// NewRankCandidatesResponseBody builds the HTTP response body from the result
+// of the "rank_candidates" endpoint of the "investigations" service.
+func NewRankCandidatesResponseBody(res *investigations.RankedCandidateList) *RankCandidatesResponseBody {
+	body := &RankCandidatesResponseBody{}
+	if res.Baseline != nil {
+		body.Baseline = marshalInvestigationsRankedCandidateBaselineToRankedCandidateBaselineResponseBody(res.Baseline)
+	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*RankedCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsRankedCandidateToRankedCandidateResponseBody(val)
+		}
+	} else {
+		body.Candidates = []*RankedCandidateResponseBody{}
+	}
+	return body
+}
+
 // NewGenerateReportResponseBody builds the HTTP response body from the result
 // of the "generate_report" endpoint of the "investigations" service.
 func NewGenerateReportResponseBody(res *investigations.Investigation) *GenerateReportResponseBody {
@@ -562,6 +656,29 @@ func NewSuggestRewriteNotFoundResponseBody(res *investigations.NotFoundError) *S
 	return body
 }
 
+// NewRankCandidatesNotFoundResponseBody builds the HTTP response body from the
+// result of the "rank_candidates" endpoint of the "investigations" service.
+func NewRankCandidatesNotFoundResponseBody(res *investigations.NotFoundError) *RankCandidatesNotFoundResponseBody {
+	body := &RankCandidatesNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewRankCandidatesValidationErrorResponseBody builds the HTTP response body
+// from the result of the "rank_candidates" endpoint of the "investigations"
+// service.
+func NewRankCandidatesValidationErrorResponseBody(res *investigations.ValidationError) *RankCandidatesValidationErrorResponseBody {
+	body := &RankCandidatesValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
 // NewGenerateReportNotFoundResponseBody builds the HTTP response body from the
 // result of the "generate_report" endpoint of the "investigations" service.
 func NewGenerateReportNotFoundResponseBody(res *investigations.NotFoundError) *GenerateReportNotFoundResponseBody {
@@ -640,6 +757,21 @@ func NewAddCandidatePayload(body *AddCandidateRequestBody, id string) *investiga
 // endpoint payload.
 func NewSuggestRewritePayload(id string) *investigations.SuggestRewritePayload {
 	v := &investigations.SuggestRewritePayload{}
+	v.ID = id
+
+	return v
+}
+
+// NewRankCandidatesPayload builds a investigations service rank_candidates
+// endpoint payload.
+func NewRankCandidatesPayload(body *RankCandidatesRequestBody, id string) *investigations.RankCandidatesPayload {
+	v := &investigations.RankCandidatesPayload{}
+	if body.Analyze != nil {
+		v.Analyze = *body.Analyze
+	}
+	if body.Analyze == nil {
+		v.Analyze = false
+	}
 	v.ID = id
 
 	return v
