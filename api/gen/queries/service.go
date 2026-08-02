@@ -122,6 +122,43 @@ type GetSavedPayload struct {
 	ID string
 }
 
+type IndexAdvice struct {
+	// Columns implicated by the finding
+	RelatedColumns []string
+	// Existing indexes evaluated
+	RelatedIndexes []*IndexDefinition
+	// Issue codes (e.g. no_covering_index, already_covered)
+	Issues []string
+	// Plain-language benefit if advice is followed
+	PotentialBenefit *string
+	// Write-amplification cost of the recommended change
+	WriteCost *string
+	// On-disk storage cost of the recommended change
+	StorageCost *string
+	// Draft DDL for expert review only; never auto-applied
+	CandidateDdl *string
+}
+
+type IndexDefinition struct {
+	// Index name
+	Name string
+	// pg_get_indexdef text
+	Definition string
+	// Key columns in position order
+	KeyColumns []string
+	// INCLUDE columns
+	IncludeColumns []string
+	// Partial-index predicate when present
+	Predicate     *string
+	IsUnique      bool
+	IsPrimary     bool
+	IsValid       bool
+	SizeBytes     *int64
+	IndexScans    *int64
+	TuplesRead    *int64
+	TuplesFetched *int64
+}
+
 // ListSavedPayload is the payload type of the queries service list_saved
 // method.
 type ListSavedPayload struct {
@@ -191,6 +228,10 @@ type PlanFinding struct {
 	Message string
 	// Raw plan metrics backing this finding (e.g. Plan Rows=8000)
 	Evidence []string
+	// Filter/join/sort columns implicated by this finding
+	RelatedColumns []string
+	// Structured index advice when catalog enrichment produced it
+	IndexAdvice *IndexAdvice
 }
 
 // RunQueryPayload is the payload type of the queries service run method.

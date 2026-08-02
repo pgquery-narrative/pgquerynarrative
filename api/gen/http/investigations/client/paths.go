@@ -31,6 +31,11 @@ func AddCandidateInvestigationsPath(id string) string {
 	return fmt.Sprintf("/api/v1/investigations/%v/candidate", id)
 }
 
+// SuggestRewriteInvestigationsPath returns the URL path to the investigations service suggest_rewrite HTTP endpoint.
+func SuggestRewriteInvestigationsPath(id string) string {
+	return fmt.Sprintf("/api/v1/investigations/%v/suggest-rewrite", id)
+}
+
 // GenerateReportInvestigationsPath returns the URL path to the investigations service generate_report HTTP endpoint.
 func GenerateReportInvestigationsPath(id string) string {
 	return fmt.Sprintf("/api/v1/investigations/%v/report", id)

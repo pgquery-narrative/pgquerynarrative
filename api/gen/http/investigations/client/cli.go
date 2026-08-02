@@ -25,7 +25,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 	{
 		err = json.Unmarshal([]byte(investigationsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"calls\": 728259904713096040,\n      \"connection_id\": \"Exercitationem expedita.\",\n      \"mean_time_ms\": 0.5453465830714747,\n      \"queryid\": \"Impedit hic possimus sint.\",\n      \"rows\": 7072131438228646640,\n      \"sql\": \"qg\",\n      \"title\": \"0ka\",\n      \"total_time_ms\": 0.6020486081590435\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"calls\": 749312840170807379,\n      \"connection_id\": \"Odit perspiciatis nihil nemo corrupti modi.\",\n      \"mean_time_ms\": 0.33044438689978756,\n      \"queryid\": \"Sunt alias illum deleniti id quia illo.\",\n      \"rows\": 3012006019566254776,\n      \"sql\": \"5\",\n      \"title\": \"jqz\",\n      \"total_time_ms\": 0.9726486546114039\n   }'")
 		}
 		if utf8.RuneCountInString(body.Title) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 1, true))
@@ -132,7 +132,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 	{
 		err = json.Unmarshal([]byte(investigationsAddCandidateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"candidate_sql\": \"i3\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"candidate_sql\": \"nib\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
@@ -163,6 +163,24 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 			v.Analyze = false
 		}
 	}
+	v.ID = id
+
+	return v, nil
+}
+
+// BuildSuggestRewritePayload builds the payload for the investigations
+// suggest_rewrite endpoint from CLI flags.
+func BuildSuggestRewritePayload(investigationsSuggestRewriteID string) (*investigations.SuggestRewritePayload, error) {
+	var err error
+	var id string
+	{
+		id = investigationsSuggestRewriteID
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &investigations.SuggestRewritePayload{}
 	v.ID = id
 
 	return v, nil

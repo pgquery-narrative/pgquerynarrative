@@ -266,6 +266,49 @@ type PlanFindingResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 	// Raw plan metrics backing this finding (e.g. Plan Rows=8000)
 	Evidence []string `form:"evidence,omitempty" json:"evidence,omitempty" xml:"evidence,omitempty"`
+	// Filter/join/sort columns implicated by this finding
+	RelatedColumns []string `form:"related_columns,omitempty" json:"related_columns,omitempty" xml:"related_columns,omitempty"`
+	// Structured index advice when catalog enrichment produced it
+	IndexAdvice *IndexAdviceResponseBody `form:"index_advice,omitempty" json:"index_advice,omitempty" xml:"index_advice,omitempty"`
+}
+
+// IndexAdviceResponseBody is used to define fields on response body types.
+type IndexAdviceResponseBody struct {
+	// Columns implicated by the finding
+	RelatedColumns []string `form:"related_columns,omitempty" json:"related_columns,omitempty" xml:"related_columns,omitempty"`
+	// Existing indexes evaluated
+	RelatedIndexes []*IndexDefinitionResponseBody `form:"related_indexes,omitempty" json:"related_indexes,omitempty" xml:"related_indexes,omitempty"`
+	// Issue codes (e.g. no_covering_index, already_covered)
+	Issues []string `form:"issues,omitempty" json:"issues,omitempty" xml:"issues,omitempty"`
+	// Plain-language benefit if advice is followed
+	PotentialBenefit *string `form:"potential_benefit,omitempty" json:"potential_benefit,omitempty" xml:"potential_benefit,omitempty"`
+	// Write-amplification cost of the recommended change
+	WriteCost *string `form:"write_cost,omitempty" json:"write_cost,omitempty" xml:"write_cost,omitempty"`
+	// On-disk storage cost of the recommended change
+	StorageCost *string `form:"storage_cost,omitempty" json:"storage_cost,omitempty" xml:"storage_cost,omitempty"`
+	// Draft DDL for expert review only; never auto-applied
+	CandidateDdl *string `form:"candidate_ddl,omitempty" json:"candidate_ddl,omitempty" xml:"candidate_ddl,omitempty"`
+}
+
+// IndexDefinitionResponseBody is used to define fields on response body types.
+type IndexDefinitionResponseBody struct {
+	// Index name
+	Name string `form:"name" json:"name" xml:"name"`
+	// pg_get_indexdef text
+	Definition string `form:"definition" json:"definition" xml:"definition"`
+	// Key columns in position order
+	KeyColumns []string `form:"key_columns,omitempty" json:"key_columns,omitempty" xml:"key_columns,omitempty"`
+	// INCLUDE columns
+	IncludeColumns []string `form:"include_columns,omitempty" json:"include_columns,omitempty" xml:"include_columns,omitempty"`
+	// Partial-index predicate when present
+	Predicate     *string `form:"predicate,omitempty" json:"predicate,omitempty" xml:"predicate,omitempty"`
+	IsUnique      bool    `form:"is_unique" json:"is_unique" xml:"is_unique"`
+	IsPrimary     bool    `form:"is_primary" json:"is_primary" xml:"is_primary"`
+	IsValid       bool    `form:"is_valid" json:"is_valid" xml:"is_valid"`
+	SizeBytes     *int64  `form:"size_bytes,omitempty" json:"size_bytes,omitempty" xml:"size_bytes,omitempty"`
+	IndexScans    *int64  `form:"index_scans,omitempty" json:"index_scans,omitempty" xml:"index_scans,omitempty"`
+	TuplesRead    *int64  `form:"tuples_read,omitempty" json:"tuples_read,omitempty" xml:"tuples_read,omitempty"`
+	TuplesFetched *int64  `form:"tuples_fetched,omitempty" json:"tuples_fetched,omitempty" xml:"tuples_fetched,omitempty"`
 }
 
 // ExplainQueryResultResponseBody is used to define fields on response body

@@ -154,6 +154,35 @@ var StatStatementsResult = Type("StatStatementsResult", func() {
 	Required("items", "order_by", "limit")
 })
 
+// IndexDefinition describes an existing index considered by the advisor.
+var IndexDefinition = Type("IndexDefinition", func() {
+	Attribute("name", String, "Index name")
+	Attribute("definition", String, "pg_get_indexdef text")
+	Attribute("key_columns", ArrayOf(String), "Key columns in position order")
+	Attribute("include_columns", ArrayOf(String), "INCLUDE columns")
+	Attribute("predicate", String, "Partial-index predicate when present")
+	Attribute("is_unique", Boolean)
+	Attribute("is_primary", Boolean)
+	Attribute("is_valid", Boolean)
+	Attribute("size_bytes", Int64)
+	Attribute("index_scans", Int64)
+	Attribute("tuples_read", Int64)
+	Attribute("tuples_fetched", Int64)
+	Required("name", "definition", "is_unique", "is_primary", "is_valid")
+})
+
+// IndexAdvice is structured index-recommendation evidence for a plan finding.
+// CandidateDDL is for expert review only and is never auto-applied.
+var IndexAdvice = Type("IndexAdvice", func() {
+	Attribute("related_columns", ArrayOf(String), "Columns implicated by the finding")
+	Attribute("related_indexes", ArrayOf(IndexDefinition), "Existing indexes evaluated")
+	Attribute("issues", ArrayOf(String), "Issue codes (e.g. no_covering_index, already_covered)")
+	Attribute("potential_benefit", String, "Plain-language benefit if advice is followed")
+	Attribute("write_cost", String, "Write-amplification cost of the recommended change")
+	Attribute("storage_cost", String, "On-disk storage cost of the recommended change")
+	Attribute("candidate_ddl", String, "Draft DDL for expert review only; never auto-applied")
+})
+
 // PlanFinding highlights a notable node in an EXPLAIN plan.
 var PlanFinding = Type("PlanFinding", func() {
 	Attribute("node_type", String, "PostgreSQL plan node type (e.g. Seq Scan)")
@@ -165,7 +194,24 @@ var PlanFinding = Type("PlanFinding", func() {
 	Attribute("confidence", String, "Triage confidence: low, medium, or high")
 	Attribute("message", String, "Human-readable summary and optional index hint")
 	Attribute("evidence", ArrayOf(String), "Raw plan metrics backing this finding (e.g. Plan Rows=8000)")
+	Attribute("related_columns", ArrayOf(String), "Filter/join/sort columns implicated by this finding")
+	Attribute("index_advice", IndexAdvice, "Structured index advice when catalog enrichment produced it")
 	Required("node_type", "is_seq_scan", "message")
+})
+
+// RewriteCandidate is a system-generated SQL rewrite suggestion.
+var RewriteCandidate = Type("RewriteCandidate", func() {
+	Attribute("sql", String, "Candidate rewrite SQL")
+	Attribute("rationale", String, "Short explanation of the rewrite")
+	Attribute("category", String, "Rewrite category (e.g. function_wrap)")
+	Attribute("confidence", String, "Suggestion confidence: low, medium, or high")
+	Required("sql", "rationale")
+})
+
+// RewriteSuggestionList is the result of suggest_rewrite.
+var RewriteSuggestionList = Type("RewriteSuggestionList", func() {
+	Attribute("candidates", ArrayOf(RewriteCandidate))
+	Required("candidates")
 })
 
 // ComparePlansPayload compares before and after EXPLAIN plans.

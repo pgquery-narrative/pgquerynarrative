@@ -72,6 +72,23 @@ var _ = Service("investigations", func() {
 		})
 	})
 
+	Method("suggest_rewrite", func() {
+		Description("Suggest candidate SQL rewrites from the investigation SQL and plan findings (AST-based; no demo scenarios required)")
+		Payload(func() {
+			Attribute("id", String, func() {
+				Format(FormatUUID)
+			})
+			Required("id")
+		})
+		Result(RewriteSuggestionList)
+		Error("not_found", NotFoundError)
+		HTTP(func() {
+			POST("/api/v1/investigations/{id}/suggest-rewrite")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+		})
+	})
+
 	Method("generate_report", func() {
 		Description("Generate an engineering investigation report")
 		Payload(func() {

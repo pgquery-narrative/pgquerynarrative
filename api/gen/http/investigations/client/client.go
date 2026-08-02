@@ -30,6 +30,10 @@ type Client struct {
 	// add_candidate endpoint.
 	AddCandidateDoer goahttp.Doer
 
+	// SuggestRewrite Doer is the HTTP client used to make requests to the
+	// suggest_rewrite endpoint.
+	SuggestRewriteDoer goahttp.Doer
+
 	// GenerateReport Doer is the HTTP client used to make requests to the
 	// generate_report endpoint.
 	GenerateReportDoer goahttp.Doer
@@ -59,6 +63,7 @@ func NewClient(
 		ListDoer:            doer,
 		GetDoer:             doer,
 		AddCandidateDoer:    doer,
+		SuggestRewriteDoer:  doer,
 		GenerateReportDoer:  doer,
 		RestoreResponseBody: restoreBody,
 		scheme:              scheme,
@@ -154,6 +159,25 @@ func (c *Client) AddCandidate() goa.Endpoint {
 		resp, err := c.AddCandidateDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("investigations", "add_candidate", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// SuggestRewrite returns an endpoint that makes HTTP requests to the
+// investigations service suggest_rewrite server.
+func (c *Client) SuggestRewrite() goa.Endpoint {
+	var (
+		decodeResponse = DecodeSuggestRewriteResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildSuggestRewriteRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.SuggestRewriteDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("investigations", "suggest_rewrite", err)
 		}
 		return decodeResponse(resp)
 	}
