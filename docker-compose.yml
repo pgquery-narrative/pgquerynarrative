@@ -5,7 +5,7 @@
 # - Postgres and the app bind to 127.0.0.1 only (not published on all interfaces).
 # - Default passwords and SSL=disable are for local demos.
 # For production use: deploy/helm/pgquerynarrative/ or deploy/kubernetes/ with
-# APP_ENV=production (StrictMode). See docs/ops/PRODUCTION.md.
+# APP_ENV=production (StrictMode). See docs/reference/deployment.md and docs/trust-model.md.
 # =============================================================================
 
 name: pgquerynarrative

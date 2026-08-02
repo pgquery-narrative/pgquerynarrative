@@ -56,13 +56,23 @@ tools/db/.venv-nyc/
 docs-site/
 site/
 
-# Release planning (local-only)
+# Local-only planning / marketing (never publish)
 release-2.md
+.planning/
+docs/private/
+docs/ROADMAP.md
+docs/BACKLOG.md
+docs/PHASE2_SUMMARY.md
+docs/POSTGRES_CREDIBILITY.md
+docs/DEMO_RUNBOOK.md
+docs/ops/PRODUCTION.md
+docs/ops/INCIDENT_RUNBOOKS.md
+docs/linkedin/
+cmd/linkedin-social/
+automation/
+tools/demo/capture_readme_gif.sh
+docs/assets/demo-workflow.gif
 
-# Private LinkedIn content (local-only)
-docs/linkedin/POST_SERIES.md
-
-# LinkedIn automation queue (keep templates; ignore draft JSON)
-automation/linkedin/pending/*.json
-automation/linkedin/approved/*.json
-automation/linkedin/posted/*.json
+# Local-only AI agent context (never publish — keep on disk for Cursor/agents)
+AGENTS.md
+.cursor/rules/product-direction.mdc

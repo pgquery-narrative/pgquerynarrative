@@ -75,7 +75,7 @@ Include:
 - Rate-limit failure mode cannot be `open` when auth is enabled
 
 ### Production StrictMode (mandatory for company data)
-See `docs/ops/PRODUCTION.md`. Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled.
+Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled. See `docs/trust-model.md` and `docs/reference/deployment.md`.
 
 ## Security Scanning
 

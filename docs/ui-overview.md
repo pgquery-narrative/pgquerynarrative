@@ -12,7 +12,7 @@ Primary path for the product story:
 4. Edit or accept a **candidate** rewrite → **Compare plans**
 5. **Generate report** → engineering investigation report
 
-Concepts behind each step: [Concepts](concepts.md). Timed demo: [Demo runbook](DEMO_RUNBOOK.md).
+Concepts behind each step: [Concepts](concepts.md).
 
 ## Other surfaces
 

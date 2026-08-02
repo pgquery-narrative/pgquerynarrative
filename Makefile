@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release linkedin-social-help linkedin-social-draft pilot-acceptance pilot-report helm-strict-check demo demo-gif demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
+.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release pilot-acceptance pilot-report helm-strict-check demo demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -281,7 +281,6 @@ pilot-acceptance:
 	@chmod +x ./tools/ops/pilot_acceptance.sh
 	@DOCKER_API_VERSION=1.44 ./tools/ops/pilot_acceptance.sh
 
-# Solo product demo (see docs/DEMO_RUNBOOK.md)
 # One-command guided demo: starts Postgres + app with small seed (no 10M wait).
 demo:
 	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/smoke_scenes.sh ./tools/demo/ensure_ollama.sh
@@ -299,17 +298,6 @@ ollama-up:
 
 ollama-pull:
 	@docker compose exec -T ollama ollama pull $${LLM_MODEL:-llama3.2}
-
-demo-gif:
-	@chmod +x ./tools/demo/capture_readme_gif.sh
-	@./tools/demo/capture_readme_gif.sh
-
-# Credible README GIF path: 10M-row seed + EXPLAIN ANALYZE (compose) + capture.
-demo-gif-credible:
-	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/capture_readme_gif.sh ./tools/demo/ensure_ollama.sh
-	@echo "==> Bootstrapping with SEED_LARGE=1 (10M rows; several minutes)"
-	@SEED_LARGE=1 ./tools/demo/bootstrap.sh
-	@./tools/demo/capture_readme_gif.sh
 
 demo-bootstrap:
 	@chmod +x ./tools/demo/bootstrap.sh ./tools/demo/smoke_scenes.sh ./tools/demo/multi_org_demo.sh
@@ -556,16 +544,6 @@ cli-shell:
 changelog:
 	@echo "📝 Building CHANGELOG.md from changelog/..."
 	@sh ./tools/changelog/build.sh
-
-# ============================================================================
-# LinkedIn (draft → approve → post); see: go run ./cmd/linkedin-social help
-# ============================================================================
-
-linkedin-social-help:
-	@$(GO) run ./cmd/linkedin-social help
-
-linkedin-social-draft:
-	@$(GO) run ./cmd/linkedin-social draft
 
 # ============================================================================
 # PostgreSQL Extension

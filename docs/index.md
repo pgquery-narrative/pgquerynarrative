@@ -6,7 +6,7 @@
 |------|------|
 | Try the demo | [Quick start](getting-started/quickstart.md) |
 | Connect your database | [Connect your PostgreSQL](getting-started/connect-postgres.md) |
-| Ship to production | [Production — start here](ops/PRODUCTION.md#start-here) |
+| Deploy | [Deployment](reference/deployment.md) |
 | Trust & scope | [Trust model](trust-model.md) |
 | How the product thinks | [Concepts](concepts.md) |
 
@@ -27,7 +27,7 @@ make demo
 
 Open **http://localhost:8080** → **Investigate** → **Slow dashboard query** → **Compare plans** → **Generate report**.
 
-Scene-by-scene: [Demo runbook](DEMO_RUNBOOK.md). Large seed: `make demo-bootstrap`.
+Large seed: `make demo-bootstrap`.
 
 ## Documentation map
 
@@ -35,9 +35,9 @@ Scene-by-scene: [Demo runbook](DEMO_RUNBOOK.md). Large seed: `make demo-bootstra
 |-------|----------|
 | Concepts & trust | [Concepts](concepts.md) · [Trust model](trust-model.md) |
 | Getting started | [Quick start](getting-started/quickstart.md) · [Installation](getting-started/installation.md) · [Connect Postgres](getting-started/connect-postgres.md) |
-| Product guides | [UI overview](ui-overview.md) · [Demo runbook](DEMO_RUNBOOK.md) · [Configuration](configuration.md) |
+| Product guides | [UI overview](ui-overview.md) · [Configuration](configuration.md) |
 | API | [API reference](api/README.md) · [Examples](api/examples.md) |
-| Deployment & ops | [Deployment](reference/deployment.md) · [Production](ops/PRODUCTION.md) · [Operations](reference/operations.md) · [Incidents](ops/INCIDENT_RUNBOOKS.md) |
+| Deployment & ops | [Deployment](reference/deployment.md) · [Operations](reference/operations.md) |
 | Troubleshooting | [Troubleshooting](reference/troubleshooting.md) |
 | Dataset & case study | [Dataset](DATASET.md) · [Query optimization](case-studies/01-query-optimization.md) |
 | Development | [Setup](development/setup.md) · [Testing](development/testing.md) · [Dev runbook](development/runbook.md) |

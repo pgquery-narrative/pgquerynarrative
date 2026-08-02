@@ -38,7 +38,7 @@ Postgres-first repositioning: secure read-only SQL, plan analysis, and analytics
 - **pgvector semantic search:** HNSW index on saved-query embeddings.
 - **SQL period comparison:** `LAG` window functions in `app/queryrunner/period_comparison.go`; Go metrics path is fallback.
 - **Case study:** 1.1s → 145ms covering index optimization on 10M rows ([docs/case-studies/01-query-optimization.md](docs/case-studies/01-query-optimization.md)).
-- **Production ops docs:** Backup, migrations, monitoring ([docs/ops/PRODUCTION.md](docs/ops/PRODUCTION.md)).
+- **Production ops docs:** Backup, migrations, monitoring (see deployment/operations reference docs).
 
 ### Changed
 

@@ -63,7 +63,6 @@ nav:
   - User guides:
       - UI overview: ui-overview.md
       - CLI usage: usage/cli-usage.md
-      - Demo runbook: DEMO_RUNBOOK.md
   - Configuration: configuration.md
   - API:
       - API reference: api/README.md
@@ -77,8 +76,6 @@ nav:
       - Versioning and releases: reference/versioning-and-releases.md
       - Dataset and schema: DATASET.md
   - Operations:
-      - Production checklist: ops/PRODUCTION.md
-      - Incident runbooks: ops/INCIDENT_RUNBOOKS.md
       - RLS demo: ops/rls-demo.md
   - Development:
       - Setup: development/setup.md

@@ -99,5 +99,5 @@ Client → App validator → pgquerynarrative_readonly → policy (all rows) →
 Manual psql → pgquerynarrative_sales_rep → policy (rep filter) → read-only txn
 ```
 
-See [PRODUCTION.md §4](PRODUCTION.md#4-security-model-defense-in-depth) for the full
+See [Trust model](../trust-model.md) for the
 security model.

@@ -23,16 +23,16 @@ and ship engineering-ready reports.
 <p align="center">
   <a href="#try-it-5-minutes"><strong>Try the demo</strong></a> ·
   <a href="docs/getting-started/connect-postgres.md">Connect your Postgres</a> ·
-  <a href="docs/ops/PRODUCTION.md#start-here">Ship to production</a> ·
+  <a href="docs/reference/deployment.md">Deploy</a> ·
   <a href="docs/index.md">Documentation</a> ·
   <a href=".github/SECURITY.md">Security</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-workflow.gif" alt="Query Investigation: finding blocked partition pruning, comparing a rewrite (50→1 partitions), then generating a report" width="720">
+  <img src="docs/assets/demo-workflow.svg" alt="Query Investigation workflow: findings, compare, report" width="720">
 </p>
 
-<p align="center"><sub>From blocked partition pruning to a verified rewrite (50→1 partitions).</sub></p>
+<p align="center"><sub>Investigate → compare rewrite with plan proof → engineering report.</sub></p>
 
 ---
 
@@ -50,7 +50,7 @@ Safe read-only SQL and plan analysis are the core. An optional LLM can narrate; 
 |--------------|------------|
 | **Try it in ~5 minutes** | [Try it](#try-it-5-minutes) — `make demo` + guided Investigate |
 | **Connect your PostgreSQL** | [Connect your Postgres](docs/getting-started/connect-postgres.md) — readonly role + schema allowlist |
-| **Ship to production** | [Production — start here](docs/ops/PRODUCTION.md#start-here) — StrictMode, replicas, checklists |
+| **Deploy** | [Deployment](docs/reference/deployment.md) — Docker / Compose / Kubernetes |
 | **Understand trust & scope** | [Trust model](docs/trust-model.md) — what the app will and will not do |
 
 ---
@@ -79,7 +79,7 @@ make demo-bootstrap
 
 `make demo` also starts **Ollama** and pulls `llama3.2` so **Ask in natural language** works locally (first run may download the model). Investigation still works if you skip the LLM.
 
-More detail: [Quick start](docs/getting-started/quickstart.md) · [Demo runbook](docs/DEMO_RUNBOOK.md)
+More detail: [Quick start](docs/getting-started/quickstart.md)
 
 ---
 
@@ -121,8 +121,6 @@ Optional narratives: [LLM setup](docs/getting-started/llm-setup.md) · library e
 | Build / test | `make build` / `make test` |
 | CLI | `make cli CMD='query "SELECT * FROM demo.sales LIMIT 5"'` |
 
-Maintainer GIF capture lives in the [Demo runbook](docs/DEMO_RUNBOOK.md#readme-gif-capture).
-
 ---
 
 ## Project structure
@@ -146,9 +144,9 @@ Preview: **`make docs`** → http://localhost:8000
 |---------|--------|
 | **Start here** | [Docs overview](docs/index.md) · [Concepts](docs/concepts.md) · [Trust model](docs/trust-model.md) |
 | **Getting started** | [Quick start](docs/getting-started/quickstart.md) · [Installation](docs/getting-started/installation.md) · [Connect Postgres](docs/getting-started/connect-postgres.md) · [LLM setup](docs/getting-started/llm-setup.md) |
-| **Product** | [UI overview](docs/ui-overview.md) · [Demo runbook](docs/DEMO_RUNBOOK.md) · [Configuration](docs/configuration.md) |
+| **Product** | [UI overview](docs/ui-overview.md) · [Configuration](docs/configuration.md) |
 | **API** | [Reference](docs/api/README.md) · [Examples](docs/api/examples.md) |
-| **Ops** | [Deployment](docs/reference/deployment.md) · [Production](docs/ops/PRODUCTION.md) · [Troubleshooting](docs/reference/troubleshooting.md) |
+| **Ops** | [Deployment](docs/reference/deployment.md) · [Operations](docs/reference/operations.md) · [Troubleshooting](docs/reference/troubleshooting.md) |
 | **Develop** | [Setup](docs/development/setup.md) · [Testing](docs/development/testing.md) · [Dev runbook](docs/development/runbook.md) |
 | **Evidence** | [Dataset](docs/DATASET.md) · [Case study](docs/case-studies/01-query-optimization.md) |
 

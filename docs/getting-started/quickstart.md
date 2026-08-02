@@ -23,7 +23,7 @@ Open **http://localhost:8080**:
 4. Click **Compare plans** on the range-predicate rewrite
 5. Click **Generate report**
 
-Vocabulary: [Concepts](../concepts.md). Scene timing: [Demo runbook](../DEMO_RUNBOOK.md).
+Vocabulary: [Concepts](../concepts.md).
 
 For large-seed partition counts (≈10M rows, 50→1 style proof):
 
@@ -62,7 +62,7 @@ Leaving the `demo` schema: [Connect your PostgreSQL](connect-postgres.md) and [T
 | UI map | [UI overview](../ui-overview.md) |
 | API investigation flow | [API examples](../api/examples.md) |
 | Optional narratives | [LLM setup](llm-setup.md) |
-| Production | [Production — start here](../ops/PRODUCTION.md#start-here) |
+| Deploy | [Deployment](../reference/deployment.md) |
 
 ## See also
 

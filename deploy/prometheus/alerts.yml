@@ -8,7 +8,7 @@ groups:
           severity: warning
         annotations:
           summary: High HTTP 5xx rate on PgQueryNarrative
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#http-5xx-spike
+          runbook: docs/reference/operations.md#http-5xx-spike
 
       - alert: PgqnAuthFailureSpike
         expr: rate(pgqn_auth_failures_total[5m]) > 1
@@ -17,7 +17,7 @@ groups:
           severity: warning
         annotations:
           summary: Elevated authentication failures
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#auth-failure-spike
+          runbook: docs/reference/operations.md#auth-failure-spike
 
       - alert: PgqnQueryTimeoutSpike
         expr: rate(pgqn_query_timeouts_total[5m]) > 0.2
@@ -26,7 +26,7 @@ groups:
           severity: warning
         annotations:
           summary: Query timeouts elevated
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#query-timeouts
+          runbook: docs/reference/operations.md#query-timeouts
 
       - alert: PgqnLLMBudgetDenials
         expr: increase(pgqn_llm_budget_denials_total[15m]) > 5
@@ -35,7 +35,7 @@ groups:
           severity: info
         annotations:
           summary: LLM budget denials increasing
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#llm-budget-exhausted
+          runbook: docs/reference/operations.md#llm-budget-exhausted
 
       - alert: PgqnPoolSaturation
         expr: pgqn_pool_acquired_conns / clamp_min(pgqn_pool_max_conns, 1) > 0.85
@@ -44,7 +44,7 @@ groups:
           severity: critical
         annotations:
           summary: App DB pool near capacity
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#db-pool-saturation
+          runbook: docs/reference/operations.md#db-pool-saturation
 
       - alert: PgqnSchedulerFailures
         expr: increase(pgqn_scheduler_failures_total[15m]) > 0
@@ -53,7 +53,7 @@ groups:
           severity: warning
         annotations:
           summary: Scheduled report runs are failing
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#scheduler-stuck--duplicate-runs
+          runbook: docs/reference/operations.md#scheduler-stuck--duplicate-runs
 
       - alert: PgqnScheduleDeadLetters
         expr: increase(pgqn_schedule_dead_letters_total[30m]) > 0
@@ -62,7 +62,7 @@ groups:
           severity: critical
         annotations:
           summary: Scheduled report runs reached dead-letter state
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#scheduler-stuck--duplicate-runs
+          runbook: docs/reference/operations.md#scheduler-stuck--duplicate-runs
 
       - alert: PgqnWebhookFailures
         expr: increase(pgqn_webhook_failures_total[15m]) > 3
@@ -71,7 +71,7 @@ groups:
           severity: warning
         annotations:
           summary: Webhook deliveries are failing
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#webhook-delivery-failures--dead-letter
+          runbook: docs/reference/operations.md#webhook-delivery-failures--dead-letter
 
       - alert: PgqnWebhookDeadLetters
         expr: increase(pgqn_webhook_dead_letters_total[30m]) > 0
@@ -80,4 +80,4 @@ groups:
           severity: critical
         annotations:
           summary: Webhook deliveries reached dead-letter state
-          runbook: docs/ops/INCIDENT_RUNBOOKS.md#webhook-delivery-failures--dead-letter
+          runbook: docs/reference/operations.md#webhook-delivery-failures--dead-letter

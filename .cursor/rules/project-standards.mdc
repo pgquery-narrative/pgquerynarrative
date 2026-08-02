@@ -5,10 +5,12 @@ alwaysApply: true
 
 # Project standards
 
-- **Do not create markdown files** (README, docs, .md) unless the user explicitly asks for them.
+- **Product direction**: Read local (gitignored) `AGENTS.md` and `.cursor/rules/product-direction.mdc` when present. Prefer rewrite/index suggestion work over platform theater. **Never commit those two files** — they are private agent context only.
+- **Do not create markdown files** (README, docs, .md) unless the user explicitly asks for them. Do not publish agent planning/context files to GitHub.
+- **Never commit planning / marketing theater**: ROADMAP, BACKLOG, PRODUCTION checklists, DEMO_RUNBOOK, LinkedIn automation, GIF capture scripts, credibility audits, `AGENTS.md`, `product-direction.mdc`. Use gitignored `.planning/` or `docs/private/` for local notes only.
 - **Go**: Follow Effective Go. Run `make fmt` and `make lint` before considering code done. Use godoc comments for exported symbols.
 - **Build**: After changing `api/design/*.go`, run `make generate`. The app uses Goa; generated code lives in `api/gen/` and repo-root `gen/` (both are built).
 - **Tests**: Run `make test` (unit + integration). Integration tests need Docker; unit tests in `app/queryrunner/validator_test.go` must pass.
-- **Commits**: Use Conventional Commits (feat:, fix:, docs:, style:, refactor:, test:, chore:).
-- **Structure**: Application code in `app/` (config, db, queryrunner, metrics, llm, story, service, errors). API design in `api/design/`. Entrypoint `cmd/server/main.go`. Web UI in `web/`.
+- **Commits**: Use Conventional Commits (feat:, fix:, docs:, style:, refactor:, test:, chore:). Do not force-push `main` unless the user explicitly requests it.
+- **Structure**: Application code in `app/` (config, db, queryrunner, metrics, llm, story, service, errors). API design in `api/design/`. Entrypoint `cmd/server/main.go`. Web UI in `frontend/` (SPA) and `web/` (export handlers).
 - **Database**: Allowed query schema is `demo`; read-only pool for queries, app pool for saved_queries/reports. Migrations in `app/db/migrations/`.

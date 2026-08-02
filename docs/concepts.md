@@ -66,5 +66,4 @@ Narratives and “Ask in natural language” use a configured provider (often lo
 ## See also
 
 - [Trust model](trust-model.md) — what the app will and will not do
-- [Demo runbook](DEMO_RUNBOOK.md) — scene-by-scene walkthrough
 - [API examples](api/examples.md) — investigation create → candidate → report

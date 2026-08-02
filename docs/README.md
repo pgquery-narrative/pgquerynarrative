@@ -8,7 +8,7 @@ PostgreSQL **Query Investigation** workbench: safe read-only SQL, plan evidence,
 |------|--------|
 | Try in minutes | [Quick start](getting-started/quickstart.md) (`make demo`) |
 | Connect your DB | [Connect your PostgreSQL](getting-started/connect-postgres.md) |
-| Ship to prod | [Production — start here](ops/PRODUCTION.md#start-here) |
+| Deploy | [Deployment](reference/deployment.md) |
 | Trust & scope | [Trust model](trust-model.md) |
 
 **Recommended reading order:** [Concepts](concepts.md) → [Quick start](getting-started/quickstart.md) → [Trust model](trust-model.md) → [Configuration](configuration.md).
@@ -28,7 +28,6 @@ This file mirrors the MkDocs home page ([index.md](index.md)). Prefer **[index.m
 | [Concepts](concepts.md) | Investigation loop, evidence, EXPLAIN vs ANALYZE, what compare proves |
 | [Trust model](trust-model.md) | Readonly role, allowlists, what the app will not do |
 | [UI overview](ui-overview.md) | Investigate, compare, reports, Security & Trust |
-| [Demo runbook](DEMO_RUNBOOK.md) | Solo demo scenes + README GIF capture notes |
 | [Configuration](configuration.md) | Environment variables |
 
 ### Getting started
@@ -54,10 +53,9 @@ This file mirrors the MkDocs home page ([index.md](index.md)). Prefer **[index.m
 | Document | Description |
 |----------|-------------|
 | [Deployment](reference/deployment.md) | Docker, Compose, Kubernetes, Helm |
-| [Production ops](ops/PRODUCTION.md) | Start-here checklist, security, monitoring |
 | [Operations](reference/operations.md) | Health, monitoring day-2 |
-| [Incident runbooks](ops/INCIDENT_RUNBOOKS.md) | Incident response |
 | [Troubleshooting](reference/troubleshooting.md) | Common failures |
+| [RLS demo](ops/rls-demo.md) | Row-level security demo notes |
 
 ### Reference & evidence
 
@@ -73,10 +71,6 @@ This file mirrors the MkDocs home page ([index.md](index.md)). Prefer **[index.m
 
 | Document | Description |
 |----------|-------------|
-| [Development setup](development/setup.md) | Build, codegen, frontend |
-| [Testing](development/testing.md) | Unit, integration, E2E |
-| [Dev runbook](development/runbook.md) | Daily developer workflow |
-
----
-
-**Contributing & security:** [.github/CONTRIBUTING.md](../.github/CONTRIBUTING.md) · [.github/SECURITY.md](../.github/SECURITY.md). **Changelog:** [CHANGELOG.md](../CHANGELOG.md). **Root README:** [../README.md](../README.md).
+| [Setup](development/setup.md) | Local development |
+| [Testing](development/testing.md) | Unit, integration, e2e |
+| [Dev runbook](development/runbook.md) | Day-to-day commands |

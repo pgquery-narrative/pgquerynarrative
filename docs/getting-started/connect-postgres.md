@@ -66,7 +66,7 @@ Then open **Investigate**, paste a real expensive query from that schema, and ru
 
 ## 6. Production checklist
 
-When leaving laptop demo mode: [Production ops — start here](../ops/PRODUCTION.md#start-here).
+When leaving laptop demo mode: see [Deployment](../reference/deployment.md) and [Trust model](../trust-model.md).
 
 ## See also
 

@@ -1,6 +1,6 @@
 # Trust model
 
-Plain-language scope for security reviewers and operators. Details and checklists: [Production ops](ops/PRODUCTION.md).
+Plain-language scope for security reviewers and operators.
 
 ## What PgQueryNarrative is for
 
@@ -55,5 +55,5 @@ The workbench **Security & Trust** page (`GET /api/v1/trust`) reflects configure
 
 - [Connect your PostgreSQL](getting-started/connect-postgres.md)
 - [Configuration](configuration.md) — security and database variables
-- [Production ops](ops/PRODUCTION.md) — defense in depth, StrictMode, checklists
+- [Deployment](reference/deployment.md) — Docker / Compose / Kubernetes
 - [Concepts](concepts.md)

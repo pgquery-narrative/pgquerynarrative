@@ -39,7 +39,6 @@ All responses include `X-Request-ID` when request ID middleware is used. **Limit
 
 ## Runbooks
 
-Formal incident playbooks: [Incident runbooks](../ops/INCIDENT_RUNBOOKS.md) (5xx, auth, timeouts, scheduler, webhooks, LLM budget, pool saturation, credential rotation).
 
 ### Deploy (standard)
 

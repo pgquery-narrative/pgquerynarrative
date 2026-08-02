@@ -41,7 +41,7 @@ emit() {
   echo "- [ ] Security review completed (auth, RLS, LLM governance, webhooks)"
   echo "- [ ] Corporate IdP browser login verified on staging (\`/auth/login\` → callback → \`/auth/session\`)"
   echo "- [ ] Backup → restore drill evidence attached (from \`make pilot-acceptance\`)"
-  echo "- [ ] On-call runbooks reviewed (\`docs/ops/INCIDENT_RUNBOOKS.md\`)"
+  echo "- [ ] On-call runbooks reviewed (\`docs/reference/operations.md\`)"
   echo "- [ ] Credential rotation procedure exercised or scheduled"
   echo ""
   echo "## Pilot KPI snapshot (fill after 7-day window)"

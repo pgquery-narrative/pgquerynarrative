@@ -121,4 +121,4 @@ if [[ "$FAIL" -ne 0 ]]; then
   exit 1
 fi
 echo "==> Smoke PASSED (core scenes)"
-echo "    Next: docs/DEMO_RUNBOOK.md walkthrough + ./tools/demo/multi_org_demo.sh"
+echo "    Next: open http://localhost:8080 → Investigate"
