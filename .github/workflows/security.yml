@@ -49,7 +49,7 @@ jobs:
           results_format: sarif
           publish_results: false
       - name: Upload Scorecard SARIF
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/upload-sarif@d1ba80a13dd99fba24a470575428917156a28b43
         if: always() && hashFiles('scorecard.sarif') != ''
         with:
           sarif_file: scorecard.sarif
@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/init@d1ba80a13dd99fba24a470575428917156a28b43
         with:
           languages: ${{ matrix.language }}
       - uses: ./.github/actions/setup-go-cgo
@@ -105,9 +105,9 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Autobuild
-        uses: github/codeql-action/autobuild@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/autobuild@d1ba80a13dd99fba24a470575428917156a28b43
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/analyze@d1ba80a13dd99fba24a470575428917156a28b43
 
   # Security audit with gosec
   gosec:
@@ -121,7 +121,7 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Run gosec (blocking on high severity/confidence findings)
-        uses: securego/gosec@45b083a0cb42119d61b1e0e364d8c62c68f6f5cd
+        uses: securego/gosec@5e72efc19d97e11549b3427b83fab3257a8c9894
         with:
           # No -no-fail: the job fails when issues remain after filtering. Filtered to
           # high severity + high confidence so pre-existing low/medium findings (tracked
