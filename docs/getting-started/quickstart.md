@@ -20,16 +20,19 @@ Open **http://localhost:8080**:
 1. Click **Start guided demo** or open **Investigate**
 2. Choose **Slow dashboard query**
 3. Review plan findings (e.g. function-wrapped date → blocked partition pruning)
-4. Click **Compare plans** on the range-predicate rewrite
-5. Click **Generate report**
+4. Click **Suggest rewrite** (or **Rank candidates**) — rewrites are system-proposed; demo scenarios ship problem SQL only
+5. Click **Compare plans** and confirm equivalence is **Equal**
+6. Click **Generate report**
 
 Vocabulary: [Concepts](../concepts.md).
 
-For large-seed partition counts (≈10M rows, 50→1 style proof):
+For partition-count proof on ~10M rows (50→1 style), run **`make demo-bootstrap`** first, then repeat from step 2:
 
 ```bash
 make demo-bootstrap
 ```
+
+Optional API smoke after the stack is up: `make demo-smoke`.
 
 ## Other ways to run
 

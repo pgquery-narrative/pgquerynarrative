@@ -6,7 +6,7 @@
 
 <p align="center">
 <strong>PostgreSQL query intelligence that shows its evidence</strong><br>
-Investigate expensive queries, compare rewrites with plan proof,<br>
+Investigate expensive queries, compare system-proposed rewrites with plan proof,<br>
 and ship engineering-ready reports.
 </p>
 
@@ -29,10 +29,10 @@ and ship engineering-ready reports.
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo-workflow.svg" alt="Query Investigation workflow: findings, compare, report" width="720">
+  <img src="docs/assets/demo-workflow.svg" alt="Query Investigation workflow: EXPLAIN, suggest rewrite, compare, report" width="720">
 </p>
 
-<p align="center"><sub>Investigate → compare rewrite with plan proof → engineering report.</sub></p>
+<p align="center"><sub>Investigate → system-proposed rewrite → compare with plan proof → engineering report.</sub></p>
 
 ---
 
@@ -40,9 +40,16 @@ and ship engineering-ready reports.
 
 PgQueryNarrative is a **PostgreSQL investigation workbench**. The flagship loop is:
 
-**expensive query → plan findings → candidate rewrite → measured compare → engineering report**
+**expensive query → plan findings → system-proposed rewrite or index candidate → measured compare + equivalence proof → engineering report**
 
-Safe read-only SQL and plan analysis are the core. An optional LLM can narrate; it is not required for investigation reports. Start with [Concepts](docs/concepts.md) if you want the vocabulary (evidence, EXPLAIN vs ANALYZE, what compare proves).
+Safe read-only SQL and plan analysis are the core. An optional LLM can narrate workbench analytics; it is **not** required for investigation reports (those are evidence templates, not LLM narratives). Start with [Concepts](docs/concepts.md) for vocabulary (evidence, EXPLAIN vs ANALYZE, what compare proves).
+
+**How it works (honest):**
+
+- Rewrites are **proposed from the query AST and plan findings** (`Suggest rewrite` / `Rank candidates`) — demo scenarios ship **problem SQL only**, no answer-key rewrite
+- Index DDL is **suggested only** (hypopg when installed; labeled heuristic otherwise) — never auto-applied
+- **Equivalence** (`Equal` / `Different` / `Unverified`) gates shippable investigation reports
+- **Regression inbox** is empty on default `make demo` unless real `pg_stat_statements` data exists; set `APP_ENV=demo` for seeded demo alerts and KPIs
 
 ## Choose your path
 
@@ -68,10 +75,11 @@ Open **http://localhost:8080**:
 1. **Start guided demo** or open **Investigate**
 2. Choose **Slow dashboard query**
 3. Review the finding (e.g. `DATE_TRUNC` blocking partition pruning)
-4. **Compare plans** on the range-predicate rewrite
-5. **Generate report**
+4. Click **Suggest rewrite** (or **Rank candidates**) — rewrites are system-proposed, not prefilled
+5. **Compare plans** and confirm equivalence is **Equal**
+6. **Generate report**
 
-For README-scale partition counts (50→1 on ~10M rows):
+For partition-count proof on ~10M rows (50→1 style), run **`make demo-bootstrap`** first (or `make seed-large-docker` on an existing stack), then repeat from step 2.
 
 ```bash
 make demo-bootstrap
@@ -98,13 +106,16 @@ Full write-up: [Trust model](docs/trust-model.md)
 
 | Area | What you get |
 |------|----------------|
-| **Query Investigation** | Findings from EXPLAIN, candidate compare, engineering report |
+| **Query Investigation** | EXPLAIN findings, system-proposed candidates, compare, equivalence proof, template engineering report |
+| **Rewrite engine** | AST-based `Suggest rewrite` (DATE_TRUNC, EXTRACT, COALESCE, OR→UNION ALL, IN→EXISTS, …) |
+| **Candidate ranking** | `Rank candidates`: dry-EXPLAIN rewrites + optional hypopg index projection (heuristic when hypopg unavailable) |
+| **Equivalence proof** | `COUNT(*)` + multiset sample → Equal / Different / Unverified; reports require Equal |
 | **Secure read-only access** | Readonly pool, statement limits, timeouts, schema allowlist |
-| **Plan analysis** | Seq-scan / cost findings; optional `EXPLAIN ANALYZE` when enabled |
-| **Workbench** | Plan tree, compare table, regression inbox, Security & Trust page |
+| **Plan analysis** | Seq-scan / cost / partition-pruning findings; optional `EXPLAIN ANALYZE` when enabled; IndexAdvice DDL (suggest-only) |
+| **Workbench** | Plan tree, compare table, regression inbox (real stats or `APP_ENV=demo`), Security & Trust page |
 | **Scale demo** | Partitioned `demo.sales`; 10M-row seed — [Dataset](docs/DATASET.md) |
 
-Optional narratives: [LLM setup](docs/getting-started/llm-setup.md) · library embed: [Embedded integration](docs/getting-started/embedded.md)
+**Two report types:** **Investigation reports** (evidence template, no LLM) vs **Workbench LLM reports** (`/reports/generate`, Ask). Optional narratives: [LLM setup](docs/getting-started/llm-setup.md) · library embed: [Embedded integration](docs/getting-started/embedded.md)
 
 ---
 
@@ -114,6 +125,7 @@ Optional narratives: [LLM setup](docs/getting-started/llm-setup.md) · library e
 |--------|---------|
 | **Guided demo** | `make demo` |
 | Guided demo + 10M-row seed | `make demo-bootstrap` |
+| API smoke after demo | `make demo-smoke` |
 | Start / stop stack | `make start-docker` / `make stop` |
 | Migrate (Docker) | `make migrate-docker` |
 | Seed 10M rows (Docker) | `make seed-large-docker` |
@@ -128,11 +140,14 @@ Optional narratives: [LLM setup](docs/getting-started/llm-setup.md) · library e
 | Path | Purpose |
 |------|---------|
 | [`cmd/server`](cmd/server) | API, health/ready, SPA |
+| [`cmd/mcp-server`](cmd/mcp-server) | Optional MCP server (query/report tools) |
 | [`app/`](app/) | Config, DB, query runner, investigations, LLM, reports |
-| [`api/design/`](api/design/) | Goa API design → `api/gen/` |
+| [`api/design/`](api/design/) | Goa API design → `api/gen/` and repo-root `gen/` |
 | [`frontend/`](frontend/) | React workbench |
+| [`web/`](web/) | Report HTML/PDF export handlers |
 | [`docs/`](docs/index.md) | Documentation (preview: `make docs`) |
 | [`pkg/narrative/`](pkg/narrative/) | Embeddable client |
+| [`test/`](test/) | Unit, integration, e2e, Playwright |
 
 ---
 

@@ -9,10 +9,13 @@ Flagship flow examples: [API examples — Query Investigation](examples.md#query
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/investigations` | Body: `{"title","sql", ...}`. Create investigation; runs plan analysis. Returns investigation with `explain` / findings. |
+| POST | `/investigations/from-regression` | Body: `{"regression_id", ...}`. Open investigation from a regression inbox alert. |
 | GET | `/investigations` | Query: `limit`, `offset`. List investigations. |
 | GET | `/investigations/{id}` | Get investigation with evidence, optional candidate + comparison. |
-| POST | `/investigations/{id}/candidate` | Body: `{"candidate_sql","analyze"}`. Attach rewrite and compare plans. |
-| POST | `/investigations/{id}/report` | Generate engineering investigation report; sets `report_id`. |
+| POST | `/investigations/{id}/suggest-rewrite` | AST-based rewrite suggestions from source SQL and plan findings. Returns `candidates[]` with `sql`, `rationale`, `category`. |
+| POST | `/investigations/{id}/rank-candidates` | Body: `{"analyze": false}`. Generate rewrite + index-DDL candidates, dry-EXPLAIN, rank by cost/partitions (hypopg when available). |
+| POST | `/investigations/{id}/candidate` | Body: `{"candidate_sql","analyze"}`. Attach rewrite and compare plans + equivalence (Equal / Different / Unverified). |
+| POST | `/investigations/{id}/report` | Generate engineering investigation report (evidence template); requires equivalence **Equal**; sets `report_id`. |
 
 ## Workspace
 
@@ -21,7 +24,7 @@ Flagship flow examples: [API examples — Query Investigation](examples.md#query
 | GET | `/workspace/overview` | Landing evidence summary (stats / attention counts). |
 | GET | `/workspace/regressions` | Regression inbox items. |
 | POST | `/workspace/regressions/{id}/acknowledge` | Acknowledge a regression. |
-| GET | `/demo/scenarios` | Guided demo scenarios (title, SQL, candidate). |
+| GET | `/demo/scenarios` | Guided demo scenarios (title, problem SQL, expected improvement). No prefilled `candidate_sql`. |
 | GET | `/trust` | Security & Trust snapshot for the UI. |
 
 ## Queries
@@ -61,7 +64,7 @@ Flagship flow examples: [API examples — Query Investigation](examples.md#query
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/reports/generate` | Body: `{"sql","saved_query_id","connection_id"}`. Narrative report path (often requires [LLM](../getting-started/llm-setup.md)). |
+| POST | `/reports/generate` | Body: `{"sql","saved_query_id","connection_id"}`. **Workbench LLM narrative** report (distinct from investigation template reports). Often requires [LLM](../getting-started/llm-setup.md). |
 | GET | `/reports/{id}` | Get report. |
 | GET | `/reports` | Query: `limit`, `offset`, `saved_query_id`, `connection_id`. List reports. |
 

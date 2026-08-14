@@ -8,7 +8,7 @@ Product vocabulary: [Concepts](../concepts.md).
 
 ## Query Investigation (flagship)
 
-Create an investigation from SQL, attach a candidate rewrite (plan compare), then generate a report.
+Create an investigation from SQL, get a **system-proposed rewrite**, compare plans, then generate a report.
 
 ```bash
 # 1) Create — returns id, explain findings, status
@@ -21,18 +21,32 @@ INV=$(curl -s -X POST http://localhost:8080/api/v1/investigations \
 echo "$INV" | jq '{id, status, findings: [.explain.findings[]?.message][:3]}'
 ID=$(echo "$INV" | jq -r .id)
 
-# 2) Candidate rewrite + compare (set "analyze": true when server allows EXPLAIN ANALYZE)
+# 2) System-proposed rewrite (AST engine)
+SUGGEST=$(curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/suggest-rewrite" \
+  -H "Content-Type: application/json" \
+  -d "{}")
+echo "$SUGGEST" | jq '{candidates: [.candidates[]? | {sql, rationale, category}]}'
+REWRITE=$(echo "$SUGGEST" | jq -r '.candidates[0].sql')
+
+# 3) Compare plans + equivalence (set "analyze": true when server allows EXPLAIN ANALYZE)
 curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/candidate" \
   -H "Content-Type: application/json" \
-  -d '{
-    "candidate_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE date >= '\''2025-01-01'\'' AND date < '\''2025-02-01'\'' GROUP BY product_category ORDER BY revenue DESC",
-    "analyze": true
-  }' | jq '{status, comparison: .comparison.metrics}'
+  -d "$(jq -n --arg sql "$REWRITE" '{candidate_sql: $sql, analyze: true}')" \
+  | jq '{status, equivalence: .comparison.equivalence, comparison: .comparison.metrics}'
 
-# 3) Engineering report
+# 4) Engineering report (requires equivalence Equal)
 curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/report" \
   -H "Content-Type: application/json" \
   -d "{}" | jq '{status, report_id}'
+```
+
+Optional: rank rewrite + index DDL candidates with dry EXPLAIN:
+
+```bash
+curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/rank-candidates" \
+  -H "Content-Type: application/json" \
+  -d '{"analyze": false}' \
+  | jq '{ranked: [.ranked[]? | {sql, rationale, total_cost, partitions_scanned}]}'
 ```
 
 List / fetch:

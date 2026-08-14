@@ -1,6 +1,6 @@
 # PgQueryNarrative
 
-**PostgreSQL query intelligence that shows its evidence.** Investigate expensive queries with plan findings, compare rewrites, and produce engineering-ready reports — with an optional LLM narrative layer on top.
+**PostgreSQL query intelligence that shows its evidence.** Investigate expensive queries with plan findings, compare system-proposed rewrites, and produce engineering-ready reports — with an optional LLM narrative layer on the workbench.
 
 | Path | Link |
 |------|------|
@@ -14,10 +14,10 @@ Web UI: [UI overview](ui-overview.md) · API: [Reference](api/README.md) · [Exa
 
 ## Recommended path
 
-1. [Concepts](concepts.md) — investigation, evidence, what compare proves  
+1. [Concepts](concepts.md) — investigation, evidence, rewrite engine, what compare proves  
 2. [Quick start](getting-started/quickstart.md) — `make demo`  
 3. [Trust model](trust-model.md) — then [Connect your PostgreSQL](getting-started/connect-postgres.md) when leaving the demo schema  
-4. [LLM setup](getting-started/llm-setup.md) — only if you want narratives / Ask  
+4. [LLM setup](getting-started/llm-setup.md) — only if you want workbench narratives / Ask  
 
 ## One-command demo
 
@@ -25,9 +25,9 @@ Web UI: [UI overview](ui-overview.md) · API: [Reference](api/README.md) · [Exa
 make demo
 ```
 
-Open **http://localhost:8080** → **Investigate** → **Slow dashboard query** → **Compare plans** → **Generate report**.
+Open **http://localhost:8080** → **Investigate** → **Slow dashboard query** → **Suggest rewrite** → **Compare plans** → **Generate report**.
 
-Large seed: `make demo-bootstrap`.
+For 50→1 partition proof on ~10M rows: run `make demo-bootstrap` first.
 
 ## Documentation map
 

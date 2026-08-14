@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" role="img" aria-label="PgQueryNarrative Query Investigation workflow">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 420" role="img" aria-label="PgQueryNarrative Query Investigation workflow">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0a0f1f"/>
@@ -9,60 +9,75 @@
       <stop offset="100%" stop-color="#8a5cff"/>
     </linearGradient>
   </defs>
-  <rect width="960" height="420" fill="url(#bg)" rx="16"/>
-  <text x="480" y="42" text-anchor="middle" fill="#e2e8f0" font-family="system-ui,sans-serif" font-size="22" font-weight="700">Query Investigation</text>
-  <text x="480" y="68" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="13">PostgreSQL evidence - plan analysis - verified report</text>
+  <rect width="1080" height="420" fill="url(#bg)" rx="16"/>
+  <text x="540" y="42" text-anchor="middle" fill="#e2e8f0" font-family="system-ui,sans-serif" font-size="22" font-weight="700">Query Investigation</text>
+  <text x="540" y="68" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="13">PostgreSQL evidence — system-proposed rewrite — verified report</text>
 
   <!-- Steps -->
   <g font-family="ui-monospace,monospace" font-size="11">
-    <rect x="40" y="110" width="150" height="72" rx="10" fill="#0f1629" stroke="#00f5ff" stroke-width="1.5"/>
-    <text x="115" y="140" text-anchor="middle" fill="#00f5ff" font-weight="600">Regression</text>
-    <text x="115" y="158" text-anchor="middle" fill="#94a3b8">inbox</text>
+    <rect x="30" y="110" width="135" height="72" rx="10" fill="#0f1629" stroke="#2a7fff" stroke-width="1.5"/>
+    <text x="97" y="140" text-anchor="middle" fill="#2a7fff" font-weight="600">Inspect</text>
+    <text x="97" y="158" text-anchor="middle" fill="#94a3b8">SQL + stats</text>
 
-    <rect x="230" y="110" width="150" height="72" rx="10" fill="#0f1629" stroke="#2a7fff" stroke-width="1.5"/>
-    <text x="305" y="140" text-anchor="middle" fill="#2a7fff" font-weight="600">Inspect</text>
-    <text x="305" y="158" text-anchor="middle" fill="#94a3b8">SQL + stats</text>
+    <rect x="185" y="110" width="135" height="72" rx="10" fill="#0f1629" stroke="#8a5cff" stroke-width="1.5"/>
+    <text x="252" y="140" text-anchor="middle" fill="#8a5cff" font-weight="600">EXPLAIN</text>
+    <text x="252" y="158" text-anchor="middle" fill="#94a3b8">plan tree</text>
 
-    <rect x="420" y="110" width="150" height="72" rx="10" fill="#0f1629" stroke="#8a5cff" stroke-width="1.5"/>
-    <text x="495" y="140" text-anchor="middle" fill="#8a5cff" font-weight="600">EXPLAIN</text>
-    <text x="495" y="158" text-anchor="middle" fill="#94a3b8">plan tree</text>
+    <rect x="340" y="110" width="135" height="72" rx="10" fill="#0f1629" stroke="#00f5ff" stroke-width="2"/>
+    <text x="407" y="136" text-anchor="middle" fill="#00f5ff" font-weight="700">Suggest</text>
+    <text x="407" y="154" text-anchor="middle" fill="#00f5ff" font-weight="700">rewrite</text>
+    <text x="407" y="172" text-anchor="middle" fill="#94a3b8">AST engine</text>
 
-    <rect x="610" y="110" width="150" height="72" rx="10" fill="#0f1629" stroke="#10b981" stroke-width="1.5"/>
-    <text x="685" y="140" text-anchor="middle" fill="#10b981" font-weight="600">Compare</text>
-    <text x="685" y="158" text-anchor="middle" fill="#94a3b8">before/after</text>
+    <rect x="495" y="110" width="135" height="72" rx="10" fill="#0f1629" stroke="#10b981" stroke-width="1.5"/>
+    <text x="562" y="140" text-anchor="middle" fill="#10b981" font-weight="600">Compare</text>
+    <text x="562" y="158" text-anchor="middle" fill="#94a3b8">before/after</text>
 
-    <rect x="800" y="110" width="120" height="72" rx="10" fill="#0f1629" stroke="#f59e0b" stroke-width="1.5"/>
-    <text x="860" y="140" text-anchor="middle" fill="#f59e0b" font-weight="600">Report</text>
-    <text x="860" y="158" text-anchor="middle" fill="#94a3b8">engineering</text>
+    <rect x="650" y="110" width="135" height="72" rx="10" fill="#0f1629" stroke="#6366f1" stroke-width="1.5"/>
+    <text x="717" y="140" text-anchor="middle" fill="#6366f1" font-weight="600">Verify</text>
+    <text x="717" y="158" text-anchor="middle" fill="#94a3b8">equivalence</text>
+
+    <rect x="805" y="110" width="135" height="72" rx="10" fill="#0f1629" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="872" y="140" text-anchor="middle" fill="#f59e0b" font-weight="600">Report</text>
+    <text x="872" y="158" text-anchor="middle" fill="#94a3b8">engineering</text>
   </g>
 
-  <!-- Flow arrows (static; GitHub Camo strips SMIL animate) -->
-  <path d="M 190 146 L 222 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
-  <polygon points="222,140 234,146 222,152" fill="#8a5cff"/>
-  <path d="M 380 146 L 412 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
-  <polygon points="412,140 424,146 412,152" fill="#8a5cff"/>
-  <path d="M 570 146 L 602 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
-  <polygon points="602,140 614,146 602,152" fill="#8a5cff"/>
-  <path d="M 760 146 L 792 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
-  <polygon points="792,140 804,146 792,152" fill="#f59e0b"/>
+  <!-- Flow arrows -->
+  <path d="M 165 146 L 177 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="177,140 189,146 177,152" fill="#8a5cff"/>
+  <path d="M 320 146 L 332 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="332,140 344,146 332,152" fill="#8a5cff"/>
+  <path d="M 475 146 L 487 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="487,140 499,146 487,152" fill="#00f5ff"/>
+  <path d="M 630 146 L 642 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="642,140 654,146 642,152" fill="#10b981"/>
+  <path d="M 785 146 L 797 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="797,140 809,146 797,152" fill="#6366f1"/>
+  <path d="M 940 146 L 952 146" stroke="url(#accent)" stroke-width="2" fill="none"/>
+  <polygon points="952,140 964,146 952,152" fill="#f59e0b"/>
 
   <!-- Mock UI panel -->
-  <rect x="40" y="220" width="880" height="170" rx="12" fill="#0f1629" stroke="#1e293b" stroke-width="1"/>
-  <rect x="56" y="236" width="200" height="138" rx="8" fill="#05060b" stroke="#334155"/>
-  <text x="68" y="258" fill="#64748b" font-size="10" font-family="system-ui">Regression inbox</text>
-  <rect x="68" y="268" width="176" height="22" rx="4" fill="#1e293b"/>
-  <text x="76" y="283" fill="#e2e8f0" font-size="10" font-family="system-ui">Slow dashboard query</text>
-  <rect x="68" y="298" width="176" height="22" rx="4" fill="#1e293b" opacity="0.6"/>
-  <rect x="68" y="328" width="176" height="22" rx="4" fill="#1e293b" opacity="0.4"/>
+  <rect x="30" y="220" width="1020" height="170" rx="12" fill="#0f1629" stroke="#1e293b" stroke-width="1"/>
+  <rect x="46" y="236" width="200" height="138" rx="8" fill="#05060b" stroke="#334155"/>
+  <text x="58" y="258" fill="#64748b" font-size="10" font-family="system-ui">Guided demo</text>
+  <rect x="58" y="268" width="176" height="22" rx="4" fill="#1e293b"/>
+  <text x="66" y="283" fill="#e2e8f0" font-size="10" font-family="system-ui">Slow dashboard query</text>
+  <text x="58" y="310" fill="#64748b" font-size="9" font-family="system-ui">Problem SQL only</text>
+  <text x="58" y="326" fill="#64748b" font-size="9" font-family="system-ui">No answer-key rewrite</text>
 
-  <rect x="272" y="236" width="632" height="138" rx="8" fill="#05060b" stroke="#334155"/>
-  <text x="288" y="258" fill="#64748b" font-size="10" font-family="system-ui">Plan explorer</text>
-  <text x="300" y="286" fill="#00f5ff" font-size="11" font-family="ui-monospace">Aggregate</text>
-  <text x="320" y="308" fill="#94a3b8" font-size="10" font-family="ui-monospace">- Sort</text>
-  <text x="340" y="328" fill="#f59e0b" font-size="10" font-family="ui-monospace">  - Seq Scan: demo.sales</text>
-  <rect x="500" y="276" width="180" height="80" rx="6" fill="#0a0f1f" stroke="#00f5ff" stroke-width="1"/>
-  <text x="512" y="296" fill="#e2e8f0" font-size="10" font-family="system-ui">Evidence</text>
-  <text x="512" y="314" fill="#94a3b8" font-size="9" font-family="system-ui">146x row underestimate</text>
-  <text x="512" y="330" fill="#94a3b8" font-size="9" font-family="system-ui">Confidence: High</text>
-  <text x="512" y="346" fill="#64748b" font-size="9" font-family="system-ui">Investigate: statistics</text>
+  <rect x="262" y="236" width="500" height="138" rx="8" fill="#05060b" stroke="#334155"/>
+  <text x="278" y="258" fill="#64748b" font-size="10" font-family="system-ui">Plan explorer + rewrite</text>
+  <text x="290" y="286" fill="#00f5ff" font-size="11" font-family="ui-monospace">Aggregate</text>
+  <text x="310" y="308" fill="#94a3b8" font-size="10" font-family="ui-monospace">- Sort</text>
+  <text x="330" y="328" fill="#f59e0b" font-size="10" font-family="ui-monospace">  - Seq Scan: demo.sales</text>
+  <rect x="430" y="276" width="160" height="28" rx="6" fill="#0a0f1f" stroke="#00f5ff" stroke-width="1.5"/>
+  <text x="510" y="295" text-anchor="middle" fill="#00f5ff" font-size="10" font-family="system-ui" font-weight="600">Suggest rewrite</text>
+  <rect x="600" y="276" width="140" height="28" rx="6" fill="#0a0f1f" stroke="#334155"/>
+  <text x="670" y="295" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="system-ui">Compare plans</text>
+
+  <rect x="778" y="236" width="256" height="138" rx="8" fill="#05060b" stroke="#334155"/>
+  <text x="794" y="258" fill="#64748b" font-size="10" font-family="system-ui">Evidence</text>
+  <text x="794" y="282" fill="#94a3b8" font-size="9" font-family="system-ui">DATE_TRUNC blocks pruning</text>
+  <text x="794" y="298" fill="#94a3b8" font-size="9" font-family="system-ui">Range rewrite → 50→1 partitions</text>
+  <text x="794" y="318" fill="#6366f1" font-size="9" font-family="system-ui">Equivalence: Equal</text>
+  <text x="794" y="334" fill="#64748b" font-size="9" font-family="system-ui">Template report (no LLM)</text>
 </svg>
