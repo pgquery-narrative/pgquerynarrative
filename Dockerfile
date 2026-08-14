@@ -5,7 +5,7 @@ RUN npm ci --silent
 COPY frontend/ .
 RUN npm run build
 
-FROM golang:1.25-alpine AS go-build
+FROM golang:1.25.13-alpine AS go-build
 WORKDIR /app
 RUN apk add --no-cache git build-base
 COPY go.mod go.sum ./
