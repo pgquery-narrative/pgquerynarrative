@@ -18,14 +18,15 @@ import (
 
 // Server lists the investigations service endpoint HTTP handlers.
 type Server struct {
-	Mounts         []*MountPoint
-	Create         http.Handler
-	List           http.Handler
-	Get            http.Handler
-	AddCandidate   http.Handler
-	SuggestRewrite http.Handler
-	RankCandidates http.Handler
-	GenerateReport http.Handler
+	Mounts               []*MountPoint
+	Create               http.Handler
+	CreateFromRegression http.Handler
+	List                 http.Handler
+	Get                  http.Handler
+	AddCandidate         http.Handler
+	SuggestRewrite       http.Handler
+	RankCandidates       http.Handler
+	GenerateReport       http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -56,6 +57,7 @@ func New(
 	return &Server{
 		Mounts: []*MountPoint{
 			{"Create", "POST", "/api/v1/investigations"},
+			{"CreateFromRegression", "POST", "/api/v1/investigations/from-regression"},
 			{"List", "GET", "/api/v1/investigations"},
 			{"Get", "GET", "/api/v1/investigations/{id}"},
 			{"AddCandidate", "POST", "/api/v1/investigations/{id}/candidate"},
@@ -63,13 +65,14 @@ func New(
 			{"RankCandidates", "POST", "/api/v1/investigations/{id}/rank-candidates"},
 			{"GenerateReport", "POST", "/api/v1/investigations/{id}/report"},
 		},
-		Create:         NewCreateHandler(e.Create, mux, decoder, encoder, errhandler, formatter),
-		List:           NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
-		Get:            NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
-		AddCandidate:   NewAddCandidateHandler(e.AddCandidate, mux, decoder, encoder, errhandler, formatter),
-		SuggestRewrite: NewSuggestRewriteHandler(e.SuggestRewrite, mux, decoder, encoder, errhandler, formatter),
-		RankCandidates: NewRankCandidatesHandler(e.RankCandidates, mux, decoder, encoder, errhandler, formatter),
-		GenerateReport: NewGenerateReportHandler(e.GenerateReport, mux, decoder, encoder, errhandler, formatter),
+		Create:               NewCreateHandler(e.Create, mux, decoder, encoder, errhandler, formatter),
+		CreateFromRegression: NewCreateFromRegressionHandler(e.CreateFromRegression, mux, decoder, encoder, errhandler, formatter),
+		List:                 NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
+		Get:                  NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
+		AddCandidate:         NewAddCandidateHandler(e.AddCandidate, mux, decoder, encoder, errhandler, formatter),
+		SuggestRewrite:       NewSuggestRewriteHandler(e.SuggestRewrite, mux, decoder, encoder, errhandler, formatter),
+		RankCandidates:       NewRankCandidatesHandler(e.RankCandidates, mux, decoder, encoder, errhandler, formatter),
+		GenerateReport:       NewGenerateReportHandler(e.GenerateReport, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -79,6 +82,7 @@ func (s *Server) Service() string { return "investigations" }
 // Use wraps the server handlers with the given middleware.
 func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Create = m(s.Create)
+	s.CreateFromRegression = m(s.CreateFromRegression)
 	s.List = m(s.List)
 	s.Get = m(s.Get)
 	s.AddCandidate = m(s.AddCandidate)
@@ -93,6 +97,7 @@ func (s *Server) MethodNames() []string { return investigations.MethodNames[:] }
 // Mount configures the mux to serve the investigations endpoints.
 func Mount(mux goahttp.Muxer, h *Server) {
 	MountCreateHandler(mux, h.Create)
+	MountCreateFromRegressionHandler(mux, h.CreateFromRegression)
 	MountListHandler(mux, h.List)
 	MountGetHandler(mux, h.Get)
 	MountAddCandidateHandler(mux, h.AddCandidate)
@@ -136,6 +141,60 @@ func NewCreateHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "create")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "investigations")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountCreateFromRegressionHandler configures the mux to serve the
+// "investigations" service "create_from_regression" endpoint.
+func MountCreateFromRegressionHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/api/v1/investigations/from-regression", f)
+}
+
+// NewCreateFromRegressionHandler creates a HTTP handler which loads the HTTP
+// request and calls the "investigations" service "create_from_regression"
+// endpoint.
+func NewCreateFromRegressionHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeCreateFromRegressionRequest(mux, decoder)
+		encodeResponse = EncodeCreateFromRegressionResponse(encoder)
+		encodeError    = EncodeCreateFromRegressionError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "create_from_regression")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "investigations")
 		payload, err := decodeRequest(r)
 		if err != nil {

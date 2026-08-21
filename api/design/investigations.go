@@ -19,6 +19,25 @@ var _ = Service("investigations", func() {
 		})
 	})
 
+	Method("create_from_regression", func() {
+		Description("Open an investigation from a regression alert (EXPLAIN + link alert to investigation)")
+		Payload(func() {
+			Attribute("regression_alert_id", String, func() {
+				Format(FormatUUID)
+			})
+			Required("regression_alert_id")
+		})
+		Result(Investigation)
+		Error("not_found", NotFoundError)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/investigations/from-regression")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
 	Method("list", func() {
 		Description("List query investigations for the current organization")
 		Payload(func() {
@@ -90,7 +109,7 @@ var _ = Service("investigations", func() {
 	})
 
 	Method("rank_candidates", func() {
-		Description("Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, and rank by cost/partitions (index DDL is review-only)")
+		Description("Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, project index cost (hypopg or honest heuristic), and rank by cost/partitions")
 		Payload(func() {
 			Attribute("id", String, func() {
 				Format(FormatUUID)

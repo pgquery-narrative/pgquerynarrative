@@ -23,6 +23,11 @@ type tableCatalogStats struct {
 // are downgraded: sequential scans over small tables are usually optimal.
 const smallTableRowThreshold = 1000
 
+// smallTableBytesThreshold treats tiny on-disk relations as small when
+// reltuples is missing/zero (common on partitioned parents before ANALYZE
+// propagates), so we do not draft CREATE INDEX DDL for empty/demo-sized tables.
+const smallTableBytesThreshold int64 = 2 << 20 // 2 MiB
+
 // maxIndexesPerTable bounds how many index definitions are pulled per relation
 // so a pathologically over-indexed table can't blow up analysis time.
 const maxIndexesPerTable = 25
@@ -34,7 +39,11 @@ const lowUseIndexScanThreshold = 0
 // enrichExplainFindings adds table-size, index, and statistics-freshness
 // context from the catalog, and suppresses low-value index recommendations.
 func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFinding) []PlanFinding {
-	if len(findings) == 0 || r.activePool(ctx) == nil {
+	if len(findings) == 0 {
+		return findings
+	}
+	pool := r.activePool(ctx)
+	if pool == nil {
 		return findings
 	}
 
@@ -43,25 +52,40 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 		name   string
 	}
 	keys := make(map[relKey]struct{})
+	resolvedSchemas := make(map[string]string) // relation → schema when EXPLAIN omitted Schema
 	for _, f := range findings {
 		if f.Relation == "" {
 			continue
 		}
-		keys[relKey{schema: f.Schema, name: f.Relation}] = struct{}{}
+		schema := f.Schema
+		if schema == "" {
+			resolved, ok := r.resolveRelationSchema(ctx, pool, f.Relation)
+			if !ok {
+				continue
+			}
+			schema = resolved
+			resolvedSchemas[f.Relation] = schema
+		}
+		keys[relKey{schema: schema, name: f.Relation}] = struct{}{}
 	}
 	if len(keys) == 0 {
 		return findings
 	}
 
 	stats := make(map[relKey]tableCatalogStats, len(keys))
-	pool := r.activePool(ctx)
-	if pool == nil {
-		return findings
-	}
 	for k := range keys {
 		var row tableCatalogStats
 		err := pool.QueryRow(ctx, `
-			SELECT COALESCE(c.reltuples::bigint, 0),
+			SELECT COALESCE(
+			         NULLIF((
+			           SELECT SUM(child.reltuples)::bigint
+			           FROM pg_inherits i
+			           JOIN pg_class child ON child.oid = i.inhrelid
+			           WHERE i.inhparent = c.oid
+			         ), 0),
+			         NULLIF(c.reltuples::bigint, 0),
+			         0
+			       ),
 			       COALESCE(pg_total_relation_size(c.oid), 0),
 			       (SELECT COUNT(*)::int FROM pg_index i WHERE i.indrelid = c.oid AND i.indisvalid),
 			       s.last_analyze,
@@ -90,12 +114,20 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 		if out[i].Relation == "" {
 			continue
 		}
-		st, ok := stats[relKey{schema: out[i].Schema, name: out[i].Relation}]
+		schema := out[i].Schema
+		if schema == "" {
+			schema = resolvedSchemas[out[i].Relation]
+			if schema != "" {
+				out[i].Schema = schema
+			}
+		}
+		st, ok := stats[relKey{schema: schema, name: out[i].Relation}]
 		if !ok {
 			continue
 		}
 		out[i] = applyCatalogContext(out[i], st)
 		out[i].IndexAdvice = buildIndexAdvice(out[i], st)
+		out[i] = promoteIndexCandidateFinding(out[i])
 	}
 
 	// Beyond per-node enrichment, surface health issues with the *existing*
@@ -109,6 +141,46 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 		}
 		reportedTables[k] = true
 		out = append(out, detectIndexIssues(k.schema, k.name, st.Indexes)...)
+	}
+	return out
+}
+
+// resolveRelationSchema finds the schema for a relation when EXPLAIN omitted
+// the Schema field (common for partition children). Prefers the validator
+// allowlist, then any non-system schema.
+func (r *Runner) resolveRelationSchema(ctx context.Context, pool *pgxpool.Pool, relation string) (string, bool) {
+	if pool == nil || relation == "" {
+		return "", false
+	}
+	preferred := r.allowedSchemaList()
+	var schema string
+	err := pool.QueryRow(ctx, `
+		SELECT n.nspname
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relname = $1
+		  AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		  AND n.nspname NOT LIKE 'pg_temp_%'
+		  AND n.nspname NOT LIKE 'pg_toast_temp_%'
+		ORDER BY CASE
+			WHEN cardinality($2::text[]) > 0 AND n.nspname = ANY($2::text[]) THEN 0
+			ELSE 1
+		END, n.nspname
+		LIMIT 1
+	`, relation, preferred).Scan(&schema)
+	if err != nil || schema == "" {
+		return "", false
+	}
+	return schema, true
+}
+
+func (r *Runner) allowedSchemaList() []string {
+	if r == nil || r.validator == nil {
+		return nil
+	}
+	out := make([]string, 0, len(r.validator.allowedSchemas))
+	for s := range r.validator.allowedSchemas {
+		out = append(out, s)
 	}
 	return out
 }
@@ -185,9 +257,9 @@ func applyCatalogContext(f PlanFinding, st tableCatalogStats) PlanFinding {
 	}
 
 	// Small tables: sequential scans are usually optimal; suppress index advice.
-	if f.IsSeqScan && st.EstimatedRows > 0 && st.EstimatedRows < smallTableRowThreshold {
+	if f.IsSeqScan && isSmallTable(st) {
 		f.Confidence = "low"
-		parts = append(parts, fmt.Sprintf("table is small (<%d rows); an index is unlikely to help", smallTableRowThreshold))
+		parts = append(parts, fmt.Sprintf("table is small (<%d rows or <%s on disk); an index is unlikely to help", smallTableRowThreshold, formatBytes(smallTableBytesThreshold)))
 		f.Message = strings.Join(parts, " — ")
 		return f
 	}
@@ -328,12 +400,32 @@ func buildIndexAdvice(f PlanFinding, st tableCatalogStats) *IndexAdvice {
 	if len(f.RelatedColumns) == 0 {
 		return nil
 	}
-	advice := &IndexAdvice{RelatedColumns: append([]string(nil), f.RelatedColumns...)}
+	cols := indexAdviceColumns(f)
+	advice := &IndexAdvice{RelatedColumns: cols}
+
+	// Small tables: sequential scans are usually optimal; do not draft DDL.
+	if f.IsSeqScan && isSmallTable(st) {
+		advice.Issues = []string{"small_table"}
+		if st.EstimatedRows > 0 {
+			advice.PotentialBenefit = fmt.Sprintf(
+				"table has ~%s rows (<%d); sequential scan is usually optimal — skip new index DDL unless steady-state traffic proves otherwise",
+				formatRowCount(st.EstimatedRows), smallTableRowThreshold,
+			)
+		} else {
+			advice.PotentialBenefit = fmt.Sprintf(
+				"relation is small on disk (~%s, <%s) or lacks row estimates; sequential scan is usually optimal — skip new index DDL until ANALYZE shows a large table",
+				formatBytes(st.TotalBytes), formatBytes(smallTableBytesThreshold),
+			)
+		}
+		advice.WriteCost = "n/a — index not recommended on small tables"
+		advice.StorageCost = "n/a"
+		return advice
+	}
 
 	var covering *IndexDefinition
 	var partial []IndexDefinition
 	for i := range st.Indexes {
-		switch indexColumnCoverage(st.Indexes[i], f.RelatedColumns) {
+		switch indexColumnCoverage(st.Indexes[i], cols) {
 		case coverageFull:
 			if covering == nil {
 				covering = &st.Indexes[i]
@@ -349,7 +441,7 @@ func buildIndexAdvice(f PlanFinding, st tableCatalogStats) *IndexAdvice {
 		advice.Issues = []string{"already_covered"}
 		advice.PotentialBenefit = fmt.Sprintf(
 			"existing index %s already covers (%s) as a leftmost prefix — investigate stale statistics, low selectivity, or a type/collation mismatch before adding another index",
-			covering.Name, strings.Join(f.RelatedColumns, ", "),
+			covering.Name, strings.Join(cols, ", "),
 		)
 		return advice
 	case len(partial) > 0:
@@ -361,19 +453,31 @@ func buildIndexAdvice(f PlanFinding, st tableCatalogStats) *IndexAdvice {
 		advice.Issues = []string{"partial_coverage"}
 		advice.PotentialBenefit = fmt.Sprintf(
 			"%s reference some of (%s) but not as a leftmost prefix — extending or reordering an existing index may avoid creating a new one",
-			strings.Join(names, ", "), strings.Join(f.RelatedColumns, ", "),
+			strings.Join(names, ", "), strings.Join(cols, ", "),
 		)
 	default:
 		advice.Issues = []string{"no_covering_index"}
-		if st.EstimatedRows > 0 {
+		if isFunctionWrapFinding(f) {
+			if st.EstimatedRows > 0 {
+				advice.PotentialBenefit = fmt.Sprintf(
+					"after rewriting the function-wrapped predicate, a btree index on the bare column(s) (%s) — not on the wrapped expression — could let the planner scan ~%s rows via index instead of seq scan",
+					strings.Join(cols, ", "), formatRowCount(st.EstimatedRows),
+				)
+			} else {
+				advice.PotentialBenefit = fmt.Sprintf(
+					"after rewriting the function-wrapped predicate, a btree index on the bare column(s) (%s) — not on the wrapped expression — could avoid scanning the full table",
+					strings.Join(cols, ", "),
+				)
+			}
+		} else if st.EstimatedRows > 0 {
 			advice.PotentialBenefit = fmt.Sprintf(
 				"a new index on (%s) could let the planner use an index scan instead of scanning ~%s rows",
-				strings.Join(f.RelatedColumns, ", "), formatRowCount(st.EstimatedRows),
+				strings.Join(cols, ", "), formatRowCount(st.EstimatedRows),
 			)
 		} else {
 			advice.PotentialBenefit = fmt.Sprintf(
 				"a new index on (%s) could avoid scanning the full table for this predicate",
-				strings.Join(f.RelatedColumns, ", "),
+				strings.Join(cols, ", "),
 			)
 		}
 	}
@@ -384,8 +488,103 @@ func buildIndexAdvice(f PlanFinding, st tableCatalogStats) *IndexAdvice {
 	} else {
 		advice.StorageCost = "unknown (no catalog row-count estimate available)"
 	}
-	advice.CandidateDDL = draftCandidateDDL(f.Schema, f.Relation, f.RelatedColumns)
+	advice.CandidateDDL = draftCandidateDDL(f.Schema, f.Relation, cols)
 	return advice
+}
+
+// indexAdviceColumns returns RelatedColumns ordered for a candidate btree:
+// equality-filter columns first (higher selectivity / leftmost prefix), then
+// the remaining columns in their original order. Ordering is a heuristic from
+// the finding message text — not planner selectivity estimates.
+func isSmallTable(st tableCatalogStats) bool {
+	if st.EstimatedRows > 0 && st.EstimatedRows < smallTableRowThreshold {
+		return true
+	}
+	// Partitioned parents often report reltuples=0 even after child ANALYZE.
+	// Fall back to on-disk size so we do not recommend indexes on tiny relations.
+	if st.EstimatedRows <= 0 && st.TotalBytes > 0 && st.TotalBytes < smallTableBytesThreshold {
+		return true
+	}
+	return false
+}
+
+func indexAdviceColumns(f PlanFinding) []string {
+	cols := append([]string(nil), f.RelatedColumns...)
+	if len(cols) < 2 {
+		return cols
+	}
+	blob := strings.ToLower(f.Message + " " + strings.Join(f.Evidence, " "))
+	eqFirst := make([]string, 0, len(cols))
+	rest := make([]string, 0, len(cols))
+	for _, c := range cols {
+		if columnLooksEqualityFiltered(c, blob) {
+			eqFirst = append(eqFirst, c)
+		} else {
+			rest = append(rest, c)
+		}
+	}
+	return append(eqFirst, rest...)
+}
+
+func columnLooksEqualityFiltered(col, blob string) bool {
+	if col == "" || blob == "" {
+		return false
+	}
+	c := strings.ToLower(col)
+	// Scan for equality uses of col, allowing optional )::type cast wrappers from EXPLAIN text.
+	for i := 0; i < len(blob); {
+		idx := strings.Index(blob[i:], c)
+		if idx < 0 {
+			return false
+		}
+		pos := i + idx
+		// Word boundary before the column name.
+		if pos > 0 {
+			prev := blob[pos-1]
+			if (prev >= 'a' && prev <= 'z') || (prev >= '0' && prev <= '9') || prev == '_' {
+				i = pos + 1
+				continue
+			}
+		}
+		rest := blob[pos+len(c):]
+		rest = strings.TrimLeft(rest, " \t")
+		// Optional ")::type" wrapper from EXPLAIN: (region)::text =
+		if strings.HasPrefix(rest, ")") {
+			rest = strings.TrimPrefix(rest, ")")
+			rest = strings.TrimLeft(rest, " \t")
+			if strings.HasPrefix(rest, "::") {
+				rest = rest[2:]
+				// skip type name
+				j := 0
+				for j < len(rest) {
+					ch := rest[j]
+					if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' {
+						j++
+						continue
+					}
+					break
+				}
+				rest = strings.TrimLeft(rest[j:], " \t")
+			}
+		}
+		if strings.HasPrefix(rest, "=") && !strings.HasPrefix(rest, "==") {
+			return true
+		}
+		i = pos + 1
+	}
+	return false
+}
+
+func isFunctionWrapFinding(f PlanFinding) bool {
+	blob := strings.ToLower(f.Message + " " + strings.Join(f.Evidence, " "))
+	return strings.Contains(blob, "function-wrapped") ||
+		strings.Contains(blob, "function wrap") ||
+		strings.Contains(blob, "date_trunc") ||
+		strings.Contains(blob, "extract(") ||
+		strings.Contains(blob, "date_part(") ||
+		strings.Contains(blob, "to_char(") ||
+		strings.Contains(blob, "coalesce(") ||
+		columnDateCastRe.MatchString(blob)
 }
 
 // hasExpressionColumn reports whether cols contains an entry that couldn't be
@@ -578,6 +777,27 @@ func draftCandidateDDL(schema, relation string, cols []string) string {
 		"-- CANDIDATE for expert review only — do not auto-apply. Verify on staging/a replica, check for lock contention, and confirm write/storage cost first.\nCREATE INDEX CONCURRENTLY %s ON %s (%s);",
 		quoteIdent(idxName), table, strings.Join(quotedCols, ", "),
 	)
+}
+
+func hasIndexIssue(issues []string, want string) bool {
+	for _, i := range issues {
+		if i == want {
+			return true
+		}
+	}
+	return false
+}
+
+// promoteIndexCandidateFinding upgrades a seq_scan finding to index_candidate when
+// catalog enrichment produced actionable no_covering_index advice.
+func promoteIndexCandidateFinding(f PlanFinding) PlanFinding {
+	if f.IndexAdvice != nil &&
+		f.Category == CategorySeqScan &&
+		hasIndexIssue(f.IndexAdvice.Issues, "no_covering_index") &&
+		!hasIndexIssue(f.IndexAdvice.Issues, "small_table") {
+		f.Category = CategoryIndexCandidate
+	}
+	return f
 }
 
 // quoteIdent double-quotes a PostgreSQL identifier for safe inclusion in a

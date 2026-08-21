@@ -129,6 +129,35 @@ func TestSuggestRewrites_EmptySQL(t *testing.T) {
 	}
 }
 
+func TestSuggestRewrites_CastDateEquality(t *testing.T) {
+	sql := `SELECT COUNT(*) FROM demo.sales WHERE date::date = DATE '2025-01-15'`
+	cands := SuggestRewrites(sql, nil)
+	if len(cands) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(cands))
+	}
+	out := strings.ToLower(cands[0].SQL)
+	if !strings.Contains(out, ">=") || !strings.Contains(out, "<") {
+		t.Fatalf("expected sargable range, got %s", cands[0].SQL)
+	}
+	if strings.Contains(out, "::date =") || (strings.Contains(out, "cast(") && strings.Contains(out, " as date)")) {
+		t.Fatalf("cast equality should be rewritten away: %s", cands[0].SQL)
+	}
+	if !strings.Contains(strings.ToLower(cands[0].Rationale), "date") {
+		t.Fatalf("rationale should mention cast/date: %s", cands[0].Rationale)
+	}
+}
+
+func TestSuggestRewrites_CastAsDateEquality(t *testing.T) {
+	sql := `SELECT product_category FROM demo.sales WHERE CAST(date AS date) = '2025-03-01' GROUP BY 1`
+	cands := SuggestRewrites(sql, nil)
+	if len(cands) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(cands))
+	}
+	if !strings.Contains(cands[0].SQL, ">=") || !strings.Contains(cands[0].SQL, "<") {
+		t.Fatalf("expected range rewrite, got %s", cands[0].SQL)
+	}
+}
+
 func TestSuggestRewrites_DemoScenarioSQL(t *testing.T) {
 	// Mirrors the slow-dashboard demo SQL; engine must work without DemoScenarios.
 	sql := `SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '2025-01-01' GROUP BY product_category ORDER BY revenue DESC`

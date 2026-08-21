@@ -152,8 +152,34 @@ export function InvestigationReportView({ report }: { report: InvestigationRepor
 
       {report.equivalence_validation && (
         <Section title="Result-equivalence validation">
-          <p className="text-sm"><strong>Status:</strong> {report.equivalence_validation.status}</p>
-          <p className="text-sm text-muted-foreground mt-1">{report.equivalence_validation.notes}</p>
+          <div
+            className={
+              report.equivalence_validation.status === "Different" || report.equivalence_validation.status === "Unverified"
+                ? "rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1"
+                : "space-y-1"
+            }
+          >
+            <p className="text-sm">
+              <strong>Status:</strong>{" "}
+              <Badge
+                variant={
+                  report.equivalence_validation.status === "Equal"
+                    ? "success"
+                    : report.equivalence_validation.status === "Different"
+                      ? "destructive"
+                      : "secondary"
+                }
+              >
+                {report.equivalence_validation.status}
+              </Badge>
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">{report.equivalence_validation.notes}</p>
+            {(report.equivalence_validation.status === "Different" || report.equivalence_validation.status === "Unverified") && (
+              <p className="text-xs font-medium text-destructive mt-2">
+                Not shippable — resolve equivalence before treating this report as deployment evidence.
+              </p>
+            )}
+          </div>
         </Section>
       )}
 

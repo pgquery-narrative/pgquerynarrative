@@ -52,6 +52,9 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	if version < db.RequiredMigrationVersion {
 		t.Fatalf("version %d < required %d", version, db.RequiredMigrationVersion)
 	}
+	if version != db.RequiredMigrationVersion {
+		t.Fatalf("expected tip version %d after full up, got %d", db.RequiredMigrationVersion, version)
+	}
 
 	if err := m.Steps(-1); err != nil {
 		t.Fatalf("migrate down one step: %v", err)
@@ -73,6 +76,22 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
+	// Latest migration (51) only adjusts hypopg grants. Rolling it back must not
+	// drop migration 50 artifacts (investigation_id) or earlier poller tables.
+	var investigationCol bool
+	err = pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'app' AND table_name = 'regression_alerts' AND column_name = 'investigation_id'
+		)
+	`).Scan(&investigationCol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !investigationCol {
+		t.Fatal("regression_alerts.investigation_id missing after rolling back only migration 51")
+	}
+
 	var pollsExists bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
@@ -83,8 +102,8 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pollsExists {
-		t.Fatal("app.stat_statement_polls still exists after rolling back migration 48")
+	if !pollsExists {
+		t.Fatal("app.stat_statement_polls should still exist after rolling back migration 51")
 	}
 
 	if err := m.Steps(1); err != nil {
@@ -103,28 +122,14 @@ func TestMigrationsRoundTrip(t *testing.T) {
 
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'app' AND table_name = 'stat_statement_polls'
-		)
-	`).Scan(&pollsExists)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !pollsExists {
-		t.Fatal("app.stat_statement_polls missing after re-applying migration 48")
-	}
-
-	var queryidCol bool
-	err = pool.QueryRow(ctx, `
-		SELECT EXISTS (
 			SELECT 1 FROM information_schema.columns
-			WHERE table_schema = 'app' AND table_name = 'regression_alerts' AND column_name = 'queryid'
+			WHERE table_schema = 'app' AND table_name = 'regression_alerts' AND column_name = 'investigation_id'
 		)
-	`).Scan(&queryidCol)
+	`).Scan(&investigationCol)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !queryidCol {
-		t.Fatal("regression_alerts.queryid missing after migration 48")
+	if !investigationCol {
+		t.Fatal("regression_alerts.investigation_id missing after re-applying tip migration")
 	}
 }

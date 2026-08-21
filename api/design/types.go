@@ -221,22 +221,24 @@ var RankedCandidateBaseline = Type("RankedCandidateBaseline", func() {
 	Attribute("execution_time_ms", Float64, "Baseline execution time when ANALYZE was used")
 })
 
-// RankedCandidate is one scored rewrite or review-only index DDL suggestion.
+// RankedCandidate is one scored rewrite or index-DDL suggestion (DDL may carry
+// hypopg/heuristic projected cost when available).
 var RankedCandidate = Type("RankedCandidate", func() {
 	Attribute("kind", String, "sql_rewrite or index_ddl")
 	Attribute("rank", Int32, "1-based rank among rankable candidates; 0 when not rankable")
-	Attribute("rankable", Boolean, "True when dry-EXPLAIN metrics are available for ranking")
+	Attribute("rankable", Boolean, "True when dry-EXPLAIN or projected index metrics are available for ranking")
 	Attribute("sql", String, "Candidate rewrite SQL (sql_rewrite)")
 	Attribute("ddl", String, "Candidate DDL for expert review (index_ddl); never auto-applied")
 	Attribute("rationale", String, "Short explanation")
 	Attribute("category", String)
 	Attribute("confidence", String)
-	Attribute("total_cost", Float64, "After-plan total cost for sql_rewrite")
-	Attribute("cost_delta", Float64, "after - baseline total cost (negative is better)")
+	Attribute("total_cost", Float64, "After-plan or projected total cost")
+	Attribute("cost_delta", Float64, "after/projected - baseline total cost (negative is better)")
 	Attribute("partitions_scanned", Float64)
 	Attribute("partitions_delta", Float64, "after - baseline partitions (negative is better)")
 	Attribute("execution_time_ms", Float64, "After-plan timing when ANALYZE was used")
 	Attribute("improved", ArrayOf(String), "Structural improvements vs baseline")
+	Attribute("projection_method", String, "For index_ddl: hypopg, heuristic, or unavailable")
 	Required("kind", "rankable", "rationale")
 })
 
@@ -288,7 +290,12 @@ var ComparePlansResult = Type("ComparePlansResult", func() {
 	Attribute("after", ExplainQueryResult)
 	Attribute("metrics", ArrayOf(PlanComparisonMetric))
 	Attribute("diff", PlanComparisonDiff)
-	Attribute("result_checksum_equal", Boolean, "True when row checksums match (when computable)")
+	Attribute("result_checksum_equal", Boolean, "True when results match; false when they differ; omitted/null when unverified")
+	Attribute("result_equivalence_status", String, "Equal | Different | Unverified")
+	Attribute("result_equivalence_notes", String, "Human-readable equivalence caveats (COUNT(*), sample size, failures)")
+	Attribute("result_before_row_count", Int64, "COUNT(*) of before SQL when computable")
+	Attribute("result_after_row_count", Int64, "COUNT(*) of after SQL when computable")
+	Attribute("result_sample_rows", Int32, "Rows compared in the multiset sample")
 	Required("before", "after", "metrics", "diff")
 })
 
@@ -397,6 +404,15 @@ var RegressionAlert = Type("RegressionAlert", func() {
 	})
 	Attribute("acknowledged", Boolean)
 	Attribute("connection_id", String)
+	Attribute("queryid", String, "pg_stat_statements queryid when known")
+	Attribute("source", String, "poller or demo")
+	Attribute("investigation_id", String, "Linked investigation when opened from inbox", func() {
+		Format(FormatUUID)
+	})
+	Attribute("calls", Int64)
+	Attribute("mean_time_ms", Float64)
+	Attribute("total_time_ms", Float64)
+	Attribute("rows", Int64)
 	Required("id", "title", "query", "change_type", "change_summary", "impact", "first_detected_at", "acknowledged", "connection_id")
 })
 

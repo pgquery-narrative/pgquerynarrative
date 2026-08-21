@@ -38,6 +38,14 @@ func StrictMode() bool {
 	return getEnvBool("SECURITY_STRICT", false)
 }
 
+// DemoMode returns true only when APP_ENV=demo. Fake regression seeds and
+// invented dashboard KPIs are gated behind this — never enable in production
+// or default local/dev unless an operator explicitly opts into demo theater.
+func DemoMode() bool {
+	env := strings.ToLower(strings.TrimSpace(getEnv("APP_ENV", "")))
+	return env == "demo"
+}
+
 // Validate checks configuration for production safety. Always validates auth/key pairing
 // and forbids open-admin without an explicit insecure opt-in; when StrictMode is enabled,
 // also requires TLS, non-default passwords, rate limits, and auth.

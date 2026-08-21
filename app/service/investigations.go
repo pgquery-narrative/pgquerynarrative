@@ -98,6 +98,87 @@ func (s *InvestigationsService) Create(ctx context.Context, payload *investigati
 	return s.Get(ctx, &investigations.GetPayload{ID: id})
 }
 
+// CreateFromRegression opens an investigation from a regression alert: loads full
+// SQL (preferring the latest snapshot when the alert text was truncated), runs
+// EXPLAIN via Create, and links the alert to the new investigation.
+func (s *InvestigationsService) CreateFromRegression(ctx context.Context, payload *investigations.CreateFromRegressionPayload) (*investigations.Investigation, error) {
+	org := orgID(ctx)
+	row := s.appPool.QueryRow(ctx, `
+		SELECT id, title, query_text, COALESCE(connection_id, 'default'),
+		       queryid, investigation_id,
+		       calls, mean_time_ms, total_time_ms, rows_count
+		FROM app.regression_alerts
+		WHERE id = $1 AND organization_id = $2
+	`, payload.RegressionAlertID, org)
+
+	var alertID, title, queryText, connID string
+	var queryid, existingInv *string
+	var calls, rowsCount *int64
+	var meanMs, totalMs *float64
+	if err := row.Scan(&alertID, &title, &queryText, &connID, &queryid, &existingInv, &calls, &meanMs, &totalMs, &rowsCount); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &investigations.NotFoundError{Name: "not_found", Message: "regression alert not found", Code: strPtr("NOT_FOUND")}
+		}
+		return nil, err
+	}
+	if existingInv != nil && *existingInv != "" {
+		return s.Get(ctx, &investigations.GetPayload{ID: *existingInv})
+	}
+
+	sqlText := strings.TrimSpace(queryText)
+	if queryid != nil && *queryid != "" {
+		if better := s.latestSnapshotSQL(ctx, org, *queryid); better != "" && len(better) >= len(sqlText) {
+			sqlText = better
+		}
+	}
+	if sqlText == "" || strings.HasSuffix(sqlText, "...") {
+		return nil, &investigations.ValidationError{
+			Name:    "validation_error",
+			Message: "regression alert has incomplete SQL; open from Query Stats with a full statement, or wait for a fresh poller snapshot",
+			Code:    strPtr("VALIDATION_ERROR"),
+		}
+	}
+	// CreateInvestigation rejects semicolons.
+	sqlText = strings.TrimSuffix(strings.TrimSpace(sqlText), ";")
+
+	createPayload := &investigations.CreateInvestigationPayload{
+		Title:        title,
+		SQL:          sqlText,
+		ConnectionID: &connID,
+		Queryid:      queryid,
+		Calls:        calls,
+		MeanTimeMs:   meanMs,
+		TotalTimeMs:  totalMs,
+		Rows:         rowsCount,
+	}
+	inv, err := s.Create(ctx, createPayload)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = s.appPool.Exec(ctx, `
+		UPDATE app.regression_alerts
+		SET investigation_id = $1
+		WHERE id = $2 AND organization_id = $3 AND investigation_id IS NULL
+	`, inv.ID, alertID, org)
+	return inv, nil
+}
+
+func (s *InvestigationsService) latestSnapshotSQL(ctx context.Context, orgID, queryID string) string {
+	var sqlText string
+	err := s.appPool.QueryRow(ctx, `
+		SELECT s.query_text
+		FROM app.stat_statement_snapshots s
+		JOIN app.stat_statement_polls p ON p.id = s.poll_id
+		WHERE p.organization_id = $1 AND s.queryid = $2
+		ORDER BY p.captured_at DESC
+		LIMIT 1
+	`, orgID, queryID).Scan(&sqlText)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(sqlText)
+}
+
 // List returns investigations for the current organization.
 func (s *InvestigationsService) List(ctx context.Context, payload *investigations.ListPayload) (*investigations.InvestigationList, error) {
 	limit := int(payload.Limit)
@@ -326,10 +407,11 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 		return nil, &investigations.ValidationError{Name: "validation_error", Message: "could not read baseline plan metrics", Code: strPtr("VALIDATION_ERROR")}
 	}
 
-	findings := queryrunnerFindingsFromInvestigation(inv.Explain)
+	// Prefer freshly explained findings (includes current IndexAdvice / DDL).
+	// Stored investigation JSON may predate IndexAdvice shipping or lack catalog enrichment.
+	findings := queryrunnerFindingsFromQueriesAPI(baselineAPI)
 	if len(findings) == 0 {
-		// Fall back to freshly explained findings (includes IndexAdvice).
-		findings = queryrunnerFindingsFromQueriesAPI(baselineAPI)
+		findings = queryrunnerFindingsFromInvestigation(inv.Explain)
 	}
 
 	var scored []queryrunner.ScoredCandidate
@@ -354,7 +436,10 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 		}
 		scored = append(scored, queryrunner.ScoreSQLRewrite(rewrite, baselineMetrics, afterMetrics, improved))
 	}
-	scored = append(scored, queryrunner.CollectIndexDDLCandidates(findings)...)
+	for _, idxCand := range queryrunner.CollectIndexDDLCandidates(findings) {
+		proj := s.queriesSvc.ProjectIndexCost(ctx, &inv.ConnectionID, inv.SQL, idxCand.DDL, baselineMetrics.TotalCost)
+		scored = append(scored, queryrunner.ScoreIndexProjection(idxCand, proj))
+	}
 	scored = queryrunner.RankScoredCandidates(scored)
 
 	out := &investigations.RankedCandidateList{
@@ -413,6 +498,10 @@ func scoredCandidateToAPI(c queryrunner.ScoredCandidate) *investigations.RankedC
 	}
 	if len(c.Improved) > 0 {
 		out.Improved = append([]string(nil), c.Improved...)
+	}
+	if c.ProjectionMethod != "" {
+		m := c.ProjectionMethod
+		out.ProjectionMethod = &m
 	}
 	return out
 }
@@ -581,6 +670,21 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		return nil, err
 	}
 
+	if inv.Comparison != nil {
+		status := equivalenceStatusFromComparison(inv.Comparison)
+		if status != "Equal" {
+			msg := "result equivalence is Unverified — re-run Compare plans until status is Equal before generating a shippable report"
+			if status == "Different" {
+				msg = "result equivalence is Different — reconcile the candidate rewrite before generating a shippable report"
+			}
+			return nil, &investigations.ValidationError{
+				Name:    "validation_error",
+				Message: msg,
+				Code:    strPtr("EQUIVALENCE_NOT_EQUAL"),
+			}
+		}
+	}
+
 	var stat story.StatInput
 	if inv.StatSnapshot != nil {
 		stat = story.StatInput{
@@ -610,9 +714,14 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 			improved = inv.Comparison.Diff.Improved
 		}
 		comparison = &story.ComparisonInput{
-			Metrics:             metrics,
-			Improved:            improved,
-			ResultChecksumEqual: inv.Comparison.ResultChecksumEqual,
+			Metrics:                 metrics,
+			Improved:                improved,
+			ResultChecksumEqual:     inv.Comparison.ResultChecksumEqual,
+			ResultEquivalenceStatus: ptrString(inv.Comparison.ResultEquivalenceStatus),
+			ResultEquivalenceNotes:  ptrString(inv.Comparison.ResultEquivalenceNotes),
+			ResultBeforeRowCount:    inv.Comparison.ResultBeforeRowCount,
+			ResultAfterRowCount:     inv.Comparison.ResultAfterRowCount,
+			ResultSampleRows:        inv.Comparison.ResultSampleRows,
 		}
 	}
 
@@ -682,6 +791,22 @@ func sqlFingerprint(sql string) string {
 	normalized := strings.Join(strings.Fields(strings.TrimSpace(strings.ToLower(sql))), " ")
 	h := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(h[:8])
+}
+
+func equivalenceStatusFromComparison(cmp *investigations.ComparePlansResult) string {
+	if cmp == nil {
+		return "Unverified"
+	}
+	if cmp.ResultEquivalenceStatus != nil && *cmp.ResultEquivalenceStatus != "" {
+		return *cmp.ResultEquivalenceStatus
+	}
+	if cmp.ResultChecksumEqual == nil {
+		return "Unverified"
+	}
+	if *cmp.ResultChecksumEqual {
+		return "Equal"
+	}
+	return "Different"
 }
 
 func normalizeInvestigationError(err error) error {

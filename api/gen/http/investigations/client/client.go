@@ -20,6 +20,10 @@ type Client struct {
 	// Create Doer is the HTTP client used to make requests to the create endpoint.
 	CreateDoer goahttp.Doer
 
+	// CreateFromRegression Doer is the HTTP client used to make requests to the
+	// create_from_regression endpoint.
+	CreateFromRegressionDoer goahttp.Doer
+
 	// List Doer is the HTTP client used to make requests to the list endpoint.
 	ListDoer goahttp.Doer
 
@@ -63,18 +67,19 @@ func NewClient(
 	restoreBody bool,
 ) *Client {
 	return &Client{
-		CreateDoer:          doer,
-		ListDoer:            doer,
-		GetDoer:             doer,
-		AddCandidateDoer:    doer,
-		SuggestRewriteDoer:  doer,
-		RankCandidatesDoer:  doer,
-		GenerateReportDoer:  doer,
-		RestoreResponseBody: restoreBody,
-		scheme:              scheme,
-		host:                host,
-		decoder:             dec,
-		encoder:             enc,
+		CreateDoer:               doer,
+		CreateFromRegressionDoer: doer,
+		ListDoer:                 doer,
+		GetDoer:                  doer,
+		AddCandidateDoer:         doer,
+		SuggestRewriteDoer:       doer,
+		RankCandidatesDoer:       doer,
+		GenerateReportDoer:       doer,
+		RestoreResponseBody:      restoreBody,
+		scheme:                   scheme,
+		host:                     host,
+		decoder:                  dec,
+		encoder:                  enc,
 	}
 }
 
@@ -97,6 +102,30 @@ func (c *Client) Create() goa.Endpoint {
 		resp, err := c.CreateDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("investigations", "create", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// CreateFromRegression returns an endpoint that makes HTTP requests to the
+// investigations service create_from_regression server.
+func (c *Client) CreateFromRegression() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeCreateFromRegressionRequest(c.encoder)
+		decodeResponse = DecodeCreateFromRegressionResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildCreateFromRegressionRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.CreateFromRegressionDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("investigations", "create_from_regression", err)
 		}
 		return decodeResponse(resp)
 	}

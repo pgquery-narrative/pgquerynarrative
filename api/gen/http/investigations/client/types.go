@@ -26,6 +26,12 @@ type CreateRequestBody struct {
 	Rows        *int64   `form:"rows,omitempty" json:"rows,omitempty" xml:"rows,omitempty"`
 }
 
+// CreateFromRegressionRequestBody is the type of the "investigations" service
+// "create_from_regression" endpoint HTTP request body.
+type CreateFromRegressionRequestBody struct {
+	RegressionAlertID string `form:"regression_alert_id" json:"regression_alert_id" xml:"regression_alert_id"`
+}
+
 // AddCandidateRequestBody is the type of the "investigations" service
 // "add_candidate" endpoint HTTP request body.
 type AddCandidateRequestBody struct {
@@ -43,6 +49,26 @@ type RankCandidatesRequestBody struct {
 // CreateResponseBody is the type of the "investigations" service "create"
 // endpoint HTTP response body.
 type CreateResponseBody struct {
+	ID    *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// open, analyzing, comparing, or complete
+	Status           *string                         `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	SQL              *string                         `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	ConnectionID     *string                         `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	QueryFingerprint *string                         `form:"query_fingerprint,omitempty" json:"query_fingerprint,omitempty" xml:"query_fingerprint,omitempty"`
+	StatSnapshot     *StatSnapshotResponseBody       `form:"stat_snapshot,omitempty" json:"stat_snapshot,omitempty" xml:"stat_snapshot,omitempty"`
+	Explain          *ExplainQueryResultResponseBody `form:"explain,omitempty" json:"explain,omitempty" xml:"explain,omitempty"`
+	CandidateSQL     *string                         `form:"candidate_sql,omitempty" json:"candidate_sql,omitempty" xml:"candidate_sql,omitempty"`
+	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
+	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
+	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+}
+
+// CreateFromRegressionResponseBody is the type of the "investigations" service
+// "create_from_regression" endpoint HTTP response body.
+type CreateFromRegressionResponseBody struct {
 	ID    *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
 	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
 	// open, analyzing, comparing, or complete
@@ -145,6 +171,24 @@ type GenerateReportResponseBody struct {
 // service "create" endpoint HTTP response body for the "validation_error"
 // error.
 type CreateValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// CreateFromRegressionNotFoundResponseBody is the type of the "investigations"
+// service "create_from_regression" endpoint HTTP response body for the
+// "not_found" error.
+type CreateFromRegressionNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// CreateFromRegressionValidationErrorResponseBody is the type of the
+// "investigations" service "create_from_regression" endpoint HTTP response
+// body for the "validation_error" error.
+type CreateFromRegressionValidationErrorResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -316,8 +360,18 @@ type ComparePlansResultResponseBody struct {
 	After   *ExplainQueryResultResponseBody     `form:"after,omitempty" json:"after,omitempty" xml:"after,omitempty"`
 	Metrics []*PlanComparisonMetricResponseBody `form:"metrics,omitempty" json:"metrics,omitempty" xml:"metrics,omitempty"`
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff,omitempty" json:"diff,omitempty" xml:"diff,omitempty"`
-	// True when row checksums match (when computable)
+	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
+	// equal | Different | Unverified
+	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
+	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
+	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
+	// COUNT(*) of before SQL when computable
+	ResultBeforeRowCount *int64 `form:"result_before_row_count,omitempty" json:"result_before_row_count,omitempty" xml:"result_before_row_count,omitempty"`
+	// COUNT(*) of after SQL when computable
+	ResultAfterRowCount *int64 `form:"result_after_row_count,omitempty" json:"result_after_row_count,omitempty" xml:"result_after_row_count,omitempty"`
+	// Rows compared in the multiset sample
+	ResultSampleRows *int32 `form:"result_sample_rows,omitempty" json:"result_sample_rows,omitempty" xml:"result_sample_rows,omitempty"`
 }
 
 // PlanComparisonMetricResponseBody is used to define fields on response body
@@ -392,7 +446,7 @@ type RankedCandidateResponseBody struct {
 	Kind *string `form:"kind,omitempty" json:"kind,omitempty" xml:"kind,omitempty"`
 	// 1-based rank among rankable candidates; 0 when not rankable
 	Rank *int32 `form:"rank,omitempty" json:"rank,omitempty" xml:"rank,omitempty"`
-	// True when dry-EXPLAIN metrics are available for ranking
+	// True when dry-EXPLAIN or projected index metrics are available for ranking
 	Rankable *bool `form:"rankable,omitempty" json:"rankable,omitempty" xml:"rankable,omitempty"`
 	// Candidate rewrite SQL (sql_rewrite)
 	SQL *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
@@ -402,9 +456,9 @@ type RankedCandidateResponseBody struct {
 	Rationale  *string `form:"rationale,omitempty" json:"rationale,omitempty" xml:"rationale,omitempty"`
 	Category   *string `form:"category,omitempty" json:"category,omitempty" xml:"category,omitempty"`
 	Confidence *string `form:"confidence,omitempty" json:"confidence,omitempty" xml:"confidence,omitempty"`
-	// After-plan total cost for sql_rewrite
+	// After-plan or projected total cost
 	TotalCost *float64 `form:"total_cost,omitempty" json:"total_cost,omitempty" xml:"total_cost,omitempty"`
-	// after - baseline total cost (negative is better)
+	// after/projected - baseline total cost (negative is better)
 	CostDelta         *float64 `form:"cost_delta,omitempty" json:"cost_delta,omitempty" xml:"cost_delta,omitempty"`
 	PartitionsScanned *float64 `form:"partitions_scanned,omitempty" json:"partitions_scanned,omitempty" xml:"partitions_scanned,omitempty"`
 	// after - baseline partitions (negative is better)
@@ -413,6 +467,8 @@ type RankedCandidateResponseBody struct {
 	ExecutionTimeMs *float64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
 	// Structural improvements vs baseline
 	Improved []string `form:"improved,omitempty" json:"improved,omitempty" xml:"improved,omitempty"`
+	// For index_ddl: hypopg, heuristic, or unavailable
+	ProjectionMethod *string `form:"projection_method,omitempty" json:"projection_method,omitempty" xml:"projection_method,omitempty"`
 }
 
 // NewCreateRequestBody builds the HTTP request body from the payload of the
@@ -427,6 +483,16 @@ func NewCreateRequestBody(p *investigations.CreateInvestigationPayload) *CreateR
 		MeanTimeMs:   p.MeanTimeMs,
 		TotalTimeMs:  p.TotalTimeMs,
 		Rows:         p.Rows,
+	}
+	return body
+}
+
+// NewCreateFromRegressionRequestBody builds the HTTP request body from the
+// payload of the "create_from_regression" endpoint of the "investigations"
+// service.
+func NewCreateFromRegressionRequestBody(p *investigations.CreateFromRegressionPayload) *CreateFromRegressionRequestBody {
+	body := &CreateFromRegressionRequestBody{
+		RegressionAlertID: p.RegressionAlertID,
 	}
 	return body
 }
@@ -496,6 +562,61 @@ func NewCreateInvestigationOK(body *CreateResponseBody) *investigations.Investig
 // NewCreateValidationError builds a investigations service create endpoint
 // validation_error error.
 func NewCreateValidationError(body *CreateValidationErrorResponseBody) *investigations.ValidationError {
+	v := &investigations.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewCreateFromRegressionInvestigationOK builds a "investigations" service
+// "create_from_regression" endpoint result from a HTTP "OK" response.
+func NewCreateFromRegressionInvestigationOK(body *CreateFromRegressionResponseBody) *investigations.Investigation {
+	v := &investigations.Investigation{
+		ID:               *body.ID,
+		Title:            *body.Title,
+		Status:           *body.Status,
+		SQL:              *body.SQL,
+		ConnectionID:     *body.ConnectionID,
+		QueryFingerprint: body.QueryFingerprint,
+		CandidateSQL:     body.CandidateSQL,
+		ReportID:         body.ReportID,
+		CreatedAt:        *body.CreatedAt,
+		UpdatedAt:        *body.UpdatedAt,
+	}
+	if body.StatSnapshot != nil {
+		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
+	}
+	if body.Explain != nil {
+		v.Explain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(body.Explain)
+	}
+	if body.CandidateExplain != nil {
+		v.CandidateExplain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(body.CandidateExplain)
+	}
+	if body.Comparison != nil {
+		v.Comparison = unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(body.Comparison)
+	}
+
+	return v
+}
+
+// NewCreateFromRegressionNotFound builds a investigations service
+// create_from_regression endpoint not_found error.
+func NewCreateFromRegressionNotFound(body *CreateFromRegressionNotFoundResponseBody) *investigations.NotFoundError {
+	v := &investigations.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewCreateFromRegressionValidationError builds a investigations service
+// create_from_regression endpoint validation_error error.
+func NewCreateFromRegressionValidationError(body *CreateFromRegressionValidationErrorResponseBody) *investigations.ValidationError {
 	v := &investigations.ValidationError{
 		Name:    *body.Name,
 		Message: *body.Message,
@@ -797,6 +918,57 @@ func ValidateCreateResponseBody(body *CreateResponseBody) (err error) {
 	return
 }
 
+// ValidateCreateFromRegressionResponseBody runs the validations defined on
+// create_from_regression_response_body
+func ValidateCreateFromRegressionResponseBody(body *CreateFromRegressionResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.SQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
+	}
+	if body.ConnectionID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
+	}
+	if body.CreatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("created_at", "body"))
+	}
+	if body.UpdatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("updated_at", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.Explain != nil {
+		if err2 := ValidateExplainQueryResultResponseBody(body.Explain); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.CandidateExplain != nil {
+		if err2 := ValidateExplainQueryResultResponseBody(body.CandidateExplain); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.Comparison != nil {
+		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.CreatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
+	}
+	if body.UpdatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.updated_at", *body.UpdatedAt, goa.FormatDateTime))
+	}
+	return
+}
+
 // ValidateListResponseBody runs the validations defined on ListResponseBody
 func ValidateListResponseBody(body *ListResponseBody) (err error) {
 	if body.Items == nil {
@@ -1005,6 +1177,30 @@ func ValidateGenerateReportResponseBody(body *GenerateReportResponseBody) (err e
 // ValidateCreateValidationErrorResponseBody runs the validations defined on
 // create_validation_error_response_body
 func ValidateCreateValidationErrorResponseBody(body *CreateValidationErrorResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateCreateFromRegressionNotFoundResponseBody runs the validations
+// defined on create_from_regression_not_found_response_body
+func ValidateCreateFromRegressionNotFoundResponseBody(body *CreateFromRegressionNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateCreateFromRegressionValidationErrorResponseBody runs the validations
+// defined on create_from_regression_validation_error_response_body
+func ValidateCreateFromRegressionValidationErrorResponseBody(body *CreateFromRegressionValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

@@ -12,9 +12,17 @@ name: pgquerynarrative
 
 services:
   postgres:
+    # Built from POSTGRES_IMAGE plus hypopg, so index cost projection stays
+    # planner-backed instead of falling back to the labeled heuristic. The
+    # extension lives in the image layer, so it survives container recreation.
     # Default 16-alpine for broad compatibility. Override: POSTGRES_IMAGE=postgres:18-alpine
     # pgvector semantic search (B11): POSTGRES_IMAGE=pgvector/pgvector:pg16 then make migrate-docker
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    build:
+      context: ./tools/docker
+      dockerfile: postgres-hypopg.Dockerfile
+      args:
+        POSTGRES_IMAGE: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    image: pgquerynarrative-postgres:hypopg
     container_name: pgquerynarrative-postgres
     # pg_stat_statements (B9): shared_preload_libraries only applies on server start.
     # After changing this block, recreate the container: make postgres-recreate

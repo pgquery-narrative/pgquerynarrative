@@ -39,6 +39,12 @@ type statsQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
+const (
+	// StatStatementsQueryMaxLen is the max characters returned for a pg_stat_statements
+	// query text. Aligns with CreateInvestigation SQL MaxLength (10000).
+	StatStatementsQueryMaxLen = 10000
+)
+
 // StatStatements queries pg_stat_statements on the selected analytical connection
 // and filters to statements executed by filterRole when non-empty.
 func StatStatements(ctx context.Context, statsPool statsQuerier, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {
@@ -70,7 +76,7 @@ func StatStatements(ctx context.Context, statsPool statsQuerier, filterRole, ord
 	sql := fmt.Sprintf(`
 SELECT
   queryid::text,
-  LEFT(query, 500) AS query,
+  LEFT(query, %d) AS query,
   calls,
   ROUND(total_exec_time::numeric, 3)::float8 AS total_time_ms,
   ROUND(mean_exec_time::numeric, 3)::float8 AS mean_time_ms,
@@ -78,7 +84,7 @@ SELECT
 FROM pg_stat_statements
 WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())%s
 ORDER BY %s DESC
-LIMIT $1`, roleFilter, col)
+LIMIT $1`, StatStatementsQueryMaxLen, roleFilter, col)
 
 	rows, err := statsPool.Query(queryCtx, sql, args...)
 	if err != nil {

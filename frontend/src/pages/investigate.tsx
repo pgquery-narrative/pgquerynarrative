@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TrustBar } from "@/components/trust-bar";
 import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
-import { api, type Investigation, type RankedCandidate, ApiError } from "@/api/client";
+import { api, type Investigation, type RankedCandidate, type RewriteCandidate, ApiError } from "@/api/client";
 import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered,
 } from "lucide-react";
@@ -34,6 +34,7 @@ export default function InvestigatePage() {
   const [candidateSql, setCandidateSql] = useState("");
   const [suggestRationale, setSuggestRationale] = useState("");
   const [rankedCandidates, setRankedCandidates] = useState<RankedCandidate[]>([]);
+  const [suggestedCandidates, setSuggestedCandidates] = useState<RewriteCandidate[]>([]);
   const [actionLoading, setActionLoading] = useState("");
 
   const load = useCallback(async (investigationId: string, candidateHint?: string) => {
@@ -65,9 +66,11 @@ export default function InvestigatePage() {
       const meanTime = searchParams.get("mean_time_ms");
       const totalTime = searchParams.get("total_time_ms");
       const rows = searchParams.get("rows");
+      const queryid = searchParams.get("queryid");
       api.createInvestigation({
         title,
         sql,
+        ...(queryid ? { queryid } : {}),
         ...(calls ? { calls: Number(calls) } : {}),
         ...(meanTime ? { mean_time_ms: Number(meanTime) } : {}),
         ...(totalTime ? { total_time_ms: Number(totalTime) } : {}),
@@ -108,12 +111,15 @@ export default function InvestigatePage() {
     setError("");
     try {
       const res = await api.suggestInvestigationRewrite(investigation.id);
-      const top = res.candidates?.[0];
+      const items = res.candidates ?? [];
+      const top = items[0];
       if (!top?.sql) {
-        setError("No rewrite suggestions for this query yet. Supported pattern: DATE_TRUNC equality on a column.");
+        setSuggestedCandidates([]);
+        setError("No rewrite suggestions for this query. Supported: DATE_TRUNC / EXTRACT / to_char / ::date unwraps, COALESCE, column::text casts, OR → UNION ALL, and IN/NOT IN → EXISTS.");
         setSuggestRationale("");
         return;
       }
+      setSuggestedCandidates(items);
       setCandidateSql(top.sql);
       setSuggestRationale(top.rationale || "");
     } catch (e) {
@@ -147,6 +153,22 @@ export default function InvestigatePage() {
 
   const generateReport = async () => {
     if (!investigation) return;
+    if (investigation.comparison) {
+      const eq = investigation.comparison.result_equivalence_status
+        ?? (investigation.comparison.result_checksum_equal === true
+          ? "Equal"
+          : investigation.comparison.result_checksum_equal === false
+            ? "Different"
+            : "Unverified");
+      if (eq !== "Equal") {
+        setError(
+          eq === "Different"
+            ? "Cannot generate a shippable report while result equivalence is Different. Fix the candidate rewrite first."
+            : "Cannot generate a shippable report while result equivalence is Unverified. Re-run Compare plans until status is Equal."
+        );
+        return;
+      }
+    }
     setActionLoading("report");
     setError("");
     try {
@@ -307,7 +329,7 @@ export default function InvestigatePage() {
               setCandidateSql(e.target.value);
               setSuggestRationale("");
             }}
-            placeholder="Paste candidate SQL rewrite, or click Suggest rewrite…"
+            placeholder="Paste candidate SQL rewrite, or click Suggest rewrite / Rank candidates…"
             className="font-mono text-xs min-h-[100px]"
           />
           {suggestRationale && (
@@ -335,6 +357,35 @@ export default function InvestigatePage() {
               Compare plans
             </Button>
           </div>
+          {suggestedCandidates.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested rewrites</p>
+              {suggestedCandidates.map((c, i) => (
+                <div key={`suggest-${i}`} className="rounded-md border border-border/50 p-3 space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {c.category && <Badge variant="secondary">{c.category}</Badge>}
+                    {c.confidence && <Badge variant="outline">{c.confidence}</Badge>}
+                    <span className="text-muted-foreground flex-1">{c.rationale}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-start">
+                    <pre className="flex-1 font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-28 overflow-auto">
+                      {c.sql}
+                    </pre>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setCandidateSql(c.sql);
+                        setSuggestRationale(c.rationale || "");
+                      }}
+                    >
+                      Use
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {rankedCandidates.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ranked candidates</p>
@@ -347,6 +398,17 @@ export default function InvestigatePage() {
                       <Badge variant="outline">review</Badge>
                     )}
                     <Badge variant="outline">{c.kind}</Badge>
+                    {c.projection_method && c.projection_method !== "unavailable" && (
+                      <Badge
+                        variant={c.projection_method === "hypopg" ? "success" : "outline"}
+                        className={c.projection_method === "heuristic" ? "border-amber-500/50 text-amber-800 dark:text-amber-200" : undefined}
+                      >
+                        {c.projection_method === "heuristic" ? "heuristic (not planner)" : c.projection_method}
+                      </Badge>
+                    )}
+                    {c.kind === "index_ddl" && c.projection_method === "heuristic" && (
+                      <span className="text-[10px] text-amber-800 dark:text-amber-200">Review-only cost — not ranked with hypopg</span>
+                    )}
                     {c.category && <Badge variant="secondary">{c.category}</Badge>}
                     <span className="text-muted-foreground flex-1">{c.rationale}</span>
                   </div>
@@ -395,10 +457,22 @@ export default function InvestigatePage() {
           <div>
             <p className="font-medium">Engineering investigation report</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Generate a shareable report with PostgreSQL evidence, plan findings, and recommended next actions.
+              Findings-only reports are allowed. After Compare plans, result equivalence must be Equal to generate a shippable report (Unverified/Different are blocked).
             </p>
           </div>
-          <Button onClick={() => void generateReport()} disabled={actionLoading === "report"}>
+          <Button
+            onClick={() => void generateReport()}
+            disabled={
+              actionLoading === "report" ||
+              (!!investigation.comparison &&
+                (investigation.comparison.result_equivalence_status ??
+                  (investigation.comparison.result_checksum_equal === true
+                    ? "Equal"
+                    : investigation.comparison.result_checksum_equal === false
+                      ? "Different"
+                      : "Unverified")) !== "Equal")
+            }
+          >
             {actionLoading === "report" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
             Generate report
           </Button>
@@ -437,14 +511,28 @@ function InvestigateLanding() {
     });
   }, []);
 
-  const startFromRegression = (title: string, query: string) => {
-    const params = new URLSearchParams({ title, sql: query });
-    navigate(`/investigate?${params.toString()}`);
+  const startFromRegression = async (alert: (typeof regressions)[0]) => {
+    if (alert.investigation_id) {
+      navigate(`/investigate/${alert.investigation_id}`);
+      return;
+    }
+    setLoading(true);
+    try {
+      const inv = await api.createInvestigationFromRegression(alert.id);
+      navigate(`/investigate/${inv.id}`);
+    } catch {
+      // Fallback: paste SQL into create flow when alert SQL is incomplete.
+      const params = new URLSearchParams({ title: alert.title, sql: alert.query });
+      navigate(`/investigate?${params.toString()}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const startDemo = (scenario: (typeof scenarios)[0]) => {
+    // Problem SQL only — do not prefill answer-key candidate_sql.
+    // Rewrites come from Suggest rewrite / Rank candidates.
     const params = new URLSearchParams({ title: scenario.title, sql: scenario.sql });
-    if (scenario.candidate_sql) params.set("candidate", scenario.candidate_sql);
     navigate(`/investigate?${params.toString()}`);
   };
 
@@ -455,7 +543,9 @@ function InvestigateLanding() {
         <h1 className="text-2xl font-bold tracking-tight">Investigate a Query Regression</h1>
         <p className="text-muted-foreground mt-1 max-w-2xl">
           Select an expensive query from pg_stat_statements or start a guided demo.
-          PgQueryNarrative automatically gathers plan evidence, compares improvements, and produces engineering-ready reports.
+          PgQueryNarrative gathers EXPLAIN evidence, proposes candidate rewrites from plan findings,
+          and compares before/after plans — then packages an engineering report. You still review
+          and validate equivalence before changing production SQL.
         </p>
       </div>
 
@@ -476,13 +566,13 @@ function InvestigateLanding() {
                   <button
                     key={r.id}
                     type="button"
-                    onClick={() => startFromRegression(r.title, r.query)}
+                    onClick={() => void startFromRegression(r)}
                     className="w-full text-left p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-sm">{r.title}</span>
                       <Badge variant={r.impact === "critical" ? "destructive" : "outline"} className="text-[10px] capitalize">
-                        {r.change_summary}
+                        {r.investigation_id ? "open" : r.change_summary}
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground font-mono mt-1 truncate">{truncate(r.query, 60)}</p>
@@ -496,8 +586,10 @@ function InvestigateLanding() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Guided demo scenarios</CardTitle>
-            <CardDescription>Reproducible optimization investigations</CardDescription>
+            <CardTitle className="text-base">Sample problem queries</CardTitle>
+            <CardDescription>
+              Start from known-bad SQL, then use Suggest rewrite / Rank candidates — no answer key is prefilled.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (

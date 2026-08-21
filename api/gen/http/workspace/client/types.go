@@ -73,6 +73,16 @@ type RegressionAlertResponseBody struct {
 	FirstDetectedAt *string `form:"first_detected_at,omitempty" json:"first_detected_at,omitempty" xml:"first_detected_at,omitempty"`
 	Acknowledged    *bool   `form:"acknowledged,omitempty" json:"acknowledged,omitempty" xml:"acknowledged,omitempty"`
 	ConnectionID    *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	// pg_stat_statements queryid when known
+	Queryid *string `form:"queryid,omitempty" json:"queryid,omitempty" xml:"queryid,omitempty"`
+	// poller or demo
+	Source *string `form:"source,omitempty" json:"source,omitempty" xml:"source,omitempty"`
+	// Linked investigation when opened from inbox
+	InvestigationID *string  `form:"investigation_id,omitempty" json:"investigation_id,omitempty" xml:"investigation_id,omitempty"`
+	Calls           *int64   `form:"calls,omitempty" json:"calls,omitempty" xml:"calls,omitempty"`
+	MeanTimeMs      *float64 `form:"mean_time_ms,omitempty" json:"mean_time_ms,omitempty" xml:"mean_time_ms,omitempty"`
+	TotalTimeMs     *float64 `form:"total_time_ms,omitempty" json:"total_time_ms,omitempty" xml:"total_time_ms,omitempty"`
+	Rows            *int64   `form:"rows,omitempty" json:"rows,omitempty" xml:"rows,omitempty"`
 }
 
 // DemoScenarioResponseBody is used to define fields on response body types.
@@ -319,6 +329,9 @@ func ValidateRegressionAlertResponseBody(body *RegressionAlertResponseBody) (err
 	}
 	if body.FirstDetectedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.first_detected_at", *body.FirstDetectedAt, goa.FormatDateTime))
+	}
+	if body.InvestigationID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.investigation_id", *body.InvestigationID, goa.FormatUUID))
 	}
 	return
 }

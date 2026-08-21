@@ -107,6 +107,7 @@ export interface RankedCandidate {
   partitions_delta?: number;
   execution_time_ms?: number;
   improved?: string[];
+  projection_method?: string;
 }
 
 export interface RankedCandidateList {
@@ -142,6 +143,11 @@ export interface ComparePlansResult {
   metrics: PlanComparisonMetric[];
   diff: PlanComparisonDiff;
   result_checksum_equal?: boolean;
+  result_equivalence_status?: "Equal" | "Different" | "Unverified" | string;
+  result_equivalence_notes?: string;
+  result_before_row_count?: number;
+  result_after_row_count?: number;
+  result_sample_rows?: number;
 }
 
 export interface StatSnapshot {
@@ -190,6 +196,13 @@ export interface RegressionAlert {
   first_detected_at: string;
   acknowledged: boolean;
   connection_id: string;
+  queryid?: string;
+  source?: string;
+  investigation_id?: string;
+  calls?: number;
+  mean_time_ms?: number;
+  total_time_ms?: number;
+  rows?: number;
 }
 
 export interface DemoScenario {
@@ -490,6 +503,13 @@ export const api = {
     total_time_ms?: number;
     rows?: number;
   }) => request<Investigation>("/investigations", { method: "POST", body: JSON.stringify(body) }),
+
+  createInvestigationFromRegression: (regressionAlertId: string) =>
+    request<Investigation>("/investigations/from-regression", {
+      method: "POST",
+      body: JSON.stringify({ regression_alert_id: regressionAlertId }),
+      signal: AbortSignal.timeout(120_000),
+    }),
 
   addInvestigationCandidate: (id: string, candidateSql: string, analyze = true) =>
     request<Investigation>(`/investigations/${id}/candidate`, {

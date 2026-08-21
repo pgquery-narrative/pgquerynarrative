@@ -272,6 +272,22 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 	}, nil
 }
 
+// ProjectIndexCost estimates plan cost if candidate DDL were applied (hypopg when
+// available; otherwise an honest heuristic). Never executes real DDL.
+func (s *QueriesService) ProjectIndexCost(ctx context.Context, connectionID *string, sql, candidateDDL string, baselineCost float64) queryrunner.IndexProjection {
+	runner, err := s.connectionResolver.runnerFor(connectionID)
+	if err != nil || runner == nil {
+		return queryrunner.IndexProjection{
+			Method:        queryrunner.IndexProjectionNone,
+			BaselineCost:  baselineCost,
+			ProjectedCost: baselineCost,
+			Available:     false,
+			Rationale:     "index cost projection unavailable (no runner)",
+		}
+	}
+	return runner.ProjectIndexCost(ctx, sql, candidateDDL, baselineCost)
+}
+
 // StatStatements returns top queries from pg_stat_statements for observability.
 func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.StatStatementsPayload) (*queries.StatStatementsResult, error) {
 	if !s.statStatementsEnabled {

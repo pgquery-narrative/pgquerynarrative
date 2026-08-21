@@ -2,10 +2,12 @@ package queryrunner
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	pg_query "github.com/pganalyze/pg_query_go/v6"
+	"google.golang.org/protobuf/proto"
 )
 
 // RewriteCandidate is a system-generated SQL rewrite proposal with a short
@@ -18,80 +20,207 @@ type RewriteCandidate struct {
 }
 
 // SuggestRewrites analyzes sql (and optional plan findings) and returns
-// candidate rewrites. The first supported pattern unwraps
-// DATE_TRUNC(unit, col) = <const> into a closed sargable range on col so
-// partition pruning and indexes can apply.
+// candidate rewrites. Supported patterns:
 //
-// Findings are optional evidence: when they mention date_trunc / function-wrap
-// / partition pruning, confidence is raised to "high". The engine still works
-// from pasted SQL alone when findings are empty.
+//   - DATE_TRUNC / EXTRACT / date_part / to_char / col::date equality → sargable range
+//   - DATE_TRUNC / col::date inequalities and BETWEEN → sargable range
+//   - COALESCE(col, default) = const → sargable column predicate
+//   - col::text / col::numeric = typed literal → compare the column to a typed literal
+//   - OR of predicates on different columns → UNION ALL of indexable branches
+//   - col IN/NOT IN (SELECT ...) → EXISTS / NULL-safe NOT EXISTS
+//
+// Findings are optional evidence: function-wrap / partition-pruning language
+// raises confidence to "high". The engine still works from pasted SQL alone.
+// Parameterized SQL ($1, $2, ...) is not rewritten (literals-only, fail closed).
+// Nested CTEs / FROM subqueries are rewritten for sargable unwraps.
 func SuggestRewrites(sql string, findings []PlanFinding) []RewriteCandidate {
-	trimmed := strings.TrimSpace(sql)
-	trimmed = strings.TrimSuffix(trimmed, ";")
-	trimmed = strings.TrimSpace(trimmed)
+	trimmed := trimSQL(sql)
 	if trimmed == "" {
 		return nil
 	}
+	if _, sel, ok := parseSingleSelect(trimmed); ok && selectTreeContainsParamRef(sel) {
+		return nil
+	}
+	var out []RewriteCandidate
+	if c := suggestSargableRewrites(trimmed, findings); c != nil {
+		out = append(out, *c)
+	}
+	if c := suggestOrToUnion(trimmed, findings); c != nil {
+		out = append(out, *c)
+	}
+	if c := suggestInToExists(trimmed, findings); c != nil {
+		out = append(out, *c)
+	}
+	return uniqueRewriteSQL(out)
+}
 
+func trimSQL(sql string) string {
+	trimmed := strings.TrimSpace(sql)
+	trimmed = strings.TrimSuffix(trimmed, ";")
+	return strings.TrimSpace(trimmed)
+}
+
+func uniqueRewriteSQL(cands []RewriteCandidate) []RewriteCandidate {
+	seen := map[string]struct{}{}
+	var out []RewriteCandidate
+	for _, c := range cands {
+		key := strings.ToLower(strings.Join(strings.Fields(c.SQL), " "))
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, c)
+	}
+	return out
+}
+
+func parseSingleSelect(sql string) (*pg_query.ParseResult, *pg_query.SelectStmt, bool) {
+	trimmed := trimSQL(sql)
+	if trimmed == "" {
+		return nil, nil, false
+	}
 	result, err := pg_query.Parse(trimmed)
 	if err != nil || len(result.Stmts) != 1 {
-		return nil
+		return nil, nil, false
 	}
 	stmt := result.Stmts[0].GetStmt()
 	if stmt == nil || stmt.GetSelectStmt() == nil {
-		return nil
+		return nil, nil, false
 	}
-	sel := stmt.GetSelectStmt()
-	if sel.WhereClause == nil {
-		return nil
-	}
+	return result, stmt.GetSelectStmt(), true
+}
 
-	evidenceBoost := findingsSuggestDateTruncRewrite(findings)
-	var replacements []dateTruncRewrite
-	newWhere, n := rewriteDateTruncInExpr(sel.WhereClause, &replacements)
-	if n == 0 || newWhere == nil {
+func suggestSargableRewrites(sql string, findings []PlanFinding) *RewriteCandidate {
+	result, sel, ok := parseSingleSelect(sql)
+	if !ok {
 		return nil
 	}
-	sel.WhereClause = newWhere
+	var replacements []dateTruncRewrite
+	n := applySargableRewritesToSelectTree(sel, &replacements)
+	if n == 0 {
+		return nil
+	}
 
 	outSQL, err := pg_query.Deparse(result)
 	if err != nil {
 		return nil
 	}
 	outSQL = strings.TrimSpace(outSQL)
-	if outSQL == "" || strings.EqualFold(outSQL, trimmed) {
+	if outSQL == "" || strings.EqualFold(outSQL, sql) {
 		return nil
 	}
 
-	units := uniqueUnits(replacements)
-	rationale := fmt.Sprintf(
-		"unwrap DATE_TRUNC(%s) equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column",
-		strings.Join(quoteUnits(units), "/"),
-	)
+	kinds := uniqueKinds(replacements)
 	confidence := "medium"
-	if evidenceBoost {
+	if findingsSuggestSargableRewrite(findings) {
 		confidence = "high"
 	}
-
-	return []RewriteCandidate{{
+	return &RewriteCandidate{
 		SQL:        outSQL,
-		Rationale:  rationale,
-		Category:   "function_wrap",
+		Rationale:  rewriteRationale(kinds, uniqueUnits(replacements)),
+		Category:   rewriteCategory(kinds),
 		Confidence: confidence,
-	}}
+	}
 }
 
 type dateTruncRewrite struct {
 	Unit   string
 	Column string
+	Kind   string // date_trunc | cast_date
 }
 
-func findingsSuggestDateTruncRewrite(findings []PlanFinding) bool {
+func rewriteRationale(kinds, units []string) string {
+	has := func(want string) bool {
+		for _, k := range kinds {
+			if k == want {
+				return true
+			}
+		}
+		return false
+	}
+	hasTrunc := has("date_trunc")
+	hasCast := has("cast_date")
+	var parts []string
+	switch {
+	case hasTrunc && hasCast:
+		parts = append(parts, fmt.Sprintf(
+			"unwrap DATE_TRUNC(%s) and column::date equality to sargable range predicates so PostgreSQL can prune partitions and use indexes",
+			strings.Join(quoteUnits(units), "/"),
+		))
+	case hasTrunc:
+		parts = append(parts, fmt.Sprintf(
+			"unwrap DATE_TRUNC(%s) equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column",
+			strings.Join(quoteUnits(units), "/"),
+		))
+	case hasCast:
+		parts = append(parts, "unwrap column::date / CAST(col AS date) equality to a sargable day-range predicate so PostgreSQL can prune partitions and use indexes on the column")
+	}
+	if has("extract") {
+		parts = append(parts, "unwrap EXTRACT/date_part equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column")
+	}
+	if has("to_char") {
+		parts = append(parts, "unwrap to_char(...) equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column")
+	}
+	if has("coalesce") {
+		parts = append(parts, "unwrap COALESCE(col, default) equality so the underlying column is sargable")
+	}
+	if has("text_cast") {
+		parts = append(parts, "move the text cast off the column onto a typed literal so an index on the column can be used")
+	}
+	if has("numeric_cast") {
+		parts = append(parts, "move the numeric cast off the column onto a typed literal so an index on the column can be used")
+	}
+	if len(parts) == 0 {
+		return "unwrap non-sargable predicates to index- and partition-friendly forms"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func rewriteCategory(kinds []string) string {
+	if len(kinds) == 1 {
+		switch kinds[0] {
+		case "coalesce":
+			return "coalesce_unwrap"
+		case "text_cast", "numeric_cast":
+			return "implicit_cast"
+		}
+	}
+	return "function_wrap"
+}
+
+func uniqueKinds(rs []dateTruncRewrite) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, r := range rs {
+		k := r.Kind
+		if k == "" {
+			k = "date_trunc"
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+func findingsSuggestSargableRewrite(findings []PlanFinding) bool {
 	for _, f := range findings {
 		blob := strings.ToLower(f.Category + " " + f.Message + " " + strings.Join(f.Evidence, " "))
 		if strings.Contains(blob, "date_trunc") ||
 			strings.Contains(blob, "function-wrapped") ||
 			strings.Contains(blob, "function wrap") ||
+			strings.Contains(blob, "extract(") ||
+			strings.Contains(blob, "date_part") ||
+			strings.Contains(blob, "to_char") ||
+			strings.Contains(blob, "coalesce") ||
+			strings.Contains(blob, "::date") ||
+			strings.Contains(blob, "::text") ||
+			strings.Contains(blob, "cast(") ||
 			f.Category == CategoryPartitionPruning {
 			return true
 		}
@@ -99,12 +228,52 @@ func findingsSuggestDateTruncRewrite(findings []PlanFinding) bool {
 	return false
 }
 
-func rewriteDateTruncInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*pg_query.Node, int) {
+func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*pg_query.Node, int) {
 	if node == nil {
 		return nil, 0
 	}
 	if ae := node.GetAExpr(); ae != nil {
+		if replacement, info, ok := tryRewriteDateTruncBetween(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteCastDateBetween(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteDateTruncInequality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteCastDateInequality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
 		if replacement, info, ok := tryRewriteDateTruncEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteCastDateEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteExtractYearEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteToCharEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteCoalesceEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteNumericCastEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteTextCastEquality(ae); ok {
 			*out = append(*out, info)
 			return replacement, 1
 		}
@@ -115,7 +284,7 @@ func rewriteDateTruncInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*pg_q
 		args := make([]*pg_query.Node, len(be.Args))
 		changed := false
 		for i, arg := range be.Args {
-			rewritten, n := rewriteDateTruncInExpr(arg, out)
+			rewritten, n := rewriteFunctionWrapInExpr(arg, out)
 			total += n
 			if n > 0 && rewritten != nil {
 				args[i] = rewritten
@@ -172,8 +341,78 @@ func tryRewriteDateTruncEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTrunc
 		cmpExpr(">=", colStart, startLit),
 		cmpExpr("<", colEnd, endLit),
 	)
-	info := dateTruncRewrite{Unit: unit, Column: columnRefName(colNode)}
+	info := dateTruncRewrite{Unit: unit, Column: columnRefName(colNode), Kind: "date_trunc"}
 	return rangePred, info, true
+}
+
+// tryRewriteCastDateEquality rewrites col::date = <const> / CAST(col AS date) = <const>
+// into a closed day range on the underlying column.
+func tryRewriteCastDateEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
+	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_OP || !aExprOpIs(ae, "=") {
+		return nil, dateTruncRewrite{}, false
+	}
+	colNode, constNode, ok := splitCastDateEquality(ae.Lexpr, ae.Rexpr)
+	if !ok {
+		colNode, constNode, ok = splitCastDateEquality(ae.Rexpr, ae.Lexpr)
+	}
+	if !ok {
+		return nil, dateTruncRewrite{}, false
+	}
+	start, typ, ok := parseTemporalConst(constNode)
+	if !ok {
+		return nil, dateTruncRewrite{}, false
+	}
+	unit := "day"
+	start = truncateTime(start, unit)
+	end, ok := rangeEnd(start, unit)
+	if !ok {
+		return nil, dateTruncRewrite{}, false
+	}
+	startLit := temporalLiteralNode(start, typ, unit)
+	endLit := temporalLiteralNode(end, typ, unit)
+	colStart := cloneColumnRef(colNode)
+	colEnd := cloneColumnRef(colNode)
+	if colStart == nil || colEnd == nil || startLit == nil || endLit == nil {
+		return nil, dateTruncRewrite{}, false
+	}
+	rangePred := andExpr(
+		cmpExpr(">=", colStart, startLit),
+		cmpExpr("<", colEnd, endLit),
+	)
+	info := dateTruncRewrite{Unit: unit, Column: columnRefName(colNode), Kind: "cast_date"}
+	return rangePred, info, true
+}
+
+func splitCastDateEquality(a, b *pg_query.Node) (col, constNode *pg_query.Node, ok bool) {
+	if a == nil || b == nil {
+		return nil, nil, false
+	}
+	tc := a.GetTypeCast()
+	if tc == nil || !strings.EqualFold(typeNameLast(tc.TypeName), "date") {
+		return nil, nil, false
+	}
+	col = columnRefUnder(tc.Arg)
+	if col == nil {
+		return nil, nil, false
+	}
+	if !isTemporalConst(b) {
+		return nil, nil, false
+	}
+	return col, b, true
+}
+
+func columnRefUnder(n *pg_query.Node) *pg_query.Node {
+	if n == nil {
+		return nil
+	}
+	if n.GetColumnRef() != nil {
+		return n
+	}
+	// Reject nested casts that are not a bare column (e.g. (expr)::date).
+	if tc := n.GetTypeCast(); tc != nil {
+		return columnRefUnder(tc.Arg)
+	}
+	return nil
 }
 
 func splitDateTruncEquality(a, b *pg_query.Node) (unit string, col, constNode *pg_query.Node, ok bool) {
@@ -529,4 +768,173 @@ func quoteUnits(units []string) []string {
 		out[i] = "'" + u + "'"
 	}
 	return out
+}
+
+func cloneSelectStmt(sel *pg_query.SelectStmt) *pg_query.SelectStmt {
+	if sel == nil {
+		return nil
+	}
+	cloned, ok := proto.Clone(sel).(*pg_query.SelectStmt)
+	if !ok {
+		return nil
+	}
+	return cloned
+}
+
+func intConstValue(n *pg_query.Node) (int64, bool) {
+	if n == nil {
+		return 0, false
+	}
+	if tc := n.GetTypeCast(); tc != nil {
+		return intConstValue(tc.Arg)
+	}
+	ac := n.GetAConst()
+	if ac == nil {
+		return 0, false
+	}
+	if ival := ac.GetIval(); ival != nil {
+		return int64(ival.GetIval()), true
+	}
+	if sval := ac.GetSval(); sval != nil {
+		v, err := strconv.ParseInt(strings.TrimSpace(sval.GetSval()), 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		return v, true
+	}
+	return 0, false
+}
+
+func aConstInt(v int32) *pg_query.Node {
+	return &pg_query.Node{Node: &pg_query.Node_AConst{AConst: &pg_query.A_Const{
+		Val: &pg_query.A_Const_Ival{Ival: &pg_query.Integer{Ival: v}},
+	}}}
+}
+
+func isConstNode(n *pg_query.Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.GetAConst() != nil {
+		return true
+	}
+	if tc := n.GetTypeCast(); tc != nil {
+		return isConstNode(tc.Arg)
+	}
+	return false
+}
+
+func constEqual(a, b *pg_query.Node) bool {
+	if sa, ok := stringConstValue(a); ok {
+		if sb, ok := stringConstValue(b); ok {
+			return sa == sb
+		}
+	}
+	if ia, ok := intConstValue(a); ok {
+		if ib, ok := intConstValue(b); ok {
+			return ia == ib
+		}
+	}
+	return false
+}
+
+func notExpr(n *pg_query.Node) *pg_query.Node {
+	return &pg_query.Node{Node: &pg_query.Node_BoolExpr{BoolExpr: &pg_query.BoolExpr{
+		Boolop: pg_query.BoolExprType_NOT_EXPR,
+		Args:   []*pg_query.Node{n},
+	}}}
+}
+
+func nullTest(arg *pg_query.Node, isNull bool) *pg_query.Node {
+	t := pg_query.NullTestType_IS_NULL
+	if !isNull {
+		t = pg_query.NullTestType_IS_NOT_NULL
+	}
+	return &pg_query.Node{Node: &pg_query.Node_NullTest{NullTest: &pg_query.NullTest{
+		Arg:          arg,
+		Nulltesttype: t,
+	}}}
+}
+
+func orExpr(args ...*pg_query.Node) *pg_query.Node {
+	filtered := make([]*pg_query.Node, 0, len(args))
+	for _, a := range args {
+		if a != nil {
+			filtered = append(filtered, a)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	if len(filtered) == 1 {
+		return filtered[0]
+	}
+	return &pg_query.Node{Node: &pg_query.Node_BoolExpr{BoolExpr: &pg_query.BoolExpr{
+		Boolop: pg_query.BoolExprType_OR_EXPR,
+		Args:   filtered,
+	}}}
+}
+
+func combineAnd(args []*pg_query.Node) *pg_query.Node {
+	filtered := make([]*pg_query.Node, 0, len(args))
+	for _, a := range args {
+		if a != nil {
+			filtered = append(filtered, a)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	if len(filtered) == 1 {
+		return filtered[0]
+	}
+	return &pg_query.Node{Node: &pg_query.Node_BoolExpr{BoolExpr: &pg_query.BoolExpr{
+		Boolop: pg_query.BoolExprType_AND_EXPR,
+		Args:   filtered,
+	}}}
+}
+
+func singleFromAlias(sel *pg_query.SelectStmt) (string, bool) {
+	if sel == nil || len(sel.FromClause) != 1 {
+		return "", false
+	}
+	rv := sel.FromClause[0].GetRangeVar()
+	if rv == nil || rv.Relname == "" {
+		return "", false
+	}
+	if rv.Alias != nil && rv.Alias.Aliasname != "" {
+		return rv.Alias.Aliasname, true
+	}
+	return rv.Relname, true
+}
+
+func qualifyColumnRef(n *pg_query.Node, alias string) *pg_query.Node {
+	if n == nil || alias == "" {
+		return n
+	}
+	cr := n.GetColumnRef()
+	if cr == nil {
+		return n
+	}
+	if len(cr.Fields) >= 2 {
+		return cloneColumnRef(n)
+	}
+	name := columnRefName(n)
+	if name == "" {
+		return n
+	}
+	return &pg_query.Node{Node: &pg_query.Node_ColumnRef{ColumnRef: &pg_query.ColumnRef{
+		Fields: []*pg_query.Node{stringNode(alias), stringNode(name)},
+	}}}
+}
+
+func resTargetVal(n *pg_query.Node) *pg_query.Node {
+	if n == nil {
+		return nil
+	}
+	rt := n.GetResTarget()
+	if rt == nil {
+		return nil
+	}
+	return rt.Val
 }
