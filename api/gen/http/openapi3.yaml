@@ -12685,7 +12685,7 @@ components:
                     example: Dolore omnis ducimus.
                 result_equivalence_status:
                     type: string
-                    description: equal | Different | Unverified
+                    description: Equal | Different | Unverified
                     example: Voluptatum esse placeat minima ipsam.
                 result_sample_rows:
                     type: integer

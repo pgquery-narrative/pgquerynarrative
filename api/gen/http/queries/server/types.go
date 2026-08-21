@@ -112,7 +112,7 @@ type ComparePlansResponseBody struct {
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff" json:"diff" xml:"diff"`
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
-	// equal | Different | Unverified
+	// Equal | Different | Unverified
 	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`

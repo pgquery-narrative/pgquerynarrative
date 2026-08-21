@@ -123,7 +123,9 @@ test.describe("Full UI coverage", () => {
   test("investigate guided demo scenario end-to-end", async ({ page }) => {
     await page.goto("/investigate");
     await expect(page.getByRole("heading", { name: /Investigate a Query Regression/i })).toBeVisible();
-    await expect(page.getByText(/Sample problem queries|Guided demo/i)).toBeVisible();
+    // Prefer the card heading — page copy also says "guided demo", which makes a
+    // getByText(/…|Guided demo/i) locator match twice (strict mode violation).
+    await expect(page.getByRole("heading", { name: /Sample problem queries/i })).toBeVisible();
 
     const scenario = page.getByRole("button", { name: /Slow dashboard query/i });
     await expect(scenario).toBeVisible({ timeout: 20_000 });
@@ -164,15 +166,22 @@ test.describe("Full UI coverage", () => {
     const name = `pw-dash-${Date.now()}`;
     await page.goto("/dashboards");
     await expect(page.getByRole("heading", { name: "Dashboards" })).toBeVisible();
-    await page.getByPlaceholder(/Daily Revenue Ops|e\.g\./i).fill(name);
-    await page.getByRole("button", { name: /^Create$/i }).click();
-    await expect(page.getByText(name)).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("link", { name: /^Open$/i }).filter({ has: page.locator(`xpath=ancestor::*[contains(., '${name}')]`) }).first().click().catch(async () => {
-      // Fallback: click Open next to the named dashboard card.
-      const card = page.locator("div").filter({ hasText: name }).filter({ has: page.getByRole("link", { name: /^Open$/i }) }).first();
-      await card.getByRole("link", { name: /^Open$/i }).click();
-    });
+    const nameInput = page.getByPlaceholder(/e\.g\. Daily Revenue Ops/i);
+    await nameInput.fill(name);
+    await expect(nameInput).toHaveValue(name);
+
+    const createResp = page.waitForResponse(
+      (r) => r.url().includes("/dashboards") && r.request().method() === "POST",
+      { timeout: 20_000 },
+    );
+    await page.getByRole("button", { name: /^Create$/i }).click();
+    const created = await createResp;
+    expect(created.ok(), `create dashboard failed: ${created.status()}`).toBeTruthy();
+    await expect(page.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    const card = page.locator("div").filter({ hasText: name }).filter({ has: page.getByRole("link", { name: /^Open$/i }) }).first();
+    await card.getByRole("link", { name: /^Open$/i }).click();
 
     await expect(page.getByRole("heading", { name })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Add widgets|Auto refresh/i).first()).toBeVisible();
@@ -180,11 +189,14 @@ test.describe("Full UI coverage", () => {
     await page.getByRole("link", { name: /^Back$/i }).click();
     await expect(page.getByRole("heading", { name: "Dashboards" })).toBeVisible();
 
-    // Delete via trash button on the card.
-    page.once("dialog", (d) => d.accept().catch(() => {}));
-    const row = page.locator("div").filter({ hasText: name }).filter({ has: page.getByRole("button") }).first();
+    // Delete via trash button on the card (no confirm dialog).
+    const row = page
+      .locator("div")
+      .filter({ hasText: name })
+      .filter({ has: page.getByRole("button") })
+      .first();
     await row.getByRole("button").last().click();
-    await expect(page.getByText(name)).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByText(name, { exact: true })).toHaveCount(0, { timeout: 15_000 });
   });
 
   test("saved queries open and delete flow", async ({ page }) => {

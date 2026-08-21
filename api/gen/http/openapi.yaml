@@ -2595,7 +2595,7 @@ definitions:
                 example: Odit aut neque consectetur.
             result_equivalence_status:
                 type: string
-                description: equal | Different | Unverified
+                description: Equal | Different | Unverified
                 example: Rerum rerum.
             result_sample_rows:
                 type: integer

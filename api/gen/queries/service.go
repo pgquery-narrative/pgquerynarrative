@@ -83,7 +83,7 @@ type ComparePlansResult struct {
 	Diff    *PlanComparisonDiff
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool
-	// equal | Different | Unverified
+	// Equal | Different | Unverified
 	ResultEquivalenceStatus *string
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string
