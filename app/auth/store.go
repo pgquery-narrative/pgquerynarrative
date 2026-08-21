@@ -478,6 +478,13 @@ func isAnalystWritePath(method, path string) bool {
 	if method != http.MethodPost {
 		return false
 	}
+	// Query Investigation is the analyst hero path: create, suggest/rank, compare, report.
+	if strings.HasPrefix(path, "/api/v1/investigations") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/v1/workspace/regressions/") && strings.HasSuffix(path, "/acknowledge") {
+		return true
+	}
 	allowed := []string{
 		"/api/v1/queries/run",
 		"/api/v1/queries/explain",
