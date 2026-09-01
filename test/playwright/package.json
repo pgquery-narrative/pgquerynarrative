@@ -9,6 +9,6 @@
     "test:critical": "playwright test critical-path.spec.ts shares.spec.ts schedules.spec.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.61.1"
+    "@playwright/test": "1.62.1"
   }
 }
