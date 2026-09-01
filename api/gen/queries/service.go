@@ -123,6 +123,8 @@ type ExplainQueryResult struct {
 	Plan any
 	// Notable plan nodes (seq scans, high-cost operators)
 	Findings []*PlanFinding
+	// Verdict-first rollup of findings into ranked causes
+	Diagnosis *PlanDiagnosis
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs int64
 }
@@ -217,6 +219,51 @@ type PlanComparisonMetric struct {
 	After string
 	// Change summary (e.g. −96.3%)
 	Change string
+}
+
+type PlanDiagnosis struct {
+	// Short root-cause label
+	Headline *string
+	// Two-to-three sentence verdict with concrete numbers
+	Summary *string
+	// The single highest-leverage cause
+	RootCause *PlanDiagnosisCause
+	// Ranked causes, root first (excludes incidental)
+	Causes []*PlanDiagnosisCause
+	// Rolled-up schema-hygiene noise
+	Incidental *PlanDiagnosisIncidental
+	// Number of findings before rollup
+	RawCount int
+}
+
+type PlanDiagnosisCause struct {
+	// Finding category, e.g. partition_pruning, sort_spill
+	Category string
+	// Deduplicated, human headline for this cause
+	Title string
+	// One-line explanation
+	Detail *string
+	// Short imperative fix; empty when there is no generic fix
+	Fix *string
+	// blocker | contributing
+	Severity string
+	// 0..1 share of plan cost attributable to this cause
+	CostShare *float64
+	// Raw findings that rolled into this cause
+	Occurrences *int
+	// Distinct plan node types involved
+	NodeTypes []string
+	// Up to five sample raw finding messages
+	Evidence []string
+}
+
+type PlanDiagnosisIncidental struct {
+	// Raw findings rolled up
+	Count int
+	// One-line explanation of why these are set aside
+	Summary string
+	// Categories represented
+	Categories []string
 }
 
 type PlanFinding struct {

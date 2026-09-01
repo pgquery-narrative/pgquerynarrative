@@ -115,12 +115,41 @@ export interface RankedCandidateList {
   candidates: RankedCandidate[];
 }
 
+export interface PlanDiagnosisCause {
+  category: string;
+  title: string;
+  detail?: string;
+  fix?: string;
+  severity: "blocker" | "contributing" | string;
+  cost_share?: number;
+  occurrences?: number;
+  node_types?: string[];
+  evidence?: string[];
+}
+
+export interface PlanDiagnosisIncidental {
+  count: number;
+  summary: string;
+  categories?: string[];
+}
+
+/** Verdict-first rollup of raw plan findings into ranked causes. */
+export interface PlanDiagnosis {
+  headline?: string;
+  summary?: string;
+  root_cause?: PlanDiagnosisCause;
+  causes?: PlanDiagnosisCause[];
+  incidental?: PlanDiagnosisIncidental;
+  raw_count: number;
+}
+
 /** Result of POST /queries/explain (EXPLAIN FORMAT JSON). */
 export interface ExplainQueryResult {
   sql: string;
   total_cost: number;
   plan: unknown;
   findings: PlanFinding[];
+  diagnosis?: PlanDiagnosis;
   execution_time_ms: number;
 }
 

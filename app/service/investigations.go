@@ -263,6 +263,7 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 	if len(explainJSON) > 0 {
 		var exp investigations.ExplainQueryResult
 		if json.Unmarshal(explainJSON, &exp) == nil {
+			attachDiagnosis(&exp)
 			inv.Explain = &exp
 		}
 	}
@@ -310,6 +311,86 @@ func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *inv
 		out.Candidates = append(out.Candidates, cand)
 	}
 	return out, nil
+}
+
+// attachDiagnosis derives the verdict-first rollup from the stored findings and
+// plan and sets exp.Diagnosis. Computed at read time so it always reflects the
+// current diagnosis logic and needs no backfill of historical rows.
+func attachDiagnosis(exp *investigations.ExplainQueryResult) {
+	if exp == nil || len(exp.Findings) == 0 {
+		return
+	}
+	findings := queryrunnerFindingsFromInvestigation(exp)
+
+	var metrics queryrunner.PlanMetrics
+	if planBytes, err := json.Marshal(exp.Plan); err == nil {
+		if !isExplainRootArray(planBytes) {
+			if wrapped, werr := json.Marshal([]map[string]any{{"Plan": exp.Plan}}); werr == nil {
+				planBytes = wrapped
+			}
+		}
+		if m, merr := queryrunner.MetricsFromPlan(planBytes); merr == nil {
+			metrics = m
+		}
+	}
+	if metrics.TotalCost == 0 {
+		metrics.TotalCost = exp.TotalCost
+	}
+
+	d := queryrunner.Diagnose(findings, metrics)
+	if d == nil {
+		return
+	}
+	exp.Diagnosis = planDiagnosisToAPI(d)
+}
+
+func planDiagnosisToAPI(d *queryrunner.Diagnosis) *investigations.PlanDiagnosis {
+	out := &investigations.PlanDiagnosis{RawCount: d.RawCount}
+	if d.Headline != "" {
+		out.Headline = &d.Headline
+	}
+	if d.Summary != "" {
+		out.Summary = &d.Summary
+	}
+	if d.RootCause != nil {
+		out.RootCause = planCauseToAPI(*d.RootCause)
+	}
+	for _, c := range d.Causes {
+		out.Causes = append(out.Causes, planCauseToAPI(c))
+	}
+	if d.Incidental != nil {
+		out.Incidental = &investigations.PlanDiagnosisIncidental{
+			Count:      d.Incidental.Count,
+			Summary:    d.Incidental.Summary,
+			Categories: d.Incidental.Categories,
+		}
+	}
+	return out
+}
+
+func planCauseToAPI(c queryrunner.DiagnosisCause) *investigations.PlanDiagnosisCause {
+	out := &investigations.PlanDiagnosisCause{
+		Category:  c.Category,
+		Title:     c.Title,
+		Severity:  string(c.Severity),
+		NodeTypes: c.NodeTypes,
+		Evidence:  c.Evidence,
+	}
+	if c.Detail != "" {
+		out.Detail = &c.Detail
+	}
+	if c.Fix != "" {
+		out.Fix = &c.Fix
+	}
+	if c.CostShare > 0 {
+		cs := c.CostShare
+		out.CostShare = &cs
+	}
+	if c.Occurrences > 0 {
+		occ := c.Occurrences
+		out.Occurrences = &occ
+	}
+	return out
 }
 
 func queryrunnerFindingsFromInvestigation(exp *investigations.ExplainQueryResult) []queryrunner.PlanFinding {

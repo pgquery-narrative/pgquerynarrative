@@ -286,6 +286,8 @@ type ExplainQueryResultResponseBody struct {
 	Plan any `form:"plan" json:"plan" xml:"plan"`
 	// Notable plan nodes (seq scans, high-cost operators)
 	Findings []*PlanFindingResponseBody `form:"findings" json:"findings" xml:"findings"`
+	// Verdict-first rollup of findings into ranked causes
+	Diagnosis *PlanDiagnosisResponseBody `form:"diagnosis,omitempty" json:"diagnosis,omitempty" xml:"diagnosis,omitempty"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
 }
@@ -353,6 +355,56 @@ type IndexDefinitionResponseBody struct {
 	IndexScans    *int64  `form:"index_scans,omitempty" json:"index_scans,omitempty" xml:"index_scans,omitempty"`
 	TuplesRead    *int64  `form:"tuples_read,omitempty" json:"tuples_read,omitempty" xml:"tuples_read,omitempty"`
 	TuplesFetched *int64  `form:"tuples_fetched,omitempty" json:"tuples_fetched,omitempty" xml:"tuples_fetched,omitempty"`
+}
+
+// PlanDiagnosisResponseBody is used to define fields on response body types.
+type PlanDiagnosisResponseBody struct {
+	// Short root-cause label
+	Headline *string `form:"headline,omitempty" json:"headline,omitempty" xml:"headline,omitempty"`
+	// Two-to-three sentence verdict with concrete numbers
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// The single highest-leverage cause
+	RootCause *PlanDiagnosisCauseResponseBody `form:"root_cause,omitempty" json:"root_cause,omitempty" xml:"root_cause,omitempty"`
+	// Ranked causes, root first (excludes incidental)
+	Causes []*PlanDiagnosisCauseResponseBody `form:"causes,omitempty" json:"causes,omitempty" xml:"causes,omitempty"`
+	// Rolled-up schema-hygiene noise
+	Incidental *PlanDiagnosisIncidentalResponseBody `form:"incidental,omitempty" json:"incidental,omitempty" xml:"incidental,omitempty"`
+	// Number of findings before rollup
+	RawCount int `form:"raw_count" json:"raw_count" xml:"raw_count"`
+}
+
+// PlanDiagnosisCauseResponseBody is used to define fields on response body
+// types.
+type PlanDiagnosisCauseResponseBody struct {
+	// Finding category, e.g. partition_pruning, sort_spill
+	Category string `form:"category" json:"category" xml:"category"`
+	// Deduplicated, human headline for this cause
+	Title string `form:"title" json:"title" xml:"title"`
+	// One-line explanation
+	Detail *string `form:"detail,omitempty" json:"detail,omitempty" xml:"detail,omitempty"`
+	// Short imperative fix; empty when there is no generic fix
+	Fix *string `form:"fix,omitempty" json:"fix,omitempty" xml:"fix,omitempty"`
+	// blocker | contributing
+	Severity string `form:"severity" json:"severity" xml:"severity"`
+	// 0..1 share of plan cost attributable to this cause
+	CostShare *float64 `form:"cost_share,omitempty" json:"cost_share,omitempty" xml:"cost_share,omitempty"`
+	// Raw findings that rolled into this cause
+	Occurrences *int `form:"occurrences,omitempty" json:"occurrences,omitempty" xml:"occurrences,omitempty"`
+	// Distinct plan node types involved
+	NodeTypes []string `form:"node_types,omitempty" json:"node_types,omitempty" xml:"node_types,omitempty"`
+	// Up to five sample raw finding messages
+	Evidence []string `form:"evidence,omitempty" json:"evidence,omitempty" xml:"evidence,omitempty"`
+}
+
+// PlanDiagnosisIncidentalResponseBody is used to define fields on response
+// body types.
+type PlanDiagnosisIncidentalResponseBody struct {
+	// Raw findings rolled up
+	Count int `form:"count" json:"count" xml:"count"`
+	// One-line explanation of why these are set aside
+	Summary string `form:"summary" json:"summary" xml:"summary"`
+	// Categories represented
+	Categories []string `form:"categories,omitempty" json:"categories,omitempty" xml:"categories,omitempty"`
 }
 
 // ComparePlansResultResponseBody is used to define fields on response body

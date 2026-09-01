@@ -131,8 +131,43 @@ var ExplainQueryResult = Type("ExplainQueryResult", func() {
 	Attribute("total_cost", Float64, "Estimated total cost from the root plan node")
 	Attribute("plan", Any, "Raw EXPLAIN (FORMAT JSON) output")
 	Attribute("findings", ArrayOf(PlanFinding), "Notable plan nodes (seq scans, high-cost operators)")
+	Attribute("diagnosis", PlanDiagnosis, "Verdict-first rollup of findings into ranked causes")
 	Attribute("execution_time_ms", Int64, "Time to run EXPLAIN and parse the plan")
 	Required("sql", "total_cost", "plan", "findings", "execution_time_ms")
+})
+
+// PlanDiagnosisCause is one distinct, deduplicated reason a query is slow.
+var PlanDiagnosisCause = Type("PlanDiagnosisCause", func() {
+	Attribute("category", String, "Finding category, e.g. partition_pruning, sort_spill")
+	Attribute("title", String, "Deduplicated, human headline for this cause")
+	Attribute("detail", String, "One-line explanation")
+	Attribute("fix", String, "Short imperative fix; empty when there is no generic fix")
+	Attribute("severity", String, "blocker | contributing")
+	Attribute("cost_share", Float64, "0..1 share of plan cost attributable to this cause")
+	Attribute("occurrences", Int, "Raw findings that rolled into this cause")
+	Attribute("node_types", ArrayOf(String), "Distinct plan node types involved")
+	Attribute("evidence", ArrayOf(String), "Up to five sample raw finding messages")
+	Required("category", "title", "severity")
+})
+
+// PlanDiagnosisIncidental is the collapsed line for schema-hygiene noise.
+var PlanDiagnosisIncidental = Type("PlanDiagnosisIncidental", func() {
+	Attribute("count", Int, "Raw findings rolled up")
+	Attribute("summary", String, "One-line explanation of why these are set aside")
+	Attribute("categories", ArrayOf(String), "Categories represented")
+	Required("count", "summary")
+})
+
+// PlanDiagnosis collapses hundreds of repetitive findings into the small set of
+// distinct, ranked causes a human would name.
+var PlanDiagnosis = Type("PlanDiagnosis", func() {
+	Attribute("headline", String, "Short root-cause label")
+	Attribute("summary", String, "Two-to-three sentence verdict with concrete numbers")
+	Attribute("root_cause", PlanDiagnosisCause, "The single highest-leverage cause")
+	Attribute("causes", ArrayOf(PlanDiagnosisCause), "Ranked causes, root first (excludes incidental)")
+	Attribute("incidental", PlanDiagnosisIncidental, "Rolled-up schema-hygiene noise")
+	Attribute("raw_count", Int, "Number of findings before rollup")
+	Required("raw_count")
 })
 
 // StatStatementRow is one entry from pg_stat_statements.
