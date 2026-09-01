@@ -85,7 +85,13 @@ test.describe("Full UI coverage", () => {
         async () => {
           if (await page.getByRole("table").isVisible()) return "table";
           if (await page.getByText(/No statements recorded yet/i).isVisible()) return "empty";
-          if (await page.getByText(/Failed to load query stats|pg_stat_statements/i).isVisible()) {
+          // Match the error banner only — a bare "pg_stat_statements" also appears
+          // in the static page description, which trips strict mode.
+          if (
+            await page
+              .getByText(/Failed to load query stats|pg_stat_statements (is not available|query failed)/i)
+              .isVisible()
+          ) {
             return "error";
           }
           return "pending";
