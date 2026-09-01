@@ -215,10 +215,32 @@ func TestSuggestRewrites_NumericCast(t *testing.T) {
 	}
 }
 
-func TestSuggestRewrites_ParamRefSkipped(t *testing.T) {
+func TestSuggestRewrites_ParamEqualityRewritten(t *testing.T) {
 	sql := `SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) = $1`
+	c := mustFindCategory(t, SuggestRewrites(sql, nil), "function_wrap")
+	got := normalizeSQL(c.SQL)
+	if strings.Contains(strings.ToLower(got), "date_trunc") {
+		t.Fatalf("expected unwrap, got: %s", c.SQL)
+	}
+	if !strings.Contains(got, "date >= $1") || !strings.Contains(got, "date < ($1 + '1 month'::interval)") {
+		t.Fatalf("expected placeholder-preserving month range, got: %s", c.SQL)
+	}
+}
+
+func TestSuggestRewrites_ParamInequalitySkipped(t *testing.T) {
+	// A parameterized inequality is only safe if the bind is already unit-aligned,
+	// which we cannot verify — fail closed.
+	sql := `SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) >= $1`
 	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
-		t.Fatalf("parameterized SQL must fail closed: %#v", cands)
+		t.Fatalf("parameterized inequality must fail closed: %#v", cands)
+	}
+}
+
+func TestSuggestRewrites_ParamOrUnionSkipped(t *testing.T) {
+	// OR→UNION ALL stays literals-only even when a param is present.
+	sql := `SELECT 1 FROM demo.sales WHERE region = $1 OR product_category = $2`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("parameterized OR must not produce a UNION rewrite: %#v", cands)
 	}
 }
 

@@ -2623,18 +2623,18 @@ definitions:
                 items:
                     $ref: '#/definitions/PlanComparisonMetric'
                 example:
-                    - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                      before: Est sequi non qui.
-                      change: Rerum eum et et.
-                      evidence: Aut molestias.
-                    - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                      before: Est sequi non qui.
-                      change: Rerum eum et et.
-                      evidence: Aut molestias.
-                    - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                      before: Est sequi non qui.
-                      change: Rerum eum et et.
-                      evidence: Aut molestias.
+                    - after: Voluptatem officia.
+                      before: Laborum perspiciatis corporis et.
+                      change: Hic rerum eum et et.
+                      evidence: Molestias et est sequi non.
+                    - after: Voluptatem officia.
+                      before: Laborum perspiciatis corporis et.
+                      change: Hic rerum eum et et.
+                      evidence: Molestias et est sequi non.
+                    - after: Voluptatem officia.
+                      before: Laborum perspiciatis corporis et.
+                      change: Hic rerum eum et et.
+                      evidence: Molestias et est sequi non.
             result_after_row_count:
                 type: integer
                 description: COUNT(*) of after SQL when computable
@@ -2752,7 +2752,7 @@ definitions:
                         severity: Eos aut omnis sint.
                         title: Fugit maxime qui ut tenetur quisquam.
                     summary: Quo rerum aliquid quis et veritatis vel.
-                execution_time_ms: 4920842861912807518
+                execution_time_ms: 220555659230306017
                 findings:
                     - category: Cumque culpa impedit.
                       confidence: Consectetur ut dignissimos.
@@ -3158,6 +3158,7 @@ definitions:
                         - Laudantium culpa et aut.
                       relation: Animi velit.
                       schema: Minus atque ratione quisquam explicabo omnis.
+                generic_plan: true
                 plan: Ut officia tenetur non sit et.
                 sql: Deleniti dolores architecto ad cum.
                 total_cost: 0.7100202956847084
@@ -3250,7 +3251,7 @@ definitions:
                         severity: Eos aut omnis sint.
                         title: Fugit maxime qui ut tenetur quisquam.
                     summary: Quo rerum aliquid quis et veritatis vel.
-                execution_time_ms: 4920842861912807518
+                execution_time_ms: 220555659230306017
                 findings:
                     - category: Cumque culpa impedit.
                       confidence: Consectetur ut dignissimos.
@@ -3656,6 +3657,7 @@ definitions:
                         - Laudantium culpa et aut.
                       relation: Animi velit.
                       schema: Minus atque ratione quisquam explicabo omnis.
+                generic_plan: true
                 plan: Ut officia tenetur non sit et.
                 sql: Deleniti dolores architecto ad cum.
                 total_cost: 0.7100202956847084
@@ -3671,14 +3673,14 @@ definitions:
                     - Sit repellendus et.
                     - Consequatur corrupti quaerat ea.
             metrics:
-                - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                  before: Est sequi non qui.
-                  change: Rerum eum et et.
-                  evidence: Aut molestias.
-                - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                  before: Est sequi non qui.
-                  change: Rerum eum et et.
-                  evidence: Aut molestias.
+                - after: Voluptatem officia.
+                  before: Laborum perspiciatis corporis et.
+                  change: Hic rerum eum et et.
+                  evidence: Molestias et est sequi non.
+                - after: Voluptatem officia.
+                  before: Laborum perspiciatis corporis et.
+                  change: Hic rerum eum et et.
+                  evidence: Molestias et est sequi non.
             result_after_row_count: 7233771896210947974
             result_before_row_count: 372678547790744107
             result_checksum_equal: true
@@ -6444,22 +6446,22 @@ definitions:
                 type: boolean
                 description: When true, run EXPLAIN (ANALYZE, FORMAT JSON) instead of estimate-only
                 default: false
-                example: false
+                example: true
             connection_id:
                 type: string
                 description: Optional connection ID; defaults to server default connection
-                example: Voluptates incidunt.
+                example: Incidunt nihil est.
             sql:
                 type: string
                 description: Read-only SQL to explain (SELECT or WITH)
-                example: "6"
+                example: f
                 pattern: ^[^;]+$
                 minLength: 1
                 maxLength: 10000
         example:
             analyze: false
-            connection_id: Delectus voluptatem quibusdam architecto.
-            sql: ux
+            connection_id: Voluptatem quibusdam.
+            sql: "n"
         required:
             - sql
     ExplainQueryResult:
@@ -6471,7 +6473,7 @@ definitions:
             execution_time_ms:
                 type: integer
                 description: Time to run EXPLAIN and parse the plan
-                example: 4171079305689357971
+                example: 8660943941125356934
                 format: int64
             findings:
                 type: array
@@ -6681,6 +6683,10 @@ definitions:
                         - Laudantium culpa et aut.
                       relation: Animi velit.
                       schema: Minus atque ratione quisquam explicabo omnis.
+            generic_plan:
+                type: boolean
+                description: True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is parameterized ($1, $2, ...)
+                example: false
             plan:
                 description: Raw EXPLAIN (FORMAT JSON) output
                 example: Dolores dolores.
@@ -6782,7 +6788,7 @@ definitions:
                     severity: Eos aut omnis sint.
                     title: Fugit maxime qui ut tenetur quisquam.
                 summary: Quo rerum aliquid quis et veritatis vel.
-            execution_time_ms: 1201268858946525921
+            execution_time_ms: 667869946746596508
             findings:
                 - category: Cumque culpa impedit.
                   confidence: Consectetur ut dignissimos.
@@ -7188,8 +7194,9 @@ definitions:
                     - Laudantium culpa et aut.
                   relation: Animi velit.
                   schema: Minus atque ratione quisquam explicabo omnis.
+            generic_plan: false
             plan: Sequi dolore error.
-            sql: Quibusdam earum nemo totam consequuntur soluta.
+            sql: Earum nemo totam consequuntur soluta.
             total_cost: 0.08626752604520825
         required:
             - sql
@@ -7665,7 +7672,7 @@ definitions:
                         severity: Eos aut omnis sint.
                         title: Fugit maxime qui ut tenetur quisquam.
                     summary: Quo rerum aliquid quis et veritatis vel.
-                execution_time_ms: 4920842861912807518
+                execution_time_ms: 220555659230306017
                 findings:
                     - category: Cumque culpa impedit.
                       confidence: Consectetur ut dignissimos.
@@ -8071,6 +8078,7 @@ definitions:
                         - Laudantium culpa et aut.
                       relation: Animi velit.
                       schema: Minus atque ratione quisquam explicabo omnis.
+                generic_plan: true
                 plan: Ut officia tenetur non sit et.
                 sql: Deleniti dolores architecto ad cum.
                 total_cost: 0.7100202956847084
@@ -8165,7 +8173,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -8571,6 +8579,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -8663,7 +8672,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -9069,6 +9078,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -9084,18 +9094,18 @@ definitions:
                         - Sit repellendus et.
                         - Consequatur corrupti quaerat ea.
                 metrics:
-                    - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                      before: Est sequi non qui.
-                      change: Rerum eum et et.
-                      evidence: Aut molestias.
-                    - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                      before: Est sequi non qui.
-                      change: Rerum eum et et.
-                      evidence: Aut molestias.
-                    - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                      before: Est sequi non qui.
-                      change: Rerum eum et et.
-                      evidence: Aut molestias.
+                    - after: Voluptatem officia.
+                      before: Laborum perspiciatis corporis et.
+                      change: Hic rerum eum et et.
+                      evidence: Molestias et est sequi non.
+                    - after: Voluptatem officia.
+                      before: Laborum perspiciatis corporis et.
+                      change: Hic rerum eum et et.
+                      evidence: Molestias et est sequi non.
+                    - after: Voluptatem officia.
+                      before: Laborum perspiciatis corporis et.
+                      change: Hic rerum eum et et.
+                      evidence: Molestias et est sequi non.
                 result_after_row_count: 1638533584272715156
                 result_before_row_count: 7100420321338810105
                 result_checksum_equal: true
@@ -9193,7 +9203,7 @@ definitions:
                         severity: Eos aut omnis sint.
                         title: Fugit maxime qui ut tenetur quisquam.
                     summary: Quo rerum aliquid quis et veritatis vel.
-                execution_time_ms: 4920842861912807518
+                execution_time_ms: 220555659230306017
                 findings:
                     - category: Cumque culpa impedit.
                       confidence: Consectetur ut dignissimos.
@@ -9599,6 +9609,7 @@ definitions:
                         - Laudantium culpa et aut.
                       relation: Animi velit.
                       schema: Minus atque ratione quisquam explicabo omnis.
+                generic_plan: true
                 plan: Ut officia tenetur non sit et.
                 sql: Deleniti dolores architecto ad cum.
                 total_cost: 0.7100202956847084
@@ -9721,7 +9732,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -10127,6 +10138,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -10221,7 +10233,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -10627,6 +10639,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -10719,7 +10732,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -11125,6 +11138,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -11140,18 +11154,18 @@ definitions:
                                 - Sit repellendus et.
                                 - Consequatur corrupti quaerat ea.
                         metrics:
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
                         result_after_row_count: 1638533584272715156
                         result_before_row_count: 7100420321338810105
                         result_checksum_equal: true
@@ -11249,7 +11263,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -11655,6 +11669,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -11760,7 +11775,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -12166,6 +12181,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -12260,7 +12276,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -12666,6 +12682,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -12758,7 +12775,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -13164,6 +13181,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -13179,18 +13197,18 @@ definitions:
                                 - Sit repellendus et.
                                 - Consequatur corrupti quaerat ea.
                         metrics:
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
                         result_after_row_count: 1638533584272715156
                         result_before_row_count: 7100420321338810105
                         result_checksum_equal: true
@@ -13288,7 +13306,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -13694,6 +13712,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -13799,7 +13818,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -14205,6 +14224,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -14299,7 +14319,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -14705,6 +14725,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -14797,7 +14818,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -15203,6 +15224,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -15218,18 +15240,18 @@ definitions:
                                 - Sit repellendus et.
                                 - Consequatur corrupti quaerat ea.
                         metrics:
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
                         result_after_row_count: 1638533584272715156
                         result_before_row_count: 7100420321338810105
                         result_checksum_equal: true
@@ -15327,7 +15349,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -15733,6 +15755,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -15838,7 +15861,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -16244,6 +16267,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -16338,7 +16362,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -16744,6 +16768,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -16836,7 +16861,7 @@ definitions:
                                     severity: Eos aut omnis sint.
                                     title: Fugit maxime qui ut tenetur quisquam.
                                 summary: Quo rerum aliquid quis et veritatis vel.
-                            execution_time_ms: 4920842861912807518
+                            execution_time_ms: 220555659230306017
                             findings:
                                 - category: Cumque culpa impedit.
                                   confidence: Consectetur ut dignissimos.
@@ -17242,6 +17267,7 @@ definitions:
                                     - Laudantium culpa et aut.
                                   relation: Animi velit.
                                   schema: Minus atque ratione quisquam explicabo omnis.
+                            generic_plan: true
                             plan: Ut officia tenetur non sit et.
                             sql: Deleniti dolores architecto ad cum.
                             total_cost: 0.7100202956847084
@@ -17257,18 +17283,18 @@ definitions:
                                 - Sit repellendus et.
                                 - Consequatur corrupti quaerat ea.
                         metrics:
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
-                            - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                              before: Est sequi non qui.
-                              change: Rerum eum et et.
-                              evidence: Aut molestias.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
+                            - after: Voluptatem officia.
+                              before: Laborum perspiciatis corporis et.
+                              change: Hic rerum eum et et.
+                              evidence: Molestias et est sequi non.
                         result_after_row_count: 1638533584272715156
                         result_before_row_count: 7100420321338810105
                         result_checksum_equal: true
@@ -17366,7 +17392,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -17772,6 +17798,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -17887,7 +17914,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -18293,6 +18320,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -18387,7 +18415,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -18793,6 +18821,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -18885,7 +18914,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -19291,6 +19320,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -19306,18 +19336,18 @@ definitions:
                             - Sit repellendus et.
                             - Consequatur corrupti quaerat ea.
                     metrics:
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
                     result_after_row_count: 1638533584272715156
                     result_before_row_count: 7100420321338810105
                     result_checksum_equal: true
@@ -19415,7 +19445,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -19821,6 +19851,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -19926,7 +19957,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -20332,6 +20363,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -20426,7 +20458,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -20832,6 +20864,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -20924,7 +20957,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -21330,6 +21363,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -21345,18 +21379,18 @@ definitions:
                             - Sit repellendus et.
                             - Consequatur corrupti quaerat ea.
                     metrics:
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
                     result_after_row_count: 1638533584272715156
                     result_before_row_count: 7100420321338810105
                     result_checksum_equal: true
@@ -21454,7 +21488,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -21860,6 +21894,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -21965,7 +22000,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -22371,6 +22406,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -22465,7 +22501,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -22871,6 +22907,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -22963,7 +23000,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -23369,6 +23406,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -23384,18 +23422,18 @@ definitions:
                             - Sit repellendus et.
                             - Consequatur corrupti quaerat ea.
                     metrics:
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
                     result_after_row_count: 1638533584272715156
                     result_before_row_count: 7100420321338810105
                     result_checksum_equal: true
@@ -23493,7 +23531,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -23899,6 +23937,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -24004,7 +24043,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -24410,6 +24449,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -24504,7 +24544,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -24910,6 +24950,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -25002,7 +25043,7 @@ definitions:
                                 severity: Eos aut omnis sint.
                                 title: Fugit maxime qui ut tenetur quisquam.
                             summary: Quo rerum aliquid quis et veritatis vel.
-                        execution_time_ms: 4920842861912807518
+                        execution_time_ms: 220555659230306017
                         findings:
                             - category: Cumque culpa impedit.
                               confidence: Consectetur ut dignissimos.
@@ -25408,6 +25449,7 @@ definitions:
                                 - Laudantium culpa et aut.
                               relation: Animi velit.
                               schema: Minus atque ratione quisquam explicabo omnis.
+                        generic_plan: true
                         plan: Ut officia tenetur non sit et.
                         sql: Deleniti dolores architecto ad cum.
                         total_cost: 0.7100202956847084
@@ -25423,18 +25465,18 @@ definitions:
                             - Sit repellendus et.
                             - Consequatur corrupti quaerat ea.
                     metrics:
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
-                        - after: Perspiciatis corporis et minima voluptatem officia aspernatur.
-                          before: Est sequi non qui.
-                          change: Rerum eum et et.
-                          evidence: Aut molestias.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
+                        - after: Voluptatem officia.
+                          before: Laborum perspiciatis corporis et.
+                          change: Hic rerum eum et et.
+                          evidence: Molestias et est sequi non.
                     result_after_row_count: 1638533584272715156
                     result_before_row_count: 7100420321338810105
                     result_checksum_equal: true
@@ -25532,7 +25574,7 @@ definitions:
                             severity: Eos aut omnis sint.
                             title: Fugit maxime qui ut tenetur quisquam.
                         summary: Quo rerum aliquid quis et veritatis vel.
-                    execution_time_ms: 4920842861912807518
+                    execution_time_ms: 220555659230306017
                     findings:
                         - category: Cumque culpa impedit.
                           confidence: Consectetur ut dignissimos.
@@ -25938,6 +25980,7 @@ definitions:
                             - Laudantium culpa et aut.
                           relation: Animi velit.
                           schema: Minus atque ratione quisquam explicabo omnis.
+                    generic_plan: true
                     plan: Ut officia tenetur non sit et.
                     sql: Deleniti dolores architecto ad cum.
                     total_cost: 0.7100202956847084
@@ -26615,7 +26658,7 @@ definitions:
             evidence:
                 type: string
                 description: Metric name (e.g. Execution time)
-                example: Laborum ipsa dolores quo.
+                example: Nobis laborum ipsa dolores quo.
         example:
             after: Iure consequatur perferendis.
             before: Recusandae officia magnam enim aut mollitia.

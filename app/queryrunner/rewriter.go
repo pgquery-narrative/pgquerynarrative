@@ -31,25 +31,33 @@ type RewriteCandidate struct {
 //
 // Findings are optional evidence: function-wrap / partition-pruning language
 // raises confidence to "high". The engine still works from pasted SQL alone.
-// Parameterized SQL ($1, $2, ...) is not rewritten (literals-only, fail closed).
 // Nested CTEs / FROM subqueries are rewritten for sargable unwraps.
+//
+// Parameterized SQL ($1, $2, ...) — the shape the poller reads from
+// pg_stat_statements — is rewritten only for the sargable `=` / `BETWEEN` shapes
+// where the transform is unambiguous (DATE_TRUNC and col::date). The bind value
+// is preserved as a placeholder; equivalence/compare still need sample binds.
+// OR→UNION ALL and IN/NOT IN→EXISTS stay literals-only.
 func SuggestRewrites(sql string, findings []PlanFinding) []RewriteCandidate {
 	trimmed := trimSQL(sql)
 	if trimmed == "" {
 		return nil
 	}
-	if _, sel, ok := parseSingleSelect(trimmed); ok && selectTreeContainsParamRef(sel) {
-		return nil
+	hasParam := false
+	if _, sel, ok := parseSingleSelect(trimmed); ok {
+		hasParam = selectTreeContainsParamRef(sel)
 	}
 	var out []RewriteCandidate
 	if c := suggestSargableRewrites(trimmed, findings); c != nil {
 		out = append(out, *c)
 	}
-	if c := suggestOrToUnion(trimmed, findings); c != nil {
-		out = append(out, *c)
-	}
-	if c := suggestInToExists(trimmed, findings); c != nil {
-		out = append(out, *c)
+	if !hasParam {
+		if c := suggestOrToUnion(trimmed, findings); c != nil {
+			out = append(out, *c)
+		}
+		if c := suggestInToExists(trimmed, findings); c != nil {
+			out = append(out, *c)
+		}
 	}
 	return uniqueRewriteSQL(out)
 }
@@ -144,6 +152,17 @@ func rewriteRationale(kinds, units []string) string {
 	hasTrunc := has("date_trunc")
 	hasCast := has("cast_date")
 	var parts []string
+
+	if has("date_trunc_param") || has("cast_date_param") {
+		what := "DATE_TRUNC(...)"
+		if has("cast_date_param") && !has("date_trunc_param") {
+			what = "column::date"
+		}
+		parts = append(parts, fmt.Sprintf(
+			"unwrap the parameterized %s = $n / BETWEEN into a sargable range on the column (placeholders preserved) so PostgreSQL can prune partitions and use indexes; supply sample bind values to run compare/equivalence",
+			what,
+		))
+	}
 	switch {
 	case hasTrunc && hasCast:
 		parts = append(parts, fmt.Sprintf(
@@ -274,6 +293,23 @@ func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*p
 			return replacement, 1
 		}
 		if replacement, info, ok := tryRewriteTextCastEquality(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		// Parameterized shapes ($1, $2, ...) — equality / BETWEEN only.
+		if replacement, info, ok := tryRewriteDateTruncEqualityParam(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteDateTruncBetweenParam(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteCastDateEqualityParam(ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteCastDateBetweenParam(ae); ok {
 			*out = append(*out, info)
 			return replacement, 1
 		}
