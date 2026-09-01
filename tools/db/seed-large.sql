@@ -9,6 +9,8 @@
 -- behave like real workloads:
 --   - product_category is front-weighted (Electronics most common) via power(random(), 2)
 --   - dates spread across ~24 months so rows land in many monthly partitions
+--     (CURRENT_DATE − 730 days). Investigate sample SQL reads live MIN/MAX(date)
+--     rather than a frozen calendar year.
 --   - total_amount is consistent: unit_price * quantity
 
 \set ON_ERROR_STOP on

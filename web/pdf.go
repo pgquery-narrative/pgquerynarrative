@@ -3,6 +3,7 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jung-kurt/gofpdf/v2"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
 // BuildReportPDF writes a structured PDF report to w. Uses Helvetica (ASCII-safe).
@@ -53,6 +55,11 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 	pdf.SetFont("Helvetica", "", 10)
 	pdf.Ln(8)
 
+	if report.Metrics != nil && report.Metrics.Investigation != nil {
+		writeInvestigationPDF(pdf, report)
+		return pdf.Output(w)
+	}
+
 	// Narrative: headline and sections
 	if report.Narrative != nil {
 		if report.Narrative.Headline != "" {
@@ -73,7 +80,11 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 			var items []string
 			switch title {
 			case "Drivers":
-				items = report.Narrative.Drivers
+				items = queryrunner.CollapseRepeatedFindingMessages(report.Narrative.Drivers)
+				if len(items) > 8 {
+					omitted := len(items) - 8
+					items = append(append([]string{}, items[:8]...), fmt.Sprintf("...and %d more similar items omitted", omitted))
+				}
 			case "Limitations":
 				items = report.Narrative.Limitations
 			case "Recommendations":
@@ -216,6 +227,199 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 	}
 
 	return pdf.Output(w)
+}
+
+func investigationMap(report *reports.Report) map[string]any {
+	if report.Metrics == nil || report.Metrics.Investigation == nil {
+		return nil
+	}
+	if m, ok := report.Metrics.Investigation.(map[string]any); ok {
+		return m
+	}
+	raw, err := json.Marshal(report.Metrics.Investigation)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
+	inv := investigationMap(report)
+	if inv == nil {
+		return
+	}
+
+	if report.Narrative != nil && report.Narrative.Headline != "" {
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.MultiCell(0, 14, safePDFString(report.Narrative.Headline), "", "L", false)
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.Ln(4)
+	}
+
+	findings := collapseInvestigationFindings(mapSlice(inv, "plan_findings"))
+
+	if summary := mapString(inv, "executive_summary"); summary != "" {
+		raw := len(mapSlice(inv, "plan_findings"))
+		distinct := len(findings)
+		if raw > distinct && distinct > 0 {
+			summary = strings.Replace(summary,
+				fmt.Sprintf("identified %d execution-plan finding(s)", raw),
+				fmt.Sprintf("identified %d distinct plan issue(s) (%d partition-level findings)", distinct, raw),
+				1)
+		}
+		sectionTitle(pdf, "Executive summary")
+		pdf.MultiCell(0, 10, safePDFString(summary), "", "L", false)
+		pdf.Ln(4)
+	}
+
+	if impact := mapAny(inv, "impact"); impact != nil {
+		sectionTitle(pdf, "Impact")
+		if sev := mapString(impact, "severity"); sev != "" {
+			pdf.MultiCell(0, 10, safePDFString("Severity: "+sev), "", "L", false)
+		}
+		if s := mapString(impact, "summary"); s != "" {
+			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+		}
+		pdf.Ln(4)
+	}
+
+	if len(findings) > 0 {
+		sectionTitle(pdf, "Execution-plan findings")
+		const maxFindingsInPDF = 8
+		for i, f := range findings {
+			if i >= maxFindingsInPDF {
+				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+				pdf.MultiCell(0, 10, safePDFString(fmt.Sprintf("...and %d more finding(s) omitted", len(findings)-maxFindingsInPDF)), "", "L", false)
+				break
+			}
+			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+			line := mapString(f, "message")
+			if cat := mapString(f, "category"); cat != "" {
+				line = cat + ": " + line
+			}
+			pdf.MultiCell(0, 10, safePDFString(line), "", "L", false)
+		}
+		pdf.Ln(4)
+	}
+
+	candidates := mapSlice(inv, "candidate_improvements")
+	var shown int
+	for _, c := range candidates {
+		sql := strings.TrimSpace(mapString(c, "proposed_change"))
+		if sql == "" || !looksLikeSQLRewrite(sql) {
+			continue
+		}
+		if shown == 0 {
+			sectionTitle(pdf, "Candidate rewrite")
+		}
+		shown++
+		if shown > 2 {
+			break
+		}
+		pdf.SetFont("Courier", "", 8)
+		pdf.SetFillColor(245, 245, 245)
+		if len(sql) > 800 {
+			sql = sql[:800] + "..."
+		}
+		pdf.MultiCell(0, 11, safePDFString(sql), "1", "L", true)
+		pdf.SetFont("Helvetica", "", 10)
+		if why := mapString(c, "why_it_might_help"); why != "" {
+			pdf.Ln(2)
+			pdf.MultiCell(0, 10, safePDFString(why), "", "L", false)
+		}
+		pdf.Ln(4)
+	}
+
+	if tests := mapAny(inv, "controlled_test_results"); tests != nil {
+		metrics := mapSlice(tests, "metrics")
+		if len(metrics) > 0 {
+			sectionTitle(pdf, "Controlled test")
+			for _, m := range metrics {
+				line := fmt.Sprintf("%s: %s -> %s (%s)",
+					mapString(m, "evidence"), mapString(m, "before"), mapString(m, "after"), mapString(m, "change"))
+				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+				pdf.MultiCell(0, 10, safePDFString(line), "", "L", false)
+			}
+			pdf.Ln(4)
+		}
+	}
+
+	if eq := mapAny(inv, "equivalence_validation"); eq != nil {
+		sectionTitle(pdf, "Result equivalence")
+		status := mapString(eq, "status")
+		if status == "" {
+			status = "Unverified"
+		}
+		pdf.MultiCell(0, 10, safePDFString("Status: "+status), "", "L", false)
+		if notes := mapString(eq, "notes"); notes != "" {
+			pdf.MultiCell(0, 10, safePDFString(notes), "", "L", false)
+		}
+		pdf.Ln(4)
+	}
+
+	if next := mapString(inv, "recommended_next_action"); next != "" {
+		sectionTitle(pdf, "Recommended next action")
+		pdf.MultiCell(0, 10, safePDFString(next), "", "L", false)
+		pdf.Ln(4)
+	}
+
+	if report.Narrative != nil && len(report.Narrative.Limitations) > 0 {
+		sectionTitle(pdf, "Limitations")
+		for _, s := range report.Narrative.Limitations {
+			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+		}
+	}
+}
+
+func collapseInvestigationFindings(findings []map[string]any) []map[string]any {
+	if len(findings) == 0 {
+		return nil
+	}
+	type group struct {
+		first map[string]any
+		n     int
+	}
+	order := make([]string, 0)
+	grouped := make(map[string]*group)
+	for _, f := range findings {
+		msg := mapString(f, "message")
+		key := mapString(f, "category") + "\x00" + queryrunner.FindingFingerprint(msg)
+		if g, ok := grouped[key]; ok {
+			g.n++
+			continue
+		}
+		order = append(order, key)
+		grouped[key] = &group{first: f, n: 1}
+	}
+	out := make([]map[string]any, 0, len(order))
+	for _, key := range order {
+		g := grouped[key]
+		item := g.first
+		if g.n > 1 {
+			copied := make(map[string]any, len(item))
+			for k, v := range item {
+				copied[k] = v
+			}
+			copied["message"] = queryrunner.FormatCollapsedFinding(mapString(item, "message"), g.n)
+			item = copied
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return queryrunner.FindingDisplayRank(mapString(out[i], "category"), mapString(out[i], "message")) <
+			queryrunner.FindingDisplayRank(mapString(out[j], "category"), mapString(out[j], "message"))
+	})
+	return out
+}
+
+func looksLikeSQLRewrite(s string) bool {
+	head := strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(head, "select") || strings.HasPrefix(head, "with")
 }
 
 func sectionTitle(pdf *gofpdf.Fpdf, title string) {

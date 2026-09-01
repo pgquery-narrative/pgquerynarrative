@@ -618,11 +618,11 @@ func formatInvestigationHTML(payload any) string {
 		sb.WriteString(template.HTMLEscapeString(sql))
 		sb.WriteString("</pre></div>")
 	}
-	writeEscapedList(&sb, "PostgreSQL evidence", mapStrings(inv, "postgresql_evidence"))
 
-	if findings := mapSlice(inv, "plan_findings"); len(findings) > 0 {
+	collapsedFindings := collapseInvestigationFindings(mapSlice(inv, "plan_findings"))
+	if len(collapsedFindings) > 0 {
 		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Execution-plan findings</h4><ul class=\"report-list\">")
-		for _, item := range findings {
+		for _, item := range collapsedFindings {
 			sb.WriteString("<li>")
 			if category := mapString(item, "category"); category != "" {
 				sb.WriteString("<strong>")
@@ -630,16 +630,6 @@ func formatInvestigationHTML(payload any) string {
 				sb.WriteString(":</strong> ")
 			}
 			sb.WriteString(template.HTMLEscapeString(mapString(item, "message")))
-			evidence := mapStrings(item, "evidence")
-			if len(evidence) > 0 {
-				sb.WriteString("<ul class=\"report-list\">")
-				for _, detail := range evidence {
-					sb.WriteString("<li>")
-					sb.WriteString(template.HTMLEscapeString(detail))
-					sb.WriteString("</li>")
-				}
-				sb.WriteString("</ul>")
-			}
 			sb.WriteString("</li>")
 		}
 		sb.WriteString("</ul></div>")
@@ -647,7 +637,12 @@ func formatInvestigationHTML(payload any) string {
 
 	if candidates := mapSlice(inv, "candidate_improvements"); len(candidates) > 0 {
 		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Candidate improvements</h4><ul class=\"report-list\">")
+		shown := 0
 		for _, item := range candidates {
+			if shown >= 2 {
+				break
+			}
+			shown++
 			sb.WriteString("<li>")
 			if proposed := mapString(item, "proposed_change"); proposed != "" {
 				sb.WriteString("<pre>")
@@ -658,15 +653,6 @@ func formatInvestigationHTML(payload any) string {
 				sb.WriteString("<p>")
 				sb.WriteString(template.HTMLEscapeString(why))
 				sb.WriteString("</p>")
-			}
-			if verification := mapStrings(item, "required_verification"); len(verification) > 0 {
-				sb.WriteString("<p><strong>Required verification</strong></p><ul class=\"report-list\">")
-				for _, step := range verification {
-					sb.WriteString("<li>")
-					sb.WriteString(template.HTMLEscapeString(step))
-					sb.WriteString("</li>")
-				}
-				sb.WriteString("</ul>")
 			}
 			sb.WriteString("</li>")
 		}
