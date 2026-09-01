@@ -33,7 +33,7 @@ export function InvestigationVerdict({ diagnosis, projected, onFix, fixLabel, fi
   const rest = (diagnosis.causes ?? []).filter((c) => c !== root && c.category !== root?.category);
 
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
+    <section data-testid="investigation-verdict" className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="p-5 border-b border-border/60">
         <div className="flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />

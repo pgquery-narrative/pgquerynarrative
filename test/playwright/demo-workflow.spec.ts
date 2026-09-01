@@ -75,10 +75,8 @@ async function warmReadyInvestigation(browser: Browser): Promise<string> {
     });
     await page.goto(`/investigate?${params.toString()}`);
     await expect(page.getByText(/Query Investigation/i).first()).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByRole("heading", { name: /Execution plan/i })).toBeVisible({
-      timeout: 120_000,
-    });
-    await expect(page.getByText(/date_trunc|function-wrapped|no pruning/i).first()).toBeVisible({
+    await expect(page.getByTestId("investigation-verdict")).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText(/pruning|sargable|partition/i).first()).toBeVisible({
       timeout: 60_000,
     });
     // Prefer the persisted investigation route (fast reload for the recorded page).
