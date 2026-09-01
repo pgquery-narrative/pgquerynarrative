@@ -660,6 +660,9 @@ func marshalInvestigationsExplainQueryResultToExplainQueryResultResponseBody(v *
 	} else {
 		res.Findings = []*PlanFindingResponseBody{}
 	}
+	if v.Diagnosis != nil {
+		res.Diagnosis = marshalInvestigationsPlanDiagnosisToPlanDiagnosisResponseBody(v.Diagnosis)
+	}
 
 	return res
 }
@@ -765,6 +768,91 @@ func marshalInvestigationsIndexDefinitionToIndexDefinitionResponseBody(v *invest
 		res.IncludeColumns = make([]string, len(v.IncludeColumns))
 		for i, val := range v.IncludeColumns {
 			res.IncludeColumns[i] = val
+		}
+	}
+
+	return res
+}
+
+// marshalInvestigationsPlanDiagnosisToPlanDiagnosisResponseBody builds a value
+// of type *PlanDiagnosisResponseBody from a value of type
+// *investigations.PlanDiagnosis.
+func marshalInvestigationsPlanDiagnosisToPlanDiagnosisResponseBody(v *investigations.PlanDiagnosis) *PlanDiagnosisResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PlanDiagnosisResponseBody{
+		Headline: v.Headline,
+		Summary:  v.Summary,
+		RawCount: v.RawCount,
+	}
+	if v.RootCause != nil {
+		res.RootCause = marshalInvestigationsPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody(v.RootCause)
+	}
+	if v.Causes != nil {
+		res.Causes = make([]*PlanDiagnosisCauseResponseBody, len(v.Causes))
+		for i, val := range v.Causes {
+			if val == nil {
+				res.Causes[i] = nil
+				continue
+			}
+			res.Causes[i] = marshalInvestigationsPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody(val)
+		}
+	}
+	if v.Incidental != nil {
+		res.Incidental = marshalInvestigationsPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody(v.Incidental)
+	}
+
+	return res
+}
+
+// marshalInvestigationsPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody
+// builds a value of type *PlanDiagnosisCauseResponseBody from a value of type
+// *investigations.PlanDiagnosisCause.
+func marshalInvestigationsPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody(v *investigations.PlanDiagnosisCause) *PlanDiagnosisCauseResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PlanDiagnosisCauseResponseBody{
+		Category:    v.Category,
+		Title:       v.Title,
+		Detail:      v.Detail,
+		Fix:         v.Fix,
+		Severity:    v.Severity,
+		CostShare:   v.CostShare,
+		Occurrences: v.Occurrences,
+	}
+	if v.NodeTypes != nil {
+		res.NodeTypes = make([]string, len(v.NodeTypes))
+		for i, val := range v.NodeTypes {
+			res.NodeTypes[i] = val
+		}
+	}
+	if v.Evidence != nil {
+		res.Evidence = make([]string, len(v.Evidence))
+		for i, val := range v.Evidence {
+			res.Evidence[i] = val
+		}
+	}
+
+	return res
+}
+
+// marshalInvestigationsPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody
+// builds a value of type *PlanDiagnosisIncidentalResponseBody from a value of
+// type *investigations.PlanDiagnosisIncidental.
+func marshalInvestigationsPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody(v *investigations.PlanDiagnosisIncidental) *PlanDiagnosisIncidentalResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PlanDiagnosisIncidentalResponseBody{
+		Count:   v.Count,
+		Summary: v.Summary,
+	}
+	if v.Categories != nil {
+		res.Categories = make([]string, len(v.Categories))
+		for i, val := range v.Categories {
+			res.Categories[i] = val
 		}
 	}
 

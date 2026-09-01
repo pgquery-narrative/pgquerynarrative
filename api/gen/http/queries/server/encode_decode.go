@@ -719,6 +719,90 @@ func marshalQueriesIndexDefinitionToIndexDefinitionResponseBody(v *queries.Index
 	return res
 }
 
+// marshalQueriesPlanDiagnosisToPlanDiagnosisResponseBody builds a value of
+// type *PlanDiagnosisResponseBody from a value of type *queries.PlanDiagnosis.
+func marshalQueriesPlanDiagnosisToPlanDiagnosisResponseBody(v *queries.PlanDiagnosis) *PlanDiagnosisResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PlanDiagnosisResponseBody{
+		Headline: v.Headline,
+		Summary:  v.Summary,
+		RawCount: v.RawCount,
+	}
+	if v.RootCause != nil {
+		res.RootCause = marshalQueriesPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody(v.RootCause)
+	}
+	if v.Causes != nil {
+		res.Causes = make([]*PlanDiagnosisCauseResponseBody, len(v.Causes))
+		for i, val := range v.Causes {
+			if val == nil {
+				res.Causes[i] = nil
+				continue
+			}
+			res.Causes[i] = marshalQueriesPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody(val)
+		}
+	}
+	if v.Incidental != nil {
+		res.Incidental = marshalQueriesPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody(v.Incidental)
+	}
+
+	return res
+}
+
+// marshalQueriesPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody builds a
+// value of type *PlanDiagnosisCauseResponseBody from a value of type
+// *queries.PlanDiagnosisCause.
+func marshalQueriesPlanDiagnosisCauseToPlanDiagnosisCauseResponseBody(v *queries.PlanDiagnosisCause) *PlanDiagnosisCauseResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PlanDiagnosisCauseResponseBody{
+		Category:    v.Category,
+		Title:       v.Title,
+		Detail:      v.Detail,
+		Fix:         v.Fix,
+		Severity:    v.Severity,
+		CostShare:   v.CostShare,
+		Occurrences: v.Occurrences,
+	}
+	if v.NodeTypes != nil {
+		res.NodeTypes = make([]string, len(v.NodeTypes))
+		for i, val := range v.NodeTypes {
+			res.NodeTypes[i] = val
+		}
+	}
+	if v.Evidence != nil {
+		res.Evidence = make([]string, len(v.Evidence))
+		for i, val := range v.Evidence {
+			res.Evidence[i] = val
+		}
+	}
+
+	return res
+}
+
+// marshalQueriesPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody
+// builds a value of type *PlanDiagnosisIncidentalResponseBody from a value of
+// type *queries.PlanDiagnosisIncidental.
+func marshalQueriesPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody(v *queries.PlanDiagnosisIncidental) *PlanDiagnosisIncidentalResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PlanDiagnosisIncidentalResponseBody{
+		Count:   v.Count,
+		Summary: v.Summary,
+	}
+	if v.Categories != nil {
+		res.Categories = make([]string, len(v.Categories))
+		for i, val := range v.Categories {
+			res.Categories[i] = val
+		}
+	}
+
+	return res
+}
+
 // marshalQueriesExplainQueryResultToExplainQueryResultResponseBody builds a
 // value of type *ExplainQueryResultResponseBody from a value of type
 // *queries.ExplainQueryResult.
@@ -740,6 +824,9 @@ func marshalQueriesExplainQueryResultToExplainQueryResultResponseBody(v *queries
 		}
 	} else {
 		res.Findings = []*PlanFindingResponseBody{}
+	}
+	if v.Diagnosis != nil {
+		res.Diagnosis = marshalQueriesPlanDiagnosisToPlanDiagnosisResponseBody(v.Diagnosis)
 	}
 
 	return res

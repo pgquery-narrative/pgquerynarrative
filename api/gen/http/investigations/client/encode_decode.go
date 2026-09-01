@@ -808,6 +808,9 @@ func unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(v
 		}
 		res.Findings[i] = unmarshalPlanFindingResponseBodyToInvestigationsPlanFinding(val)
 	}
+	if v.Diagnosis != nil {
+		res.Diagnosis = unmarshalPlanDiagnosisResponseBodyToInvestigationsPlanDiagnosis(v.Diagnosis)
+	}
 
 	return res
 }
@@ -913,6 +916,91 @@ func unmarshalIndexDefinitionResponseBodyToInvestigationsIndexDefinition(v *Inde
 		res.IncludeColumns = make([]string, len(v.IncludeColumns))
 		for i, val := range v.IncludeColumns {
 			res.IncludeColumns[i] = val
+		}
+	}
+
+	return res
+}
+
+// unmarshalPlanDiagnosisResponseBodyToInvestigationsPlanDiagnosis builds a
+// value of type *investigations.PlanDiagnosis from a value of type
+// *PlanDiagnosisResponseBody.
+func unmarshalPlanDiagnosisResponseBodyToInvestigationsPlanDiagnosis(v *PlanDiagnosisResponseBody) *investigations.PlanDiagnosis {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.PlanDiagnosis{
+		Headline: v.Headline,
+		Summary:  v.Summary,
+		RawCount: *v.RawCount,
+	}
+	if v.RootCause != nil {
+		res.RootCause = unmarshalPlanDiagnosisCauseResponseBodyToInvestigationsPlanDiagnosisCause(v.RootCause)
+	}
+	if v.Causes != nil {
+		res.Causes = make([]*investigations.PlanDiagnosisCause, len(v.Causes))
+		for i, val := range v.Causes {
+			if val == nil {
+				res.Causes[i] = nil
+				continue
+			}
+			res.Causes[i] = unmarshalPlanDiagnosisCauseResponseBodyToInvestigationsPlanDiagnosisCause(val)
+		}
+	}
+	if v.Incidental != nil {
+		res.Incidental = unmarshalPlanDiagnosisIncidentalResponseBodyToInvestigationsPlanDiagnosisIncidental(v.Incidental)
+	}
+
+	return res
+}
+
+// unmarshalPlanDiagnosisCauseResponseBodyToInvestigationsPlanDiagnosisCause
+// builds a value of type *investigations.PlanDiagnosisCause from a value of
+// type *PlanDiagnosisCauseResponseBody.
+func unmarshalPlanDiagnosisCauseResponseBodyToInvestigationsPlanDiagnosisCause(v *PlanDiagnosisCauseResponseBody) *investigations.PlanDiagnosisCause {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.PlanDiagnosisCause{
+		Category:    *v.Category,
+		Title:       *v.Title,
+		Detail:      v.Detail,
+		Fix:         v.Fix,
+		Severity:    *v.Severity,
+		CostShare:   v.CostShare,
+		Occurrences: v.Occurrences,
+	}
+	if v.NodeTypes != nil {
+		res.NodeTypes = make([]string, len(v.NodeTypes))
+		for i, val := range v.NodeTypes {
+			res.NodeTypes[i] = val
+		}
+	}
+	if v.Evidence != nil {
+		res.Evidence = make([]string, len(v.Evidence))
+		for i, val := range v.Evidence {
+			res.Evidence[i] = val
+		}
+	}
+
+	return res
+}
+
+// unmarshalPlanDiagnosisIncidentalResponseBodyToInvestigationsPlanDiagnosisIncidental
+// builds a value of type *investigations.PlanDiagnosisIncidental from a value
+// of type *PlanDiagnosisIncidentalResponseBody.
+func unmarshalPlanDiagnosisIncidentalResponseBodyToInvestigationsPlanDiagnosisIncidental(v *PlanDiagnosisIncidentalResponseBody) *investigations.PlanDiagnosisIncidental {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.PlanDiagnosisIncidental{
+		Count:   *v.Count,
+		Summary: *v.Summary,
+	}
+	if v.Categories != nil {
+		res.Categories = make([]string, len(v.Categories))
+		for i, val := range v.Categories {
+			res.Categories[i] = val
 		}
 	}
 

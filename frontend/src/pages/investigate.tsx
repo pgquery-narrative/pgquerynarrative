@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TrustBar } from "@/components/trust-bar";
 import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
+import { InvestigationVerdict } from "@/components/investigation-verdict";
 import { api, type Investigation, type RankedCandidate, type RewriteCandidate, ApiError } from "@/api/client";
 import {
-  Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered,
+  Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
 import { cn, formatFloat, truncate } from "@/lib/utils";
 
@@ -189,6 +190,27 @@ export default function InvestigatePage() {
     ? investigation.report_id ? 5 : 3
     : investigation?.explain ? 2 : 0;
 
+  const candidateRef = useRef<HTMLDivElement>(null);
+  const topRanked = rankedCandidates.find((c) => c.rankable && c.sql);
+  const baselineCost = investigation?.explain?.total_cost;
+  const projected = topRanked
+    ? {
+        costPct:
+          topRanked.total_cost != null && baselineCost
+            ? Math.round(((topRanked.total_cost - baselineCost) / baselineCost) * 100)
+            : undefined,
+        partitionsBefore:
+          topRanked.partitions_scanned != null && topRanked.partitions_delta != null
+            ? topRanked.partitions_scanned - topRanked.partitions_delta
+            : undefined,
+        partitionsAfter: topRanked.partitions_scanned ?? undefined,
+      }
+    : null;
+  const jumpToFix = () => {
+    if (!rankedCandidates.length && !suggestedCandidates.length) void suggestRewrite();
+    setTimeout(() => candidateRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  };
+
   if (!id && !searchParams.get("sql")) {
     return <InvestigateLanding />;
   }
@@ -223,9 +245,9 @@ export default function InvestigatePage() {
             </Badge>
           </div>
           <h1 className="text-2xl font-bold tracking-tight">{investigation.title}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Evidence-backed PostgreSQL query investigation workflow
-          </p>
+          {investigation.query_fingerprint && (
+            <p className="text-muted-foreground mt-1 text-xs font-mono">{investigation.query_fingerprint}</p>
+          )}
         </div>
         {investigation.report_id && (
           <Link to={`/reports/${investigation.report_id}`}>
@@ -261,6 +283,17 @@ export default function InvestigatePage() {
         </div>
       )}
 
+      {/* Verdict — root cause + recommended fix, ahead of the raw plan */}
+      {investigation.explain?.diagnosis && (
+        <InvestigationVerdict
+          diagnosis={investigation.explain.diagnosis}
+          projected={projected}
+          onFix={jumpToFix}
+          fixLabel={rankedCandidates.length || suggestedCandidates.length ? "Jump to rewrite" : "Preview the fix"}
+          fixBusy={actionLoading === "suggest"}
+        />
+      )}
+
       {/* Stats snapshot */}
       {investigation.stat_snapshot && (
         <Card>
@@ -290,32 +323,34 @@ export default function InvestigatePage() {
           <CardTitle className="text-sm flex items-center gap-2">
             <Search className="h-4 w-4" /> Source query
           </CardTitle>
-          {investigation.query_fingerprint && (
-            <CardDescription>Fingerprint: {investigation.query_fingerprint}</CardDescription>
-          )}
         </CardHeader>
         <CardContent>
           <pre className="text-xs font-mono bg-muted/40 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap">{investigation.sql}</pre>
         </CardContent>
       </Card>
 
-      {/* Plan explorer */}
+      {/* Raw plan analysis — collapsed by default; the verdict above is the summary */}
       {investigation.explain && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Execution plan</CardTitle>
-            <CardDescription>
-              Total cost {formatFloat(investigation.explain.total_cost)} · {investigation.explain.findings?.length ?? 0} findings
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <PlanExplorer plan={investigation.explain.plan} findings={investigation.explain.findings} />
-          </CardContent>
+          <details className="group">
+            <summary className="flex items-center justify-between gap-2 p-4 cursor-pointer list-none select-none">
+              <span className="text-sm font-medium flex items-center gap-2">
+                <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" />
+                Raw plan analysis
+              </span>
+              <span className="text-xs text-muted-foreground">
+                cost {formatFloat(investigation.explain.total_cost)} · {investigation.explain.findings?.length ?? 0} findings
+              </span>
+            </summary>
+            <CardContent className="pt-0">
+              <PlanExplorer plan={investigation.explain.plan} findings={investigation.explain.findings} />
+            </CardContent>
+          </details>
         </Card>
       )}
 
       {/* Candidate comparison */}
-      <Card>
+      <Card ref={candidateRef}>
         <CardHeader>
           <CardTitle className="text-sm flex items-center gap-2">
             <GitCompare className="h-4 w-4" /> Candidate improvement
@@ -457,7 +492,9 @@ export default function InvestigatePage() {
           <div>
             <p className="font-medium">Engineering investigation report</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Findings-only reports are allowed. After Compare plans, result equivalence must be Equal to generate a shippable report (Unverified/Different are blocked).
+              {investigation.comparison
+                ? "Result equivalence must be Equal to ship a report with a rewrite."
+                : "Generates a findings-only report from the diagnosis above."}
             </p>
           </div>
           <Button

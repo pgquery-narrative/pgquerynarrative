@@ -97,6 +97,8 @@ type ExplainPlanResponseBody struct {
 	Plan any `form:"plan,omitempty" json:"plan,omitempty" xml:"plan,omitempty"`
 	// Notable plan nodes (seq scans, high-cost operators)
 	Findings []*PlanFindingResponseBody `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+	// Verdict-first rollup of findings into ranked causes
+	Diagnosis *PlanDiagnosisResponseBody `form:"diagnosis,omitempty" json:"diagnosis,omitempty" xml:"diagnosis,omitempty"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
 }
@@ -319,6 +321,56 @@ type IndexDefinitionResponseBody struct {
 	TuplesFetched *int64  `form:"tuples_fetched,omitempty" json:"tuples_fetched,omitempty" xml:"tuples_fetched,omitempty"`
 }
 
+// PlanDiagnosisResponseBody is used to define fields on response body types.
+type PlanDiagnosisResponseBody struct {
+	// Short root-cause label
+	Headline *string `form:"headline,omitempty" json:"headline,omitempty" xml:"headline,omitempty"`
+	// Two-to-three sentence verdict with concrete numbers
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// The single highest-leverage cause
+	RootCause *PlanDiagnosisCauseResponseBody `form:"root_cause,omitempty" json:"root_cause,omitempty" xml:"root_cause,omitempty"`
+	// Ranked causes, root first (excludes incidental)
+	Causes []*PlanDiagnosisCauseResponseBody `form:"causes,omitempty" json:"causes,omitempty" xml:"causes,omitempty"`
+	// Rolled-up schema-hygiene noise
+	Incidental *PlanDiagnosisIncidentalResponseBody `form:"incidental,omitempty" json:"incidental,omitempty" xml:"incidental,omitempty"`
+	// Number of findings before rollup
+	RawCount *int `form:"raw_count,omitempty" json:"raw_count,omitempty" xml:"raw_count,omitempty"`
+}
+
+// PlanDiagnosisCauseResponseBody is used to define fields on response body
+// types.
+type PlanDiagnosisCauseResponseBody struct {
+	// Finding category, e.g. partition_pruning, sort_spill
+	Category *string `form:"category,omitempty" json:"category,omitempty" xml:"category,omitempty"`
+	// Deduplicated, human headline for this cause
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// One-line explanation
+	Detail *string `form:"detail,omitempty" json:"detail,omitempty" xml:"detail,omitempty"`
+	// Short imperative fix; empty when there is no generic fix
+	Fix *string `form:"fix,omitempty" json:"fix,omitempty" xml:"fix,omitempty"`
+	// blocker | contributing
+	Severity *string `form:"severity,omitempty" json:"severity,omitempty" xml:"severity,omitempty"`
+	// 0..1 share of plan cost attributable to this cause
+	CostShare *float64 `form:"cost_share,omitempty" json:"cost_share,omitempty" xml:"cost_share,omitempty"`
+	// Raw findings that rolled into this cause
+	Occurrences *int `form:"occurrences,omitempty" json:"occurrences,omitempty" xml:"occurrences,omitempty"`
+	// Distinct plan node types involved
+	NodeTypes []string `form:"node_types,omitempty" json:"node_types,omitempty" xml:"node_types,omitempty"`
+	// Up to five sample raw finding messages
+	Evidence []string `form:"evidence,omitempty" json:"evidence,omitempty" xml:"evidence,omitempty"`
+}
+
+// PlanDiagnosisIncidentalResponseBody is used to define fields on response
+// body types.
+type PlanDiagnosisIncidentalResponseBody struct {
+	// Raw findings rolled up
+	Count *int `form:"count,omitempty" json:"count,omitempty" xml:"count,omitempty"`
+	// One-line explanation of why these are set aside
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Categories represented
+	Categories []string `form:"categories,omitempty" json:"categories,omitempty" xml:"categories,omitempty"`
+}
+
 // ExplainQueryResultResponseBody is used to define fields on response body
 // types.
 type ExplainQueryResultResponseBody struct {
@@ -330,6 +382,8 @@ type ExplainQueryResultResponseBody struct {
 	Plan any `form:"plan,omitempty" json:"plan,omitempty" xml:"plan,omitempty"`
 	// Notable plan nodes (seq scans, high-cost operators)
 	Findings []*PlanFindingResponseBody `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+	// Verdict-first rollup of findings into ranked causes
+	Diagnosis *PlanDiagnosisResponseBody `form:"diagnosis,omitempty" json:"diagnosis,omitempty" xml:"diagnosis,omitempty"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
 }
@@ -548,6 +602,9 @@ func NewExplainPlanExplainQueryResultOK(body *ExplainPlanResponseBody) *queries.
 			continue
 		}
 		v.Findings[i] = unmarshalPlanFindingResponseBodyToQueriesPlanFinding(val)
+	}
+	if body.Diagnosis != nil {
+		v.Diagnosis = unmarshalPlanDiagnosisResponseBodyToQueriesPlanDiagnosis(body.Diagnosis)
 	}
 
 	return v
@@ -776,6 +833,11 @@ func ValidateExplainPlanResponseBody(body *ExplainPlanResponseBody) (err error) 
 			if err2 := ValidatePlanFindingResponseBody(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	if body.Diagnosis != nil {
+		if err2 := ValidatePlanDiagnosisResponseBody(body.Diagnosis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return
@@ -1092,6 +1154,59 @@ func ValidateIndexDefinitionResponseBody(body *IndexDefinitionResponseBody) (err
 	return
 }
 
+// ValidatePlanDiagnosisResponseBody runs the validations defined on
+// PlanDiagnosisResponseBody
+func ValidatePlanDiagnosisResponseBody(body *PlanDiagnosisResponseBody) (err error) {
+	if body.RawCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("raw_count", "body"))
+	}
+	if body.RootCause != nil {
+		if err2 := ValidatePlanDiagnosisCauseResponseBody(body.RootCause); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	for _, e := range body.Causes {
+		if e != nil {
+			if err2 := ValidatePlanDiagnosisCauseResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.Incidental != nil {
+		if err2 := ValidatePlanDiagnosisIncidentalResponseBody(body.Incidental); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidatePlanDiagnosisCauseResponseBody runs the validations defined on
+// PlanDiagnosisCauseResponseBody
+func ValidatePlanDiagnosisCauseResponseBody(body *PlanDiagnosisCauseResponseBody) (err error) {
+	if body.Category == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("category", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Severity == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("severity", "body"))
+	}
+	return
+}
+
+// ValidatePlanDiagnosisIncidentalResponseBody runs the validations defined on
+// PlanDiagnosisIncidentalResponseBody
+func ValidatePlanDiagnosisIncidentalResponseBody(body *PlanDiagnosisIncidentalResponseBody) (err error) {
+	if body.Count == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("count", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	return
+}
+
 // ValidateExplainQueryResultResponseBody runs the validations defined on
 // ExplainQueryResultResponseBody
 func ValidateExplainQueryResultResponseBody(body *ExplainQueryResultResponseBody) (err error) {
@@ -1115,6 +1230,11 @@ func ValidateExplainQueryResultResponseBody(body *ExplainQueryResultResponseBody
 			if err2 := ValidatePlanFindingResponseBody(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	if body.Diagnosis != nil {
+		if err2 := ValidatePlanDiagnosisResponseBody(body.Diagnosis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return

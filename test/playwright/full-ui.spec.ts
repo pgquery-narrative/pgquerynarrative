@@ -85,7 +85,13 @@ test.describe("Full UI coverage", () => {
         async () => {
           if (await page.getByRole("table").isVisible()) return "table";
           if (await page.getByText(/No statements recorded yet/i).isVisible()) return "empty";
-          if (await page.getByText(/Failed to load query stats|pg_stat_statements/i).isVisible()) {
+          // Match the error banner only — a bare "pg_stat_statements" also appears
+          // in the static page description, which trips strict mode.
+          if (
+            await page
+              .getByText(/Failed to load query stats|pg_stat_statements (is not available|query failed)/i)
+              .isVisible()
+          ) {
             return "error";
           }
           return "pending";
@@ -134,9 +140,9 @@ test.describe("Full UI coverage", () => {
 
     // Landing badge also says "Query Investigation"; wait for the created detail route.
     await expect(page).toHaveURL(/\/investigate\/[0-9a-f-]{36}/i, { timeout: 60_000 });
-    await expect(page.getByRole("heading", { name: /Execution plan/i })).toBeVisible({
-      timeout: 90_000,
-    });
+    // Explain finished once the verdict and the (collapsed) raw plan section render.
+    await expect(page.getByText(/Raw plan analysis/i)).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByTestId("investigation-verdict")).toBeVisible({ timeout: 30_000 });
 
     // Candidate must come from the rewrite engine, not a demo answer key.
     const suggest = page.getByRole("button", { name: /Suggest rewrite/i });
