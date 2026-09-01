@@ -592,12 +592,22 @@ func formatInvestigationHTML(payload any) string {
 		return ""
 	}
 
+	rawFindings := mapSlice(inv, "plan_findings")
+	collapsedFindings := collapseInvestigationFindings(rawFindings)
+
 	var sb strings.Builder
 	sb.WriteString("<div class=\"investigation-report\">")
 	if summary := mapString(inv, "executive_summary"); summary != "" {
 		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Executive summary</h4><p>")
 		sb.WriteString(template.HTMLEscapeString(summary))
-		sb.WriteString("</p></div>")
+		sb.WriteString("</p>")
+		if raw, distinct := len(rawFindings), len(collapsedFindings); raw > distinct && distinct > 0 {
+			sb.WriteString("<p class=\"report-hint\">")
+			sb.WriteString(template.HTMLEscapeString(fmt.Sprintf(
+				"%d partition-level plan findings were grouped into %d distinct issue(s).", raw, distinct)))
+			sb.WriteString("</p>")
+		}
+		sb.WriteString("</div>")
 	}
 	if impact := mapAny(inv, "impact"); impact != nil {
 		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Impact</h4>")
@@ -619,7 +629,8 @@ func formatInvestigationHTML(payload any) string {
 		sb.WriteString("</pre></div>")
 	}
 
-	collapsedFindings := collapseInvestigationFindings(mapSlice(inv, "plan_findings"))
+	writeEscapedList(&sb, "PostgreSQL evidence", mapStrings(inv, "postgresql_evidence"))
+
 	if len(collapsedFindings) > 0 {
 		sb.WriteString("<div class=\"report-narrative\"><h4 class=\"report-section-title\">Execution-plan findings</h4><ul class=\"report-list\">")
 		for _, item := range collapsedFindings {

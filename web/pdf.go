@@ -263,16 +263,12 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 	findings := collapseInvestigationFindings(mapSlice(inv, "plan_findings"))
 
 	if summary := mapString(inv, "executive_summary"); summary != "" {
-		raw := len(mapSlice(inv, "plan_findings"))
-		distinct := len(findings)
-		if raw > distinct && distinct > 0 {
-			summary = strings.Replace(summary,
-				fmt.Sprintf("identified %d execution-plan finding(s)", raw),
-				fmt.Sprintf("identified %d distinct plan issue(s) (%d partition-level findings)", distinct, raw),
-				1)
-		}
 		sectionTitle(pdf, "Executive summary")
 		pdf.MultiCell(0, 10, safePDFString(summary), "", "L", false)
+		if raw, distinct := len(mapSlice(inv, "plan_findings")), len(findings); raw > distinct && distinct > 0 {
+			pdf.MultiCell(0, 10, safePDFString(fmt.Sprintf(
+				"%d partition-level plan findings were grouped into %d distinct issue(s).", raw, distinct)), "", "L", false)
+		}
 		pdf.Ln(4)
 	}
 
@@ -283,6 +279,15 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		}
 		if s := mapString(impact, "summary"); s != "" {
 			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+		}
+		pdf.Ln(4)
+	}
+
+	if evidence := mapStrings(inv, "postgresql_evidence"); len(evidence) > 0 {
+		sectionTitle(pdf, "PostgreSQL evidence")
+		for _, e := range evidence {
+			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+			pdf.MultiCell(0, 10, safePDFString(e), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -306,27 +311,25 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		pdf.Ln(4)
 	}
 
+	// Mirror the HTML report: show the first two candidate improvements as-is,
+	// regardless of the SQL shape of proposed_change.
 	candidates := mapSlice(inv, "candidate_improvements")
-	var shown int
-	for _, c := range candidates {
-		sql := strings.TrimSpace(mapString(c, "proposed_change"))
-		if sql == "" || !looksLikeSQLRewrite(sql) {
-			continue
-		}
-		if shown == 0 {
-			sectionTitle(pdf, "Candidate rewrite")
-		}
-		shown++
-		if shown > 2 {
+	for i, c := range candidates {
+		if i >= 2 {
 			break
 		}
-		pdf.SetFont("Courier", "", 8)
-		pdf.SetFillColor(245, 245, 245)
-		if len(sql) > 800 {
-			sql = sql[:800] + "..."
+		if i == 0 {
+			sectionTitle(pdf, "Candidate improvements")
 		}
-		pdf.MultiCell(0, 11, safePDFString(sql), "1", "L", true)
-		pdf.SetFont("Helvetica", "", 10)
+		if sql := strings.TrimSpace(mapString(c, "proposed_change")); sql != "" {
+			if len(sql) > 800 {
+				sql = sql[:800] + "..."
+			}
+			pdf.SetFont("Courier", "", 8)
+			pdf.SetFillColor(245, 245, 245)
+			pdf.MultiCell(0, 11, safePDFString(sql), "1", "L", true)
+			pdf.SetFont("Helvetica", "", 10)
+		}
 		if why := mapString(c, "why_it_might_help"); why != "" {
 			pdf.Ln(2)
 			pdf.MultiCell(0, 10, safePDFString(why), "", "L", false)
@@ -373,6 +376,28 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
 			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
 		}
+		pdf.Ln(4)
+	}
+
+	// Narrative.Recommendations that aren't already shown as the recommended
+	// next action. Takeaways are intentionally omitted here: every entry is
+	// already covered by the executive summary, impact, and candidate sections.
+	if report.Narrative != nil && len(report.Narrative.Recommendations) > 0 {
+		next := strings.TrimSpace(mapString(inv, "recommended_next_action"))
+		var extra []string
+		for _, rec := range report.Narrative.Recommendations {
+			if r := strings.TrimSpace(rec); r != "" && r != next {
+				extra = append(extra, rec)
+			}
+		}
+		if len(extra) > 0 {
+			sectionTitle(pdf, "Recommendations")
+			for _, rec := range extra {
+				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+				pdf.MultiCell(0, 10, safePDFString(rec), "", "L", false)
+			}
+			pdf.Ln(4)
+		}
 	}
 }
 
@@ -415,11 +440,6 @@ func collapseInvestigationFindings(findings []map[string]any) []map[string]any {
 			queryrunner.FindingDisplayRank(mapString(out[j], "category"), mapString(out[j], "message"))
 	})
 	return out
-}
-
-func looksLikeSQLRewrite(s string) bool {
-	head := strings.ToLower(strings.TrimSpace(s))
-	return strings.HasPrefix(head, "select") || strings.HasPrefix(head, "with")
 }
 
 func sectionTitle(pdf *gofpdf.Fpdf, title string) {
