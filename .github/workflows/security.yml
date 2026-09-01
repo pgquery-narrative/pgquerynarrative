@@ -49,7 +49,7 @@ jobs:
           results_format: sarif
           publish_results: false
       - name: Upload Scorecard SARIF
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938
         if: always() && hashFiles('scorecard.sarif') != ''
         with:
           sarif_file: scorecard.sarif
@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Check for secrets
-        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11
+        uses: trufflesecurity/trufflehog@20652fbbdefffcdaa493a5bf57ab2ac6b1db715b
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938
         with:
           languages: ${{ matrix.language }}
       - uses: ./.github/actions/setup-go-cgo
@@ -105,9 +105,9 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Autobuild
-        uses: github/codeql-action/autobuild@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/autobuild@cdf488f595d80d6e07e03d4674febd5ab45fa938
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938
 
   # Security audit with gosec
   gosec:
@@ -121,7 +121,7 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Run gosec (blocking on high severity/confidence findings)
-        uses: securego/gosec@45b083a0cb42119d61b1e0e364d8c62c68f6f5cd
+        uses: securego/gosec@4d447d9bf750776ec436724dcaf728e5c629f2f6
         with:
           # No -no-fail: the job fails when issues remain after filtering. Filtered to
           # high severity + high confidence so pre-existing low/medium findings (tracked
