@@ -289,7 +289,13 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 
 	if len(findings) > 0 {
 		sectionTitle(pdf, "Execution-plan findings")
-		for _, f := range findings {
+		const maxFindingsInPDF = 8
+		for i, f := range findings {
+			if i >= maxFindingsInPDF {
+				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
+				pdf.MultiCell(0, 10, safePDFString(fmt.Sprintf("...and %d more finding(s) omitted", len(findings)-maxFindingsInPDF)), "", "L", false)
+				break
+			}
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
 			line := mapString(f, "message")
 			if cat := mapString(f, "category"); cat != "" {
@@ -408,9 +414,6 @@ func collapseInvestigationFindings(findings []map[string]any) []map[string]any {
 		return queryrunner.FindingDisplayRank(mapString(out[i], "category"), mapString(out[i], "message")) <
 			queryrunner.FindingDisplayRank(mapString(out[j], "category"), mapString(out[j], "message"))
 	})
-	if len(out) > 8 {
-		out = out[:8]
-	}
 	return out
 }
 
