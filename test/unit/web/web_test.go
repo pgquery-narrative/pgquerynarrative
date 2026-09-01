@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -225,6 +226,46 @@ func TestFormatReportHTML_InvestigationReport(t *testing.T) {
 	}
 	if !strings.Contains(html, "Validate an index on customer_id in staging") {
 		t.Error("expected next action in investigation HTML")
+	}
+	if !strings.Contains(html, "PostgreSQL evidence") ||
+		!strings.Contains(html, "pg_stat_statements mean execution time: 2200.0ms") {
+		t.Error("expected the top-level PostgreSQL evidence section in investigation HTML")
+	}
+	if strings.Contains(html, "grouped into") {
+		t.Error("did not expect a collapse note when no findings were collapsed")
+	}
+}
+
+func TestFormatReportHTML_InvestigationReport_CollapsesPartitionFindings(t *testing.T) {
+	planFindings := make([]any, 0, 12)
+	for month := 1; month <= 12; month++ {
+		planFindings = append(planFindings, map[string]any{
+			"category": "partition_pruning",
+			"message":  fmt.Sprintf("Seq scan on demo.sales_2023_%02d (estimated cost %d.0)", month, 100+month),
+		})
+	}
+	r := &reports.Report{
+		ID:  "investigation-2",
+		SQL: "SELECT * FROM demo.sales",
+		Metrics: &reports.MetricsData{
+			Investigation: map[string]any{
+				"executive_summary": "Investigation of \"sales\" identified 12 execution-plan finding(s) with high impact.",
+				"plan_findings":     planFindings,
+			},
+		},
+		CreatedAt:   "2025-01-01T00:00:00Z",
+		LlmModel:    "evidence-template",
+		LlmProvider: "pgquerynarrative",
+	}
+	html := web.FormatReportHTML(r)
+	if !strings.Contains(html, "12 partition-level plan findings were grouped into 1 distinct issue(s).") {
+		t.Errorf("expected collapse note in investigation HTML, got:\n%s", html)
+	}
+	if !strings.Contains(html, "similar partition scans") {
+		t.Error("expected a collapsed partition-scan finding line")
+	}
+	if strings.Contains(html, "sales_2023_07") {
+		t.Error("expected individual partition names to be collapsed away")
 	}
 }
 
