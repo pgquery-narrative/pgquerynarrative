@@ -307,9 +307,17 @@ func planFindingMessage(nodeType, schema, relation, filter string, cost float64,
 			msg += fmt.Sprintf(" — filter: %s", filter)
 		}
 		switch {
-		case strings.Contains(filterLower, "date_trunc"):
+		case strings.Contains(filterLower, "date_trunc") ||
+			strings.Contains(filterLower, "extract(") ||
+			strings.Contains(filterLower, "date_part(") ||
+			strings.Contains(filterLower, "to_char(") ||
+			strings.Contains(filterLower, "coalesce(") ||
+			columnDateCastRe.MatchString(filterLower):
 			confidence = "high"
 			msg += " — function-wrapped partition/index key blocks pruning and index use; rewrite as a sargable range predicate"
+		case columnTextCastRe.MatchString(filterLower):
+			confidence = "high"
+			msg += " — casting the column to text blocks index use; compare the column to a typed literal instead"
 		case filter == "":
 			confidence = "low"
 			msg += " — likely acceptable for small or unfiltered scans"
@@ -354,9 +362,18 @@ func bytesTrimSpace(b []byte) []byte {
 }
 
 var (
+	// columnDateCastRe matches date::date / col::date, not '2025-01-01'::date.
+	columnDateCastRe = regexp.MustCompile(`(?i)(?:^|[^'\w])[a-z_][a-z0-9_.]*::date\b`)
+	// columnTextCastRe matches col::text, not 'North'::text.
+	columnTextCastRe = regexp.MustCompile(`(?i)(?:^|[^'\w])[a-z_][a-z0-9_.]*::(?:text|varchar|character|bpchar)\b`)
 	// typeCastRe strips PostgreSQL "::type" casts (e.g. "'North'::text") so the
-	// column regex below isn't confused by the cast suffix.
-	typeCastRe = regexp.MustCompile(`::[a-zA-Z_][a-zA-Z0-9_]*(?:\([0-9,\s]+\))?`)
+	// column regex below isn't confused by the cast suffix. Multi-word type
+	// names must be consumed whole: leaving the tail of
+	// "(date)::timestamp with time zone" behind makes "zone" look like the
+	// column operand of the following comparison. The optional length modifier
+	// can precede the tail, as in "::timestamp(3) with time zone".
+	typeCastRe = regexp.MustCompile(`(?i)::[a-z_][a-z0-9_]*(?:\([0-9,\s]+\))?` +
+		`(?:\s+(?:with|without)\s+time\s+zone|\s+precision|\s+varying(?:\([0-9,\s]+\))?)?`)
 	// filterColumnRe captures identifiers (optionally alias-qualified) adjacent
 	// to a comparison operator in a flattened filter expression (parentheses
 	// already replaced with spaces): group 1 is the left operand of a symbol

@@ -30,6 +30,14 @@ func TestRankScoredCandidates_OrdersByCostThenPartitions(t *testing.T) {
 	}
 }
 
+func TestScoreIndexProjection_UnavailableStaysReviewOnly(t *testing.T) {
+	base := ScoredCandidate{Kind: CandidateKindIndexDDL, Rankable: false, DDL: "CREATE INDEX ON t(a)"}
+	sc := ScoreIndexProjection(base, IndexProjection{Method: IndexProjectionNone, Available: false})
+	if sc.Rankable {
+		t.Fatal("unavailable projection must stay non-rankable")
+	}
+}
+
 func TestCollectIndexDDLCandidates_Dedupes(t *testing.T) {
 	ddl := "CREATE INDEX CONCURRENTLY idx ON demo.sales (region)"
 	findings := []PlanFinding{

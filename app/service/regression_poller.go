@@ -15,6 +15,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/apilog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
 // RegressionPollerConfig tunes background regression detection.
@@ -218,14 +219,14 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 
 		impact := classifyImpact(changePct, p.cfg)
 		title := regressionTitle(queryText)
-		if err := p.openAlert(ctx, appDB, orgID, queryID, title, queryText, changeType, changePct, summary, impact); err != nil {
+		if err := p.openAlert(ctx, appDB, orgID, queryID, title, queryText, changeType, changePct, summary, impact, currCalls, currMean, currTotal, currRows); err != nil {
 			return err
 		}
 	}
 	return rows.Err()
 }
 
-func (p *RegressionPoller) openAlert(ctx context.Context, appDB db.DB, orgID, queryID, title, queryText, changeType string, changePct float64, summary, impact string) error {
+func (p *RegressionPoller) openAlert(ctx context.Context, appDB db.DB, orgID, queryID, title, queryText, changeType string, changePct float64, summary, impact string, calls int64, meanMs, totalMs float64, rows int64) error {
 	var exists bool
 	_ = appDB.QueryRow(ctx, `
 		SELECT EXISTS(
@@ -239,9 +240,10 @@ func (p *RegressionPoller) openAlert(ctx context.Context, appDB db.DB, orgID, qu
 	_, err := appDB.Exec(ctx, `
 		INSERT INTO app.regression_alerts (
 			organization_id, title, query_text, queryid, change_type,
-			change_percent, change_summary, impact, source, connection_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', 'default')
-	`, orgID, title, truncateQuery(queryText, 500), queryID, changeType, changePct, summary, impact)
+			change_percent, change_summary, impact, source, connection_id,
+			calls, mean_time_ms, total_time_ms, rows_count
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', 'default', $9, $10, $11, $12)
+	`, orgID, title, truncateQuery(queryText, queryrunner.StatStatementsQueryMaxLen), queryID, changeType, changePct, summary, impact, calls, meanMs, totalMs, rows)
 	return err
 }
 

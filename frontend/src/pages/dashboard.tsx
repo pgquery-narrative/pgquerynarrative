@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,9 +43,11 @@ const ENTRY_POINTS = [
 ];
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState<WorkspaceOverview | null>(null);
   const [regressions, setRegressions] = useState<RegressionAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingId, setOpeningId] = useState("");
 
   useEffect(() => {
     Promise.allSettled([api.getWorkspaceOverview(), api.getRegressions(5)]).then(([o, r]) => {
@@ -54,6 +56,22 @@ export default function Dashboard() {
       setLoading(false);
     });
   }, []);
+
+  const openFromRegression = async (r: RegressionAlert) => {
+    if (r.investigation_id) {
+      navigate(`/investigate/${r.investigation_id}`);
+      return;
+    }
+    setOpeningId(r.id);
+    try {
+      const inv = await api.createInvestigationFromRegression(r.id);
+      navigate(`/investigate/${inv.id}`);
+    } catch {
+      navigate(`/investigate?title=${encodeURIComponent(r.title)}&sql=${encodeURIComponent(r.query)}`);
+    } finally {
+      setOpeningId("");
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -68,7 +86,7 @@ export default function Dashboard() {
         </p>
         <div className="flex flex-wrap gap-3 mt-5">
           <Link to="/investigate">
-            <Button size="lg"><Play className="h-4 w-4" /> Start guided demo</Button>
+            <Button size="lg"><Play className="h-4 w-4" /> Investigate a query</Button>
           </Link>
           <Link to="/security">
             <Button variant="secondary" size="lg"><Shield className="h-4 w-4" /> Security & Trust</Button>
@@ -156,12 +174,14 @@ export default function Dashboard() {
                       </td>
                       <td className="py-3 text-muted-foreground text-xs">{timeAgo(r.first_detected_at)}</td>
                       <td className="py-3 text-right">
-                        <Link
-                          to={`/investigate?title=${encodeURIComponent(r.title)}&sql=${encodeURIComponent(r.query)}`}
-                          className="text-xs text-primary hover:underline"
+                        <button
+                          type="button"
+                          onClick={() => void openFromRegression(r)}
+                          disabled={openingId === r.id}
+                          className="text-xs text-primary hover:underline disabled:opacity-50"
                         >
-                          Investigate
-                        </Link>
+                          {openingId === r.id ? "Opening…" : r.investigation_id ? "Resume" : "Investigate"}
+                        </button>
                       </td>
                     </tr>
                   ))}

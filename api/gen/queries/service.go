@@ -81,8 +81,18 @@ type ComparePlansResult struct {
 	After   *ExplainQueryResult
 	Metrics []*PlanComparisonMetric
 	Diff    *PlanComparisonDiff
-	// True when row checksums match (when computable)
+	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool
+	// Equal | Different | Unverified
+	ResultEquivalenceStatus *string
+	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
+	ResultEquivalenceNotes *string
+	// COUNT(*) of before SQL when computable
+	ResultBeforeRowCount *int64
+	// COUNT(*) of after SQL when computable
+	ResultAfterRowCount *int64
+	// Rows compared in the multiset sample
+	ResultSampleRows *int32
 }
 
 // DeleteSavedPayload is the payload type of the queries service delete_saved

@@ -110,8 +110,18 @@ type ComparePlansResponseBody struct {
 	After   *ExplainQueryResultResponseBody     `form:"after" json:"after" xml:"after"`
 	Metrics []*PlanComparisonMetricResponseBody `form:"metrics" json:"metrics" xml:"metrics"`
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff" json:"diff" xml:"diff"`
-	// True when row checksums match (when computable)
+	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
+	// Equal | Different | Unverified
+	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
+	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
+	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
+	// COUNT(*) of before SQL when computable
+	ResultBeforeRowCount *int64 `form:"result_before_row_count,omitempty" json:"result_before_row_count,omitempty" xml:"result_before_row_count,omitempty"`
+	// COUNT(*) of after SQL when computable
+	ResultAfterRowCount *int64 `form:"result_after_row_count,omitempty" json:"result_after_row_count,omitempty" xml:"result_after_row_count,omitempty"`
+	// Rows compared in the multiset sample
+	ResultSampleRows *int32 `form:"result_sample_rows,omitempty" json:"result_sample_rows,omitempty" xml:"result_sample_rows,omitempty"`
 }
 
 // ListSavedResponseBody is the type of the "queries" service "list_saved"
@@ -468,7 +478,12 @@ func NewExplainPlanResponseBody(res *queries.ExplainQueryResult) *ExplainPlanRes
 // the "compare_plans" endpoint of the "queries" service.
 func NewComparePlansResponseBody(res *queries.ComparePlansResult) *ComparePlansResponseBody {
 	body := &ComparePlansResponseBody{
-		ResultChecksumEqual: res.ResultChecksumEqual,
+		ResultChecksumEqual:     res.ResultChecksumEqual,
+		ResultEquivalenceStatus: res.ResultEquivalenceStatus,
+		ResultEquivalenceNotes:  res.ResultEquivalenceNotes,
+		ResultBeforeRowCount:    res.ResultBeforeRowCount,
+		ResultAfterRowCount:     res.ResultAfterRowCount,
+		ResultSampleRows:        res.ResultSampleRows,
 	}
 	if res.Before != nil {
 		body.Before = marshalQueriesExplainQueryResultToExplainQueryResultResponseBody(res.Before)

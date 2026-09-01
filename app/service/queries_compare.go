@@ -66,12 +66,12 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 		})
 	}
 
-	checksumEqual := compareResultChecksums(ctx, runner, payload.BeforeSQL, payload.AfterSQL)
+	equiv := compareResultEquivalence(ctx, runner, payload.BeforeSQL, payload.AfterSQL)
 
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, beforeResult)
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, afterResult)
 
-	return &queries.ComparePlansResult{
+	out := &queries.ComparePlansResult{
 		Before:  beforeAPI,
 		After:   afterAPI,
 		Metrics: metrics,
@@ -80,8 +80,22 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 			Added:    cmp.Diff.Added,
 			Improved: cmp.Diff.Improved,
 		},
-		ResultChecksumEqual: &checksumEqual,
-	}, nil
+		// nil = unverified (run failed / incomplete); never map errors to false/"Different".
+		ResultChecksumEqual: equiv.Equal,
+	}
+	status := equiv.Status
+	out.ResultEquivalenceStatus = &status
+	notes := equiv.Notes
+	out.ResultEquivalenceNotes = &notes
+	bc := equiv.BeforeCount
+	out.ResultBeforeRowCount = &bc
+	ac := equiv.AfterCount
+	out.ResultAfterRowCount = &ac
+	if equiv.SampleRows > 0 {
+		sr := int32(equiv.SampleRows)
+		out.ResultSampleRows = &sr
+	}
+	return out, nil
 }
 
 func explainResultToAPI(result *queryrunner.ExplainResult) *queries.ExplainQueryResult {
@@ -203,25 +217,4 @@ func indexDefinitionToAPI(idx queryrunner.IndexDefinition) *queries.IndexDefinit
 	return out
 }
 
-func compareResultChecksums(ctx context.Context, runner *queryrunner.Runner, beforeSQL, afterSQL string) bool {
-	before, err := runner.Run(ctx, beforeSQL, 1000)
-	if err != nil {
-		return false
-	}
-	after, err := runner.Run(ctx, afterSQL, 1000)
-	if err != nil {
-		return false
-	}
-	return hashResult(before) == hashResult(after)
-}
-
-func hashResult(result *queryrunner.Result) string {
-	if result == nil {
-		return ""
-	}
-	data, err := json.Marshal(result.Rows)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
+// compareResultEquivalence and fingerprint helpers live in equivalence.go.

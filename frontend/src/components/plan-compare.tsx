@@ -1,19 +1,62 @@
 import { cn } from "@/lib/utils";
 import type { PlanComparisonMetric, ComparePlansResult } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
-import { Minus, Plus, TrendingDown } from "lucide-react";
+import { Minus, Plus, TrendingDown, AlertTriangle } from "lucide-react";
 
 interface PlanCompareProps {
   comparison: ComparePlansResult;
   className?: string;
 }
 
-/** Before/after plan comparison view. */
+function equivalenceStatus(comparison: ComparePlansResult): "Equal" | "Different" | "Unverified" {
+  if (comparison.result_equivalence_status === "Equal" || comparison.result_equivalence_status === "Different" || comparison.result_equivalence_status === "Unverified") {
+    return comparison.result_equivalence_status;
+  }
+  if (comparison.result_checksum_equal === true) return "Equal";
+  if (comparison.result_checksum_equal === false) return "Different";
+  return "Unverified";
+}
+
+/** Before/after plan comparison view with blocking equivalence banner. */
 export function PlanCompare({ comparison, className }: PlanCompareProps) {
-  const { metrics, diff, result_checksum_equal: checksumEqual } = comparison;
+  const { metrics, diff } = comparison;
+  const status = equivalenceStatus(comparison);
+  const notes =
+    comparison.result_equivalence_notes ||
+    (status === "Equal"
+      ? "Results match under COUNT(*) + sampled multiset check."
+      : status === "Different"
+        ? "Results differ — do not deploy."
+        : "Equivalence could not be verified — treat as unknown, not a mismatch, and not shippable.");
 
   return (
     <div className={cn("space-y-6", className)}>
+      {status !== "Equal" && (
+        <div
+          role="alert"
+          className={cn(
+            "rounded-lg border p-4 text-sm space-y-1",
+            status === "Different"
+              ? "border-destructive/40 bg-destructive/10 text-destructive"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+          )}
+        >
+          <p className="font-semibold flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            {status === "Different"
+              ? "Result equivalence: Different — do not ship this candidate"
+              : "Result equivalence: Unverified — not shippable yet"}
+          </p>
+          <p className="text-xs opacity-90">{notes}</p>
+          {(comparison.result_before_row_count != null || comparison.result_after_row_count != null) && (
+            <p className="text-xs font-mono opacity-80">
+              COUNT(*) before={comparison.result_before_row_count ?? "—"} after={comparison.result_after_row_count ?? "—"}
+              {comparison.result_sample_rows != null && <> · sample={comparison.result_sample_rows}</>}
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-border/70">
         <table className="w-full text-sm">
           <thead>
@@ -28,18 +71,21 @@ export function PlanCompare({ comparison, className }: PlanCompareProps) {
             {metrics.map((row) => (
               <ComparisonRow key={row.evidence} row={row} />
             ))}
-            {checksumEqual != null && (
-              <tr className="border-t border-border/50">
-                <td className="p-3 font-medium">Result checksum</td>
-                <td className="p-3 font-mono text-xs text-muted-foreground">—</td>
-                <td className="p-3 font-mono text-xs text-muted-foreground">—</td>
-                <td className="p-3">
-                  <Badge variant={checksumEqual ? "success" : "destructive"}>
-                    {checksumEqual ? "Equal" : "Different"}
-                  </Badge>
-                </td>
-              </tr>
-            )}
+            <tr className="border-t border-border/50">
+              <td className="p-3 font-medium">Result equivalence</td>
+              <td className="p-3 font-mono text-xs text-muted-foreground">
+                {comparison.result_before_row_count != null ? `COUNT(*)=${comparison.result_before_row_count}` : "—"}
+              </td>
+              <td className="p-3 font-mono text-xs text-muted-foreground">
+                {comparison.result_after_row_count != null ? `COUNT(*)=${comparison.result_after_row_count}` : "—"}
+              </td>
+              <td className="p-3 space-y-1">
+                {status === "Equal" && <Badge variant="success">Equal</Badge>}
+                {status === "Different" && <Badge variant="destructive">Different</Badge>}
+                {status === "Unverified" && <Badge variant="secondary">Unverified</Badge>}
+                <p className="text-xs text-muted-foreground">{notes}</p>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

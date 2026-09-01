@@ -186,6 +186,13 @@ func marshalWorkspaceRegressionAlertToRegressionAlertResponseBody(v *workspace.R
 		FirstDetectedAt: v.FirstDetectedAt,
 		Acknowledged:    v.Acknowledged,
 		ConnectionID:    v.ConnectionID,
+		Queryid:         v.Queryid,
+		Source:          v.Source,
+		InvestigationID: v.InvestigationID,
+		Calls:           v.Calls,
+		MeanTimeMs:      v.MeanTimeMs,
+		TotalTimeMs:     v.TotalTimeMs,
+		Rows:            v.Rows,
 	}
 
 	return res

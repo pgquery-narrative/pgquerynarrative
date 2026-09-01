@@ -11,9 +11,8 @@ const (
 	CandidateKindIndexDDL   = "index_ddl"
 )
 
-// ScoredCandidate is a rewrite or DDL suggestion with optional dry-EXPLAIN metrics
-// relative to a baseline plan. Index DDL candidates are never rankable (cannot be
-// EXPLAINed as SELECT under a read-only policy).
+// ScoredCandidate is a rewrite or DDL suggestion with optional dry-EXPLAIN or
+// projected-index metrics relative to a baseline plan.
 type ScoredCandidate struct {
 	Kind              string
 	Rankable          bool
@@ -30,10 +29,11 @@ type ScoredCandidate struct {
 	ExecutionTimeMs   float64
 	HasTiming         bool
 	Improved          []string
+	ProjectionMethod  string // hypopg | heuristic | unavailable (index_ddl)
 }
 
 // CollectIndexDDLCandidates returns unique CREATE/DROP index DDL suggestions
-// from plan findings. These are review-only and not dry-EXPLAIN ranked.
+// from plan findings. Without a cost projection they remain review-only.
 func CollectIndexDDLCandidates(findings []PlanFinding) []ScoredCandidate {
 	seen := map[string]struct{}{}
 	var out []ScoredCandidate
@@ -65,15 +65,49 @@ func CollectIndexDDLCandidates(findings []PlanFinding) []ScoredCandidate {
 			category = CategoryIndexHealth
 		}
 		out = append(out, ScoredCandidate{
-			Kind:       CandidateKindIndexDDL,
-			Rankable:   false,
-			DDL:        ddl,
-			Rationale:  rationale,
-			Category:   category,
-			Confidence: f.Confidence,
+			Kind:             CandidateKindIndexDDL,
+			Rankable:         false,
+			DDL:              ddl,
+			Rationale:        rationale,
+			Category:         category,
+			Confidence:       f.Confidence,
+			ProjectionMethod: IndexProjectionNone,
 		})
 	}
 	return out
+}
+
+// ScoreIndexProjection attaches hypopg/heuristic projected cost so an index DDL
+// candidate can participate in ranking. Heuristic projections are never treated
+// as planner-backed: they stay review-only (Rankable=false) so they cannot look
+// identical to hypopg in ranked lists. hypopg projections are rankable.
+func ScoreIndexProjection(base ScoredCandidate, proj IndexProjection) ScoredCandidate {
+	sc := base
+	sc.ProjectionMethod = proj.Method
+	rationale := base.Rationale
+	if proj.Rationale != "" {
+		rationale = strings.TrimSpace(rationale + " — " + proj.Rationale)
+	}
+	if proj.FailureReason != "" && proj.Method != IndexProjectionHypopg {
+		rationale = strings.TrimSpace(rationale + " [hypopg_failure=" + proj.FailureReason + "]")
+	}
+	sc.Rationale = rationale
+	if !proj.Available {
+		sc.Rankable = false
+		if sc.ProjectionMethod == "" {
+			sc.ProjectionMethod = IndexProjectionNone
+		}
+		return sc
+	}
+	sc.TotalCost = proj.ProjectedCost
+	sc.CostDelta = proj.CostDelta
+	// Only planner-backed hypopg estimates participate in numeric ranking.
+	if proj.Method == IndexProjectionHypopg {
+		sc.Rankable = true
+	} else {
+		sc.Rankable = false
+	}
+	return sc
 }
 
 // ScoreSQLRewrite attaches dry-EXPLAIN metrics for a rewrite relative to baseline.

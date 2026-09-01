@@ -35,6 +35,31 @@ func TestExtractFilterColumns(t *testing.T) {
 		{name: "conjunction", filter: "((price > 100) AND (qty < 5))", want: []string{"price", "qty"}},
 		{name: "is not null", filter: "(email IS NOT NULL)", want: []string{"email"}},
 		{name: "no comparison", filter: "(true)", want: nil},
+		// Multi-word type names must be stripped whole. Leaving the tail behind
+		// makes the trailing word ("zone", "precision", "varying") look like the
+		// column being compared, which produced index advice for columns that do
+		// not exist.
+		{
+			name:   "date_trunc wrap with timestamptz cast",
+			filter: "(date_trunc('month'::text, (date)::timestamp with time zone) = '2025-01-01'::date)",
+			want:   []string{"date"},
+		},
+		{
+			name:   "timestamp without time zone",
+			filter: "(created_at >= '2024-01-01'::timestamp without time zone)",
+			want:   []string{"created_at"},
+		},
+		{
+			name:   "timestamptz with length modifier",
+			filter: "((ts)::timestamp(3) with time zone = '2024-01-01'::timestamp with time zone)",
+			want:   []string{"ts"},
+		},
+		{name: "double precision", filter: "(lat > '40.7'::double precision)", want: []string{"lat"}},
+		{
+			name:   "character varying with length",
+			filter: "((a.code)::character varying(8) = 'ABC'::character varying)",
+			want:   []string{"code"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,6 +164,27 @@ func TestIndexColumnCoverage(t *testing.T) {
 	}
 }
 
+func TestPromoteIndexCandidateFinding(t *testing.T) {
+	f := PlanFinding{
+		Category:  CategorySeqScan,
+		IsSeqScan: true,
+		IndexAdvice: &IndexAdvice{
+			Issues:       []string{"no_covering_index"},
+			CandidateDDL: "CREATE INDEX ...",
+		},
+	}
+	got := promoteIndexCandidateFinding(f)
+	if got.Category != CategoryIndexCandidate {
+		t.Fatalf("category = %q, want %q", got.Category, CategoryIndexCandidate)
+	}
+	// already_covered must not promote
+	f.IndexAdvice.Issues = []string{"already_covered"}
+	got = promoteIndexCandidateFinding(f)
+	if got.Category != CategorySeqScan {
+		t.Fatalf("already_covered must stay seq_scan, got %q", got.Category)
+	}
+}
+
 // TestBuildIndexAdvice_NoCoveringIndex verifies that when no existing index
 // covers a finding's implicated columns, advice proposes a candidate DDL
 // clearly marked for expert review only, plus benefit/write/storage cost text.
@@ -209,6 +255,99 @@ func TestBuildIndexAdvice_AlreadyCovered(t *testing.T) {
 func TestBuildIndexAdvice_NoRelatedColumns(t *testing.T) {
 	if got := buildIndexAdvice(PlanFinding{Schema: "demo", Relation: "sales"}, tableCatalogStats{}); got != nil {
 		t.Fatalf("expected nil advice when no related columns, got %+v", got)
+	}
+}
+
+func TestBuildIndexAdvice_SmallTableSkipsDDL(t *testing.T) {
+	f := PlanFinding{
+		Schema:         "demo",
+		Relation:       "sales",
+		IsSeqScan:      true,
+		RelatedColumns: []string{"region"},
+		Message:        "Sequential scan — filter: (region = 'North')",
+	}
+	st := tableCatalogStats{EstimatedRows: 50, TotalBytes: 8192}
+
+	advice := buildIndexAdvice(f, st)
+	if advice == nil {
+		t.Fatal("expected advice")
+	}
+	if len(advice.Issues) != 1 || advice.Issues[0] != "small_table" {
+		t.Fatalf("expected small_table issue, got %v", advice.Issues)
+	}
+	if advice.CandidateDDL != "" {
+		t.Errorf("small table must not get candidate DDL, got %q", advice.CandidateDDL)
+	}
+}
+
+func TestBuildIndexAdvice_SmallTableByBytesWhenRelTuplesZero(t *testing.T) {
+	f := PlanFinding{
+		Schema:         "demo",
+		Relation:       "sales",
+		IsSeqScan:      true,
+		RelatedColumns: []string{"region"},
+		Message:        "Sequential scan — filter: (region = 'North')",
+	}
+	// Partitioned parents often report reltuples=0 with a small total size.
+	st := tableCatalogStats{EstimatedRows: 0, TotalBytes: 64 << 10}
+
+	advice := buildIndexAdvice(f, st)
+	if advice == nil {
+		t.Fatal("expected advice")
+	}
+	if len(advice.Issues) != 1 || advice.Issues[0] != "small_table" {
+		t.Fatalf("expected small_table issue, got %v", advice.Issues)
+	}
+	if advice.CandidateDDL != "" {
+		t.Errorf("tiny relation must not get candidate DDL, got %q", advice.CandidateDDL)
+	}
+}
+
+func TestBuildIndexAdvice_FunctionWrapBareColumn(t *testing.T) {
+	f := PlanFinding{
+		Schema:         "demo",
+		Relation:       "sales",
+		IsSeqScan:      true,
+		RelatedColumns: []string{"date"},
+		Message:        "Sequential scan — filter: (date_trunc('month'::text, date) = '2025-01-01'::date) — function-wrapped partition/index key blocks pruning",
+	}
+	st := tableCatalogStats{EstimatedRows: 500000, TotalBytes: 80 << 20}
+
+	advice := buildIndexAdvice(f, st)
+	if advice == nil {
+		t.Fatal("expected advice")
+	}
+	if !strings.Contains(advice.PotentialBenefit, "bare column") {
+		t.Errorf("expected bare-column guidance, got %q", advice.PotentialBenefit)
+	}
+	if !strings.Contains(advice.CandidateDDL, `"date"`) {
+		t.Errorf("expected index on bare date column, got %q", advice.CandidateDDL)
+	}
+}
+
+func TestIndexAdviceColumns_EqualityFirst(t *testing.T) {
+	f := PlanFinding{
+		RelatedColumns: []string{"sold_at", "region"},
+		Message:        "Sequential scan — filter: ((region = 'North'::text) AND (sold_at >= '2025-01-01'::date))",
+	}
+	got := indexAdviceColumns(f)
+	if len(got) != 2 || got[0] != "region" || got[1] != "sold_at" {
+		t.Fatalf("expected equality column first, got %v", got)
+	}
+}
+
+func TestPromoteIndexCandidateFinding_SmallTableSkipped(t *testing.T) {
+	f := PlanFinding{
+		Category:  CategorySeqScan,
+		IsSeqScan: true,
+		IndexAdvice: &IndexAdvice{
+			Issues:       []string{"small_table"},
+			CandidateDDL: "",
+		},
+	}
+	got := promoteIndexCandidateFinding(f)
+	if got.Category != CategorySeqScan {
+		t.Fatalf("small_table must not promote, got %q", got.Category)
 	}
 }
 

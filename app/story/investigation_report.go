@@ -92,9 +92,14 @@ type PlanFindingInput struct {
 
 // ComparisonInput carries before/after comparison for report building.
 type ComparisonInput struct {
-	Metrics             []ComparisonMetricRow
-	Improved            []string
-	ResultChecksumEqual *bool
+	Metrics                 []ComparisonMetricRow
+	Improved                []string
+	ResultChecksumEqual     *bool
+	ResultEquivalenceStatus string
+	ResultEquivalenceNotes  string
+	ResultBeforeRowCount    *int64
+	ResultAfterRowCount     *int64
+	ResultSampleRows        *int32
 }
 
 // StatInput carries pg_stat_statements context.
@@ -139,16 +144,23 @@ func BuildInvestigationReport(
 	var equiv *EquivalenceValidation
 	if comparison != nil {
 		controlled = &ControlledTestResults{Metrics: comparison.Metrics, Improved: comparison.Improved}
-		status := "Not verified"
-		notes := "Run compare plans and validate result checksums before applying changes."
-		if comparison.ResultChecksumEqual != nil {
-			if *comparison.ResultChecksumEqual {
-				status = "Equal"
-				notes = "Result checksums match between original and candidate queries (sampled execution)."
-			} else {
-				status = "Different"
-				notes = "Result checksums differ — do not deploy the candidate without review."
+		status := comparison.ResultEquivalenceStatus
+		notes := comparison.ResultEquivalenceNotes
+		if status == "" {
+			status = "Unverified"
+			notes = "Result equivalence could not be verified (query error, timeout, or incomplete sample). Treat as unknown — not as a mismatch."
+			if comparison.ResultChecksumEqual != nil {
+				if *comparison.ResultChecksumEqual {
+					status = "Equal"
+					notes = "Sampled result payloads match between original and candidate queries."
+				} else {
+					status = "Different"
+					notes = "Sampled results differ — do not deploy the candidate without review."
+				}
 			}
+		}
+		if notes == "" {
+			notes = "See result equivalence status."
 		}
 		equiv = &EquivalenceValidation{ChecksumEqual: comparison.ResultChecksumEqual, Status: status, Notes: notes}
 	}
@@ -164,7 +176,20 @@ func BuildInvestigationReport(
 
 	nextAction := "Review plan evidence and test a candidate rewrite in a controlled environment."
 	if comparison != nil && len(comparison.Improved) > 0 {
-		nextAction = "Candidate shows measurable improvement — validate equivalence, then open an optimization ticket with this report attached."
+		nextAction = "Candidate shows measurable plan improvement — confirm result equivalence is Equal, then open an optimization ticket with this report attached."
+		status := comparison.ResultEquivalenceStatus
+		if status == "" && comparison.ResultChecksumEqual != nil {
+			if *comparison.ResultChecksumEqual {
+				status = "Equal"
+			} else {
+				status = "Different"
+			}
+		}
+		if status == "Different" || (comparison.ResultChecksumEqual != nil && !*comparison.ResultChecksumEqual) {
+			nextAction = "Plan improved but results differ — do not deploy; reconcile the rewrite before opening a change ticket."
+		} else if status == "Unverified" || status == "" || comparison.ResultChecksumEqual == nil {
+			nextAction = "Plan improved but result equivalence is Unverified — do not treat as shippable until Equal is confirmed."
+		}
 	}
 
 	provenance.AnalysisTimestamp = time.Now().UTC().Format(time.RFC3339)
@@ -275,7 +300,7 @@ func buildCandidates(findings []PlanFindingInput, candidateSQL string, compariso
 			WhyItMightHelp: why,
 			Confidence:     confidence,
 			Verification: []string{
-				"Compare result checksums",
+				"Compare result equivalence (sampled rows)",
 				"Test representative parameters",
 				"Review write and maintenance cost before adding indexes",
 			},

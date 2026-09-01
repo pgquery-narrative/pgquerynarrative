@@ -22,3 +22,26 @@ func TestAllowsMethod_AnalystSavedQueries(t *testing.T) {
 		t.Fatal("viewer must not save queries")
 	}
 }
+
+func TestAllowsMethod_AnalystInvestigations(t *testing.T) {
+	paths := []string{
+		"/api/v1/investigations",
+		"/api/v1/investigations/from-regression",
+		"/api/v1/investigations/abc/candidate",
+		"/api/v1/investigations/abc/suggest-rewrite",
+		"/api/v1/investigations/abc/rank-candidates",
+		"/api/v1/investigations/abc/report",
+		"/api/v1/workspace/regressions/abc/acknowledge",
+	}
+	for _, path := range paths {
+		if !AllowsMethod(RoleAnalyst, http.MethodPost, path) {
+			t.Fatalf("analyst should write %s", path)
+		}
+	}
+	if AllowsMethod(RoleAnalyst, http.MethodPost, "/api/v1/dashboards") {
+		t.Fatal("analyst must not create dashboards without explicit grant")
+	}
+	if AllowsMethod(RoleViewer, http.MethodPost, "/api/v1/investigations") {
+		t.Fatal("viewer must not create investigations")
+	}
+}

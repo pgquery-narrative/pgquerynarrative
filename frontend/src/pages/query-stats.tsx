@@ -134,7 +134,7 @@ export default function QueryStats() {
                       <td className="px-3 py-2 text-right tabular-nums">{row.rows.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right">
                         <Link
-                          to={`/investigate?title=${encodeURIComponent("Query investigation")}&sql=${encodeURIComponent(row.query)}&calls=${row.calls}&mean_time_ms=${row.mean_time_ms}&total_time_ms=${row.total_time_ms}&rows=${row.rows}`}
+                          to={`/investigate?title=${encodeURIComponent("Query investigation")}&sql=${encodeURIComponent(row.query)}${row.queryid ? `&queryid=${encodeURIComponent(row.queryid)}` : ""}&calls=${row.calls}&mean_time_ms=${row.mean_time_ms}&total_time_ms=${row.total_time_ms}&rows=${row.rows}`}
                           className="text-xs text-primary hover:underline whitespace-nowrap"
                         >
                           Investigate

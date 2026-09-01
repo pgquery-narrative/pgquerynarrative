@@ -89,6 +89,89 @@ func EncodeCreateError(encoder func(context.Context, http.ResponseWriter) goahtt
 	}
 }
 
+// EncodeCreateFromRegressionResponse returns an encoder for responses returned
+// by the investigations create_from_regression endpoint.
+func EncodeCreateFromRegressionResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*investigations.Investigation)
+		enc := encoder(ctx, w)
+		body := NewCreateFromRegressionResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeCreateFromRegressionRequest returns a decoder for requests sent to the
+// investigations create_from_regression endpoint.
+func DecodeCreateFromRegressionRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.CreateFromRegressionPayload, error) {
+	return func(r *http.Request) (*investigations.CreateFromRegressionPayload, error) {
+		var (
+			body CreateFromRegressionRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateCreateFromRegressionRequestBody(&body)
+		if err != nil {
+			return nil, err
+		}
+		payload := NewCreateFromRegressionPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeCreateFromRegressionError returns an encoder for errors returned by
+// the create_from_regression investigations endpoint.
+func EncodeCreateFromRegressionError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *investigations.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewCreateFromRegressionNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "validation_error":
+			var res *investigations.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewCreateFromRegressionValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeListResponse returns an encoder for responses returned by the
 // investigations list endpoint.
 func EncodeListResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -696,7 +779,12 @@ func marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(v *
 		return nil
 	}
 	res := &ComparePlansResultResponseBody{
-		ResultChecksumEqual: v.ResultChecksumEqual,
+		ResultChecksumEqual:     v.ResultChecksumEqual,
+		ResultEquivalenceStatus: v.ResultEquivalenceStatus,
+		ResultEquivalenceNotes:  v.ResultEquivalenceNotes,
+		ResultBeforeRowCount:    v.ResultBeforeRowCount,
+		ResultAfterRowCount:     v.ResultAfterRowCount,
+		ResultSampleRows:        v.ResultSampleRows,
 	}
 	if v.Before != nil {
 		res.Before = marshalInvestigationsExplainQueryResultToExplainQueryResultResponseBody(v.Before)
@@ -844,6 +932,7 @@ func marshalInvestigationsRankedCandidateToRankedCandidateResponseBody(v *invest
 		PartitionsScanned: v.PartitionsScanned,
 		PartitionsDelta:   v.PartitionsDelta,
 		ExecutionTimeMs:   v.ExecutionTimeMs,
+		ProjectionMethod:  v.ProjectionMethod,
 	}
 	if v.Improved != nil {
 		res.Improved = make([]string, len(v.Improved))

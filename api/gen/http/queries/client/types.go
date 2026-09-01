@@ -108,8 +108,18 @@ type ComparePlansResponseBody struct {
 	After   *ExplainQueryResultResponseBody     `form:"after,omitempty" json:"after,omitempty" xml:"after,omitempty"`
 	Metrics []*PlanComparisonMetricResponseBody `form:"metrics,omitempty" json:"metrics,omitempty" xml:"metrics,omitempty"`
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff,omitempty" json:"diff,omitempty" xml:"diff,omitempty"`
-	// True when row checksums match (when computable)
+	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
+	// Equal | Different | Unverified
+	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
+	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
+	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
+	// COUNT(*) of before SQL when computable
+	ResultBeforeRowCount *int64 `form:"result_before_row_count,omitempty" json:"result_before_row_count,omitempty" xml:"result_before_row_count,omitempty"`
+	// COUNT(*) of after SQL when computable
+	ResultAfterRowCount *int64 `form:"result_after_row_count,omitempty" json:"result_after_row_count,omitempty" xml:"result_after_row_count,omitempty"`
+	// Rows compared in the multiset sample
+	ResultSampleRows *int32 `form:"result_sample_rows,omitempty" json:"result_sample_rows,omitempty" xml:"result_sample_rows,omitempty"`
 }
 
 // ListSavedResponseBody is the type of the "queries" service "list_saved"
@@ -559,7 +569,12 @@ func NewExplainPlanValidationError(body *ExplainPlanValidationErrorResponseBody)
 // result from a HTTP "OK" response.
 func NewComparePlansResultOK(body *ComparePlansResponseBody) *queries.ComparePlansResult {
 	v := &queries.ComparePlansResult{
-		ResultChecksumEqual: body.ResultChecksumEqual,
+		ResultChecksumEqual:     body.ResultChecksumEqual,
+		ResultEquivalenceStatus: body.ResultEquivalenceStatus,
+		ResultEquivalenceNotes:  body.ResultEquivalenceNotes,
+		ResultBeforeRowCount:    body.ResultBeforeRowCount,
+		ResultAfterRowCount:     body.ResultAfterRowCount,
+		ResultSampleRows:        body.ResultSampleRows,
 	}
 	v.Before = unmarshalExplainQueryResultResponseBodyToQueriesExplainQueryResult(body.Before)
 	v.After = unmarshalExplainQueryResultResponseBodyToQueriesExplainQueryResult(body.After)

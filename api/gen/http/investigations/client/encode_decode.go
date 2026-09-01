@@ -107,6 +107,110 @@ func DecodeCreateResponse(decoder func(*http.Response) goahttp.Decoder, restoreB
 	}
 }
 
+// BuildCreateFromRegressionRequest instantiates a HTTP request object with
+// method and path set to call the "investigations" service
+// "create_from_regression" endpoint
+func (c *Client) BuildCreateFromRegressionRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: CreateFromRegressionInvestigationsPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("investigations", "create_from_regression", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeCreateFromRegressionRequest returns an encoder for requests sent to
+// the investigations create_from_regression server.
+func EncodeCreateFromRegressionRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*investigations.CreateFromRegressionPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("investigations", "create_from_regression", "*investigations.CreateFromRegressionPayload", v)
+		}
+		body := NewCreateFromRegressionRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("investigations", "create_from_regression", err)
+		}
+		return nil
+	}
+}
+
+// DecodeCreateFromRegressionResponse returns a decoder for responses returned
+// by the investigations create_from_regression endpoint. restoreBody controls
+// whether the response body should be restored after having been read.
+// DecodeCreateFromRegressionResponse may return the following errors:
+//   - "not_found" (type *investigations.NotFoundError): http.StatusNotFound
+//   - "validation_error" (type *investigations.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeCreateFromRegressionResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body CreateFromRegressionResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "create_from_regression", err)
+			}
+			err = ValidateCreateFromRegressionResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "create_from_regression", err)
+			}
+			res := NewCreateFromRegressionInvestigationOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body CreateFromRegressionNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "create_from_regression", err)
+			}
+			err = ValidateCreateFromRegressionNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "create_from_regression", err)
+			}
+			return nil, NewCreateFromRegressionNotFound(&body)
+		case http.StatusBadRequest:
+			var (
+				body CreateFromRegressionValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "create_from_regression", err)
+			}
+			err = ValidateCreateFromRegressionValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "create_from_regression", err)
+			}
+			return nil, NewCreateFromRegressionValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("investigations", "create_from_regression", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildListRequest instantiates a HTTP request object with method and path set
 // to call the "investigations" service "list" endpoint
 func (c *Client) BuildListRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -823,7 +927,12 @@ func unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(v
 		return nil
 	}
 	res := &investigations.ComparePlansResult{
-		ResultChecksumEqual: v.ResultChecksumEqual,
+		ResultChecksumEqual:     v.ResultChecksumEqual,
+		ResultEquivalenceStatus: v.ResultEquivalenceStatus,
+		ResultEquivalenceNotes:  v.ResultEquivalenceNotes,
+		ResultBeforeRowCount:    v.ResultBeforeRowCount,
+		ResultAfterRowCount:     v.ResultAfterRowCount,
+		ResultSampleRows:        v.ResultSampleRows,
 	}
 	res.Before = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(v.Before)
 	res.After = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(v.After)
@@ -961,6 +1070,7 @@ func unmarshalRankedCandidateResponseBodyToInvestigationsRankedCandidate(v *Rank
 		PartitionsScanned: v.PartitionsScanned,
 		PartitionsDelta:   v.PartitionsDelta,
 		ExecutionTimeMs:   v.ExecutionTimeMs,
+		ProjectionMethod:  v.ProjectionMethod,
 	}
 	if v.Improved != nil {
 		res.Improved = make([]string, len(v.Improved))

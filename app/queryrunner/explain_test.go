@@ -95,6 +95,28 @@ func TestBuildExplainSQL(t *testing.T) {
 	}
 }
 
+func TestPlanFindingMessage_FunctionWraps(t *testing.T) {
+	tests := []struct {
+		filter     string
+		want       string
+		confidence string
+	}{
+		{filter: "(date_trunc('month'::text, date) = '2025-01-01'::date)", want: "function-wrapped", confidence: "high"},
+		{filter: "(EXTRACT(year FROM date) = 2025)", want: "function-wrapped", confidence: "high"},
+		{filter: "(date::text = '5'::text)", want: "casting the column to text", confidence: "high"},
+		{filter: "(region = 'North'::text)", want: "btree index", confidence: "medium"},
+	}
+	for _, tt := range tests {
+		msg, conf := planFindingMessage("Seq Scan", "demo", "sales", tt.filter, 180, true, map[string]interface{}{})
+		if conf != tt.confidence {
+			t.Errorf("filter %q confidence=%s, want %s", tt.filter, conf, tt.confidence)
+		}
+		if !strings.Contains(strings.ToLower(msg), strings.ToLower(tt.want)) {
+			t.Errorf("filter %q message %q missing %q", tt.filter, msg, tt.want)
+		}
+	}
+}
+
 func TestParseExplainJSON_roundTrip(t *testing.T) {
 	_, _, planJSON, err := parseExplainJSON([]byte(sampleExplainJSON))
 	if err != nil {
