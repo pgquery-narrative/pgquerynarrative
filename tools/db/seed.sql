@@ -1,5 +1,9 @@
 BEGIN;
 
+-- Dates: last 365 days from CURRENT_DATE (rolling window). Guided Investigate
+-- scenarios read live MIN(date)/MAX(date) and inject DATE literals so sample
+-- SQL returns rows without freezing a calendar year.
+
 CREATE SCHEMA IF NOT EXISTS demo;
 
 INSERT INTO demo.sales (
