@@ -191,7 +191,7 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 			JOIN app.stat_statement_polls b ON b.id = s.poll_id
 			WHERE b.organization_id = $1
 			  AND b.id <> $2
-			  AND b.captured_at >= now() - ($3::text || ' days')::interval
+			  AND b.captured_at >= now() - make_interval(days => $3)
 			GROUP BY s.queryid
 		)
 		SELECT c.queryid, c.query_text,
@@ -382,7 +382,7 @@ func (p *RegressionPoller) reconcileAppliedFixes(ctx context.Context, appDB db.D
 			fix_measured_at = now(),
 			fix_status = CASE
 				WHEN a.current_mean <= a.baseline * (1 - $2::float / 100) THEN 'confirmed'
-				WHEN a.applied_at < now() - ($3::text || ' hours')::interval
+				WHEN a.applied_at < now() - make_interval(hours => $3)
 				     AND a.current_mean >= a.baseline * 0.95 THEN 'regressed'
 				ELSE 'applied'
 			END,
@@ -400,7 +400,7 @@ func (p *RegressionPoller) cleanupOldPolls(ctx context.Context) {
 	}
 	_, err := p.rawPool.Exec(ctx, `
 		DELETE FROM app.stat_statement_polls
-		WHERE captured_at < NOW() - ($1::text || ' days')::interval
+		WHERE captured_at < NOW() - make_interval(days => $1)
 	`, retention)
 	if err != nil {
 		apilog.ValidationError("regression_poller", "cleanup", err.Error())
