@@ -248,6 +248,9 @@ func setupHTTPServer(
 	combinedMux.HandleFunc("/web/reports/export", webHandlers.ExportReport)
 	combinedMux.HandleFunc("/web/reports/export/pdf", webHandlers.ExportReportPDF)
 	combinedMux.HandleFunc("/web/reports/export/shared/pdf", webHandlers.ExportSharedReportPDF)
+	combinedMux.HandleFunc("/web/reports/export/md", webHandlers.ExportReportMarkdown)
+	combinedMux.HandleFunc("/web/reports/export/json", webHandlers.ExportReportJSON)
+	combinedMux.HandleFunc("/web/reports/export/sql", webHandlers.ExportReportSQL)
 	combinedMux.Handle("/", spaHandler("frontend/dist"))
 
 	authenticator := auth.NewAuthenticator(
@@ -628,7 +631,7 @@ func requestLoggingMiddleware(next http.Handler, appLogger *logger.Logger, audit
 		}
 		wrapped.logErrorIfAny()
 
-		if auditStore != nil && (strings.HasPrefix(path, "/api/") || path == "/web/reports/export" || path == "/web/reports/export/pdf") {
+		if auditStore != nil && (strings.HasPrefix(path, "/api/") || isAuditedReportExport(path)) {
 			identity, _ := r.Context().Value(auth.IdentityContextKey).(string)
 			_ = auditStore.Record(r.Context(), audit.Entry{
 				EventType: apiRequestEventType(method, path),
@@ -639,6 +642,13 @@ func requestLoggingMiddleware(next http.Handler, appLogger *logger.Logger, audit
 			})
 		}
 	})
+}
+
+// isAuditedReportExport matches the authenticated report-export routes
+// (HTML, PDF, Markdown, JSON, SQL) but not the token-based shared export,
+// which carries no principal to attribute the entry to.
+func isAuditedReportExport(path string) bool {
+	return strings.HasPrefix(path, "/web/reports/export") && !strings.Contains(path, "/shared/")
 }
 
 // apiRequestEventType classifies a request into a specific app.audit_logs event type for
@@ -653,7 +663,7 @@ func apiRequestEventType(method, path string) string {
 		return audit.EventRunQuery
 	case (path == "/api/v1/reports/generate" || path == "/api/v1/reports/rewrite") && method == http.MethodPost:
 		return audit.EventGenerateReport
-	case path == "/web/reports/export" || path == "/web/reports/export/pdf":
+	case isAuditedReportExport(path):
 		return audit.EventExportReport
 	case path == "/api/v1/queries/saved" && method == http.MethodPost:
 		return audit.EventSaveQuery
