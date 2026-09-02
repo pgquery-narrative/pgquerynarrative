@@ -1192,6 +1192,38 @@ func unmarshalPlanComparisonDiffResponseBodyToInvestigationsPlanComparisonDiff(v
 	return res
 }
 
+// unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate
+// builds a value of type *investigations.InvestigationCandidate from a value
+// of type *InvestigationCandidateResponseBody.
+func unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(v *InvestigationCandidateResponseBody) *investigations.InvestigationCandidate {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.InvestigationCandidate{
+		ID:                *v.ID,
+		CandidateSQL:      *v.CandidateSQL,
+		EquivalenceStatus: v.EquivalenceStatus,
+		CostDelta:         v.CostDelta,
+		Source:            v.Source,
+		IsCurrent:         v.IsCurrent,
+		CreatedAt:         *v.CreatedAt,
+	}
+	if v.Binds != nil {
+		res.Binds = make([]string, len(v.Binds))
+		for i, val := range v.Binds {
+			res.Binds[i] = val
+		}
+	}
+	if v.CandidateExplain != nil {
+		res.CandidateExplain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(v.CandidateExplain)
+	}
+	if v.Comparison != nil {
+		res.Comparison = unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(v.Comparison)
+	}
+
+	return res
+}
+
 // unmarshalInvestigationResponseBodyToInvestigationsInvestigation builds a
 // value of type *investigations.Investigation from a value of type
 // *InvestigationResponseBody.
@@ -1225,6 +1257,16 @@ func unmarshalInvestigationResponseBodyToInvestigationsInvestigation(v *Investig
 	}
 	if v.Comparison != nil {
 		res.Comparison = unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(v.Comparison)
+	}
+	if v.Candidates != nil {
+		res.Candidates = make([]*investigations.InvestigationCandidate, len(v.Candidates))
+		for i, val := range v.Candidates {
+			if val == nil {
+				res.Candidates[i] = nil
+				continue
+			}
+			res.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
+		}
 	}
 
 	return res

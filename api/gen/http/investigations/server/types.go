@@ -77,6 +77,8 @@ type CreateResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -107,6 +109,8 @@ type CreateFromRegressionResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -145,6 +149,8 @@ type GetResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -175,6 +181,8 @@ type AddCandidateResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -205,6 +213,8 @@ type UpdateFixResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -248,6 +258,8 @@ type GenerateReportResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -565,6 +577,26 @@ type PlanComparisonDiffResponseBody struct {
 	Improved []string `form:"improved,omitempty" json:"improved,omitempty" xml:"improved,omitempty"`
 }
 
+// InvestigationCandidateResponseBody is used to define fields on response body
+// types.
+type InvestigationCandidateResponseBody struct {
+	ID           string `form:"id" json:"id" xml:"id"`
+	CandidateSQL string `form:"candidate_sql" json:"candidate_sql" xml:"candidate_sql"`
+	// Sample bind values used for the executed compare, when parameterized
+	Binds            []string                        `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
+	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
+	// Equal | Different | Unverified
+	EquivalenceStatus *string `form:"equivalence_status,omitempty" json:"equivalence_status,omitempty" xml:"equivalence_status,omitempty"`
+	// after - before total cost (negative is better)
+	CostDelta *float64 `form:"cost_delta,omitempty" json:"cost_delta,omitempty" xml:"cost_delta,omitempty"`
+	// manual | suggested | ranked
+	Source *string `form:"source,omitempty" json:"source,omitempty" xml:"source,omitempty"`
+	// True for the candidate currently attached to the investigation
+	IsCurrent *bool  `form:"is_current,omitempty" json:"is_current,omitempty" xml:"is_current,omitempty"`
+	CreatedAt string `form:"created_at" json:"created_at" xml:"created_at"`
+}
+
 // InvestigationResponseBody is used to define fields on response body types.
 type InvestigationResponseBody struct {
 	ID    string `form:"id" json:"id" xml:"id"`
@@ -580,6 +612,8 @@ type InvestigationResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -681,6 +715,16 @@ func NewCreateResponseBody(res *investigations.Investigation) *CreateResponseBod
 	if res.Comparison != nil {
 		body.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(res.Comparison)
 	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*InvestigationCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
+	}
 	return body
 }
 
@@ -717,6 +761,16 @@ func NewCreateFromRegressionResponseBody(res *investigations.Investigation) *Cre
 	}
 	if res.Comparison != nil {
 		body.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(res.Comparison)
+	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*InvestigationCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
 	}
 	return body
 }
@@ -776,6 +830,16 @@ func NewGetResponseBody(res *investigations.Investigation) *GetResponseBody {
 	if res.Comparison != nil {
 		body.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(res.Comparison)
 	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*InvestigationCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
+	}
 	return body
 }
 
@@ -812,6 +876,16 @@ func NewAddCandidateResponseBody(res *investigations.Investigation) *AddCandidat
 	if res.Comparison != nil {
 		body.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(res.Comparison)
 	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*InvestigationCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
+	}
 	return body
 }
 
@@ -847,6 +921,16 @@ func NewUpdateFixResponseBody(res *investigations.Investigation) *UpdateFixRespo
 	}
 	if res.Comparison != nil {
 		body.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(res.Comparison)
+	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*InvestigationCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
 	}
 	return body
 }
@@ -924,6 +1008,16 @@ func NewGenerateReportResponseBody(res *investigations.Investigation) *GenerateR
 	}
 	if res.Comparison != nil {
 		body.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(res.Comparison)
+	}
+	if res.Candidates != nil {
+		body.Candidates = make([]*InvestigationCandidateResponseBody, len(res.Candidates))
+		for i, val := range res.Candidates {
+			if val == nil {
+				body.Candidates[i] = nil
+				continue
+			}
+			body.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
 	}
 	return body
 }

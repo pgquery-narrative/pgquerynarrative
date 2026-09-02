@@ -302,6 +302,7 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 	}
 	inv.FixBaselineMeanMs = fixBaselineMean
 	inv.FixConfirmedMeanMs = fixConfirmedMean
+	inv.Candidates = s.loadInvestigationCandidates(ctx, inv.ID, inv.CandidateSQL)
 	return &inv, nil
 }
 
@@ -828,6 +829,40 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 	cmpJSON, _ := json.Marshal(cmp)
 	candidateExplainJSON, _ := json.Marshal(cmp.After)
 
+	// Cost delta and equivalence, denormalized for listing the candidate history.
+	var costDelta *float64
+	if cmp.Before != nil && cmp.After != nil {
+		d := cmp.After.TotalCost - cmp.Before.TotalCost
+		costDelta = &d
+	}
+	var equivStatus *string
+	if cmp.ResultEquivalenceStatus != nil && *cmp.ResultEquivalenceStatus != "" {
+		equivStatus = cmp.ResultEquivalenceStatus
+	}
+	var bindsJSON []byte
+	if len(payload.Binds) > 0 {
+		bindsJSON, _ = json.Marshal(payload.Binds)
+	}
+
+	// Record this candidate in the history (one row per distinct SQL; a re-test
+	// refreshes it) and point the investigation at it.
+	if _, err := s.appPool.Exec(ctx, `
+		INSERT INTO app.investigation_candidates (
+			organization_id, investigation_id, candidate_sql, binds,
+			candidate_explain, comparison, equivalence_status, cost_delta, source
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'manual')
+		ON CONFLICT (investigation_id, md5(candidate_sql)) DO UPDATE SET
+			binds = EXCLUDED.binds,
+			candidate_explain = EXCLUDED.candidate_explain,
+			comparison = EXCLUDED.comparison,
+			equivalence_status = EXCLUDED.equivalence_status,
+			cost_delta = EXCLUDED.cost_delta,
+			updated_at = now()
+	`, orgID(ctx), payload.ID, payload.CandidateSQL, bindsJSON,
+		candidateExplainJSON, cmpJSON, equivStatus, costDelta); err != nil {
+		return nil, err
+	}
+
 	_, err = s.appPool.Exec(ctx, `
 		UPDATE app.investigations
 		SET candidate_sql = $1, candidate_explain = $2, comparison = $3,
@@ -838,6 +873,62 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 		return nil, err
 	}
 	return s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
+}
+
+// loadInvestigationCandidates returns the tested-candidate history, newest first,
+// marking the one currently attached to the investigation.
+func (s *InvestigationsService) loadInvestigationCandidates(ctx context.Context, invID string, currentSQL *string) []*investigations.InvestigationCandidate {
+	rows, err := s.appPool.Query(ctx, `
+		SELECT id::text, candidate_sql, binds, candidate_explain, comparison,
+		       equivalence_status, cost_delta, source, created_at
+		FROM app.investigation_candidates
+		WHERE investigation_id = $1 AND organization_id = $2
+		ORDER BY updated_at DESC
+	`, invID, orgID(ctx))
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var out []*investigations.InvestigationCandidate
+	for rows.Next() {
+		var c investigations.InvestigationCandidate
+		var bindsJSON, explainJSON, cmpJSON []byte
+		var equiv, source *string
+		var costDelta *float64
+		var createdAt time.Time
+		if err := rows.Scan(&c.ID, &c.CandidateSQL, &bindsJSON, &explainJSON, &cmpJSON,
+			&equiv, &costDelta, &source, &createdAt); err != nil {
+			return out
+		}
+		c.CreatedAt = createdAt.Format(time.RFC3339)
+		c.EquivalenceStatus = equiv
+		c.CostDelta = costDelta
+		if source != nil {
+			c.Source = source
+		}
+		if len(bindsJSON) > 0 && string(bindsJSON) != "null" {
+			_ = json.Unmarshal(bindsJSON, &c.Binds)
+		}
+		if len(explainJSON) > 0 {
+			var exp investigations.ExplainQueryResult
+			if json.Unmarshal(explainJSON, &exp) == nil {
+				c.CandidateExplain = &exp
+			}
+		}
+		if len(cmpJSON) > 0 {
+			var cmp investigations.ComparePlansResult
+			if json.Unmarshal(cmpJSON, &cmp) == nil {
+				c.Comparison = &cmp
+			}
+		}
+		if currentSQL != nil && c.CandidateSQL == *currentSQL {
+			cur := true
+			c.IsCurrent = &cur
+		}
+		out = append(out, &c)
+	}
+	return out
 }
 
 // GenerateReport creates an engineering investigation report from collected evidence.

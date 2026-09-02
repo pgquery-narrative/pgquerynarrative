@@ -189,6 +189,19 @@ export interface StatSnapshot {
   rows?: number;
 }
 
+export interface InvestigationCandidate {
+  id: string;
+  candidate_sql: string;
+  binds?: string[];
+  candidate_explain?: ExplainQueryResult;
+  comparison?: ComparePlansResult;
+  equivalence_status?: string;
+  cost_delta?: number;
+  source?: string;
+  is_current?: boolean;
+  created_at: string;
+}
+
 export interface Investigation {
   id: string;
   title: string;
@@ -201,6 +214,7 @@ export interface Investigation {
   candidate_sql?: string;
   candidate_explain?: ExplainQueryResult;
   comparison?: ComparePlansResult;
+  candidates?: InvestigationCandidate[];
   report_id?: string;
   fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned" | string;
   fix_reference?: string;
