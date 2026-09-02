@@ -51,7 +51,7 @@ func seedPoll(t *testing.T, ctx context.Context, pool *pgxpool.Pool, org string,
 	var pollID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO app.stat_statement_polls (organization_id, connection_id, captured_at)
-		VALUES ($1, 'default', now() - ($2::text || ' minutes')::interval)
+		VALUES ($1, 'default', now() - make_interval(mins => $2))
 		RETURNING id::text
 	`, org, ageMin).Scan(&pollID); err != nil {
 		t.Fatalf("seed poll: %v", err)
@@ -95,7 +95,7 @@ func TestRegressionPoller_BaselineLifecycle(t *testing.T) {
 	org := auth.DefaultOrganizationID
 	poller := newTestPoller(pool)
 	const qid = "12345"
-	const qtext = "SELECT * FROM orders WHERE customer_id = $1"
+	const qtext = "SELECT * FROM orders WHERE customer_id = 42"
 
 	// 5 baseline polls around 100ms mean with mild jitter, then a steady current poll.
 	for i, mean := range []float64{96, 104, 99, 101, 103} {
@@ -180,7 +180,7 @@ func TestRegressionPoller_SelfObservedNeverAlerts(t *testing.T) {
 	org := auth.DefaultOrganizationID
 	poller := newTestPoller(pool)
 	const qid = "999"
-	const explainText = "EXPLAIN (GENERIC_PLAN, FORMAT JSON) SELECT * FROM orders WHERE id = $1"
+	const explainText = "EXPLAIN (GENERIC_PLAN, FORMAT JSON) SELECT * FROM orders WHERE id = 42"
 
 	for i := range []int{0, 1, 2, 3} {
 		seedPoll(t, ctx, pool, org, 40-(i*10), qid, explainText, 10, 500, 50, 0)
@@ -208,21 +208,21 @@ func TestInvestigationFix_LifecycleAndReconcile(t *testing.T) {
 	var invID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO app.investigations (organization_id, title, sql, query_fingerprint, status)
-		VALUES ($1, 'Slow orders', 'SELECT * FROM orders WHERE customer_id = $2', 'fp-orders', 'complete')
+		VALUES ($1, 'Slow orders', 'SELECT * FROM orders WHERE customer_id = 42', 'fp-orders', 'complete')
 		RETURNING id::text
-	`, org, "$1").Scan(&invID); err != nil {
+	`, org).Scan(&invID); err != nil {
 		t.Fatalf("seed investigation: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO app.regression_alerts (organization_id, title, query_text, queryid, change_type, change_summary, impact, source, investigation_id)
-		VALUES ($1, 'Slow orders', 'SELECT * FROM orders WHERE customer_id = $2', $3, 'latency', '+200%', 'high', 'poller', $4)
-	`, org, "$1", qid, invID); err != nil {
+		VALUES ($1, 'Slow orders', 'SELECT * FROM orders WHERE customer_id = 42', $2, 'latency', '+200%', 'high', 'poller', $3)
+	`, org, qid, invID); err != nil {
 		t.Fatalf("seed linked alert: %v", err)
 	}
 
 	// Baseline the linked query at 200ms across enough polls, then mark applied.
 	for i := range []int{0, 1, 2} {
-		seedPoll(t, ctx, pool, org, 30-(i*10), qid, "SELECT * FROM orders WHERE customer_id = $1", 200, 10000, 50, 500)
+		seedPoll(t, ctx, pool, org, 30-(i*10), qid, "SELECT * FROM orders WHERE customer_id = 42", 200, 10000, 50, 500)
 	}
 
 	// Invalid transition rejected.
@@ -244,7 +244,7 @@ func TestInvestigationFix_LifecycleAndReconcile(t *testing.T) {
 	}
 
 	// A later poll shows the query is 3x faster → reconcile marks it confirmed.
-	seedPoll(t, ctx, pool, org, 0, qid, "SELECT * FROM orders WHERE customer_id = $1", 65, 3250, 50, 500)
+	seedPoll(t, ctx, pool, org, 0, qid, "SELECT * FROM orders WHERE customer_id = 42", 65, 3250, 50, 500)
 	poller := newTestPoller(pool)
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (reconcile): %v", err)
