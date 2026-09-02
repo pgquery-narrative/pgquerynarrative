@@ -301,6 +301,7 @@ var ComparePlansPayload = Type("ComparePlansPayload", func() {
 		Default(false)
 	})
 	Attribute("connection_id", String, "Optional connection ID")
+	Attribute("binds", ArrayOf(String), "Sample bind values for parameterized before/after SQL ($1, $2, ...); substituted for the compare/equivalence run")
 	Required("before_sql", "after_sql")
 })
 
@@ -407,6 +408,7 @@ var AddCandidatePayload = Type("AddCandidatePayload", func() {
 	Attribute("analyze", Boolean, func() {
 		Default(false)
 	})
+	Attribute("binds", ArrayOf(String), "Sample bind values for a parameterized candidate ($1, $2, ...); used only for the compare/equivalence run, not stored")
 	Required("id", "candidate_sql")
 })
 

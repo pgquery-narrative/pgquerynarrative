@@ -716,6 +716,7 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 		AfterSQL:     payload.CandidateSQL,
 		Analyze:      true,
 		ConnectionID: &inv.ConnectionID,
+		Binds:        payload.Binds,
 	})
 	if err != nil {
 		cmp, err = s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
@@ -723,6 +724,7 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 			AfterSQL:     payload.CandidateSQL,
 			Analyze:      false,
 			ConnectionID: &inv.ConnectionID,
+			Binds:        payload.Binds,
 		})
 	}
 	if err != nil {

@@ -33,6 +33,7 @@ export default function InvestigatePage() {
   const [loading, setLoading] = useState(!!id);
   const [error, setError] = useState("");
   const [candidateSql, setCandidateSql] = useState("");
+  const [bindsText, setBindsText] = useState("");
   const [suggestRationale, setSuggestRationale] = useState("");
   const [rankedCandidates, setRankedCandidates] = useState<RankedCandidate[]>([]);
   const [suggestedCandidates, setSuggestedCandidates] = useState<RewriteCandidate[]>([]);
@@ -97,7 +98,12 @@ export default function InvestigatePage() {
     setActionLoading("candidate");
     setError("");
     try {
-      const inv = await api.addInvestigationCandidate(investigation.id, candidateSql.trim());
+      const inv = await api.addInvestigationCandidate(
+        investigation.id,
+        candidateSql.trim(),
+        true,
+        parseBinds(bindsText),
+      );
       setInvestigation(inv);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to compare plans");
@@ -378,6 +384,20 @@ export default function InvestigatePage() {
           {suggestRationale && (
             <p className="text-xs text-muted-foreground">{suggestRationale}</p>
           )}
+          {investigation.explain?.generic_plan && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Bind values — one per line, e.g. <code>$1 = 2025-01-01</code>. Needed to run an executed compare and
+                equivalence check on a parameterized query.
+              </label>
+              <Textarea
+                value={bindsText}
+                onChange={(e) => setBindsText(e.target.value)}
+                placeholder={"$1 = 2025-01-01"}
+                className="font-mono text-xs min-h-[60px]"
+              />
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -534,6 +554,20 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="font-semibold">{value}</p>
     </div>
   );
+}
+
+/** Parse "$1 = 2025-01-01" lines into an ordered bind array. Gaps stay "". */
+function parseBinds(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*\$?(\d+)\s*=\s*(.+?)\s*$/);
+    if (!m) continue;
+    const idx = Number(m[1]) - 1;
+    if (idx < 0 || idx > 63) continue;
+    while (out.length <= idx) out.push("");
+    out[idx] = m[2];
+  }
+  return out;
 }
 
 function formatDelta(n?: number) {
