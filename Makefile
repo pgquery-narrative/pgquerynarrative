@@ -220,7 +220,7 @@ test: test-unit test-integration
 
 test-unit:
 	@echo "🧪 Running unit tests..."
-	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... -v
+	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... ./app/metrics/... ./web/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:

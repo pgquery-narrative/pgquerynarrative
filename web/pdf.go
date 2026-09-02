@@ -8,27 +8,31 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/jung-kurt/gofpdf/v2"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
-// BuildReportPDF writes a structured PDF report to w. Uses Helvetica (ASCII-safe).
+// BuildReportPDF writes a structured PDF report to w. Text is rendered with the
+// embedded Go fonts (see pdf_fonts.go), so UTF-8 content — em dashes, curly
+// quotes, Greek, Cyrillic — survives instead of collapsing to "?".
 func BuildReportPDF(w io.Writer, report *reports.Report) error {
 	pdf := gofpdf.New("P", "pt", "A4", "")
+	registerPDFFonts(pdf)
 	pdf.SetCreator("PgQueryNarrative", false)
 	pdf.SetProducer("PgQueryNarrative", false)
 	pdf.SetTitle("PgQueryNarrative Report", false)
 	pdf.SetMargins(40, 40, 40)
 	pdf.SetAutoPageBreak(true, 28)
 	pdf.AddPage()
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFontBody, "", 10)
 
 	// Title and meta
-	pdf.SetFont("Helvetica", "B", 16)
+	pdf.SetFont(pdfFontBody, "B", 16)
 	pdf.CellFormat(0, 16, "PgQueryNarrative Report", "", 1, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(pdfFontBody, "", 9)
 	pdf.SetTextColor(100, 100, 100)
 	pdf.CellFormat(0, 10, "Generated: "+report.CreatedAt, "", 1, "L", false, 0, "")
 	if report.LlmProvider != "" || report.LlmModel != "" {
@@ -49,10 +53,10 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 	if len(sqlStr) > 400 {
 		sqlStr = sqlStr[:400] + "..."
 	}
-	pdf.SetFont("Courier", "", 8)
+	pdf.SetFont(pdfFontMono, "", 8)
 	pdf.SetFillColor(245, 245, 245)
-	pdf.MultiCell(0, 12, safePDFString(sqlStr), "1", "L", true)
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.MultiCell(0, 12, pdfText(sqlStr), "1", "L", true)
+	pdf.SetFont(pdfFontBody, "", 10)
 	pdf.Ln(8)
 
 	if report.Metrics != nil && report.Metrics.Investigation != nil {
@@ -63,16 +67,16 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 	// Narrative: headline and sections
 	if report.Narrative != nil {
 		if report.Narrative.Headline != "" {
-			pdf.SetFont("Helvetica", "B", 14)
-			pdf.MultiCell(0, 14, safePDFString(report.Narrative.Headline), "", "L", false)
-			pdf.SetFont("Helvetica", "", 10)
+			pdf.SetFont(pdfFontBody, "B", 14)
+			pdf.MultiCell(0, 14, pdfText(report.Narrative.Headline), "", "L", false)
+			pdf.SetFont(pdfFontBody, "", 10)
 			pdf.Ln(6)
 		}
 		if len(report.Narrative.Takeaways) > 0 {
 			sectionTitle(pdf, "Key takeaways")
 			for _, t := range report.Narrative.Takeaways {
 				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-				pdf.MultiCell(0, 10, safePDFString(t), "", "L", false)
+				pdf.MultiCell(0, 10, pdfText(t), "", "L", false)
 			}
 			pdf.Ln(4)
 		}
@@ -94,7 +98,7 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 				sectionTitle(pdf, title)
 				for _, s := range items {
 					pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-					pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+					pdf.MultiCell(0, 10, pdfText(s), "", "L", false)
 				}
 				pdf.Ln(4)
 			}
@@ -115,12 +119,12 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 				continue
 			}
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-			pdf.SetFont("Helvetica", "B", 10)
-			pdf.CellFormat(0, 10, safePDFString(s.Label), "", 0, "L", false, 0, "")
-			pdf.SetFont("Helvetica", "", 10)
+			pdf.SetFont(pdfFontBody, "B", 10)
+			pdf.CellFormat(0, 10, pdfText(s.Label), "", 0, "L", false, 0, "")
+			pdf.SetFont(pdfFontBody, "", 10)
 			pdf.Ln(10)
 			pdf.CellFormat(20, 10, "", "", 0, "L", false, 0, "")
-			pdf.MultiCell(0, 10, safePDFString(s.Reason), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(s.Reason), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -160,24 +164,24 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 				continue
 			}
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-			pdf.SetFont("Helvetica", "B", 10)
-			pdf.MultiCell(0, 10, safePDFString(c.CohortLabel), "", "L", false)
-			pdf.SetFont("Helvetica", "", 10)
+			pdf.SetFont(pdfFontBody, "B", 10)
+			pdf.MultiCell(0, 10, pdfText(c.CohortLabel), "", "L", false)
+			pdf.SetFont(pdfFontBody, "", 10)
 			if c.RetentionPct != nil {
 				pdf.CellFormat(20, 10, "", "", 0, "L", false, 0, "")
 				pdf.MultiCell(0, 10, fmt.Sprintf("Retention: %.1f%%", *c.RetentionPct), "", "L", false)
 			}
 			if len(c.Periods) > 0 {
 				w0, w1 := 60.0, 80.0
-				pdf.SetFont("Helvetica", "B", 9)
+				pdf.SetFont(pdfFontBody, "B", 9)
 				pdf.CellFormat(w0, 10, "Period", "1", 0, "L", true, 0, "")
 				pdf.CellFormat(w1, 10, "Value", "1", 1, "R", true, 0, "")
-				pdf.SetFont("Helvetica", "", 9)
+				pdf.SetFont(pdfFontBody, "", 9)
 				for _, p := range c.Periods {
 					if p == nil {
 						continue
 					}
-					pdf.CellFormat(w0, 10, safePDFString(p.PeriodLabel), "1", 0, "L", false, 0, "")
+					pdf.CellFormat(w0, 10, pdfText(p.PeriodLabel), "1", 0, "L", false, 0, "")
 					pdf.CellFormat(w1, 10, fmt.Sprintf("%.2f", p.Value), "1", 1, "R", false, 0, "")
 				}
 				pdf.Ln(2)
@@ -196,19 +200,19 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 		sort.Strings(cols)
 		// Table header
 		w0, w1, w2, w3, w4 := 80.0, 45.0, 50.0, 55.0, 45.0
-		pdf.SetFont("Helvetica", "B", 9)
+		pdf.SetFont(pdfFontBody, "B", 9)
 		pdf.CellFormat(w0, 10, "Column", "1", 0, "L", true, 0, "")
 		pdf.CellFormat(w1, 10, "Nulls", "1", 0, "R", true, 0, "")
 		pdf.CellFormat(w2, 10, "Null %", "1", 0, "R", true, 0, "")
 		pdf.CellFormat(w3, 10, "Distinct", "1", 0, "R", true, 0, "")
 		pdf.CellFormat(w4, 10, "Rows", "1", 1, "R", true, 0, "")
-		pdf.SetFont("Helvetica", "", 9)
+		pdf.SetFont(pdfFontBody, "", 9)
 		for _, col := range cols {
 			q := report.Metrics.DataQuality[col]
 			if q == nil {
 				continue
 			}
-			pdf.CellFormat(w0, 10, safePDFString(col), "1", 0, "L", false, 0, "")
+			pdf.CellFormat(w0, 10, pdfText(col), "1", 0, "L", false, 0, "")
 			pdf.CellFormat(w1, 10, fmt.Sprintf("%d", q.NullCount), "1", 0, "R", false, 0, "")
 			pdf.CellFormat(w2, 10, fmt.Sprintf("%.1f", q.NullPct), "1", 0, "R", false, 0, "")
 			pdf.CellFormat(w3, 10, fmt.Sprintf("%d", q.DistinctCount), "1", 0, "R", false, 0, "")
@@ -222,7 +226,7 @@ func BuildReportPDF(w io.Writer, report *reports.Report) error {
 		sectionTitle(pdf, "Performance suggestions")
 		for _, s := range report.Metrics.PerfSuggestions {
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(s), "", "L", false)
 		}
 	}
 
@@ -254,9 +258,9 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 	}
 
 	if report.Narrative != nil && report.Narrative.Headline != "" {
-		pdf.SetFont("Helvetica", "B", 14)
-		pdf.MultiCell(0, 14, safePDFString(report.Narrative.Headline), "", "L", false)
-		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetFont(pdfFontBody, "B", 14)
+		pdf.MultiCell(0, 14, pdfText(report.Narrative.Headline), "", "L", false)
+		pdf.SetFont(pdfFontBody, "", 10)
 		pdf.Ln(4)
 	}
 
@@ -264,9 +268,9 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 
 	if summary := mapString(inv, "executive_summary"); summary != "" {
 		sectionTitle(pdf, "Executive summary")
-		pdf.MultiCell(0, 10, safePDFString(summary), "", "L", false)
+		pdf.MultiCell(0, 10, pdfText(summary), "", "L", false)
 		if raw, distinct := len(mapSlice(inv, "plan_findings")), len(findings); raw > distinct && distinct > 0 {
-			pdf.MultiCell(0, 10, safePDFString(fmt.Sprintf(
+			pdf.MultiCell(0, 10, pdfText(fmt.Sprintf(
 				"%d partition-level plan findings were grouped into %d distinct issue(s).", raw, distinct)), "", "L", false)
 		}
 		pdf.Ln(4)
@@ -275,10 +279,10 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 	if impact := mapAny(inv, "impact"); impact != nil {
 		sectionTitle(pdf, "Impact")
 		if sev := mapString(impact, "severity"); sev != "" {
-			pdf.MultiCell(0, 10, safePDFString("Severity: "+sev), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText("Severity: "+sev), "", "L", false)
 		}
 		if s := mapString(impact, "summary"); s != "" {
-			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(s), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -287,7 +291,7 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		sectionTitle(pdf, "PostgreSQL evidence")
 		for _, e := range evidence {
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-			pdf.MultiCell(0, 10, safePDFString(e), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(e), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -298,7 +302,7 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		for i, f := range findings {
 			if i >= maxFindingsInPDF {
 				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-				pdf.MultiCell(0, 10, safePDFString(fmt.Sprintf("...and %d more finding(s) omitted", len(findings)-maxFindingsInPDF)), "", "L", false)
+				pdf.MultiCell(0, 10, pdfText(fmt.Sprintf("...and %d more finding(s) omitted", len(findings)-maxFindingsInPDF)), "", "L", false)
 				break
 			}
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
@@ -306,7 +310,7 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 			if cat := mapString(f, "category"); cat != "" {
 				line = cat + ": " + line
 			}
-			pdf.MultiCell(0, 10, safePDFString(line), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(line), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -325,14 +329,14 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 			if len(sql) > 800 {
 				sql = sql[:800] + "..."
 			}
-			pdf.SetFont("Courier", "", 8)
+			pdf.SetFont(pdfFontMono, "", 8)
 			pdf.SetFillColor(245, 245, 245)
-			pdf.MultiCell(0, 11, safePDFString(sql), "1", "L", true)
-			pdf.SetFont("Helvetica", "", 10)
+			pdf.MultiCell(0, 11, pdfText(sql), "1", "L", true)
+			pdf.SetFont(pdfFontBody, "", 10)
 		}
 		if why := mapString(c, "why_it_might_help"); why != "" {
 			pdf.Ln(2)
-			pdf.MultiCell(0, 10, safePDFString(why), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(why), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -345,7 +349,7 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 				line := fmt.Sprintf("%s: %s -> %s (%s)",
 					mapString(m, "evidence"), mapString(m, "before"), mapString(m, "after"), mapString(m, "change"))
 				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-				pdf.MultiCell(0, 10, safePDFString(line), "", "L", false)
+				pdf.MultiCell(0, 10, pdfText(line), "", "L", false)
 			}
 			pdf.Ln(4)
 		}
@@ -357,16 +361,16 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		if status == "" {
 			status = "Unverified"
 		}
-		pdf.MultiCell(0, 10, safePDFString("Status: "+status), "", "L", false)
+		pdf.MultiCell(0, 10, pdfText("Status: "+status), "", "L", false)
 		if notes := mapString(eq, "notes"); notes != "" {
-			pdf.MultiCell(0, 10, safePDFString(notes), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(notes), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
 
 	if next := mapString(inv, "recommended_next_action"); next != "" {
 		sectionTitle(pdf, "Recommended next action")
-		pdf.MultiCell(0, 10, safePDFString(next), "", "L", false)
+		pdf.MultiCell(0, 10, pdfText(next), "", "L", false)
 		pdf.Ln(4)
 	}
 
@@ -374,7 +378,7 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		sectionTitle(pdf, "Limitations")
 		for _, s := range report.Narrative.Limitations {
 			pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-			pdf.MultiCell(0, 10, safePDFString(s), "", "L", false)
+			pdf.MultiCell(0, 10, pdfText(s), "", "L", false)
 		}
 		pdf.Ln(4)
 	}
@@ -394,7 +398,7 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 			sectionTitle(pdf, "Recommendations")
 			for _, rec := range extra {
 				pdf.CellFormat(12, 10, "", "", 0, "L", false, 0, "")
-				pdf.MultiCell(0, 10, safePDFString(rec), "", "L", false)
+				pdf.MultiCell(0, 10, pdfText(rec), "", "L", false)
 			}
 			pdf.Ln(4)
 		}
@@ -443,11 +447,11 @@ func collapseInvestigationFindings(findings []map[string]any) []map[string]any {
 }
 
 func sectionTitle(pdf *gofpdf.Fpdf, title string) {
-	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetFont(pdfFontBody, "B", 10)
 	pdf.SetTextColor(80, 80, 80)
 	pdf.CellFormat(0, 10, title, "", 1, "L", false, 0, "")
 	pdf.SetTextColor(0, 0, 0)
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont(pdfFontBody, "", 10)
 }
 
 // drawMetricsBarChart draws a simple bar chart from time series metrics (current period values).
@@ -479,7 +483,7 @@ func drawMetricsBarChart(pdf *gofpdf.Fpdf, timeSeries map[string]*reports.TimeSe
 	if maxVal <= 0 {
 		maxVal = 1
 	}
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(pdfFontBody, "", 9)
 	for _, measure := range measures {
 		ts := timeSeries[measure]
 		if ts == nil {
@@ -490,7 +494,7 @@ func drawMetricsBarChart(pdf *gofpdf.Fpdf, timeSeries map[string]*reports.TimeSe
 		if barW < 2 && v > 0 {
 			barW = 2
 		}
-		label := safePDFString(measure)
+		label := pdfText(measure)
 		if len(label) > 18 {
 			label = label[:15] + "..."
 		}
@@ -504,14 +508,27 @@ func drawMetricsBarChart(pdf *gofpdf.Fpdf, timeSeries map[string]*reports.TimeSe
 	}
 }
 
-// safePDFString returns a string safe for gofpdf (Helvetica is ASCII/Latin-1). Non-ASCII runes are replaced with '?'.
-func safePDFString(s string) string {
+// pdfText returns a string safe for gofpdf (Helvetica is ASCII/Latin-1). Non-ASCII runes are replaced with '?'.
+// pdfText prepares an arbitrary UTF-8 string for the PDF. The embedded Go fonts
+// cover the scripts this product actually emits, so there is no charset
+// restriction any more — this only drops control characters (except tab and
+// newline) and the Unicode replacement character, which have no glyph and would
+// otherwise render as tofu or throw off line metrics. Runes the font lacks
+// (CJK, emoji) are left as-is; gofpdf renders them as a blank box.
+func pdfText(s string) string {
+	if s == "" {
+		return s
+	}
 	var b strings.Builder
+	b.Grow(len(s))
 	for _, r := range s {
-		if r < 128 || (r >= 160 && r <= 255) {
+		switch {
+		case r == '\n' || r == '\t':
 			b.WriteRune(r)
-		} else {
-			b.WriteRune('?')
+		case r == '�' || unicode.IsControl(r):
+			// skip
+		default:
+			b.WriteRune(r)
 		}
 	}
 	return b.String()
