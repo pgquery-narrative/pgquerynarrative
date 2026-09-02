@@ -37,6 +37,9 @@ type CreateFromRegressionRequestBody struct {
 type AddCandidateRequestBody struct {
 	CandidateSQL string `form:"candidate_sql" json:"candidate_sql" xml:"candidate_sql"`
 	Analyze      bool   `form:"analyze" json:"analyze" xml:"analyze"`
+	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
+	// for the compare/equivalence run, not stored
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
 }
 
 // RankCandidatesRequestBody is the type of the "investigations" service
@@ -563,6 +566,12 @@ func NewAddCandidateRequestBody(p *investigations.AddCandidatePayload) *AddCandi
 		var zero bool
 		if body.Analyze == zero {
 			body.Analyze = false
+		}
+	}
+	if p.Binds != nil {
+		body.Binds = make([]string, len(p.Binds))
+		for i, val := range p.Binds {
+			body.Binds[i] = val
 		}
 	}
 	return body

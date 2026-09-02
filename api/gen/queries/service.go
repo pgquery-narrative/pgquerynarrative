@@ -72,6 +72,9 @@ type ComparePlansPayload struct {
 	Analyze bool
 	// Optional connection ID
 	ConnectionID *string
+	// Sample bind values for parameterized before/after SQL ($1, $2, ...);
+	// substituted for the compare/equivalence run
+	Binds []string
 }
 
 // ComparePlansResult is the result type of the queries service compare_plans

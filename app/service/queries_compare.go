@@ -28,7 +28,25 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 		return nil, connectionNotFoundQueriesError(err)
 	}
 
-	beforeResult, err := runner.Explain(ctx, payload.BeforeSQL, payload.Analyze)
+	// A parameterized before/after pair can only be EXPLAIN-ANALYZEd and
+	// row-compared once $1/$2/... are bound. Substitute the supplied sample
+	// values (AST-verified, then re-validated inside Explain/Run) for the run;
+	// the stored candidate keeps its placeholders.
+	beforeSQL, afterSQL := payload.BeforeSQL, payload.AfterSQL
+	if len(payload.Binds) > 0 {
+		if bs, serr := queryrunner.SubstituteParams(beforeSQL, payload.Binds); serr == nil {
+			beforeSQL = bs
+		} else {
+			return nil, &queries.ValidationError{Name: "validation_error", Message: "bind values: " + serr.Error(), Code: strPtr("VALIDATION_ERROR")}
+		}
+		if as, serr := queryrunner.SubstituteParams(afterSQL, payload.Binds); serr == nil {
+			afterSQL = as
+		} else {
+			return nil, &queries.ValidationError{Name: "validation_error", Message: "bind values: " + serr.Error(), Code: strPtr("VALIDATION_ERROR")}
+		}
+	}
+
+	beforeResult, err := runner.Explain(ctx, beforeSQL, payload.Analyze)
 	if err != nil {
 		kind, userMsg := ClassifyRunError(err)
 		if kind == RunErrorTimeout {
@@ -37,7 +55,7 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 		apilog.ValidationError("compare_plans", "validation_error", err.Error())
 		return nil, &queries.ValidationError{Name: "validation_error", Message: userMsg, Code: strPtr("VALIDATION_ERROR")}
 	}
-	afterResult, err := runner.Explain(ctx, payload.AfterSQL, payload.Analyze)
+	afterResult, err := runner.Explain(ctx, afterSQL, payload.Analyze)
 	if err != nil {
 		kind, userMsg := ClassifyRunError(err)
 		if kind == RunErrorTimeout {
@@ -66,7 +84,7 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 		})
 	}
 
-	equiv := compareResultEquivalence(ctx, runner, payload.BeforeSQL, payload.AfterSQL)
+	equiv := compareResultEquivalence(ctx, runner, beforeSQL, afterSQL)
 
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, beforeResult)
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, afterResult)

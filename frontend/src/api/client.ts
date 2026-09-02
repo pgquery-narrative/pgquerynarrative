@@ -542,10 +542,14 @@ export const api = {
       signal: AbortSignal.timeout(120_000),
     }),
 
-  addInvestigationCandidate: (id: string, candidateSql: string, analyze = true) =>
+  addInvestigationCandidate: (id: string, candidateSql: string, analyze = true, binds?: string[]) =>
     request<Investigation>(`/investigations/${id}/candidate`, {
       method: "POST",
-      body: JSON.stringify({ candidate_sql: candidateSql, analyze }),
+      body: JSON.stringify({
+        candidate_sql: candidateSql,
+        analyze,
+        ...(binds && binds.length ? { binds } : {}),
+      }),
     }),
 
   suggestInvestigationRewrite: (id: string) =>

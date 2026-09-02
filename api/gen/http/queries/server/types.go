@@ -47,6 +47,9 @@ type ComparePlansRequestBody struct {
 	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
 	// Optional connection ID
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	// Sample bind values for parameterized before/after SQL ($1, $2, ...);
+	// substituted for the compare/equivalence run
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
 }
 
 // SaveRequestBody is the type of the "queries" service "save" endpoint HTTP
@@ -760,6 +763,12 @@ func NewComparePlansPayload(body *ComparePlansRequestBody) *queries.ComparePlans
 	}
 	if body.Analyze == nil {
 		v.Analyze = false
+	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
 	}
 
 	return v
