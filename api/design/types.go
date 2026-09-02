@@ -346,6 +346,25 @@ var StatSnapshot = Type("StatSnapshot", func() {
 })
 
 // Investigation is a Query Investigation workflow artifact.
+// InvestigationCandidate is one rewrite that was tested against the investigation.
+var InvestigationCandidate = Type("InvestigationCandidate", func() {
+	Attribute("id", String, func() {
+		Format(FormatUUID)
+	})
+	Attribute("candidate_sql", String)
+	Attribute("binds", ArrayOf(String), "Sample bind values used for the executed compare, when parameterized")
+	Attribute("candidate_explain", ExplainQueryResult)
+	Attribute("comparison", ComparePlansResult)
+	Attribute("equivalence_status", String, "Equal | Different | Unverified")
+	Attribute("cost_delta", Float64, "after - before total cost (negative is better)")
+	Attribute("source", String, "manual | suggested | ranked")
+	Attribute("is_current", Boolean, "True for the candidate currently attached to the investigation")
+	Attribute("created_at", String, func() {
+		Format(FormatDateTime)
+	})
+	Required("id", "candidate_sql", "created_at")
+})
+
 var Investigation = Type("Investigation", func() {
 	Attribute("id", String, func() {
 		Format(FormatUUID)
@@ -361,6 +380,7 @@ var Investigation = Type("Investigation", func() {
 	Attribute("candidate_explain", ExplainQueryResult)
 	Attribute("comparison", ComparePlansResult)
 	Attribute("report_id", String)
+	Attribute("candidates", ArrayOf(InvestigationCandidate), "Every candidate rewrite tested for this investigation, newest first")
 	Attribute("fix_status", String, "proposed | verified | applied | confirmed | regressed | abandoned")
 	Attribute("fix_reference", String, "PR or ticket URL for the shipped fix")
 	Attribute("fix_applied_at", String, func() {
