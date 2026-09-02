@@ -25,9 +25,9 @@ jobs:
         run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
       - name: Check generated code is committed
         run: |
-          git diff --exit-code api/gen/ || (
-            echo "Generated code is out of date. Run 'make generate' and commit api/gen/."
-            git diff --stat api/gen/
+          git diff --exit-code api/gen/ frontend/src/api/schema.gen.ts || (
+            echo "Generated code is out of date. Run 'make generate' and commit api/gen/ + frontend/src/api/schema.gen.ts."
+            git diff --stat api/gen/ frontend/src/api/schema.gen.ts
             exit 1
           )
       - name: Run lint

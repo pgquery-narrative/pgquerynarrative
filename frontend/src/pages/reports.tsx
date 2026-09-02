@@ -121,7 +121,7 @@ function ReportDetail() {
     }
   };
 
-  const investigationReport = parseInvestigationReport(report.metrics as Record<string, unknown>);
+  const investigationReport = parseInvestigationReport(report.metrics as unknown as Record<string, unknown>);
 
   return (
     <div className="space-y-6">
@@ -297,7 +297,7 @@ function ReportDetail() {
         </Card>
       )}
 
-      <ReportMetricsCard metrics={report.metrics as MetricsPayload | undefined} />
+      <ReportMetricsCard metrics={report.metrics as unknown as MetricsPayload | undefined} />
     </div>
   );
 }
