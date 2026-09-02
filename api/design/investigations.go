@@ -91,6 +91,20 @@ var _ = Service("investigations", func() {
 		})
 	})
 
+	Method("update_fix", func() {
+		Description("Advance the fix lifecycle (proposed -> verified -> applied) and record a PR/ticket link. Marking 'applied' snapshots the query's current latency so the poller can confirm the fix.")
+		Payload(UpdateFixPayload)
+		Result(Investigation)
+		Error("not_found", NotFoundError)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/investigations/{id}/fix")
+			Response(StatusOK)
+			Response(StatusNotFound, "not_found")
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
 	Method("suggest_rewrite", func() {
 		Description("Suggest candidate SQL rewrites from the investigation SQL and plan findings (AST-based; no demo scenarios required)")
 		Payload(func() {

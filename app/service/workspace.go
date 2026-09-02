@@ -67,17 +67,17 @@ func (s *WorkspaceService) Overview(ctx context.Context) (*workspace.WorkspaceOv
 		WHERE organization_id = $1 AND status != 'complete'
 	`, org).Scan(&out.InvestigationsOpen)
 
-	// Regression inbox count
+	// Regression inbox count — open = not acknowledged and not auto-resolved.
 	_ = s.appPool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM app.regression_alerts
-		WHERE organization_id = $1 AND acknowledged_at IS NULL
+		WHERE organization_id = $1 AND acknowledged_at IS NULL AND resolved_at IS NULL
 	`, org).Scan(&out.QueriesAttention)
 
 	// Largest regression
 	var largestReg *float64
 	_ = s.appPool.QueryRow(ctx, `
 		SELECT MAX(ABS(change_percent)) FROM app.regression_alerts
-		WHERE organization_id = $1 AND acknowledged_at IS NULL
+		WHERE organization_id = $1 AND acknowledged_at IS NULL AND resolved_at IS NULL
 	`, org).Scan(&largestReg)
 	if largestReg != nil {
 		out.LargestRegressionPct = *largestReg
@@ -143,12 +143,14 @@ func (s *WorkspaceService) Regressions(ctx context.Context, payload *workspace.R
 		       first_detected_at, connection_id,
 		       (acknowledged_at IS NOT NULL) AS acknowledged,
 		       queryid, source, investigation_id,
-		       calls, mean_time_ms, total_time_ms, rows_count
+		       calls, mean_time_ms, total_time_ms, rows_count,
+		       occurrences, last_seen_at, resolved_at, previous_alert_id
 		FROM app.regression_alerts
 		WHERE organization_id = $1
 	`
 	if !payload.IncludeAcknowledged {
-		query += ` AND acknowledged_at IS NULL`
+		// Open = still needs attention: not acknowledged and not auto-resolved.
+		query += ` AND acknowledged_at IS NULL AND resolved_at IS NULL`
 	}
 	query += ` ORDER BY first_detected_at DESC LIMIT $2`
 
@@ -162,13 +164,16 @@ func (s *WorkspaceService) Regressions(ctx context.Context, payload *workspace.R
 	for rows.Next() {
 		var item workspace.RegressionAlert
 		var detectedAt time.Time
-		var queryid, source, invID *string
+		var queryid, source, invID, prevID *string
 		var calls, rowsCount *int64
 		var meanMs, totalMs *float64
+		var occurrences *int
+		var lastSeenAt, resolvedAt *time.Time
 		if err := rows.Scan(
 			&item.ID, &item.Title, &item.Query, &item.ChangeType, &item.ChangeSummary,
 			&item.Impact, &detectedAt, &item.ConnectionID, &item.Acknowledged,
 			&queryid, &source, &invID, &calls, &meanMs, &totalMs, &rowsCount,
+			&occurrences, &lastSeenAt, &resolvedAt, &prevID,
 		); err != nil {
 			return nil, err
 		}
@@ -180,6 +185,16 @@ func (s *WorkspaceService) Regressions(ctx context.Context, payload *workspace.R
 		item.MeanTimeMs = meanMs
 		item.TotalTimeMs = totalMs
 		item.Rows = rowsCount
+		item.Occurrences = occurrences
+		item.PreviousAlertID = prevID
+		if lastSeenAt != nil {
+			v := lastSeenAt.Format(time.RFC3339)
+			item.LastSeenAt = &v
+		}
+		if resolvedAt != nil {
+			v := resolvedAt.Format(time.RFC3339)
+			item.ResolvedAt = &v
+		}
 		out.Items = append(out.Items, &item)
 	}
 	return out, rows.Err()

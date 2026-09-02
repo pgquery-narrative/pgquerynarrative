@@ -390,6 +390,100 @@ func EncodeAddCandidateError(encoder func(context.Context, http.ResponseWriter) 
 	}
 }
 
+// EncodeUpdateFixResponse returns an encoder for responses returned by the
+// investigations update_fix endpoint.
+func EncodeUpdateFixResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*investigations.Investigation)
+		enc := encoder(ctx, w)
+		body := NewUpdateFixResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeUpdateFixRequest returns a decoder for requests sent to the
+// investigations update_fix endpoint.
+func DecodeUpdateFixRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.UpdateFixPayload, error) {
+	return func(r *http.Request) (*investigations.UpdateFixPayload, error) {
+		var (
+			body UpdateFixRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateUpdateFixRequestBody(&body)
+		if err != nil {
+			return nil, err
+		}
+
+		var (
+			id string
+
+			params = mux.Vars(r)
+		)
+		id = params["id"]
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+		payload := NewUpdateFixPayload(&body, id)
+
+		return payload, nil
+	}
+}
+
+// EncodeUpdateFixError returns an encoder for errors returned by the
+// update_fix investigations endpoint.
+func EncodeUpdateFixError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *investigations.NotFoundError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewUpdateFixNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "validation_error":
+			var res *investigations.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewUpdateFixValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeSuggestRewriteResponse returns an encoder for responses returned by
 // the investigations suggest_rewrite endpoint.
 func EncodeSuggestRewriteResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -946,16 +1040,22 @@ func marshalInvestigationsPlanComparisonDiffToPlanComparisonDiffResponseBody(v *
 // *investigations.Investigation.
 func marshalInvestigationsInvestigationToInvestigationResponseBody(v *investigations.Investigation) *InvestigationResponseBody {
 	res := &InvestigationResponseBody{
-		ID:               v.ID,
-		Title:            v.Title,
-		Status:           v.Status,
-		SQL:              v.SQL,
-		ConnectionID:     v.ConnectionID,
-		QueryFingerprint: v.QueryFingerprint,
-		CandidateSQL:     v.CandidateSQL,
-		ReportID:         v.ReportID,
-		CreatedAt:        v.CreatedAt,
-		UpdatedAt:        v.UpdatedAt,
+		ID:                 v.ID,
+		Title:              v.Title,
+		Status:             v.Status,
+		SQL:                v.SQL,
+		ConnectionID:       v.ConnectionID,
+		QueryFingerprint:   v.QueryFingerprint,
+		CandidateSQL:       v.CandidateSQL,
+		ReportID:           v.ReportID,
+		FixStatus:          v.FixStatus,
+		FixReference:       v.FixReference,
+		FixAppliedAt:       v.FixAppliedAt,
+		FixBaselineMeanMs:  v.FixBaselineMeanMs,
+		FixConfirmedMeanMs: v.FixConfirmedMeanMs,
+		FixMeasuredAt:      v.FixMeasuredAt,
+		CreatedAt:          v.CreatedAt,
+		UpdatedAt:          v.UpdatedAt,
 	}
 	if v.StatSnapshot != nil {
 		res.StatSnapshot = marshalInvestigationsStatSnapshotToStatSnapshotResponseBody(v.StatSnapshot)

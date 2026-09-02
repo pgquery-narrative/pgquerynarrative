@@ -346,6 +346,10 @@ func unmarshalRegressionAlertResponseBodyToWorkspaceRegressionAlert(v *Regressio
 		MeanTimeMs:      v.MeanTimeMs,
 		TotalTimeMs:     v.TotalTimeMs,
 		Rows:            v.Rows,
+		Occurrences:     v.Occurrences,
+		LastSeenAt:      v.LastSeenAt,
+		ResolvedAt:      v.ResolvedAt,
+		PreviousAlertID: v.PreviousAlertID,
 	}
 
 	return res

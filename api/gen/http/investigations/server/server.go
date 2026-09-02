@@ -24,6 +24,7 @@ type Server struct {
 	List                 http.Handler
 	Get                  http.Handler
 	AddCandidate         http.Handler
+	UpdateFix            http.Handler
 	SuggestRewrite       http.Handler
 	RankCandidates       http.Handler
 	GenerateReport       http.Handler
@@ -61,6 +62,7 @@ func New(
 			{"List", "GET", "/api/v1/investigations"},
 			{"Get", "GET", "/api/v1/investigations/{id}"},
 			{"AddCandidate", "POST", "/api/v1/investigations/{id}/candidate"},
+			{"UpdateFix", "POST", "/api/v1/investigations/{id}/fix"},
 			{"SuggestRewrite", "POST", "/api/v1/investigations/{id}/suggest-rewrite"},
 			{"RankCandidates", "POST", "/api/v1/investigations/{id}/rank-candidates"},
 			{"GenerateReport", "POST", "/api/v1/investigations/{id}/report"},
@@ -70,6 +72,7 @@ func New(
 		List:                 NewListHandler(e.List, mux, decoder, encoder, errhandler, formatter),
 		Get:                  NewGetHandler(e.Get, mux, decoder, encoder, errhandler, formatter),
 		AddCandidate:         NewAddCandidateHandler(e.AddCandidate, mux, decoder, encoder, errhandler, formatter),
+		UpdateFix:            NewUpdateFixHandler(e.UpdateFix, mux, decoder, encoder, errhandler, formatter),
 		SuggestRewrite:       NewSuggestRewriteHandler(e.SuggestRewrite, mux, decoder, encoder, errhandler, formatter),
 		RankCandidates:       NewRankCandidatesHandler(e.RankCandidates, mux, decoder, encoder, errhandler, formatter),
 		GenerateReport:       NewGenerateReportHandler(e.GenerateReport, mux, decoder, encoder, errhandler, formatter),
@@ -86,6 +89,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.List = m(s.List)
 	s.Get = m(s.Get)
 	s.AddCandidate = m(s.AddCandidate)
+	s.UpdateFix = m(s.UpdateFix)
 	s.SuggestRewrite = m(s.SuggestRewrite)
 	s.RankCandidates = m(s.RankCandidates)
 	s.GenerateReport = m(s.GenerateReport)
@@ -101,6 +105,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountListHandler(mux, h.List)
 	MountGetHandler(mux, h.Get)
 	MountAddCandidateHandler(mux, h.AddCandidate)
+	MountUpdateFixHandler(mux, h.UpdateFix)
 	MountSuggestRewriteHandler(mux, h.SuggestRewrite)
 	MountRankCandidatesHandler(mux, h.RankCandidates)
 	MountGenerateReportHandler(mux, h.GenerateReport)
@@ -354,6 +359,59 @@ func NewAddCandidateHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "add_candidate")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "investigations")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountUpdateFixHandler configures the mux to serve the "investigations"
+// service "update_fix" endpoint.
+func MountUpdateFixHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/api/v1/investigations/{id}/fix", f)
+}
+
+// NewUpdateFixHandler creates a HTTP handler which loads the HTTP request and
+// calls the "investigations" service "update_fix" endpoint.
+func NewUpdateFixHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeUpdateFixRequest(mux, decoder)
+		encodeResponse = EncodeUpdateFixResponse(encoder)
+		encodeError    = EncodeUpdateFixError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "update_fix")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "investigations")
 		payload, err := decodeRequest(r)
 		if err != nil {

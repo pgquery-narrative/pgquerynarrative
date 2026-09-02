@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -222,20 +223,27 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 	row := s.appPool.QueryRow(ctx, `
 		SELECT id, title, status, sql, connection_id, query_fingerprint,
 		       stat_snapshot, explain_result, candidate_sql, candidate_explain,
-		       comparison, report_id, created_at, updated_at
+		       comparison, report_id, created_at, updated_at,
+		       fix_status, fix_reference, fix_applied_at,
+		       fix_baseline_mean_ms, fix_confirmed_mean_ms, fix_measured_at
 		FROM app.investigations
 		WHERE id = $1 AND organization_id = $2
 	`, payload.ID, orgID(ctx))
 
 	var inv investigations.Investigation
 	var statJSON, explainJSON, candidateExplainJSON, comparisonJSON []byte
-	var candidateSQL, reportID, fingerprint *string
+	var candidateSQL, reportID, fingerprint, fixReference *string
 	var createdAt, updatedAt time.Time
+	var fixStatus string
+	var fixAppliedAt, fixMeasuredAt *time.Time
+	var fixBaselineMean, fixConfirmedMean *float64
 
 	err := row.Scan(
 		&inv.ID, &inv.Title, &inv.Status, &inv.SQL, &inv.ConnectionID, &fingerprint,
 		&statJSON, &explainJSON, &candidateSQL, &candidateExplainJSON,
 		&comparisonJSON, &reportID, &createdAt, &updatedAt,
+		&fixStatus, &fixReference, &fixAppliedAt,
+		&fixBaselineMean, &fixConfirmedMean, &fixMeasuredAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -279,7 +287,93 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 			inv.Comparison = &cmp
 		}
 	}
+	if fixStatus != "" {
+		fs := fixStatus
+		inv.FixStatus = &fs
+	}
+	inv.FixReference = fixReference
+	if fixAppliedAt != nil {
+		v := fixAppliedAt.Format(time.RFC3339)
+		inv.FixAppliedAt = &v
+	}
+	if fixMeasuredAt != nil {
+		v := fixMeasuredAt.Format(time.RFC3339)
+		inv.FixMeasuredAt = &v
+	}
+	inv.FixBaselineMeanMs = fixBaselineMean
+	inv.FixConfirmedMeanMs = fixConfirmedMean
 	return &inv, nil
+}
+
+// fixTransitions is the allowed fix_status graph. "abandoned" is reachable from
+// any non-terminal state; "confirmed"/"regressed" are set by the poller, not here.
+var fixTransitions = map[string][]string{
+	"proposed":  {"verified", "applied", "abandoned"},
+	"verified":  {"applied", "proposed", "abandoned"},
+	"applied":   {"confirmed", "regressed", "verified", "abandoned"},
+	"regressed": {"applied", "abandoned"},
+	"confirmed": {"applied"},
+	"abandoned": {"proposed"},
+}
+
+// UpdateFix advances an investigation's fix lifecycle and records the PR/ticket
+// reference. Marking "applied" snapshots the linked query's current mean latency
+// so the poller can later re-measure and confirm the fix.
+func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investigations.UpdateFixPayload) (*investigations.Investigation, error) {
+	inv, err := s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
+	if err != nil {
+		return nil, err
+	}
+	from := "proposed"
+	if inv.FixStatus != nil && *inv.FixStatus != "" {
+		from = *inv.FixStatus
+	}
+	to := from
+	if payload.FixStatus != nil && *payload.FixStatus != "" {
+		to = *payload.FixStatus
+	}
+	if to != from {
+		allowed := false
+		for _, t := range fixTransitions[from] {
+			if t == to {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, &investigations.ValidationError{
+				Name:    "validation_error",
+				Message: fmt.Sprintf("cannot move fix status from %q to %q", from, to),
+				Code:    strPtr("VALIDATION_ERROR"),
+			}
+		}
+	}
+
+	setApplied := to == "applied" && from != "applied"
+	_, err = s.appPool.Exec(ctx, `
+		UPDATE app.investigations SET
+			fix_status = $3,
+			fix_reference = COALESCE($4, fix_reference),
+			fix_applied_at = CASE WHEN $5 THEN now() ELSE fix_applied_at END,
+			fix_baseline_mean_ms = CASE
+				WHEN $5 THEN COALESCE(
+					(SELECT s.mean_time_ms
+					 FROM app.stat_statement_snapshots s
+					 JOIN app.stat_statement_polls p ON p.id = s.poll_id
+					 JOIN app.regression_alerts ra ON ra.queryid = s.queryid
+					   AND ra.investigation_id = app.investigations.id
+					 WHERE p.organization_id = $2
+					 ORDER BY p.captured_at DESC LIMIT 1),
+					(stat_snapshot->>'mean_time_ms')::float,
+					fix_baseline_mean_ms)
+				ELSE fix_baseline_mean_ms END,
+			updated_at = now()
+		WHERE id = $1 AND organization_id = $2
+	`, payload.ID, orgID(ctx), to, payload.FixReference, setApplied)
+	if err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
 }
 
 // SuggestRewrite proposes AST-based candidate rewrites from the investigation

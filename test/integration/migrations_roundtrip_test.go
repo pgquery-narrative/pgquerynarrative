@@ -76,8 +76,8 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	defer pool.Close()
 
-	// Latest migration (51) only adjusts hypopg grants. Rolling it back must not
-	// drop migration 50 artifacts (investigation_id) or earlier poller tables.
+	// Rolling back one step from the tip must not drop earlier artifacts:
+	// regression_alerts.investigation_id (migration 50) or the poller tables (48).
 	var investigationCol bool
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS (
@@ -89,7 +89,7 @@ func TestMigrationsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !investigationCol {
-		t.Fatal("regression_alerts.investigation_id missing after rolling back only migration 51")
+		t.Fatal("regression_alerts.investigation_id missing after rolling back one migration")
 	}
 
 	var pollsExists bool
@@ -103,7 +103,7 @@ func TestMigrationsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !pollsExists {
-		t.Fatal("app.stat_statement_polls should still exist after rolling back migration 51")
+		t.Fatal("app.stat_statement_polls should still exist after rolling back one migration")
 	}
 
 	if err := m.Steps(1); err != nil {

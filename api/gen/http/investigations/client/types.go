@@ -42,6 +42,16 @@ type AddCandidateRequestBody struct {
 	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
 }
 
+// UpdateFixRequestBody is the type of the "investigations" service
+// "update_fix" endpoint HTTP request body.
+type UpdateFixRequestBody struct {
+	// Target status: verified | applied | confirmed | regressed | abandoned (or
+	// unchanged)
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+}
+
 // RankCandidatesRequestBody is the type of the "investigations" service
 // "rank_candidates" endpoint HTTP request body.
 type RankCandidatesRequestBody struct {
@@ -65,8 +75,18 @@ type CreateResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
-	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
 // CreateFromRegressionResponseBody is the type of the "investigations" service
@@ -85,8 +105,18 @@ type CreateFromRegressionResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
-	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
 // ListResponseBody is the type of the "investigations" service "list" endpoint
@@ -113,8 +143,18 @@ type GetResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
-	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
 // AddCandidateResponseBody is the type of the "investigations" service
@@ -133,8 +173,48 @@ type AddCandidateResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
-	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+}
+
+// UpdateFixResponseBody is the type of the "investigations" service
+// "update_fix" endpoint HTTP response body.
+type UpdateFixResponseBody struct {
+	ID    *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// open, analyzing, comparing, or complete
+	Status           *string                         `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	SQL              *string                         `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	ConnectionID     *string                         `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	QueryFingerprint *string                         `form:"query_fingerprint,omitempty" json:"query_fingerprint,omitempty" xml:"query_fingerprint,omitempty"`
+	StatSnapshot     *StatSnapshotResponseBody       `form:"stat_snapshot,omitempty" json:"stat_snapshot,omitempty" xml:"stat_snapshot,omitempty"`
+	Explain          *ExplainQueryResultResponseBody `form:"explain,omitempty" json:"explain,omitempty" xml:"explain,omitempty"`
+	CandidateSQL     *string                         `form:"candidate_sql,omitempty" json:"candidate_sql,omitempty" xml:"candidate_sql,omitempty"`
+	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
+	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
+	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
 // SuggestRewriteResponseBody is the type of the "investigations" service
@@ -166,8 +246,18 @@ type GenerateReportResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
-	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
 // CreateValidationErrorResponseBody is the type of the "investigations"
@@ -217,6 +307,23 @@ type AddCandidateNotFoundResponseBody struct {
 // service "add_candidate" endpoint HTTP response body for the
 // "validation_error" error.
 type AddCandidateValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// UpdateFixNotFoundResponseBody is the type of the "investigations" service
+// "update_fix" endpoint HTTP response body for the "not_found" error.
+type UpdateFixNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// UpdateFixValidationErrorResponseBody is the type of the "investigations"
+// service "update_fix" endpoint HTTP response body for the "validation_error"
+// error.
+type UpdateFixValidationErrorResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -471,8 +578,18 @@ type InvestigationResponseBody struct {
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
-	CreatedAt        *string                         `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
-	UpdatedAt        *string                         `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
 }
 
 // RewriteCandidateResponseBody is used to define fields on response body types.
@@ -577,6 +694,16 @@ func NewAddCandidateRequestBody(p *investigations.AddCandidatePayload) *AddCandi
 	return body
 }
 
+// NewUpdateFixRequestBody builds the HTTP request body from the payload of the
+// "update_fix" endpoint of the "investigations" service.
+func NewUpdateFixRequestBody(p *investigations.UpdateFixPayload) *UpdateFixRequestBody {
+	body := &UpdateFixRequestBody{
+		FixStatus:    p.FixStatus,
+		FixReference: p.FixReference,
+	}
+	return body
+}
+
 // NewRankCandidatesRequestBody builds the HTTP request body from the payload
 // of the "rank_candidates" endpoint of the "investigations" service.
 func NewRankCandidatesRequestBody(p *investigations.RankCandidatesPayload) *RankCandidatesRequestBody {
@@ -596,16 +723,22 @@ func NewRankCandidatesRequestBody(p *investigations.RankCandidatesPayload) *Rank
 // result from a HTTP "OK" response.
 func NewCreateInvestigationOK(body *CreateResponseBody) *investigations.Investigation {
 	v := &investigations.Investigation{
-		ID:               *body.ID,
-		Title:            *body.Title,
-		Status:           *body.Status,
-		SQL:              *body.SQL,
-		ConnectionID:     *body.ConnectionID,
-		QueryFingerprint: body.QueryFingerprint,
-		CandidateSQL:     body.CandidateSQL,
-		ReportID:         body.ReportID,
-		CreatedAt:        *body.CreatedAt,
-		UpdatedAt:        *body.UpdatedAt,
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
 	}
 	if body.StatSnapshot != nil {
 		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
@@ -639,16 +772,22 @@ func NewCreateValidationError(body *CreateValidationErrorResponseBody) *investig
 // "create_from_regression" endpoint result from a HTTP "OK" response.
 func NewCreateFromRegressionInvestigationOK(body *CreateFromRegressionResponseBody) *investigations.Investigation {
 	v := &investigations.Investigation{
-		ID:               *body.ID,
-		Title:            *body.Title,
-		Status:           *body.Status,
-		SQL:              *body.SQL,
-		ConnectionID:     *body.ConnectionID,
-		QueryFingerprint: body.QueryFingerprint,
-		CandidateSQL:     body.CandidateSQL,
-		ReportID:         body.ReportID,
-		CreatedAt:        *body.CreatedAt,
-		UpdatedAt:        *body.UpdatedAt,
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
 	}
 	if body.StatSnapshot != nil {
 		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
@@ -713,16 +852,22 @@ func NewListInvestigationListOK(body *ListResponseBody) *investigations.Investig
 // result from a HTTP "OK" response.
 func NewGetInvestigationOK(body *GetResponseBody) *investigations.Investigation {
 	v := &investigations.Investigation{
-		ID:               *body.ID,
-		Title:            *body.Title,
-		Status:           *body.Status,
-		SQL:              *body.SQL,
-		ConnectionID:     *body.ConnectionID,
-		QueryFingerprint: body.QueryFingerprint,
-		CandidateSQL:     body.CandidateSQL,
-		ReportID:         body.ReportID,
-		CreatedAt:        *body.CreatedAt,
-		UpdatedAt:        *body.UpdatedAt,
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
 	}
 	if body.StatSnapshot != nil {
 		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
@@ -755,16 +900,22 @@ func NewGetNotFound(body *GetNotFoundResponseBody) *investigations.NotFoundError
 // "add_candidate" endpoint result from a HTTP "OK" response.
 func NewAddCandidateInvestigationOK(body *AddCandidateResponseBody) *investigations.Investigation {
 	v := &investigations.Investigation{
-		ID:               *body.ID,
-		Title:            *body.Title,
-		Status:           *body.Status,
-		SQL:              *body.SQL,
-		ConnectionID:     *body.ConnectionID,
-		QueryFingerprint: body.QueryFingerprint,
-		CandidateSQL:     body.CandidateSQL,
-		ReportID:         body.ReportID,
-		CreatedAt:        *body.CreatedAt,
-		UpdatedAt:        *body.UpdatedAt,
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
 	}
 	if body.StatSnapshot != nil {
 		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
@@ -797,6 +948,67 @@ func NewAddCandidateNotFound(body *AddCandidateNotFoundResponseBody) *investigat
 // NewAddCandidateValidationError builds a investigations service add_candidate
 // endpoint validation_error error.
 func NewAddCandidateValidationError(body *AddCandidateValidationErrorResponseBody) *investigations.ValidationError {
+	v := &investigations.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewUpdateFixInvestigationOK builds a "investigations" service "update_fix"
+// endpoint result from a HTTP "OK" response.
+func NewUpdateFixInvestigationOK(body *UpdateFixResponseBody) *investigations.Investigation {
+	v := &investigations.Investigation{
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
+	}
+	if body.StatSnapshot != nil {
+		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
+	}
+	if body.Explain != nil {
+		v.Explain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(body.Explain)
+	}
+	if body.CandidateExplain != nil {
+		v.CandidateExplain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(body.CandidateExplain)
+	}
+	if body.Comparison != nil {
+		v.Comparison = unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(body.Comparison)
+	}
+
+	return v
+}
+
+// NewUpdateFixNotFound builds a investigations service update_fix endpoint
+// not_found error.
+func NewUpdateFixNotFound(body *UpdateFixNotFoundResponseBody) *investigations.NotFoundError {
+	v := &investigations.NotFoundError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewUpdateFixValidationError builds a investigations service update_fix
+// endpoint validation_error error.
+func NewUpdateFixValidationError(body *UpdateFixValidationErrorResponseBody) *investigations.ValidationError {
 	v := &investigations.ValidationError{
 		Name:    *body.Name,
 		Message: *body.Message,
@@ -881,16 +1093,22 @@ func NewRankCandidatesValidationError(body *RankCandidatesValidationErrorRespons
 // "generate_report" endpoint result from a HTTP "OK" response.
 func NewGenerateReportInvestigationOK(body *GenerateReportResponseBody) *investigations.Investigation {
 	v := &investigations.Investigation{
-		ID:               *body.ID,
-		Title:            *body.Title,
-		Status:           *body.Status,
-		SQL:              *body.SQL,
-		ConnectionID:     *body.ConnectionID,
-		QueryFingerprint: body.QueryFingerprint,
-		CandidateSQL:     body.CandidateSQL,
-		ReportID:         body.ReportID,
-		CreatedAt:        *body.CreatedAt,
-		UpdatedAt:        *body.UpdatedAt,
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
 	}
 	if body.StatSnapshot != nil {
 		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
@@ -973,6 +1191,12 @@ func ValidateCreateResponseBody(body *CreateResponseBody) (err error) {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
+	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
 	}
@@ -1023,6 +1247,12 @@ func ValidateCreateFromRegressionResponseBody(body *CreateFromRegressionResponse
 		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
+	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
 	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
@@ -1095,6 +1325,12 @@ func ValidateGetResponseBody(body *GetResponseBody) (err error) {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
+	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
 	}
@@ -1145,6 +1381,69 @@ func ValidateAddCandidateResponseBody(body *AddCandidateResponseBody) (err error
 		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
+	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
+	}
+	if body.CreatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
+	}
+	if body.UpdatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.updated_at", *body.UpdatedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateUpdateFixResponseBody runs the validations defined on
+// update_fix_response_body
+func ValidateUpdateFixResponseBody(body *UpdateFixResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.SQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
+	}
+	if body.ConnectionID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
+	}
+	if body.CreatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("created_at", "body"))
+	}
+	if body.UpdatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("updated_at", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.Explain != nil {
+		if err2 := ValidateExplainQueryResultResponseBody(body.Explain); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.CandidateExplain != nil {
+		if err2 := ValidateExplainQueryResultResponseBody(body.CandidateExplain); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.Comparison != nil {
+		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
 	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
@@ -1229,6 +1528,12 @@ func ValidateGenerateReportResponseBody(body *GenerateReportResponseBody) (err e
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
+	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
 	}
@@ -1301,6 +1606,30 @@ func ValidateAddCandidateNotFoundResponseBody(body *AddCandidateNotFoundResponse
 // ValidateAddCandidateValidationErrorResponseBody runs the validations defined
 // on add_candidate_validation_error_response_body
 func ValidateAddCandidateValidationErrorResponseBody(body *AddCandidateValidationErrorResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateUpdateFixNotFoundResponseBody runs the validations defined on
+// update_fix_not_found_response_body
+func ValidateUpdateFixNotFoundResponseBody(body *UpdateFixNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateUpdateFixValidationErrorResponseBody runs the validations defined on
+// update_fix_validation_error_response_body
+func ValidateUpdateFixValidationErrorResponseBody(body *UpdateFixValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -1604,6 +1933,12 @@ func ValidateInvestigationResponseBody(body *InvestigationResponseBody) (err err
 		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
+	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
 	}
 	if body.CreatedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))

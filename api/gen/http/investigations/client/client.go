@@ -34,6 +34,10 @@ type Client struct {
 	// add_candidate endpoint.
 	AddCandidateDoer goahttp.Doer
 
+	// UpdateFix Doer is the HTTP client used to make requests to the update_fix
+	// endpoint.
+	UpdateFixDoer goahttp.Doer
+
 	// SuggestRewrite Doer is the HTTP client used to make requests to the
 	// suggest_rewrite endpoint.
 	SuggestRewriteDoer goahttp.Doer
@@ -72,6 +76,7 @@ func NewClient(
 		ListDoer:                 doer,
 		GetDoer:                  doer,
 		AddCandidateDoer:         doer,
+		UpdateFixDoer:            doer,
 		SuggestRewriteDoer:       doer,
 		RankCandidatesDoer:       doer,
 		GenerateReportDoer:       doer,
@@ -193,6 +198,30 @@ func (c *Client) AddCandidate() goa.Endpoint {
 		resp, err := c.AddCandidateDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("investigations", "add_candidate", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// UpdateFix returns an endpoint that makes HTTP requests to the investigations
+// service update_fix server.
+func (c *Client) UpdateFix() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeUpdateFixRequest(c.encoder)
+		decodeResponse = DecodeUpdateFixResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildUpdateFixRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.UpdateFixDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("investigations", "update_fix", err)
 		}
 		return decodeResponse(resp)
 	}
