@@ -932,6 +932,7 @@ func unmarshalExplainQueryResultResponseBodyToQueriesExplainQueryResult(v *Expla
 		SQL:             *v.SQL,
 		TotalCost:       *v.TotalCost,
 		Plan:            v.Plan,
+		GenericPlan:     v.GenericPlan,
 		ExecutionTimeMs: *v.ExecutionTimeMs,
 	}
 	res.Findings = make([]*queries.PlanFinding, len(v.Findings))

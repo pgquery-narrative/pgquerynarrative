@@ -132,6 +132,7 @@ var ExplainQueryResult = Type("ExplainQueryResult", func() {
 	Attribute("plan", Any, "Raw EXPLAIN (FORMAT JSON) output")
 	Attribute("findings", ArrayOf(PlanFinding), "Notable plan nodes (seq scans, high-cost operators)")
 	Attribute("diagnosis", PlanDiagnosis, "Verdict-first rollup of findings into ranked causes")
+	Attribute("generic_plan", Boolean, "True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is parameterized ($1, $2, ...)")
 	Attribute("execution_time_ms", Int64, "Time to run EXPLAIN and parse the plan")
 	Required("sql", "total_cost", "plan", "findings", "execution_time_ms")
 })

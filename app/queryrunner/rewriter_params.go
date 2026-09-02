@@ -39,6 +39,13 @@ func exprContainsParamRef(node *pg_query.Node) bool {
 			return true
 		}
 	}
+	if lst := node.GetList(); lst != nil {
+		for _, item := range lst.Items {
+			if exprContainsParamRef(item) {
+				return true
+			}
+		}
+	}
 	if be := node.GetBoolExpr(); be != nil {
 		for _, arg := range be.Args {
 			if exprContainsParamRef(arg) {

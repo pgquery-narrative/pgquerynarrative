@@ -268,8 +268,17 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 		TotalCost:       result.TotalCost,
 		Plan:            plan,
 		Findings:        findings,
+		GenericPlan:     boolPtrIf(result.GenericPlan),
 		ExecutionTimeMs: result.ExecutionTimeMs,
 	}, nil
+}
+
+// boolPtrIf returns &true when b, else nil — keeps false out of the JSON.
+func boolPtrIf(b bool) *bool {
+	if b {
+		return &b
+	}
+	return nil
 }
 
 // ProjectIndexCost estimates plan cost if candidate DDL were applied (hypopg when

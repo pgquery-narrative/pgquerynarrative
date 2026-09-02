@@ -150,6 +150,8 @@ export interface ExplainQueryResult {
   plan: unknown;
   findings: PlanFinding[];
   diagnosis?: PlanDiagnosis;
+  /** True when the plan is a GENERIC_PLAN because the query is parameterized ($1, $2, ...). */
+  generic_plan?: boolean;
   execution_time_ms: number;
 }
 

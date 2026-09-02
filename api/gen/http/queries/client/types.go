@@ -99,6 +99,9 @@ type ExplainPlanResponseBody struct {
 	Findings []*PlanFindingResponseBody `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
 	// Verdict-first rollup of findings into ranked causes
 	Diagnosis *PlanDiagnosisResponseBody `form:"diagnosis,omitempty" json:"diagnosis,omitempty" xml:"diagnosis,omitempty"`
+	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
+	// parameterized ($1, $2, ...)
+	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
 }
@@ -384,6 +387,9 @@ type ExplainQueryResultResponseBody struct {
 	Findings []*PlanFindingResponseBody `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
 	// Verdict-first rollup of findings into ranked causes
 	Diagnosis *PlanDiagnosisResponseBody `form:"diagnosis,omitempty" json:"diagnosis,omitempty" xml:"diagnosis,omitempty"`
+	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
+	// parameterized ($1, $2, ...)
+	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
 }
@@ -593,6 +599,7 @@ func NewExplainPlanExplainQueryResultOK(body *ExplainPlanResponseBody) *queries.
 		SQL:             *body.SQL,
 		TotalCost:       *body.TotalCost,
 		Plan:            body.Plan,
+		GenericPlan:     body.GenericPlan,
 		ExecutionTimeMs: *body.ExecutionTimeMs,
 	}
 	v.Findings = make([]*queries.PlanFinding, len(body.Findings))

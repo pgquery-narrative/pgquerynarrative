@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
 )
 
@@ -106,6 +107,10 @@ type IndexAdvice struct {
 type ExplainOptions struct {
 	Analyze bool
 	Buffers bool
+	// GenericPlan emits EXPLAIN (GENERIC_PLAN) so a query carrying positional
+	// parameters ($1, $2, ...) — the shape pg_stat_statements stores — can be
+	// planned without bind values. Incompatible with Analyze (PostgreSQL 16+).
+	GenericPlan bool
 }
 
 // ExplainResult is the outcome of EXPLAIN (FORMAT JSON) on a read-only query.
@@ -115,6 +120,10 @@ type ExplainResult struct {
 	Plan            json.RawMessage
 	Findings        []PlanFinding
 	ExecutionTimeMs int64
+	// GenericPlan is true when the plan came from EXPLAIN (GENERIC_PLAN) because
+	// the query is parameterized — costs and structure are real, but row counts
+	// use planner defaults for the unbound params.
+	GenericPlan bool
 }
 
 // Explain runs EXPLAIN (FORMAT JSON) on a validated read-only query and analyzes the plan.
@@ -132,8 +141,15 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		return nil, fmt.Errorf("query validation failed: %w", err)
 	}
 
+	// A parameterized query ($1, $2, ...) cannot be EXPLAINed with binds here, so
+	// fall back to EXPLAIN (GENERIC_PLAN) — which also rules out ANALYZE.
+	genericPlan := queryHasPositionalParams(innerSQL)
+	if genericPlan {
+		analyze = false
+	}
+
 	// BUFFERS requires ANALYZE; enable it whenever ANALYZE runs so plans carry I/O evidence.
-	explainSQL := buildExplainSQL(innerSQL, ExplainOptions{Analyze: analyze, Buffers: analyze})
+	explainSQL := buildExplainSQL(innerSQL, ExplainOptions{Analyze: analyze, Buffers: analyze, GenericPlan: genericPlan})
 
 	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
 	defer cancel()
@@ -144,20 +160,34 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
 	var planText string
-	tx, err := pool.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return nil, apperrors.ErrQueryExecutionFailed
-	}
-	defer func() { _ = tx.Rollback(queryCtx) }()
-	if err := tx.QueryRow(queryCtx, explainSQL).Scan(&planText); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
-			return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
+	if genericPlan {
+		// A parameterized EXPLAIN (GENERIC_PLAN) has to reach Postgres verbatim
+		// over the simple query protocol — pgx's normal path parses $1 as a bind
+		// placeholder and fails with "insufficient arguments" before it is sent.
+		text, gerr := runGenericPlanExplain(queryCtx, pool, explainSQL)
+		if gerr != nil {
+			if errors.Is(gerr, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
+			}
+			return nil, apperrors.ErrQueryExecutionFailed
 		}
-		// Do not embed driver/Postgres detail in the returned error.
-		return nil, apperrors.ErrQueryExecutionFailed
-	}
-	if err := tx.Commit(queryCtx); err != nil {
-		return nil, apperrors.ErrQueryExecutionFailed
+		planText = text
+	} else {
+		tx, err := pool.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+		if err != nil {
+			return nil, apperrors.ErrQueryExecutionFailed
+		}
+		defer func() { _ = tx.Rollback(queryCtx) }()
+		if err := tx.QueryRow(queryCtx, explainSQL).Scan(&planText); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
+			}
+			// Do not embed driver/Postgres detail in the returned error.
+			return nil, apperrors.ErrQueryExecutionFailed
+		}
+		if err := tx.Commit(queryCtx); err != nil {
+			return nil, apperrors.ErrQueryExecutionFailed
+		}
 	}
 
 	elapsed := time.Since(start).Milliseconds()
@@ -172,19 +202,67 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		Plan:            planJSON,
 		Findings:        r.enrichExplainFindings(queryCtx, findings),
 		ExecutionTimeMs: elapsed,
+		GenericPlan:     genericPlan,
 	}, nil
 }
 
 func buildExplainSQL(innerSQL string, opts ExplainOptions) string {
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if opts.Analyze {
 		parts = append(parts, "ANALYZE")
 		if opts.Buffers {
 			parts = append(parts, "BUFFERS")
 		}
+	} else if opts.GenericPlan {
+		parts = append(parts, "GENERIC_PLAN")
 	}
 	parts = append(parts, "FORMAT JSON")
 	return fmt.Sprintf("EXPLAIN (%s) %s", strings.Join(parts, ", "), innerSQL)
+}
+
+// runGenericPlanExplain runs a parameterized EXPLAIN (GENERIC_PLAN) statement
+// over the simple query protocol so $1/$2/... are seen by the EXPLAIN parser as
+// literal SQL text rather than driver bind placeholders. Wrapped in a READ ONLY
+// transaction; GENERIC_PLAN never executes the query so this is cheap and safe.
+func runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL string) (string, error) {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Release()
+
+	pgConn := conn.Conn().PgConn()
+	batch := "BEGIN TRANSACTION READ ONLY;\n" + explainSQL + ";\nROLLBACK;"
+	results, err := pgConn.Exec(ctx, batch).ReadAll()
+	if err != nil {
+		return "", err
+	}
+	for _, res := range results {
+		if res.Err != nil {
+			return "", res.Err
+		}
+		if len(res.Rows) > 0 && len(res.Rows[0]) > 0 {
+			return string(res.Rows[0][0]), nil
+		}
+	}
+	return "", fmt.Errorf("%w: generic-plan explain returned no rows", apperrors.ErrQueryExecutionFailed)
+}
+
+var positionalParamRe = regexp.MustCompile(`\$\d`)
+
+// queryHasPositionalParams reports whether sql uses $1/$2/... parameters. A fast
+// lexical screen backed by an AST confirmation so dollar-quoted bodies ($tag$...)
+// don't false-positive.
+func queryHasPositionalParams(sql string) bool {
+	if !positionalParamRe.MatchString(sql) {
+		return false
+	}
+	if _, sel, ok := parseSingleSelect(sql); ok {
+		return selectTreeContainsParamRef(sel)
+	}
+	// Non-SELECT shouldn't reach Explain, but if the AST screen is inconclusive,
+	// trust the lexical hit and use GENERIC_PLAN (a bound query is unaffected).
+	return true
 }
 
 type explainRoot []struct {

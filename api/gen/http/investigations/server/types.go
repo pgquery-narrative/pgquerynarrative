@@ -288,6 +288,9 @@ type ExplainQueryResultResponseBody struct {
 	Findings []*PlanFindingResponseBody `form:"findings" json:"findings" xml:"findings"`
 	// Verdict-first rollup of findings into ranked causes
 	Diagnosis *PlanDiagnosisResponseBody `form:"diagnosis,omitempty" json:"diagnosis,omitempty" xml:"diagnosis,omitempty"`
+	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
+	// parameterized ($1, $2, ...)
+	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
 }

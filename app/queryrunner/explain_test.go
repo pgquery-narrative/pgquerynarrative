@@ -93,6 +93,38 @@ func TestBuildExplainSQL(t *testing.T) {
 	if got != "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}
+	got = buildExplainSQL("SELECT 1 WHERE x = $1", ExplainOptions{GenericPlan: true})
+	if got != "EXPLAIN (GENERIC_PLAN, FORMAT JSON) SELECT 1 WHERE x = $1" {
+		t.Fatalf("got %q", got)
+	}
+	// ANALYZE and GENERIC_PLAN are incompatible — ANALYZE wins if both are set
+	// (the caller clears Analyze for parameterized queries).
+	got = buildExplainSQL("SELECT 1", ExplainOptions{Analyze: true, GenericPlan: true})
+	if got != "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestQueryHasPositionalParams(t *testing.T) {
+	yes := []string{
+		"SELECT 1 FROM demo.sales WHERE date = $1",
+		"SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) BETWEEN $1 AND $2",
+	}
+	no := []string{
+		"SELECT 1 FROM demo.sales WHERE date = DATE '2025-01-01'",
+		"SELECT 1 FROM demo.sales WHERE note = 'costs $5'",
+		"SELECT 1",
+	}
+	for _, q := range yes {
+		if !queryHasPositionalParams(q) {
+			t.Errorf("expected params: %s", q)
+		}
+	}
+	for _, q := range no {
+		if queryHasPositionalParams(q) {
+			t.Errorf("expected no params: %s", q)
+		}
+	}
 }
 
 func TestPlanFindingMessage_FunctionWraps(t *testing.T) {

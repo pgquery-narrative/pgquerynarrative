@@ -646,6 +646,7 @@ func marshalInvestigationsExplainQueryResultToExplainQueryResultResponseBody(v *
 		SQL:             v.SQL,
 		TotalCost:       v.TotalCost,
 		Plan:            v.Plan,
+		GenericPlan:     v.GenericPlan,
 		ExecutionTimeMs: v.ExecutionTimeMs,
 	}
 	if v.Findings != nil {

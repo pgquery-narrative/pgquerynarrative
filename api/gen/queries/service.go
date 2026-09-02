@@ -125,6 +125,9 @@ type ExplainQueryResult struct {
 	Findings []*PlanFinding
 	// Verdict-first rollup of findings into ranked causes
 	Diagnosis *PlanDiagnosis
+	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
+	// parameterized ($1, $2, ...)
+	GenericPlan *bool
 	// Time to run EXPLAIN and parse the plan
 	ExecutionTimeMs int64
 }

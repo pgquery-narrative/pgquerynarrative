@@ -294,6 +294,14 @@ export default function InvestigatePage() {
         />
       )}
 
+      {investigation.explain?.generic_plan && (
+        <p className="text-xs text-muted-foreground -mt-2">
+          Parameterized query ($1, $2, …): plan and costs are from <code>EXPLAIN (GENERIC_PLAN)</code>. Row counts and
+          partition pruning use planner defaults for the unbound parameters — supply sample bind values below for an
+          executed compare.
+        </p>
+      )}
+
       {/* Stats snapshot */}
       {investigation.stat_snapshot && (
         <Card>

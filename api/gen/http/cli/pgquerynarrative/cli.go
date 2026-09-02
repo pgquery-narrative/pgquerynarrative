@@ -1522,7 +1522,7 @@ func queriesComparePlansUsage() {
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries compare-plans --body '{\n      \"after_sql\": \"ool\",\n      \"analyze\": false,\n      \"before_sql\": \"1\",\n      \"connection_id\": \"Ipsa quisquam debitis harum non est vitae.\"\n   }'")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "queries compare-plans --body '{\n      \"after_sql\": \"d\",\n      \"analyze\": false,\n      \"before_sql\": \"o\",\n      \"connection_id\": \"Quisquam debitis harum non est vitae.\"\n   }'")
 }
 
 func queriesListSavedUsage() {
