@@ -15,7 +15,7 @@ import { api, type Investigation, type RankedCandidate, type RewriteCandidate, A
 import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
-import { cn, formatFloat, truncate } from "@/lib/utils";
+import { cn, formatFloat, timeAgo, truncate } from "@/lib/utils";
 
 const STEPS = [
   { id: "select", label: "Find query" },
@@ -524,6 +524,62 @@ export default function InvestigatePage() {
           )}
           {investigation.comparison && (
             <PlanCompare comparison={investigation.comparison} />
+          )}
+
+          {investigation.candidates && investigation.candidates.length > 1 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Tested candidates ({investigation.candidates.length})
+              </p>
+              {investigation.candidates.map((c) => (
+                <div
+                  key={c.id}
+                  className={cn(
+                    "rounded-md border p-2.5 space-y-1.5 text-xs",
+                    c.is_current ? "border-primary/40 bg-primary/5" : "border-border/50",
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    {c.is_current && <Badge variant="secondary" className="text-[10px]">current</Badge>}
+                    {c.source && c.source !== "manual" && (
+                      <Badge variant="outline" className="text-[10px]">{c.source}</Badge>
+                    )}
+                    {c.equivalence_status && (
+                      <Badge
+                        variant={c.equivalence_status === "Equal" ? "success" : c.equivalence_status === "Different" ? "destructive" : "outline"}
+                        className="text-[10px]"
+                      >
+                        {c.equivalence_status}
+                      </Badge>
+                    )}
+                    {typeof c.cost_delta === "number" && (
+                      <span className="text-muted-foreground">
+                        cost Δ {formatDelta(c.cost_delta)}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground/60 ml-auto">{timeAgo(c.created_at)}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-start">
+                    <pre className="flex-1 font-mono whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-24 overflow-auto">
+                      {c.candidate_sql}
+                    </pre>
+                    {!c.is_current && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setCandidateSql(c.candidate_sql);
+                          setSuggestRationale("");
+                          if (c.binds?.length) setBindsText(c.binds.map((b, i) => `$${i + 1} = ${b}`).join("\n"));
+                        }}
+                      >
+                        Re-test
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>

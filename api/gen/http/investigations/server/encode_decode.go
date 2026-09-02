@@ -1035,6 +1035,38 @@ func marshalInvestigationsPlanComparisonDiffToPlanComparisonDiffResponseBody(v *
 	return res
 }
 
+// marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody
+// builds a value of type *InvestigationCandidateResponseBody from a value of
+// type *investigations.InvestigationCandidate.
+func marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(v *investigations.InvestigationCandidate) *InvestigationCandidateResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &InvestigationCandidateResponseBody{
+		ID:                v.ID,
+		CandidateSQL:      v.CandidateSQL,
+		EquivalenceStatus: v.EquivalenceStatus,
+		CostDelta:         v.CostDelta,
+		Source:            v.Source,
+		IsCurrent:         v.IsCurrent,
+		CreatedAt:         v.CreatedAt,
+	}
+	if v.Binds != nil {
+		res.Binds = make([]string, len(v.Binds))
+		for i, val := range v.Binds {
+			res.Binds[i] = val
+		}
+	}
+	if v.CandidateExplain != nil {
+		res.CandidateExplain = marshalInvestigationsExplainQueryResultToExplainQueryResultResponseBody(v.CandidateExplain)
+	}
+	if v.Comparison != nil {
+		res.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(v.Comparison)
+	}
+
+	return res
+}
+
 // marshalInvestigationsInvestigationToInvestigationResponseBody builds a value
 // of type *InvestigationResponseBody from a value of type
 // *investigations.Investigation.
@@ -1068,6 +1100,16 @@ func marshalInvestigationsInvestigationToInvestigationResponseBody(v *investigat
 	}
 	if v.Comparison != nil {
 		res.Comparison = marshalInvestigationsComparePlansResultToComparePlansResultResponseBody(v.Comparison)
+	}
+	if v.Candidates != nil {
+		res.Candidates = make([]*InvestigationCandidateResponseBody, len(v.Candidates))
+		for i, val := range v.Candidates {
+			if val == nil {
+				res.Candidates[i] = nil
+				continue
+			}
+			res.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
+		}
 	}
 
 	return res
