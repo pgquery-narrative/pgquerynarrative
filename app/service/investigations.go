@@ -317,6 +317,17 @@ var fixTransitions = map[string][]string{
 	"abandoned": {"proposed"},
 }
 
+// fixTransitionAllowed reports whether the fix_status graph permits moving from
+// -> to. A no-op (from == to) is the caller's concern, not this function's.
+func fixTransitionAllowed(from, to string) bool {
+	for _, t := range fixTransitions[from] {
+		if t == to {
+			return true
+		}
+	}
+	return false
+}
+
 // UpdateFix advances an investigation's fix lifecycle and records the PR/ticket
 // reference. Marking "applied" snapshots the linked query's current mean latency
 // so the poller can later re-measure and confirm the fix.
@@ -334,14 +345,7 @@ func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investig
 		to = *payload.FixStatus
 	}
 	if to != from {
-		allowed := false
-		for _, t := range fixTransitions[from] {
-			if t == to {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+		if !fixTransitionAllowed(from, to) {
 			return nil, &investigations.ValidationError{
 				Name:    "validation_error",
 				Message: fmt.Sprintf("cannot move fix status from %q to %q", from, to),
