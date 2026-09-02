@@ -139,6 +139,9 @@ function ReportDetail() {
         <div className="flex gap-2">
           {!isSharedView && <a href={`/web/reports/export?id=${report.id}`} download><Button variant="outline" size="sm"><Download className="h-4 w-4" /> HTML</Button></a>}
           <a href={isSharedView ? `/web/reports/export/shared/pdf?token=${encodeURIComponent(token ?? "")}` : `/web/reports/export/pdf?id=${report.id}`} download><Button variant="outline" size="sm"><Download className="h-4 w-4" /> PDF</Button></a>
+          {!isSharedView && <a href={`/web/reports/export/md?id=${report.id}`} download><Button variant="outline" size="sm"><Download className="h-4 w-4" /> Markdown</Button></a>}
+          {!isSharedView && <a href={`/web/reports/export/sql?id=${report.id}`} download><Button variant="outline" size="sm"><Download className="h-4 w-4" /> SQL</Button></a>}
+          {!isSharedView && <a href={`/web/reports/export/json?id=${report.id}`} download><Button variant="outline" size="sm"><Download className="h-4 w-4" /> JSON</Button></a>}
         </div>
       </div>
       {!isSharedView && (
