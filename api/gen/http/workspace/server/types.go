@@ -82,6 +82,14 @@ type RegressionAlertResponseBody struct {
 	MeanTimeMs      *float64 `form:"mean_time_ms,omitempty" json:"mean_time_ms,omitempty" xml:"mean_time_ms,omitempty"`
 	TotalTimeMs     *float64 `form:"total_time_ms,omitempty" json:"total_time_ms,omitempty" xml:"total_time_ms,omitempty"`
 	Rows            *int64   `form:"rows,omitempty" json:"rows,omitempty" xml:"rows,omitempty"`
+	// How many consecutive polls this regression has been seen
+	Occurrences *int `form:"occurrences,omitempty" json:"occurrences,omitempty" xml:"occurrences,omitempty"`
+	// Most recent poll that still saw the regression
+	LastSeenAt *string `form:"last_seen_at,omitempty" json:"last_seen_at,omitempty" xml:"last_seen_at,omitempty"`
+	// Set when the query returned to baseline and the alert auto-resolved
+	ResolvedAt *string `form:"resolved_at,omitempty" json:"resolved_at,omitempty" xml:"resolved_at,omitempty"`
+	// The prior alert for this query, when it regressed again after recovering
+	PreviousAlertID *string `form:"previous_alert_id,omitempty" json:"previous_alert_id,omitempty" xml:"previous_alert_id,omitempty"`
 }
 
 // DemoScenarioResponseBody is used to define fields on response body types.

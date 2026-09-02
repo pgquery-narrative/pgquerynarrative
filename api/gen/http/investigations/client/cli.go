@@ -25,7 +25,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 	{
 		err = json.Unmarshal([]byte(investigationsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"calls\": 4222604526573172810,\n      \"connection_id\": \"Vel vel minima.\",\n      \"mean_time_ms\": 0.07186654864349687,\n      \"queryid\": \"Rerum enim.\",\n      \"rows\": 7617498157426475647,\n      \"sql\": \"bfv\",\n      \"title\": \"y\",\n      \"total_time_ms\": 0.4193036358582143\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"calls\": 3289408569010722933,\n      \"connection_id\": \"Eligendi magni.\",\n      \"mean_time_ms\": 0.5574151384119975,\n      \"queryid\": \"Ea magnam.\",\n      \"rows\": 2859005169628669955,\n      \"sql\": \"4mr\",\n      \"title\": \"o2\",\n      \"total_time_ms\": 0.25014601210931303\n   }'")
 		}
 		if utf8.RuneCountInString(body.Title) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 1, true))
@@ -66,7 +66,7 @@ func BuildCreateFromRegressionPayload(investigationsCreateFromRegressionBody str
 	{
 		err = json.Unmarshal([]byte(investigationsCreateFromRegressionBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"7c3ff2c7-8805-491e-b742-e27550ede76e\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"c61143d0-5ca8-4400-ad1b-a7ae70ce6e0e\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.regression_alert_id", body.RegressionAlertID, goa.FormatUUID))
 		if err != nil {
@@ -154,7 +154,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 	{
 		err = json.Unmarshal([]byte(investigationsAddCandidateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Aut id eum porro nisi ut.\",\n         \"Impedit aut ad ducimus corporis voluptates explicabo.\",\n         \"Excepturi exercitationem alias tenetur.\",\n         \"Voluptatem ut saepe fugiat excepturi.\"\n      ],\n      \"candidate_sql\": \"wht\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"binds\": [\n         \"Consequuntur exercitationem qui et aut.\",\n         \"Maxime consequatur dolores ipsa.\",\n         \"Porro maxime minus et non.\",\n         \"Dolor nam.\"\n      ],\n      \"candidate_sql\": \"1mv\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
@@ -190,6 +190,47 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		for i, val := range body.Binds {
 			v.Binds[i] = val
 		}
+	}
+	v.ID = id
+
+	return v, nil
+}
+
+// BuildUpdateFixPayload builds the payload for the investigations update_fix
+// endpoint from CLI flags.
+func BuildUpdateFixPayload(investigationsUpdateFixBody string, investigationsUpdateFixID string) (*investigations.UpdateFixPayload, error) {
+	var err error
+	var body UpdateFixRequestBody
+	{
+		err = json.Unmarshal([]byte(investigationsUpdateFixBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"9rk\",\n      \"fix_status\": \"verified\"\n   }'")
+		}
+		if body.FixStatus != nil {
+			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "confirmed" || *body.FixStatus == "regressed" || *body.FixStatus == "abandoned") {
+				err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "confirmed", "regressed", "abandoned"}))
+			}
+		}
+		if body.FixReference != nil {
+			if utf8.RuneCountInString(*body.FixReference) > 2000 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.fix_reference", *body.FixReference, utf8.RuneCountInString(*body.FixReference), 2000, false))
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var id string
+	{
+		id = investigationsUpdateFixID
+		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &investigations.UpdateFixPayload{
+		FixStatus:    body.FixStatus,
+		FixReference: body.FixReference,
 	}
 	v.ID = id
 

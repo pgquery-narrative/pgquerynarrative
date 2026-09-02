@@ -477,6 +477,119 @@ func DecodeAddCandidateResponse(decoder func(*http.Response) goahttp.Decoder, re
 	}
 }
 
+// BuildUpdateFixRequest instantiates a HTTP request object with method and
+// path set to call the "investigations" service "update_fix" endpoint
+func (c *Client) BuildUpdateFixRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		id string
+	)
+	{
+		p, ok := v.(*investigations.UpdateFixPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("investigations", "update_fix", "*investigations.UpdateFixPayload", v)
+		}
+		id = p.ID
+	}
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: UpdateFixInvestigationsPath(id)}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("investigations", "update_fix", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeUpdateFixRequest returns an encoder for requests sent to the
+// investigations update_fix server.
+func EncodeUpdateFixRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*investigations.UpdateFixPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("investigations", "update_fix", "*investigations.UpdateFixPayload", v)
+		}
+		body := NewUpdateFixRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("investigations", "update_fix", err)
+		}
+		return nil
+	}
+}
+
+// DecodeUpdateFixResponse returns a decoder for responses returned by the
+// investigations update_fix endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeUpdateFixResponse may return the following errors:
+//   - "not_found" (type *investigations.NotFoundError): http.StatusNotFound
+//   - "validation_error" (type *investigations.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeUpdateFixResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body UpdateFixResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "update_fix", err)
+			}
+			err = ValidateUpdateFixResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "update_fix", err)
+			}
+			res := NewUpdateFixInvestigationOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body UpdateFixNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "update_fix", err)
+			}
+			err = ValidateUpdateFixNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "update_fix", err)
+			}
+			return nil, NewUpdateFixNotFound(&body)
+		case http.StatusBadRequest:
+			var (
+				body UpdateFixValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "update_fix", err)
+			}
+			err = ValidateUpdateFixValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "update_fix", err)
+			}
+			return nil, NewUpdateFixValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("investigations", "update_fix", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildSuggestRewriteRequest instantiates a HTTP request object with method
 // and path set to call the "investigations" service "suggest_rewrite" endpoint
 func (c *Client) BuildSuggestRewriteRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -1084,16 +1197,22 @@ func unmarshalPlanComparisonDiffResponseBodyToInvestigationsPlanComparisonDiff(v
 // *InvestigationResponseBody.
 func unmarshalInvestigationResponseBodyToInvestigationsInvestigation(v *InvestigationResponseBody) *investigations.Investigation {
 	res := &investigations.Investigation{
-		ID:               *v.ID,
-		Title:            *v.Title,
-		Status:           *v.Status,
-		SQL:              *v.SQL,
-		ConnectionID:     *v.ConnectionID,
-		QueryFingerprint: v.QueryFingerprint,
-		CandidateSQL:     v.CandidateSQL,
-		ReportID:         v.ReportID,
-		CreatedAt:        *v.CreatedAt,
-		UpdatedAt:        *v.UpdatedAt,
+		ID:                 *v.ID,
+		Title:              *v.Title,
+		Status:             *v.Status,
+		SQL:                *v.SQL,
+		ConnectionID:       *v.ConnectionID,
+		QueryFingerprint:   v.QueryFingerprint,
+		CandidateSQL:       v.CandidateSQL,
+		ReportID:           v.ReportID,
+		FixStatus:          v.FixStatus,
+		FixReference:       v.FixReference,
+		FixAppliedAt:       v.FixAppliedAt,
+		FixBaselineMeanMs:  v.FixBaselineMeanMs,
+		FixConfirmedMeanMs: v.FixConfirmedMeanMs,
+		FixMeasuredAt:      v.FixMeasuredAt,
+		CreatedAt:          *v.CreatedAt,
+		UpdatedAt:          *v.UpdatedAt,
 	}
 	if v.StatSnapshot != nil {
 		res.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(v.StatSnapshot)

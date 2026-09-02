@@ -10,6 +10,7 @@ import { TrustBar } from "@/components/trust-bar";
 import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
 import { InvestigationVerdict } from "@/components/investigation-verdict";
+import { InvestigationFix } from "@/components/investigation-fix";
 import { api, type Investigation, type RankedCandidate, type RewriteCandidate, ApiError } from "@/api/client";
 import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
@@ -187,6 +188,19 @@ export default function InvestigatePage() {
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to generate report");
+    } finally {
+      setActionLoading("");
+    }
+  };
+
+  const updateFix = async (body: { fix_status?: string; fix_reference?: string }) => {
+    if (!investigation) return;
+    setActionLoading("fix");
+    setError("");
+    try {
+      setInvestigation(await api.updateInvestigationFix(investigation.id, body));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to update fix status");
     } finally {
       setActionLoading("");
     }
@@ -543,6 +557,14 @@ export default function InvestigatePage() {
           </Button>
         </CardContent>
       </Card>
+
+      {investigation.report_id && (
+        <InvestigationFix
+          investigation={investigation}
+          busy={actionLoading === "fix"}
+          onUpdate={(body) => void updateFix(body)}
+        />
+      )}
     </div>
   );
 }
@@ -655,6 +677,12 @@ function InvestigateLanding() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground font-mono mt-1 truncate">{truncate(r.query, 60)}</p>
+                    {typeof r.occurrences === "number" && r.occurrences > 1 && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        seen in {r.occurrences} consecutive polls
+                        {r.previous_alert_id ? " · recurred after recovering" : ""}
+                      </p>
+                    )}
                   </button>
                 ))}
               </div>

@@ -361,6 +361,16 @@ var Investigation = Type("Investigation", func() {
 	Attribute("candidate_explain", ExplainQueryResult)
 	Attribute("comparison", ComparePlansResult)
 	Attribute("report_id", String)
+	Attribute("fix_status", String, "proposed | verified | applied | confirmed | regressed | abandoned")
+	Attribute("fix_reference", String, "PR or ticket URL for the shipped fix")
+	Attribute("fix_applied_at", String, func() {
+		Format(FormatDateTime)
+	})
+	Attribute("fix_baseline_mean_ms", Float64, "Linked-query mean latency (ms) captured when the fix was marked applied")
+	Attribute("fix_confirmed_mean_ms", Float64, "Linked-query mean latency (ms) at the most recent post-deploy re-measurement")
+	Attribute("fix_measured_at", String, func() {
+		Format(FormatDateTime)
+	})
 	Attribute("created_at", String, func() {
 		Format(FormatDateTime)
 	})
@@ -368,6 +378,20 @@ var Investigation = Type("Investigation", func() {
 		Format(FormatDateTime)
 	})
 	Required("id", "title", "status", "sql", "connection_id", "created_at", "updated_at")
+})
+
+// UpdateFixPayload advances an investigation's fix lifecycle.
+var UpdateFixPayload = Type("UpdateFixPayload", func() {
+	Attribute("id", String, func() {
+		Format(FormatUUID)
+	})
+	Attribute("fix_status", String, "Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)", func() {
+		Enum("proposed", "verified", "applied", "confirmed", "regressed", "abandoned")
+	})
+	Attribute("fix_reference", String, "PR or ticket URL", func() {
+		MaxLength(2000)
+	})
+	Required("id")
 })
 
 var InvestigationList = Type("InvestigationList", func() {
@@ -451,6 +475,16 @@ var RegressionAlert = Type("RegressionAlert", func() {
 	Attribute("mean_time_ms", Float64)
 	Attribute("total_time_ms", Float64)
 	Attribute("rows", Int64)
+	Attribute("occurrences", Int, "How many consecutive polls this regression has been seen")
+	Attribute("last_seen_at", String, "Most recent poll that still saw the regression", func() {
+		Format(FormatDateTime)
+	})
+	Attribute("resolved_at", String, "Set when the query returned to baseline and the alert auto-resolved", func() {
+		Format(FormatDateTime)
+	})
+	Attribute("previous_alert_id", String, "The prior alert for this query, when it regressed again after recovering", func() {
+		Format(FormatUUID)
+	})
 	Required("id", "title", "query", "change_type", "change_summary", "impact", "first_detected_at", "acknowledged", "connection_id")
 })
 

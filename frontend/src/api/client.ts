@@ -202,6 +202,12 @@ export interface Investigation {
   candidate_explain?: ExplainQueryResult;
   comparison?: ComparePlansResult;
   report_id?: string;
+  fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned" | string;
+  fix_reference?: string;
+  fix_applied_at?: string;
+  fix_baseline_mean_ms?: number;
+  fix_confirmed_mean_ms?: number;
+  fix_measured_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -234,6 +240,10 @@ export interface RegressionAlert {
   mean_time_ms?: number;
   total_time_ms?: number;
   rows?: number;
+  occurrences?: number;
+  last_seen_at?: string;
+  resolved_at?: string;
+  previous_alert_id?: string;
 }
 
 export interface DemoScenario {
@@ -566,6 +576,12 @@ export const api = {
 
   generateInvestigationReport: (id: string) =>
     request<Investigation>(`/investigations/${id}/report`, { method: "POST" }),
+
+  updateInvestigationFix: (id: string, body: { fix_status?: string; fix_reference?: string }) =>
+    request<Investigation>(`/investigations/${id}/fix`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   getWorkspaceOverview: () => request<WorkspaceOverview>("/workspace/overview"),
 

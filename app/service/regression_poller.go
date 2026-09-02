@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
@@ -22,10 +21,26 @@ import (
 type RegressionPollerConfig struct {
 	Enabled              bool
 	Interval             time.Duration
-	MeanTimeThresholdPct float64 // alert when mean time rises by at least this %
+	MeanTimeThresholdPct float64 // alert when mean time rises by at least this % over baseline
 	CriticalThresholdPct float64
 	HighThresholdPct     float64
 	RetentionDays        int
+	// BaselineWindowDays bounds how far back the rolling baseline reaches.
+	// Defaults to RetentionDays (or 14).
+	BaselineWindowDays int
+	// MinBaselinePolls is the minimum number of prior polls a query needs
+	// before it can raise an alert. Default 3.
+	MinBaselinePolls int
+}
+
+func (c RegressionPollerConfig) baselineWindowDays() int {
+	if c.BaselineWindowDays > 0 {
+		return c.BaselineWindowDays
+	}
+	if c.RetentionDays > 0 {
+		return c.RetentionDays
+	}
+	return 14
 }
 
 // RegressionPoller captures pg_stat_statements snapshots and opens regression alerts.
@@ -109,12 +124,15 @@ func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
 		return fmt.Errorf("insert poll: %w", err)
 	}
 
+	stored := 0
 	for _, row := range stats.Items {
 		queryID := ""
 		if row.Queryid != nil {
 			queryID = *row.Queryid
 		}
-		if queryID == "" {
+		// Never store PgQueryNarrative's own analysis traffic — it is not an
+		// application workload and would otherwise seed the next poll's noise.
+		if queryID == "" || isSelfObservedStatement(row.Query) {
 			continue
 		}
 		_, err := appDB.Exec(ctx, `
@@ -125,132 +143,260 @@ func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
 		if err != nil {
 			return fmt.Errorf("insert snapshot: %w", err)
 		}
+		stored++
+	}
+	if stored == 0 {
+		return nil
 	}
 
-	prevPollID, err := p.previousPollID(ctx, appDB, orgID, pollID)
-	if err != nil || prevPollID == "" {
+	if err := p.detectRegressions(ctx, appDB, orgID, pollID); err != nil {
 		return err
 	}
-	return p.detectRegressions(ctx, appDB, orgID, prevPollID, pollID)
+	return p.reconcileAppliedFixes(ctx, appDB, orgID)
 }
 
-func (p *RegressionPoller) previousPollID(ctx context.Context, appDB db.DB, orgID, currentPollID string) (string, error) {
-	var prevID string
-	err := appDB.QueryRow(ctx, `
+// EvaluateLatestPoll re-runs regression detection and applied-fix reconciliation
+// for an org against its most recent snapshot poll, without capturing a new one.
+// Exposed for tests and a possible "re-evaluate now" operator action.
+func (p *RegressionPoller) EvaluateLatestPoll(ctx context.Context, orgID string) error {
+	appDB := db.NewOrgScoped(p.rawPool)
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: "regression-poller", OrgID: orgID, Role: auth.RoleAdmin})
+	var pollID string
+	if err := appDB.QueryRow(ctx, `
 		SELECT id::text FROM app.stat_statement_polls
-		WHERE organization_id = $1 AND id::text <> $2
-		ORDER BY captured_at DESC
-		LIMIT 1
-	`, orgID, currentPollID).Scan(&prevID)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return "", nil
-		}
-		return "", err
+		WHERE organization_id = $1 ORDER BY captured_at DESC LIMIT 1
+	`, orgID).Scan(&pollID); err != nil {
+		return err
 	}
-	return prevID, nil
+	if err := p.detectRegressions(ctx, appDB, orgID, pollID); err != nil {
+		return err
+	}
+	return p.reconcileAppliedFixes(ctx, appDB, orgID)
 }
 
-func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, orgID, prevPollID, currentPollID string) error {
+// detectRegressions compares every query in the current poll against a rolling
+// baseline (median mean-time / p90 total-time / avg calls+rows over the recent
+// window), opens or refreshes alerts for regressions, and auto-resolves open
+// alerts whose query has returned to baseline.
+func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, orgID, currentPollID string) error {
 	rows, err := appDB.Query(ctx, `
-		SELECT
-			c.queryid, c.query_text,
-			p.mean_time_ms AS prev_mean, c.mean_time_ms AS curr_mean,
-			p.total_time_ms AS prev_total, c.total_time_ms AS curr_total,
-			p.calls AS prev_calls, c.calls AS curr_calls,
-			p.rows AS prev_rows, c.rows AS curr_rows
+		WITH baseline AS (
+			SELECT s.queryid,
+			       percentile_cont(0.5) WITHIN GROUP (ORDER BY s.mean_time_ms)  AS base_mean,
+			       percentile_cont(0.9) WITHIN GROUP (ORDER BY s.total_time_ms) AS base_total,
+			       avg(s.calls) AS base_calls,
+			       avg(s.rows)  AS base_rows,
+			       count(*)     AS base_polls
+			FROM app.stat_statement_snapshots s
+			JOIN app.stat_statement_polls b ON b.id = s.poll_id
+			WHERE b.organization_id = $1
+			  AND b.id <> $2
+			  AND b.captured_at >= now() - ($3::text || ' days')::interval
+			GROUP BY s.queryid
+		)
+		SELECT c.queryid, c.query_text,
+		       c.mean_time_ms, c.total_time_ms, c.calls, c.rows,
+		       bl.base_mean, bl.base_total, bl.base_calls, bl.base_rows, bl.base_polls
 		FROM app.stat_statement_snapshots c
-		JOIN app.stat_statement_snapshots p
-		  ON p.poll_id = $1 AND p.queryid = c.queryid
+		JOIN baseline bl ON bl.queryid = c.queryid
 		WHERE c.poll_id = $2
-	`, prevPollID, currentPollID)
+	`, orgID, currentPollID, p.cfg.baselineWindowDays())
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
-	threshold := p.cfg.MeanTimeThresholdPct
-	if threshold <= 0 {
-		threshold = 50
+	type seen struct {
+		cur      queryStats
+		base     baselineStats
+		queryTxt string
 	}
+	byQuery := map[string]seen{}
 
 	for rows.Next() {
 		var queryID, queryText string
-		var prevMean, currMean, prevTotal, currTotal float64
-		var prevCalls, currCalls, prevRows, currRows int64
-		if err := rows.Scan(&queryID, &queryText, &prevMean, &currMean, &prevTotal, &currTotal, &prevCalls, &currCalls, &prevRows, &currRows); err != nil {
+		var cur queryStats
+		var base baselineStats
+		if err := rows.Scan(
+			&queryID, &queryText,
+			&cur.MeanMs, &cur.TotalMs, &cur.Calls, &cur.Rows,
+			&base.MeanMs, &base.TotalMs, &base.Calls, &base.Rows, &base.Polls,
+		); err != nil {
 			return err
 		}
-		if prevMean <= 0 && prevTotal <= 0 {
+		// Belt-and-suspenders: snapshots captured before the insert-time filter
+		// existed (or via a manual poll) must not become alerts either.
+		if isSelfObservedStatement(queryText) {
 			continue
 		}
+		byQuery[queryID] = seen{cur: cur, base: base, queryTxt: queryText}
 
-		meanPct := pctChange(prevMean, currMean)
-		totalPct := pctChange(prevTotal, currTotal)
-		callsPct := pctChange(float64(prevCalls), float64(currCalls))
-
-		var changeType, summary string
-		var changePct float64
-
-		switch {
-		case meanPct >= threshold:
-			changeType = "latency"
-			changePct = meanPct
-			summary = fmt.Sprintf("+%.0f%% mean latency", meanPct)
-		case totalPct >= threshold*1.5:
-			changeType = "total_time"
-			changePct = totalPct
-			summary = fmt.Sprintf("+%.0f%% total database time", totalPct)
-		case callsPct >= 200:
-			changeType = "calls"
-			changePct = callsPct
-			summary = fmt.Sprintf("+%.0f%% calls", callsPct)
-		default:
-			prevRPC := rowsPerCall(prevRows, prevCalls)
-			currRPC := rowsPerCall(currRows, currCalls)
-			if prevRPC > 0 && math.Abs(pctChange(prevRPC, currRPC)) >= 80 {
-				changeType = "rows"
-				changePct = pctChange(prevRPC, currRPC)
-				summary = fmt.Sprintf("+%.0f%% rows per execution", changePct)
-			} else {
-				continue
+		if v, ok := evaluateRegression(cur, base, p.cfg); ok {
+			impact := classifyImpact(math.Abs(v.ChangePct), p.cfg)
+			if err := p.upsertAlert(ctx, appDB, orgID, queryID, regressionTitle(queryText), queryText, v, impact, cur, base.MeanMs); err != nil {
+				return err
 			}
 		}
-
-		impact := classifyImpact(changePct, p.cfg)
-		title := regressionTitle(queryText)
-		if err := p.openAlert(ctx, appDB, orgID, queryID, title, queryText, changeType, changePct, summary, impact, currCalls, currMean, currTotal, currRows); err != nil {
-			return err
-		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	return p.resolveRecoveredAlerts(ctx, appDB, orgID, func(queryID string) (bool, bool) {
+		s, ok := byQuery[queryID]
+		if !ok {
+			return false, false // query not in this poll — leave the alert alone
+		}
+		return hasRecovered(s.cur, s.base, p.cfg), true
+	})
 }
 
-func (p *RegressionPoller) openAlert(ctx context.Context, appDB db.DB, orgID, queryID, title, queryText, changeType string, changePct float64, summary, impact string, calls int64, meanMs, totalMs float64, rows int64) error {
-	var exists bool
+// upsertAlert opens a new alert, refreshes an already-open one (bumping the
+// occurrence count and the frozen stat snapshot), or re-opens with a link to the
+// prior alert when the same query regressed again after recovering.
+func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, queryID, title, queryText string, v regressionVerdict, impact string, cur queryStats, baselineMean float64) error {
+	var openID, resolvedID string
 	_ = appDB.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM app.regression_alerts
-			WHERE organization_id = $1 AND queryid = $2 AND acknowledged_at IS NULL
-		)
-	`, orgID, queryID).Scan(&exists)
-	if exists {
-		return nil
+		SELECT
+			COALESCE((SELECT id::text FROM app.regression_alerts
+			          WHERE organization_id = $1 AND queryid = $2
+			            AND acknowledged_at IS NULL AND resolved_at IS NULL
+			          ORDER BY first_detected_at DESC LIMIT 1), ''),
+			COALESCE((SELECT id::text FROM app.regression_alerts
+			          WHERE organization_id = $1 AND queryid = $2
+			            AND resolved_at IS NOT NULL
+			          ORDER BY resolved_at DESC LIMIT 1), '')
+	`, orgID, queryID).Scan(&openID, &resolvedID)
+
+	if openID != "" {
+		_, err := appDB.Exec(ctx, `
+			UPDATE app.regression_alerts SET
+				last_seen_at = now(),
+				occurrences = occurrences + 1,
+				change_type = $3, change_summary = $4,
+				change_percent = GREATEST(COALESCE(change_percent, 0), $5),
+				impact = $6,
+				calls = $7, mean_time_ms = $8, total_time_ms = $9, rows_count = $10
+			WHERE id = $1 AND organization_id = $2
+		`, openID, orgID, v.ChangeType, v.Summary, math.Abs(v.ChangePct), impact,
+			cur.Calls, cur.MeanMs, cur.TotalMs, cur.Rows)
+		return err
+	}
+
+	var prevID any
+	if resolvedID != "" {
+		prevID = resolvedID
 	}
 	_, err := appDB.Exec(ctx, `
 		INSERT INTO app.regression_alerts (
 			organization_id, title, query_text, queryid, change_type,
 			change_percent, change_summary, impact, source, connection_id,
-			calls, mean_time_ms, total_time_ms, rows_count
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', 'default', $9, $10, $11, $12)
-	`, orgID, title, truncateQuery(queryText, queryrunner.StatStatementsQueryMaxLen), queryID, changeType, changePct, summary, impact, calls, meanMs, totalMs, rows)
+			calls, mean_time_ms, total_time_ms, rows_count,
+			last_seen_at, baseline_mean_time_ms, previous_alert_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', 'default', $9, $10, $11, $12, now(), $13, $14)
+	`, orgID, title, truncateQuery(queryText, queryrunner.StatStatementsQueryMaxLen), queryID,
+		v.ChangeType, math.Abs(v.ChangePct), v.Summary, impact,
+		cur.Calls, cur.MeanMs, cur.TotalMs, cur.Rows, baselineMean, prevID)
+	return err
+}
+
+// resolveRecoveredAlerts closes open poller alerts whose query is back to
+// baseline. recoveredFn returns (recovered, known) for a queryid — known=false
+// means the query wasn't in the latest poll, so its alert is left untouched.
+func (p *RegressionPoller) resolveRecoveredAlerts(ctx context.Context, appDB db.DB, orgID string, recoveredFn func(queryID string) (recovered, known bool)) error {
+	rows, err := appDB.Query(ctx, `
+		SELECT id::text, queryid FROM app.regression_alerts
+		WHERE organization_id = $1 AND source = 'poller'
+		  AND acknowledged_at IS NULL AND resolved_at IS NULL
+		  AND queryid IS NOT NULL
+	`, orgID)
+	if err != nil {
+		return err
+	}
+	var toResolve []string
+	for rows.Next() {
+		var id, queryID string
+		if err := rows.Scan(&id, &queryID); err != nil {
+			rows.Close()
+			return err
+		}
+		if recovered, known := recoveredFn(queryID); known && recovered {
+			toResolve = append(toResolve, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range toResolve {
+		if _, err := appDB.Exec(ctx, `
+			UPDATE app.regression_alerts SET resolved_at = now()
+			WHERE id = $1 AND organization_id = $2 AND resolved_at IS NULL
+		`, id, orgID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fixConfirmDropPct is how much the mean latency must fall from the apply-time
+// baseline for a shipped fix to be marked "confirmed".
+const fixConfirmDropPct = 20.0
+
+// fixRegressGraceHours is how long after apply a fix that shows no improvement
+// waits before being marked "regressed".
+const fixRegressGraceHours = 72
+
+// reconcileAppliedFixes re-measures investigations whose fix was marked applied:
+// it looks up the current pg_stat_statements mean for the linked query and, when
+// it has dropped enough, marks the investigation confirmed — or regressed if no
+// improvement shows after a grace period. This is what closes the loop.
+func (p *RegressionPoller) reconcileAppliedFixes(ctx context.Context, appDB db.DB, orgID string) error {
+	_, err := appDB.Exec(ctx, `
+		WITH latest_poll AS (
+			SELECT id FROM app.stat_statement_polls
+			WHERE organization_id = $1
+			ORDER BY captured_at DESC LIMIT 1
+		),
+		current_mean AS (
+			SELECT s.queryid, s.mean_time_ms
+			FROM app.stat_statement_snapshots s
+			JOIN latest_poll lp ON lp.id = s.poll_id
+		),
+		applied AS (
+			SELECT i.id AS investigation_id,
+			       i.fix_baseline_mean_ms AS baseline,
+			       i.fix_applied_at AS applied_at,
+			       cm.mean_time_ms AS current_mean
+			FROM app.investigations i
+			JOIN app.regression_alerts ra
+			  ON ra.investigation_id = i.id AND ra.organization_id = i.organization_id
+			JOIN current_mean cm ON cm.queryid = ra.queryid
+			WHERE i.organization_id = $1
+			  AND i.fix_status = 'applied'
+			  AND i.fix_baseline_mean_ms IS NOT NULL
+			  AND ra.queryid IS NOT NULL
+		)
+		UPDATE app.investigations i SET
+			fix_confirmed_mean_ms = a.current_mean,
+			fix_measured_at = now(),
+			fix_status = CASE
+				WHEN a.current_mean <= a.baseline * (1 - $2::float / 100) THEN 'confirmed'
+				WHEN a.applied_at < now() - ($3::text || ' hours')::interval
+				     AND a.current_mean >= a.baseline * 0.95 THEN 'regressed'
+				ELSE 'applied'
+			END,
+			updated_at = now()
+		FROM applied a
+		WHERE i.id = a.investigation_id AND i.organization_id = $1
+	`, orgID, fixConfirmDropPct, fixRegressGraceHours)
 	return err
 }
 
 func (p *RegressionPoller) cleanupOldPolls(ctx context.Context) {
 	retention := p.cfg.RetentionDays
 	if retention <= 0 {
-		retention = 7
+		retention = 14
 	}
 	_, err := p.rawPool.Exec(ctx, `
 		DELETE FROM app.stat_statement_polls
