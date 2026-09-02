@@ -10,7 +10,8 @@ bin/
 *.test
 *.out
 
-# Generated code (root only; api/gen is committed so CI and local builds find it)
+# goa's scratch output. The app never imports it; `make generate` syncs it into
+# api/gen/ (the single committed tree) so `go build ./...` works on a clean clone.
 /gen/
 goa*/
 internal/db/queries/

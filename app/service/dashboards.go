@@ -8,11 +8,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/dashboards"
 	queriesapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	reportsapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
 )
 
 type DashboardsService struct {

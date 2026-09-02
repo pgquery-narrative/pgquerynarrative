@@ -13,7 +13,7 @@ import (
 	"io"
 	"net/http"
 
-	schedules "github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	schedules "github.com/pgquerynarrative/pgquerynarrative/api/gen/schedules"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )

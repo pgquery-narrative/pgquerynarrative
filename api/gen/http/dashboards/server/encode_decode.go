@@ -13,7 +13,7 @@ import (
 	"io"
 	"net/http"
 
-	dashboards "github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
+	dashboards "github.com/pgquerynarrative/pgquerynarrative/api/gen/dashboards"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )

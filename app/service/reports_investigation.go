@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/story"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
 )
 
 // StoreInvestigationReport persists an evidence-backed Query Investigation report.

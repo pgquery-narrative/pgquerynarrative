@@ -8,7 +8,7 @@
 package client
 
 import (
-	investigations "github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
+	investigations "github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	goa "goa.design/goa/v3/pkg"
 )
 

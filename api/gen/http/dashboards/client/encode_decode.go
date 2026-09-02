@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"net/url"
 
-	dashboards "github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
+	dashboards "github.com/pgquerynarrative/pgquerynarrative/api/gen/dashboards"
 	goahttp "goa.design/goa/v3/http"
 )
 

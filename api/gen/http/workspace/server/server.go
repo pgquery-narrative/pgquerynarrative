@@ -11,7 +11,7 @@ import (
 	"context"
 	"net/http"
 
-	workspace "github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
+	workspace "github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )

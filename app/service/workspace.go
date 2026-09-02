@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
 )
 
 // WorkspaceService provides landing dashboard data, regression inbox, demo scenarios, and trust.

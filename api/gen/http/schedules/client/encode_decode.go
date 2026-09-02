@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"net/url"
 
-	schedules "github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	schedules "github.com/pgquerynarrative/pgquerynarrative/api/gen/schedules"
 	goahttp "goa.design/goa/v3/http"
 )
 
