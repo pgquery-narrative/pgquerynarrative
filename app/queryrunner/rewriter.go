@@ -28,6 +28,7 @@ type RewriteCandidate struct {
 //   - col::text / col::numeric = typed literal → compare the column to a typed literal
 //   - OR of predicates on different columns → UNION ALL of indexable branches
 //   - col IN/NOT IN (SELECT ...) → EXISTS / NULL-safe NOT EXISTS
+//   - LEFT JOIN b ON b.k = a.id WHERE b.k IS NULL → NOT EXISTS anti-join
 //
 // Findings are optional evidence: function-wrap / partition-pruning language
 // raises confidence to "high". The engine still works from pasted SQL alone.
@@ -56,6 +57,9 @@ func SuggestRewrites(sql string, findings []PlanFinding) []RewriteCandidate {
 			out = append(out, *c)
 		}
 		if c := suggestInToExists(trimmed, findings); c != nil {
+			out = append(out, *c)
+		}
+		if c := suggestLeftJoinAntiJoinToNotExists(trimmed, findings); c != nil {
 			out = append(out, *c)
 		}
 	}
