@@ -77,3 +77,4 @@ docs/assets/demo-workflow.gif
 # Local-only AI agent context (never publish — keep on disk for Cursor/agents)
 AGENTS.md
 .cursor/rules/product-direction.mdc
+/openapi-ts

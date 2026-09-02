@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release pilot-acceptance pilot-report helm-strict-check demo demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
+.PHONY: setup tidy generate generate-api-types build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release pilot-acceptance pilot-report helm-strict-check demo demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -167,7 +167,14 @@ generate:
 	goa gen github.com/pgquerynarrative/pgquerynarrative/api/design
 	@sh ./tools/fix-gen-metrics-validator.sh
 	@sh ./tools/copy-gen-to-api-gen.sh
+	@$(MAKE) --no-print-directory generate-api-types
 	@echo "✅ Code generated"
+
+# Frontend TS types from the committed OpenAPI spec. Pure Go, no npm — runs in
+# every CI job that runs `make generate`. Keeps frontend/src/api/schema.gen.ts
+# in lockstep with api/gen/http/openapi3.json.
+generate-api-types:
+	@$(GO) run ./tools/openapi-ts -in api/gen/http/openapi3.json -out frontend/src/api/schema.gen.ts
 
 build-frontend:
 	@echo "🔨 Building frontend..."

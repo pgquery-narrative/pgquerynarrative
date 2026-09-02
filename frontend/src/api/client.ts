@@ -1,6 +1,7 @@
-const BASE = "/api/v1";
-
+import type * as S from "./schema.gen";
 import { authFetchInit } from "./auth";
+
+const BASE = "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, authFetchInit({
@@ -28,313 +29,61 @@ export class ApiError extends Error {
   }
 }
 
-export interface Column { name: string; type: string; }
-export interface ChartSuggestion { chart_type: string; label: string; reason: string; }
-export interface RunQueryResult {
-  columns: Column[];
-  rows: unknown[][];
-  row_count: number;
-  execution_time_ms: number;
-  limit: number;
-  chart_suggestions?: ChartSuggestion[];
-}
+/*
+ * Domain types are generated from the committed OpenAPI spec
+ * (api/gen/http/openapi3.json -> schema.gen.ts via `make generate`). Re-export
+ * them under their historical names so call sites are unchanged. A handful of
+ * types are kept hand-written below: ones the spec does not describe (settings,
+ * managed API keys) and ones where the frontend deliberately narrows a field.
+ */
+export type Column = S.ColumnInfo;
+export type ChartSuggestion = S.ChartSuggestion;
+export type RunQueryResult = S.RunQueryResult;
+export type PlanFinding = S.PlanFinding;
+export type IndexDefinition = S.IndexDefinition;
+export type IndexAdvice = S.IndexAdvice;
+export type RewriteCandidate = S.RewriteCandidate;
+export type RankedCandidateBaseline = S.RankedCandidateBaseline;
+export type RankedCandidate = S.RankedCandidate;
+export type RankedCandidateList = S.RankedCandidateList;
+export type PlanDiagnosisCause = S.PlanDiagnosisCause;
+export type PlanDiagnosisIncidental = S.PlanDiagnosisIncidental;
+export type PlanDiagnosis = S.PlanDiagnosis;
+export type ExplainQueryResult = S.ExplainQueryResult;
+export type PlanComparisonMetric = S.PlanComparisonMetric;
+export type PlanComparisonDiff = S.PlanComparisonDiff;
+export type ComparePlansResult = S.ComparePlansResult;
+export type StatSnapshot = S.StatSnapshot;
+export type InvestigationCandidate = S.InvestigationCandidate;
+export type Investigation = S.Investigation;
+export type WorkspaceOverview = S.WorkspaceOverview;
+export type RegressionAlert = S.RegressionAlert;
+export type DemoScenario = S.DemoScenario;
+export type SecurityTrust = S.SecurityTrust;
+export type SavedQuery = S.SavedQuery;
+export type NarrativeContent = S.NarrativeContent;
+export type SimilarReportItem = S.SimilarReportItem;
+export type ReportShareLink = S.ReportShareLink;
+export type ReportShareInfo = S.ReportShareInfo;
+export type DashboardWidgetInput = S.DashboardWidgetInput;
+export type DashboardWidget = S.DashboardWidget;
+export type Dashboard = S.Dashboard;
+export type DashboardResolvedWidget = S.DashboardResolvedWidget;
+export type DashboardResolved = S.DashboardResolved;
+export type Schedule = S.Schedule;
+export type ScheduleRun = S.ScheduleRunRecord;
+export type WebhookDelivery = S.WebhookDeliveryRecord;
+export type AskResult = S.AskResult;
+export type ChatTurn = S.ChatTurn;
+export type ChatResult = S.ChatResult;
+export type ConnectionInfo = S.ConnectionInfo;
+export type StatStatementRow = S.StatStatementRow;
+export type StatStatementsResult = S.StatStatementsResult;
+export type SchemaInfo = S.SchemaInfo;
+export type Report = S.Report;
 
-/** Notable node from POST /queries/explain. */
-export interface PlanFinding {
-  node_type: string;
-  schema?: string;
-  relation?: string;
-  estimated_cost?: number;
-  is_seq_scan: boolean;
-  category?: string;
-  confidence?: string;
-  message: string;
-  evidence?: string[];
-  related_columns?: string[];
-  index_advice?: IndexAdvice;
-}
+// --- hand-written: not in the OpenAPI spec ---
 
-export interface IndexDefinition {
-  name: string;
-  definition: string;
-  key_columns?: string[];
-  include_columns?: string[];
-  predicate?: string;
-  is_unique: boolean;
-  is_primary: boolean;
-  is_valid: boolean;
-  size_bytes?: number;
-  index_scans?: number;
-  tuples_read?: number;
-  tuples_fetched?: number;
-}
-
-export interface IndexAdvice {
-  related_columns?: string[];
-  related_indexes?: IndexDefinition[];
-  issues?: string[];
-  potential_benefit?: string;
-  write_cost?: string;
-  storage_cost?: string;
-  candidate_ddl?: string;
-}
-
-export interface RewriteCandidate {
-  sql: string;
-  rationale: string;
-  category?: string;
-  confidence?: string;
-}
-
-export interface RankedCandidateBaseline {
-  total_cost?: number;
-  partitions_scanned?: number;
-  execution_time_ms?: number;
-}
-
-export interface RankedCandidate {
-  kind: string;
-  rank?: number;
-  rankable: boolean;
-  sql?: string;
-  ddl?: string;
-  rationale: string;
-  category?: string;
-  confidence?: string;
-  total_cost?: number;
-  cost_delta?: number;
-  partitions_scanned?: number;
-  partitions_delta?: number;
-  execution_time_ms?: number;
-  improved?: string[];
-  projection_method?: string;
-}
-
-export interface RankedCandidateList {
-  baseline?: RankedCandidateBaseline;
-  candidates: RankedCandidate[];
-}
-
-export interface PlanDiagnosisCause {
-  category: string;
-  title: string;
-  detail?: string;
-  fix?: string;
-  severity: "blocker" | "contributing" | string;
-  cost_share?: number;
-  occurrences?: number;
-  node_types?: string[];
-  evidence?: string[];
-}
-
-export interface PlanDiagnosisIncidental {
-  count: number;
-  summary: string;
-  categories?: string[];
-}
-
-/** Verdict-first rollup of raw plan findings into ranked causes. */
-export interface PlanDiagnosis {
-  headline?: string;
-  summary?: string;
-  root_cause?: PlanDiagnosisCause;
-  causes?: PlanDiagnosisCause[];
-  incidental?: PlanDiagnosisIncidental;
-  raw_count: number;
-}
-
-/** Result of POST /queries/explain (EXPLAIN FORMAT JSON). */
-export interface ExplainQueryResult {
-  sql: string;
-  total_cost: number;
-  plan: unknown;
-  findings: PlanFinding[];
-  diagnosis?: PlanDiagnosis;
-  /** True when the plan is a GENERIC_PLAN because the query is parameterized ($1, $2, ...). */
-  generic_plan?: boolean;
-  execution_time_ms: number;
-}
-
-export interface PlanComparisonMetric {
-  evidence: string;
-  before: string;
-  after: string;
-  change: string;
-}
-
-export interface PlanComparisonDiff {
-  removed?: string[];
-  added?: string[];
-  improved?: string[];
-}
-
-export interface ComparePlansResult {
-  before: ExplainQueryResult;
-  after: ExplainQueryResult;
-  metrics: PlanComparisonMetric[];
-  diff: PlanComparisonDiff;
-  result_checksum_equal?: boolean;
-  result_equivalence_status?: "Equal" | "Different" | "Unverified" | string;
-  result_equivalence_notes?: string;
-  result_before_row_count?: number;
-  result_after_row_count?: number;
-  result_sample_rows?: number;
-}
-
-export interface StatSnapshot {
-  queryid?: string;
-  calls?: number;
-  mean_time_ms?: number;
-  total_time_ms?: number;
-  rows?: number;
-}
-
-export interface InvestigationCandidate {
-  id: string;
-  candidate_sql: string;
-  binds?: string[];
-  candidate_explain?: ExplainQueryResult;
-  comparison?: ComparePlansResult;
-  equivalence_status?: string;
-  cost_delta?: number;
-  source?: string;
-  is_current?: boolean;
-  created_at: string;
-}
-
-export interface Investigation {
-  id: string;
-  title: string;
-  status: string;
-  sql: string;
-  connection_id: string;
-  query_fingerprint?: string;
-  stat_snapshot?: StatSnapshot;
-  explain?: ExplainQueryResult;
-  candidate_sql?: string;
-  candidate_explain?: ExplainQueryResult;
-  comparison?: ComparePlansResult;
-  candidates?: InvestigationCandidate[];
-  report_id?: string;
-  fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned" | string;
-  fix_reference?: string;
-  fix_applied_at?: string;
-  fix_baseline_mean_ms?: number;
-  fix_confirmed_mean_ms?: number;
-  fix_measured_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface WorkspaceOverview {
-  queries_observed: number;
-  database_time_hours: number;
-  queries_attention: number;
-  largest_regression_pct: number;
-  temp_data_written_gb: number;
-  sequential_scans_detected: number;
-  investigations_open: number;
-  reports_generated: number;
-}
-
-export interface RegressionAlert {
-  id: string;
-  title: string;
-  query: string;
-  change_type: string;
-  change_summary: string;
-  impact: string;
-  first_detected_at: string;
-  acknowledged: boolean;
-  connection_id: string;
-  queryid?: string;
-  source?: string;
-  investigation_id?: string;
-  calls?: number;
-  mean_time_ms?: number;
-  total_time_ms?: number;
-  rows?: number;
-  occurrences?: number;
-  last_seen_at?: string;
-  resolved_at?: string;
-  previous_alert_id?: string;
-}
-
-export interface DemoScenario {
-  id: string;
-  title: string;
-  problem: string;
-  sql: string;
-  candidate_sql?: string;
-  expected_improvement: string;
-  category: string;
-}
-
-export interface SecurityTrust {
-  authentication: string;
-  connection_mode: string;
-  allowed_schemas: string[];
-  tenant_isolation: string;
-  tls: string;
-  audit_mode: string;
-  query_timeout_seconds: number;
-  result_limit: number;
-  explain_analyze: string;
-  external_llm_data: string;
-}
-
-export interface SavedQuery {
-  id: string;
-  name: string;
-  sql: string;
-  description?: string;
-  tags?: string[];
-  connection_id: string;
-  created_at: string;
-  updated_at?: string;
-}
-
-export interface NarrativeContent {
-  headline: string;
-  takeaways?: string[];
-  drivers?: string[];
-  limitations?: string[];
-  recommendations?: string[];
-}
-
-export interface Report {
-  id: string;
-  sql: string;
-  narrative: NarrativeContent;
-  metrics: Record<string, unknown>;
-  chart_suggestions?: ChartSuggestion[];
-  connection_id: string;
-  created_at: string;
-  llm_model: string;
-  llm_provider: string;
-}
-
-export interface SimilarReportItem {
-  id: string;
-  headline: string;
-  sql: string;
-  connection_id: string;
-  created_at: string;
-  similarity: number;
-}
-export interface ReportShareLink {
-  token: string;
-  url: string;
-  expires_at?: string;
-}
-export interface ReportShareInfo {
-  id: string;
-  created_at: string;
-  expires_at?: string;
-  revoked_at?: string;
-  access_count: number;
-  last_accessed_at?: string;
-}
 export interface ManagedAPIKey {
   id: string;
   prefix: string;
@@ -348,120 +97,6 @@ export interface ManagedAPIKey {
 export interface ManagedAPIKeyIssued extends ManagedAPIKey {
   secret: string;
 }
-export interface DashboardWidgetInput {
-  widget_type: "report" | "saved_query";
-  title?: string;
-  report_id?: string;
-  saved_query_id?: string;
-  refresh_seconds?: number;
-  position?: number;
-}
-export interface DashboardWidget extends DashboardWidgetInput {
-  id: string;
-  refresh_seconds: number;
-  position: number;
-}
-export interface Dashboard {
-  id: string;
-  name: string;
-  widgets: DashboardWidget[];
-  created_at: string;
-  updated_at: string;
-}
-export interface DashboardResolvedWidget {
-  id: string;
-  widget_type: "report" | "saved_query";
-  title?: string;
-  refresh_seconds: number;
-  position: number;
-  report?: Report;
-  saved_query?: SavedQuery;
-}
-export interface DashboardResolved {
-  id: string;
-  name: string;
-  widgets: DashboardResolvedWidget[];
-}
-export interface Schedule {
-  id: string;
-  name: string;
-  saved_query_id?: string;
-  sql?: string;
-  connection_id: string;
-  interval_expr: string;
-  destination_type: string;
-  destination_target: string;
-  enabled: boolean;
-  last_run_at?: string;
-  last_status?: string;
-  last_error?: string;
-  next_run_at?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ScheduleRun {
-  id: string;
-  schedule_id: string;
-  status: string;
-  attempt_count: number;
-  scheduled_for: string;
-  started_at?: string;
-  completed_at?: string;
-  report_id?: string;
-  failure_code?: string;
-  failure_message?: string;
-}
-
-export interface WebhookDelivery {
-  id: string;
-  schedule_id?: string;
-  destination_url: string;
-  status: string;
-  attempt_count: number;
-  http_status?: number;
-  error_message?: string;
-  created_at: string;
-  completed_at?: string;
-}
-
-export interface AskResult {
-  question: string;
-  sql: string;
-  report: Report;
-}
-export interface ChatTurn {
-  question: string;
-  sql: string;
-  created_at: string;
-}
-export interface ChatResult {
-  session_id: string;
-  question: string;
-  sql: string;
-  report: Report;
-  history: ChatTurn[];
-  follow_ups: string[];
-}
-
-export interface ConnectionInfo { id: string; name: string; }
-
-export interface StatStatementRow {
-  queryid?: string;
-  query: string;
-  calls: number;
-  total_time_ms: number;
-  mean_time_ms: number;
-  rows: number;
-}
-
-export interface StatStatementsResult {
-  items: StatStatementRow[];
-  order_by: string;
-  limit: number;
-}
-
-export interface SchemaInfo { name: string; tables: { name: string; columns: Column[] }[]; }
 
 export interface AnalyticsSettings {
   anomaly_sigma: number;
