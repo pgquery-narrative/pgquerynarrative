@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	schedules "github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	schedules "github.com/pgquerynarrative/pgquerynarrative/api/gen/schedules"
 	goa "goa.design/goa/v3/pkg"
 )
 

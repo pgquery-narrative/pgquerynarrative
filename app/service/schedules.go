@@ -14,10 +14,10 @@ import (
 
 	queriesapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	reportsapi "github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/schedules"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/security"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
 )
 
 type SchedulesService struct {

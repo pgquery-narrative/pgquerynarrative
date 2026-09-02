@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/schedules"
 )
 
 // ListRuns returns execution history for a schedule in the caller's organization.

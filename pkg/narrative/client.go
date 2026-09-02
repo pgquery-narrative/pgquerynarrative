@@ -7,10 +7,15 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/connections"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/dashboards"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/schedules"
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
 	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
@@ -21,11 +26,6 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
 	pkgsuggestions "github.com/pgquerynarrative/pgquerynarrative/app/suggestions"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/connections"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/schedules"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
 )
 
 // Client provides access to narrative capabilities: running queries, generating

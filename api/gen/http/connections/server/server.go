@@ -11,7 +11,7 @@ import (
 	"context"
 	"net/http"
 
-	connections "github.com/pgquerynarrative/pgquerynarrative/gen/connections"
+	connections "github.com/pgquerynarrative/pgquerynarrative/api/gen/connections"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )

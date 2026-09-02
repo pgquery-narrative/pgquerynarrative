@@ -8,7 +8,7 @@
 package client
 
 import (
-	dashboards "github.com/pgquerynarrative/pgquerynarrative/gen/dashboards"
+	dashboards "github.com/pgquerynarrative/pgquerynarrative/api/gen/dashboards"
 	goa "goa.design/goa/v3/pkg"
 )
 

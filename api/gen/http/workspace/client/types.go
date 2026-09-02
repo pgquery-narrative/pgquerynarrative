@@ -8,7 +8,7 @@
 package client
 
 import (
-	workspace "github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
+	workspace "github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
 	goa "goa.design/goa/v3/pkg"
 )
 

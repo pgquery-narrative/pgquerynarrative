@@ -8,7 +8,7 @@
 package server
 
 import (
-	workspace "github.com/pgquerynarrative/pgquerynarrative/gen/workspace"
+	workspace "github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
 )
 
 // OverviewResponseBody is the type of the "workspace" service "overview"

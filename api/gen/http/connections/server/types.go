@@ -8,7 +8,7 @@
 package server
 
 import (
-	connections "github.com/pgquerynarrative/pgquerynarrative/gen/connections"
+	connections "github.com/pgquerynarrative/pgquerynarrative/api/gen/connections"
 )
 
 // ListResponseBody is the type of the "connections" service "list" endpoint

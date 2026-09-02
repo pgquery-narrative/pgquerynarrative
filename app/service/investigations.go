@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/story"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/investigations"
 )
 
 // InvestigationsService handles Query Investigation workflows.

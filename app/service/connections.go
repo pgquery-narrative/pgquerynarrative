@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/connections"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/gen/connections"
 )
 
 // ConnectionsService exposes configured data connections (safe metadata only).
