@@ -1,0 +1,9 @@
+# Generated code — kept in the tree (and CI-checked with `make generate` +
+# `git diff --exit-code`) but collapsed in review. goa re-seeds the OpenAPI
+# example placeholders on any design change, so these files churn heavily
+# without an API-surface change.
+api/gen/** linguist-generated=true
+api/gen/http/openapi*.json -diff
+api/gen/http/openapi*.yaml -diff
+api/gen/http/**/cli.go -diff
+frontend/src/api/schema.gen.ts linguist-generated=true
