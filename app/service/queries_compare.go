@@ -115,10 +115,14 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 	out.ResultEquivalenceStatus = &status
 	notes := equiv.Notes
 	out.ResultEquivalenceNotes = &notes
-	bc := equiv.BeforeCount
-	out.ResultBeforeRowCount = &bc
-	ac := equiv.AfterCount
-	out.ResultAfterRowCount = &ac
+	// Only surface row counts when COUNT(*) actually ran — otherwise the UI would
+	// render a misleading "COUNT(*)=0" for a compare that never executed a query.
+	if equiv.CountsComputed {
+		bc := equiv.BeforeCount
+		out.ResultBeforeRowCount = &bc
+		ac := equiv.AfterCount
+		out.ResultAfterRowCount = &ac
+	}
 	if equiv.SampleRows > 0 {
 		sr := int32(equiv.SampleRows)
 		out.ResultSampleRows = &sr

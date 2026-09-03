@@ -69,6 +69,24 @@ func TestBuildInvestigationReport_SampleMatchAllowsShipAdviceWithCaveat(t *testi
 	}
 }
 
+func TestBuildInvestigationReport_LegacyEqualIsTreatedAsVerifiedEqual(t *testing.T) {
+	cmp := &ComparisonInput{
+		Improved:                []string{"Partition pruning"},
+		ResultEquivalenceStatus: "Equal", // pre-PR vocabulary
+	}
+	inv, _ := BuildInvestigationReport(
+		"Slow", "SELECT 1", "SELECT 2", "fp", "default",
+		StatInput{}, nil, cmp,
+		InvestigationProvenance{},
+	)
+	if inv.EquivalenceValidation.Status != "VerifiedEqual" {
+		t.Fatalf("legacy Equal should normalize to VerifiedEqual, got %q", inv.EquivalenceValidation.Status)
+	}
+	if strings.Contains(strings.ToLower(inv.RecommendedNextAction), "not treat as shippable") {
+		t.Fatalf("legacy Equal must not block ship advice: %q", inv.RecommendedNextAction)
+	}
+}
+
 func TestBuildInvestigationReport_VerifiedEqualAllowsShipAdvice(t *testing.T) {
 	cmp := &ComparisonInput{
 		Improved:                []string{"Partition pruning"},

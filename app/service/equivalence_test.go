@@ -101,8 +101,29 @@ func TestNotRequestedEquivalence(t *testing.T) {
 	if out.Equal != nil {
 		t.Fatalf("Equal must be nil when not requested, got %v", *out.Equal)
 	}
+	if out.CountsComputed {
+		t.Fatal("CountsComputed must be false when no COUNT(*) ran")
+	}
 	if out.Notes == "" {
 		t.Fatal("NotRequested result should carry an explanatory note")
+	}
+}
+
+func TestNormalizeEquivalenceStatus(t *testing.T) {
+	cases := map[string]string{
+		"VerifiedEqual": "VerifiedEqual",
+		"SampleMatch":   "SampleMatch",
+		"Different":     "Different",
+		"Unverified":    "Unverified",
+		"NotRequested":  "NotRequested",
+		"":              "",
+		"Equal":         "VerifiedEqual", // legacy
+		"bogus":         "Unverified",
+	}
+	for in, want := range cases {
+		if got := normalizeEquivalenceStatus(in); got != want {
+			t.Errorf("normalizeEquivalenceStatus(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

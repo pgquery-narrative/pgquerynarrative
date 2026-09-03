@@ -16,7 +16,7 @@ import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
 import { cn, formatFloat, timeAgo, truncate } from "@/lib/utils";
-import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence } from "@/lib/equivalence";
+import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence, normalizeEquivalenceStatus } from "@/lib/equivalence";
 
 const STEPS = [
   { id: "select", label: "Find query" },
@@ -553,22 +553,26 @@ export default function InvestigatePage() {
                     {c.source && c.source !== "manual" && (
                       <Badge variant="outline" className="text-[10px]">{c.source}</Badge>
                     )}
-                    {c.equivalence_status && (
-                      <Badge
-                        variant={
-                          equivalenceTone(c.equivalence_status) === "success"
-                            ? "success"
-                            : equivalenceTone(c.equivalence_status) === "warning"
-                              ? "warning"
-                              : equivalenceTone(c.equivalence_status) === "destructive"
-                                ? "destructive"
-                                : "outline"
-                        }
-                        className="text-[10px]"
-                      >
-                        {equivalenceLabel(c.equivalence_status)}
-                      </Badge>
-                    )}
+                    {c.equivalence_status && (() => {
+                      const st = normalizeEquivalenceStatus(c.equivalence_status);
+                      const tone = equivalenceTone(st);
+                      return (
+                        <Badge
+                          variant={
+                            tone === "success"
+                              ? "success"
+                              : tone === "warning"
+                                ? "warning"
+                                : tone === "destructive"
+                                  ? "destructive"
+                                  : "outline"
+                          }
+                          className="text-[10px]"
+                        >
+                          {equivalenceLabel(st)}
+                        </Badge>
+                      );
+                    })()}
                     {typeof c.cost_delta === "number" && (
                       <span className="text-muted-foreground">
                         cost Δ {formatDelta(c.cost_delta)}

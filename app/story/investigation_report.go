@@ -144,7 +144,7 @@ func BuildInvestigationReport(
 	var equiv *EquivalenceValidation
 	if comparison != nil {
 		controlled = &ControlledTestResults{Metrics: comparison.Metrics, Improved: comparison.Improved}
-		status := comparison.ResultEquivalenceStatus
+		status := normalizeEquivalenceStatus(comparison.ResultEquivalenceStatus)
 		notes := comparison.ResultEquivalenceNotes
 		if status == "" {
 			// Legacy comparison with no status string — derive from the checksum,
@@ -178,7 +178,7 @@ func BuildInvestigationReport(
 
 	nextAction := "Review plan evidence and test a candidate rewrite in a controlled environment."
 	if comparison != nil && len(comparison.Improved) > 0 {
-		status := comparison.ResultEquivalenceStatus
+		status := normalizeEquivalenceStatus(comparison.ResultEquivalenceStatus)
 		if status == "" && comparison.ResultChecksumEqual != nil {
 			if *comparison.ResultChecksumEqual {
 				status = "VerifiedEqual"
@@ -330,6 +330,21 @@ func defaultConfidence(c string) string {
 		return "medium"
 	}
 	return c
+}
+
+// normalizeEquivalenceStatus maps a stored equivalence status onto the current
+// {VerifiedEqual, SampleMatch, Different, Unverified, NotRequested} vocabulary,
+// tolerating the pre-PR literal "Equal" and any unexpected value. Empty stays
+// empty so the caller's own defaulting runs.
+func normalizeEquivalenceStatus(s string) string {
+	switch s {
+	case "VerifiedEqual", "SampleMatch", "Different", "Unverified", "NotRequested", "":
+		return s
+	case "Equal":
+		return "VerifiedEqual"
+	default:
+		return "Unverified"
+	}
 }
 
 func investigateHints(category string) []string {

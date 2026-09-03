@@ -1075,7 +1075,7 @@ func equivalenceStatusFromComparison(cmp *investigations.ComparePlansResult) str
 		return EquivalenceUnverified
 	}
 	if cmp.ResultEquivalenceStatus != nil && *cmp.ResultEquivalenceStatus != "" {
-		return *cmp.ResultEquivalenceStatus
+		return normalizeEquivalenceStatus(*cmp.ResultEquivalenceStatus)
 	}
 	// Legacy comparisons stored before result_equivalence_status existed: derive
 	// from the checksum flag, which was only ever set true for a full compare.

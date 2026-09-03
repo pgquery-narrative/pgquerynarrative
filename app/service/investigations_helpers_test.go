@@ -34,6 +34,11 @@ func TestEquivalenceStatusFromComparison(t *testing.T) {
 	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{}); got != EquivalenceUnverified {
 		t.Errorf("no status, no checksum → Unverified, got %q", got)
 	}
+	// A comparison stored before this PR carries the literal "Equal".
+	legacy := "Equal"
+	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultEquivalenceStatus: &legacy}); got != EquivalenceVerifiedEqual {
+		t.Errorf("legacy \"Equal\" → VerifiedEqual, got %q", got)
+	}
 	yes, no := true, false
 	// Legacy fallback: a stored checksum-equal comparison predates the status
 	// string and was only ever a full compare.
