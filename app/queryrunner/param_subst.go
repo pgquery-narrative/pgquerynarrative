@@ -19,11 +19,10 @@ const maxBindValueLen = 4096
 // Every bind is emitted either as a strict decimal / boolean token or as a
 // single-quoted string literal with every embedded quote doubled; a value is
 // never emitted bare or cast unless it matches a fully anchored number / date /
-// timestamp pattern end to end. Bind values carrying a NUL or a backslash are
-// rejected outright (a backslash is an escape when standard_conforming_strings
-// is off, so it cannot be quoted portably). The result is re-parsed to confirm
-// it is one param-free SELECT, and callers MUST still run it through the
-// read-only validator.
+// timestamp pattern end to end. Only the binds actually referenced ($1..$n) are
+// validated and substituted. The result is re-parsed to confirm it is one
+// param-free SELECT, and callers MUST still run it through the read-only
+// validator.
 func SubstituteParams(sql string, binds []string) (string, error) {
 	trimmed := trimSQL(sql)
 	n := maxParamNumber(trimmed)
@@ -37,16 +36,14 @@ func SubstituteParams(sql string, binds []string) (string, error) {
 		return "", fmt.Errorf("dollar-quoted strings are not supported for bind substitution")
 	}
 
-	lits := make([]string, len(binds))
-	for i, b := range binds {
+	lits := make([]string, n)
+	for i := 0; i < n; i++ {
+		b := binds[i]
 		if len(b) > maxBindValueLen {
 			return "", fmt.Errorf("bind $%d is %d bytes; limit is %d", i+1, len(b), maxBindValueLen)
 		}
 		if strings.ContainsRune(b, 0) {
 			return "", fmt.Errorf("bind $%d contains a NUL byte", i+1)
-		}
-		if strings.ContainsRune(b, '\\') {
-			return "", fmt.Errorf("bind $%d contains a backslash, which cannot be substituted safely", i+1)
 		}
 		lits[i] = bindLiteral(b)
 	}
@@ -73,6 +70,9 @@ var (
 	decimalRe   = regexp.MustCompile(`^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$`)
 	dateOnlyRe  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	timestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?([+-]\d{2}(:?\d{2})?|Z)?$`)
+	// A timestamp value carrying a zone offset or Z is an instant and must be
+	// cast to timestamptz so the offset is not silently dropped.
+	timestampTZRe = regexp.MustCompile(`([+-]\d{2}(:?\d{2})?|Z)$`)
 )
 
 // maxParamNumber returns the highest $N referenced anywhere in sql (lexical).
@@ -87,7 +87,10 @@ func maxParamNumber(sql string) int {
 }
 
 // replaceDollarParams swaps $N tokens for lits[N-1], skipping single-quoted
-// strings and -- line comments.
+// strings, -- line comments and /* */ block comments (a $N inside any of those
+// is text, not a parameter). Nested block comments are not tracked — an early
+// */ leaves a dangling */ that fails the post-substitution re-parse, which is
+// safe (fail closed).
 func replaceDollarParams(sql string, lits []string) string {
 	var b strings.Builder
 	r := []rune(sql)
@@ -114,6 +117,19 @@ func replaceDollarParams(sql string, lits []string) string {
 				b.WriteRune(r[i])
 				i++
 			}
+		case r[i] == '/' && i+1 < len(r) && r[i+1] == '*':
+			b.WriteRune(r[i])
+			b.WriteRune(r[i+1])
+			i += 2
+			for i < len(r) {
+				b.WriteRune(r[i])
+				if r[i] == '*' && i+1 < len(r) && r[i+1] == '/' {
+					b.WriteRune(r[i+1])
+					i += 2
+					break
+				}
+				i++
+			}
 		case r[i] == '$' && i+1 < len(r) && r[i+1] >= '1' && r[i+1] <= '9':
 			j := i + 1
 			for j < len(r) && r[j] >= '0' && r[j] <= '9' {
@@ -134,8 +150,9 @@ func replaceDollarParams(sql string, lits []string) string {
 	return b.String()
 }
 
-// stripQuotedAndComments blanks single-quoted strings and -- comments so a
-// lexical scan for $N doesn't see placeholders that are really string content.
+// stripQuotedAndComments blanks single-quoted strings, -- line comments and
+// /* */ block comments so a lexical scan for $N doesn't see placeholders that
+// are really string or comment content.
 func stripQuotedAndComments(sql string) string {
 	var b strings.Builder
 	r := []rune(sql)
@@ -158,6 +175,15 @@ func stripQuotedAndComments(sql string) string {
 			for i < len(r) && r[i] != '\n' {
 				i++
 			}
+		case r[i] == '/' && i+1 < len(r) && r[i+1] == '*':
+			i += 2
+			for i < len(r) {
+				if r[i] == '*' && i+1 < len(r) && r[i+1] == '/' {
+					i += 2
+					break
+				}
+				i++
+			}
 		default:
 			b.WriteRune(r[i])
 			i++
@@ -170,11 +196,12 @@ func stripQuotedAndComments(sql string) string {
 // strict decimal number or boolean is emitted bare; one that is *entirely* an
 // ISO date or timestamp is emitted as a quoted, quote-escaped literal with an
 // explicit cast so date arithmetic in the rewrite (`$1 + INTERVAL '1 month'`)
-// type-checks; everything else — including a value that only looks numeric or
-// temporal at the front — becomes a single-quoted string with every embedded
-// quote doubled. `strconv.ParseFloat` is deliberately not used: it accepts
-// `NaN`, `Inf`, hex floats, and digit separators, none of which are safe to emit
-// unquoted.
+// type-checks — `::timestamptz` when the value carries a zone offset / Z so the
+// offset survives, `::timestamp` otherwise. Everything else — including a value
+// that only looks numeric or temporal at the front — becomes a single-quoted
+// string with every embedded quote doubled. `strconv.ParseFloat` is deliberately
+// not used: it accepts `NaN`, `Inf`, hex floats, and digit separators, none of
+// which are safe to emit unquoted.
 func bindLiteral(v string) string {
 	s := strings.TrimSpace(v)
 	switch {
@@ -189,6 +216,9 @@ func bindLiteral(v string) string {
 	case dateOnlyRe.MatchString(s):
 		return quoteSQLLiteral(s) + "::date"
 	case timestampRe.MatchString(s):
+		if timestampTZRe.MatchString(s) {
+			return quoteSQLLiteral(s) + "::timestamptz"
+		}
 		return quoteSQLLiteral(s) + "::timestamp"
 	default:
 		return quoteSQLLiteral(s)
@@ -196,8 +226,10 @@ func bindLiteral(v string) string {
 }
 
 // quoteSQLLiteral renders s as a single-quoted SQL string literal with every
-// embedded single quote doubled. Callers reject bind values containing a
-// backslash or NUL, so this is safe regardless of standard_conforming_strings.
+// embedded single quote doubled. pg_query.Parse (the re-parse guard) and the
+// analytical runner both assume standard_conforming_strings = on, under which a
+// backslash in a single-quoted string is a literal character, so no backslash
+// handling is needed.
 func quoteSQLLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
