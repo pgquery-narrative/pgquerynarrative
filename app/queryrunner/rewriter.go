@@ -359,11 +359,20 @@ func tryRewriteDateTruncEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTrunc
 		return nil, dateTruncRewrite{}, false
 	}
 
-	start, typ, ok := parseTemporalConst(constNode)
+	rawConst, typ, ok := parseTemporalConst(constNode)
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
-	start = truncateTime(start, unit)
+	start := truncateTime(rawConst, unit)
+	// DATE_TRUNC(unit, col) only ever yields a value on the unit boundary, so
+	// `DATE_TRUNC(unit, col) = <const>` with a <const> that is not itself on that
+	// boundary matches no rows at all. Rewriting it to the surrounding [start, end)
+	// range would turn an always-empty predicate into a whole month/day of matches,
+	// so bail and leave the original predicate untouched. Alignment-safe constants
+	// ('2025-01-01' for 'month', etc.) still rewrite below.
+	if !start.Equal(rawConst) {
+		return nil, dateTruncRewrite{}, false
+	}
 	end, ok := rangeEnd(start, unit)
 	if !ok {
 		return nil, dateTruncRewrite{}, false
@@ -882,6 +891,18 @@ func notExpr(n *pg_query.Node) *pg_query.Node {
 	return &pg_query.Node{Node: &pg_query.Node_BoolExpr{BoolExpr: &pg_query.BoolExpr{
 		Boolop: pg_query.BoolExprType_NOT_EXPR,
 		Args:   []*pg_query.Node{n},
+	}}}
+}
+
+// isNotTrueExpr wraps n in `(n) IS NOT TRUE` — a NULL-safe negation. Unlike
+// `NOT n`, this evaluates to TRUE (not NULL) when n itself is NULL, so it can
+// subtract an already-covered predicate branch without dropping rows whose
+// predicate column is NULL. Used by the OR -> UNION ALL rewrite so branch
+// multiplicity matches the original OR under three-valued logic.
+func isNotTrueExpr(n *pg_query.Node) *pg_query.Node {
+	return &pg_query.Node{Node: &pg_query.Node_BooleanTest{BooleanTest: &pg_query.BooleanTest{
+		Arg:          n,
+		Booltesttype: pg_query.BoolTestType_IS_NOT_TRUE,
 	}}}
 }
 

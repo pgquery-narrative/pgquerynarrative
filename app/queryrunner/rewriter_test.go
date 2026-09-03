@@ -85,16 +85,29 @@ func TestSuggestRewrites_QualifiedColumn(t *testing.T) {
 	}
 }
 
-func TestSuggestRewrites_TruncatesNonAlignedConst(t *testing.T) {
-	// DATE_TRUNC('month', date) = DATE '2025-01-15' is equivalent to the January range.
+func TestSuggestRewrites_MisalignedDateTruncConstIsNotRewritten(t *testing.T) {
+	// DATE_TRUNC('month', date) always returns midnight on the 1st, so
+	// `= DATE '2025-01-15'` matches no rows at all. Rewriting it to the January
+	// range would invent a month of matches — the rewrite must be skipped.
 	sql := `SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '2025-01-15'`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("expected no candidate for a misaligned DATE_TRUNC constant, got: %#v", cands)
+	}
+}
+
+func TestSuggestRewrites_AlignedDateTruncConstIsRewritten(t *testing.T) {
+	// The alignment-safe constant still unwraps to the sargable month range.
+	sql := `SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '2025-01-01'`
 	cands := SuggestRewrites(sql, nil)
 	if len(cands) != 1 {
 		t.Fatalf("expected 1 candidate, got %d", len(cands))
 	}
 	got := normalizeSQL(cands[0].SQL)
 	if !strings.Contains(got, "2025-01-01") || !strings.Contains(got, "2025-02-01") {
-		t.Fatalf("expected truncated month bounds, got: %s", cands[0].SQL)
+		t.Fatalf("expected month bounds, got: %s", cands[0].SQL)
+	}
+	if strings.Contains(strings.ToLower(got), "date_trunc") {
+		t.Fatalf("DATE_TRUNC should be unwrapped, got: %s", cands[0].SQL)
 	}
 }
 
