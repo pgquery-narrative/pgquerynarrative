@@ -24,22 +24,40 @@ func TestSQLFingerprint(t *testing.T) {
 }
 
 func TestEquivalenceStatusFromComparison(t *testing.T) {
-	if got := equivalenceStatusFromComparison(nil); got != "Unverified" {
+	if got := equivalenceStatusFromComparison(nil); got != EquivalenceUnverified {
 		t.Errorf("nil → Unverified, got %q", got)
 	}
-	eq := "Equal"
-	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultEquivalenceStatus: &eq}); got != "Equal" {
+	eq := EquivalenceSampleMatch
+	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultEquivalenceStatus: &eq}); got != EquivalenceSampleMatch {
 		t.Errorf("explicit status wins, got %q", got)
 	}
-	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{}); got != "Unverified" {
+	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{}); got != EquivalenceUnverified {
 		t.Errorf("no status, no checksum → Unverified, got %q", got)
 	}
 	yes, no := true, false
-	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultChecksumEqual: &yes}); got != "Equal" {
-		t.Errorf("checksum equal → Equal, got %q", got)
+	// Legacy fallback: a stored checksum-equal comparison predates the status
+	// string and was only ever a full compare.
+	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultChecksumEqual: &yes}); got != EquivalenceVerifiedEqual {
+		t.Errorf("checksum equal → VerifiedEqual, got %q", got)
 	}
-	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultChecksumEqual: &no}); got != "Different" {
+	if got := equivalenceStatusFromComparison(&investigations.ComparePlansResult{ResultChecksumEqual: &no}); got != EquivalenceDifferent {
 		t.Errorf("checksum unequal → Different, got %q", got)
+	}
+}
+
+func TestEquivalenceIsShippable(t *testing.T) {
+	shippable := map[string]bool{
+		EquivalenceVerifiedEqual: true,
+		EquivalenceSampleMatch:   true,
+		EquivalenceDifferent:     false,
+		EquivalenceUnverified:    false,
+		EquivalenceNotRequested:  false,
+		"":                       false,
+	}
+	for status, want := range shippable {
+		if got := equivalenceIsShippable(status); got != want {
+			t.Errorf("equivalenceIsShippable(%q) = %v, want %v", status, got, want)
+		}
 	}
 }
 

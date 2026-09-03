@@ -23,6 +23,13 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 	if err := checkConnectionAccess(ctx, s.authz, connID, explainAction); err != nil {
 		return nil, connectionForbiddenQueriesError(err)
 	}
+	// Result verification actually executes both queries (COUNT(*) + a bounded
+	// sample), which is a separate capability from planning them.
+	if payload.VerifyResults {
+		if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionQuery); err != nil {
+			return nil, connectionForbiddenQueriesError(err)
+		}
+	}
 	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
 	if err != nil {
 		return nil, connectionNotFoundQueriesError(err)
@@ -84,7 +91,10 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 		})
 	}
 
-	equiv := compareResultEquivalence(ctx, runner, beforeSQL, afterSQL)
+	equiv := notRequestedEquivalence()
+	if payload.VerifyResults {
+		equiv = compareResultEquivalence(ctx, runner, beforeSQL, afterSQL)
+	}
 
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, beforeResult)
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, afterResult)

@@ -2,36 +2,28 @@ import { cn } from "@/lib/utils";
 import type { PlanComparisonMetric, ComparePlansResult } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Minus, Plus, TrendingDown, AlertTriangle } from "lucide-react";
+import {
+  equivalenceStatusOf,
+  equivalenceLabel,
+  equivalenceBlurb,
+  isShippableEquivalence,
+} from "@/lib/equivalence";
 
 interface PlanCompareProps {
   comparison: ComparePlansResult;
   className?: string;
 }
 
-function equivalenceStatus(comparison: ComparePlansResult): "Equal" | "Different" | "Unverified" {
-  if (comparison.result_equivalence_status === "Equal" || comparison.result_equivalence_status === "Different" || comparison.result_equivalence_status === "Unverified") {
-    return comparison.result_equivalence_status;
-  }
-  if (comparison.result_checksum_equal === true) return "Equal";
-  if (comparison.result_checksum_equal === false) return "Different";
-  return "Unverified";
-}
-
 /** Before/after plan comparison view with blocking equivalence banner. */
 export function PlanCompare({ comparison, className }: PlanCompareProps) {
   const { metrics, diff } = comparison;
-  const status = equivalenceStatus(comparison);
-  const notes =
-    comparison.result_equivalence_notes ||
-    (status === "Equal"
-      ? "Results match under COUNT(*) + sampled multiset check."
-      : status === "Different"
-        ? "Results differ — do not deploy."
-        : "Equivalence could not be verified — treat as unknown, not a mismatch, and not shippable.");
+  const status = equivalenceStatusOf(comparison);
+  const shippable = isShippableEquivalence(status);
+  const notes = comparison.result_equivalence_notes || equivalenceBlurb(status);
 
   return (
     <div className={cn("space-y-6", className)}>
-      {status !== "Equal" && (
+      {!shippable && (
         <div
           role="alert"
           className={cn(
@@ -45,7 +37,9 @@ export function PlanCompare({ comparison, className }: PlanCompareProps) {
             <AlertTriangle className="h-4 w-4" />
             {status === "Different"
               ? "Result equivalence: Different — do not ship this candidate"
-              : "Result equivalence: Unverified — not shippable yet"}
+              : status === "NotRequested"
+                ? "Result equivalence: not checked — enable result verification to compare rows"
+                : "Result equivalence: Unverified — not shippable yet"}
           </p>
           <p className="text-xs opacity-90">{notes}</p>
           {(comparison.result_before_row_count != null || comparison.result_after_row_count != null) && (
@@ -80,9 +74,12 @@ export function PlanCompare({ comparison, className }: PlanCompareProps) {
                 {comparison.result_after_row_count != null ? `COUNT(*)=${comparison.result_after_row_count}` : "—"}
               </td>
               <td className="p-3 space-y-1">
-                {status === "Equal" && <Badge variant="success">Equal</Badge>}
-                {status === "Different" && <Badge variant="destructive">Different</Badge>}
-                {status === "Unverified" && <Badge variant="secondary">Unverified</Badge>}
+                {status === "VerifiedEqual" && <Badge variant="success">{equivalenceLabel(status)}</Badge>}
+                {status === "SampleMatch" && <Badge variant="warning">{equivalenceLabel(status)}</Badge>}
+                {status === "Different" && <Badge variant="destructive">{equivalenceLabel(status)}</Badge>}
+                {(status === "Unverified" || status === "NotRequested") && (
+                  <Badge variant="secondary">{equivalenceLabel(status)}</Badge>
+                )}
                 <p className="text-xs text-muted-foreground">{notes}</p>
               </td>
             </tr>

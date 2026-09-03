@@ -12,29 +12,43 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
-// Equivalence status values returned to API / reports.
+// Equivalence status values returned to API / reports. Only VerifiedEqual is a
+// full-result proof; SampleMatch is supporting evidence over a bounded sample.
 const (
-	EquivalenceEqual      = "Equal"
-	EquivalenceDifferent  = "Different"
-	EquivalenceUnverified = "Unverified"
+	EquivalenceVerifiedEqual = "VerifiedEqual"
+	EquivalenceSampleMatch   = "SampleMatch"
+	EquivalenceDifferent     = "Different"
+	EquivalenceUnverified    = "Unverified"
+	EquivalenceNotRequested  = "NotRequested"
 )
 
 const equivalenceSampleCap = 1000
 
-// EquivalenceResult is the tri-state outcome of comparing two query result sets.
-// Status is never "Different" when a run failed — that is always Unverified.
+// EquivalenceResult is the outcome of comparing two query result sets.
+// Status is never "Different" when a run failed — that is always Unverified —
+// and never "VerifiedEqual" unless every row of a COUNT(*) <= cap result matched.
 type EquivalenceResult struct {
-	Equal       *bool
+	Equal       *bool // true only for VerifiedEqual; false for Different; nil otherwise
 	Status      string
 	Notes       string
 	BeforeCount int64
 	AfterCount  int64
 	SampleRows  int
-	FullCompare bool // true when COUNT(*) <= sample cap and payloads compared fully
+	FullCompare bool // true when COUNT(*) <= sample cap and every row was compared
+}
+
+// notRequestedEquivalence is the result when the caller did not ask to execute
+// the queries (no verify_results, or the caller lacks the query permission).
+func notRequestedEquivalence() EquivalenceResult {
+	return EquivalenceResult{
+		Status: EquivalenceNotRequested,
+		Notes:  "Result equivalence was not checked — the compare only planned the queries. Re-run with result verification (requires the query permission) to compare rows.",
+	}
 }
 
 // compareResultEquivalence runs COUNT(*) on both queries, then compares a
-// bounded multiset sample. Returns Unverified (Equal=nil) on any run error.
+// deterministic bounded sample. The caller is responsible for authorizing query
+// execution before calling this. Returns Unverified (Equal=nil) on any run error.
 func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, beforeSQL, afterSQL string) EquivalenceResult {
 	out := EquivalenceResult{
 		Status: EquivalenceUnverified,
@@ -67,12 +81,12 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 		return out
 	}
 
-	before, err := runner.Run(ctx, beforeSQL, equivalenceSampleCap)
+	before, err := runEquivalenceSample(ctx, runner, beforeSQL)
 	if err != nil {
 		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample run failed on original SQL: %v. Unverified — not a mismatch.", beforeCount, err)
 		return out
 	}
-	after, err := runner.Run(ctx, afterSQL, equivalenceSampleCap)
+	after, err := runEquivalenceSample(ctx, runner, afterSQL)
 	if err != nil {
 		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample run failed on candidate SQL: %v. Unverified — not a mismatch.", afterCount, err)
 		return out
@@ -93,31 +107,65 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 	if after.RowCount < out.SampleRows {
 		out.SampleRows = after.RowCount
 	}
-	eq := bh == ah
-	out.Equal = &eq
-	if !eq {
+	if bh != ah {
+		eq := false
+		out.Equal = &eq
 		out.Status = EquivalenceDifferent
 		out.Notes = fmt.Sprintf(
-			"COUNT(*) matched (%d) but sampled payloads differ (compared up to %d rows as an order-independent multiset). Do not deploy without review.",
+			"COUNT(*) matched (%d) but the compared rows differ (deterministic sample of up to %d rows, order-independent multiset). Do not deploy without review.",
 			beforeCount, equivalenceSampleCap,
 		)
 		return out
 	}
 
-	out.Status = EquivalenceEqual
 	if beforeCount <= int64(equivalenceSampleCap) {
+		eq := true
+		out.Equal = &eq
 		out.FullCompare = true
+		out.Status = EquivalenceVerifiedEqual
 		out.Notes = fmt.Sprintf(
-			"Full result compared: COUNT(*)=%d and all sampled rows match as an order-independent multiset.",
+			"Full result compared: COUNT(*)=%d and every row matched as an order-independent multiset.",
 			beforeCount,
 		)
-	} else {
-		out.Notes = fmt.Sprintf(
-			"COUNT(*) matched (%d). Sampled %d rows match as an order-independent multiset — not a proof of full payload equality beyond the sample. Re-check on a representative parameter set before deploying.",
-			beforeCount, out.SampleRows,
-		)
+		return out
 	}
+
+	// COUNT(*) matched but the result is larger than the sample cap: the two
+	// deterministic md5-ordered samples matched, which is supporting evidence,
+	// not a full-result proof.
+	out.Status = EquivalenceSampleMatch
+	out.Notes = fmt.Sprintf(
+		"COUNT(*) matched (%d). A deterministic %d-row sample (ordered by row hash) matched as an order-independent multiset — supporting evidence, not full-result proof. Re-check on a representative parameter set before deploying.",
+		beforeCount, out.SampleRows,
+	)
 	return out
+}
+
+// runEquivalenceSample executes a deterministic, bounded slice of sql: the rows
+// are ordered by md5(row::text) before the LIMIT, so two queries with identical
+// full result sets return the same subset (an un-ordered LIMIT would return an
+// arbitrary — and possibly different — slice of each plan).
+func runEquivalenceSample(ctx context.Context, runner *queryrunner.Runner, sql string) (*queryrunner.Result, error) {
+	wrapped, err := wrapDeterministicSampleSQL(sql, equivalenceSampleCap)
+	if err != nil {
+		return nil, err
+	}
+	return runner.Run(ctx, wrapped, equivalenceSampleCap)
+}
+
+func wrapDeterministicSampleSQL(sql string, limit int) (string, error) {
+	inner, _, err := queryrunner.ExtractReadOnlySQL(sql)
+	if err != nil {
+		return "", err
+	}
+	inner = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(inner), ";"))
+	if inner == "" {
+		return "", fmt.Errorf("empty SQL")
+	}
+	return fmt.Sprintf(
+		"SELECT * FROM (%s) AS pgqn_eq ORDER BY md5(pgqn_eq::text) LIMIT %d",
+		inner, limit,
+	), nil
 }
 
 func countQueryRows(ctx context.Context, runner *queryrunner.Runner, sql string) (int64, error) {

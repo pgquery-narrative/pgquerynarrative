@@ -147,15 +147,17 @@ func BuildInvestigationReport(
 		status := comparison.ResultEquivalenceStatus
 		notes := comparison.ResultEquivalenceNotes
 		if status == "" {
+			// Legacy comparison with no status string — derive from the checksum,
+			// which was only ever set true for a full-result compare.
 			status = "Unverified"
 			notes = "Result equivalence could not be verified (query error, timeout, or incomplete sample). Treat as unknown — not as a mismatch."
 			if comparison.ResultChecksumEqual != nil {
 				if *comparison.ResultChecksumEqual {
-					status = "Equal"
-					notes = "Sampled result payloads match between original and candidate queries."
+					status = "VerifiedEqual"
+					notes = "Full result compared: every row matched between original and candidate."
 				} else {
 					status = "Different"
-					notes = "Sampled results differ — do not deploy the candidate without review."
+					notes = "Results differ — do not deploy the candidate without review."
 				}
 			}
 		}
@@ -176,19 +178,23 @@ func BuildInvestigationReport(
 
 	nextAction := "Review plan evidence and test a candidate rewrite in a controlled environment."
 	if comparison != nil && len(comparison.Improved) > 0 {
-		nextAction = "Candidate shows measurable plan improvement — confirm result equivalence is Equal, then open an optimization ticket with this report attached."
 		status := comparison.ResultEquivalenceStatus
 		if status == "" && comparison.ResultChecksumEqual != nil {
 			if *comparison.ResultChecksumEqual {
-				status = "Equal"
+				status = "VerifiedEqual"
 			} else {
 				status = "Different"
 			}
 		}
-		if status == "Different" || (comparison.ResultChecksumEqual != nil && !*comparison.ResultChecksumEqual) {
+		switch status {
+		case "VerifiedEqual":
+			nextAction = "Candidate shows measurable plan improvement and full result equivalence — open an optimization ticket with this report attached."
+		case "SampleMatch":
+			nextAction = "Candidate shows measurable plan improvement and a large-result sample matched — re-check equivalence on a representative parameter set, then open an optimization ticket."
+		case "Different":
 			nextAction = "Plan improved but results differ — do not deploy; reconcile the rewrite before opening a change ticket."
-		} else if status == "Unverified" || status == "" || comparison.ResultChecksumEqual == nil {
-			nextAction = "Plan improved but result equivalence is Unverified — do not treat as shippable until Equal is confirmed."
+		default: // Unverified, NotRequested, or empty
+			nextAction = "Plan improved but result equivalence was not verified — do not treat as shippable until VerifiedEqual (or SampleMatch for a large result) is confirmed."
 		}
 	}
 

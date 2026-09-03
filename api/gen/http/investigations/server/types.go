@@ -39,6 +39,9 @@ type CreateFromRegressionRequestBody struct {
 type AddCandidateRequestBody struct {
 	CandidateSQL *string `form:"candidate_sql,omitempty" json:"candidate_sql,omitempty" xml:"candidate_sql,omitempty"`
 	Analyze      *bool   `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+	// Execute the candidate and the original to check result equivalence. Requires
+	// the `query` permission on the connection.
+	VerifyResults *bool `form:"verify_results,omitempty" json:"verify_results,omitempty" xml:"verify_results,omitempty"`
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
@@ -541,7 +544,7 @@ type ComparePlansResultResponseBody struct {
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff" json:"diff" xml:"diff"`
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
@@ -586,7 +589,7 @@ type InvestigationCandidateResponseBody struct {
 	Binds            []string                        `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	EquivalenceStatus *string `form:"equivalence_status,omitempty" json:"equivalence_status,omitempty" xml:"equivalence_status,omitempty"`
 	// after - before total cost (negative is better)
 	CostDelta *float64 `form:"cost_delta,omitempty" json:"cost_delta,omitempty" xml:"cost_delta,omitempty"`
@@ -1223,8 +1226,14 @@ func NewAddCandidatePayload(body *AddCandidateRequestBody, id string) *investiga
 	if body.Analyze != nil {
 		v.Analyze = *body.Analyze
 	}
+	if body.VerifyResults != nil {
+		v.VerifyResults = *body.VerifyResults
+	}
 	if body.Analyze == nil {
 		v.Analyze = false
+	}
+	if body.VerifyResults == nil {
+		v.VerifyResults = false
 	}
 	if body.Binds != nil {
 		v.Binds = make([]string, len(body.Binds))
