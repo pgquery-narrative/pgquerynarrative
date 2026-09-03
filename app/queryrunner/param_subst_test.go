@@ -91,3 +91,93 @@ func TestSubstituteParams_InjectionNeutralized(t *testing.T) {
 		t.Fatalf("result is not a clean param-free SELECT: %s", got)
 	}
 }
+
+// A bind that starts like an ISO timestamp but carries a SQL payload must not
+// take the bare `'..'::timestamp` path: the value has to end up fully inside a
+// single-quoted, quote-doubled literal (or be rejected). This is the
+// unanchored-timestampRe / unescaped-timestamp-branch regression.
+func TestSubstituteParams_HostileTimestampPrefixBinds(t *testing.T) {
+	sql := "SELECT 1 FROM demo.sales WHERE date >= $1 AND date < ($1 + '1 month'::interval)"
+
+	// The SQL skeleton with every string literal and -- comment blanked. A hostile
+	// bind that stays inside its quotes leaves this identical to a benign plain
+	// string bind (which, like the hostile ones, takes the unquoted-cast-free path).
+	benign, err := SubstituteParams(sql, []string{"North"})
+	if err != nil {
+		t.Fatalf("benign substitution failed: %v", err)
+	}
+	wantSkeleton := stripQuotedAndComments(benign)
+
+	hostile := []string{
+		`2025-01-01T00:00:00'::timestamp OR 1=1 --`,
+		`2025-01-01 00:00' OR '1'='1`,
+		`2025-01-01T00:00:00'::text || (SELECT current_user) --`,
+		`2025-01-01' ; DROP TABLE demo.sales -- `,
+		`2025-01-01T00:00:00) OR 1=1 --`,
+	}
+	for _, b := range hostile {
+		t.Run(b, func(t *testing.T) {
+			got, err := SubstituteParams(sql, []string{b})
+			if err != nil {
+				return // rejecting outright is a valid neutralization
+			}
+			// Every caller quote must be doubled (breakout neutralized).
+			esc := "'" + strings.ReplaceAll(strings.TrimSpace(b), "'", "''") + "'"
+			if !strings.Contains(got, esc) {
+				t.Fatalf("hostile bind not emitted as a quote-doubled literal:\n bind: %q\n  got: %s", b, got)
+			}
+			// Nothing the caller supplied may appear outside a string literal.
+			if skel := stripQuotedAndComments(got); skel != wantSkeleton {
+				t.Fatalf("hostile bind changed the SQL skeleton:\n want: %s\n  got: %s\n from: %s", wantSkeleton, skel, got)
+			}
+			if _, sel, ok := parseSingleSelect(got); !ok || selectTreeContainsParamRef(sel) {
+				t.Fatalf("result is not a clean param-free SELECT: %s", got)
+			}
+		})
+	}
+}
+
+func TestSubstituteParams_RejectsUnsafeBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		bind string
+	}{
+		{"backslash", `C:\Users\x`},
+		{"nul byte", "a\x00b"},
+		{"over length", strings.Repeat("x", maxBindValueLen+1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE region = $1", []string{tc.bind}); err == nil {
+				t.Fatalf("expected %s bind to be rejected", tc.name)
+			}
+		})
+	}
+}
+
+func TestSubstituteParams_NonFiniteNumbersAreQuoted(t *testing.T) {
+	// strconv.ParseFloat would accept these; emitting them bare would let the
+	// planner read `NaN` / `Infinity` as column references or worse.
+	for _, b := range []string{"NaN", "Infinity", "-Inf", "0x1p4", "1_000"} {
+		got, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE quantity > $1", []string{b})
+		if err != nil {
+			t.Fatalf("%q: unexpected error %v", b, err)
+		}
+		if !strings.Contains(got, "'"+b+"'") {
+			t.Fatalf("%q must be quoted, got: %s", b, got)
+		}
+	}
+}
+
+func TestSubstituteParams_TimestampBindKeepsCast(t *testing.T) {
+	for _, b := range []string{"2025-01-01 12:30:00", "2025-01-01T12:30:00.123456+00:00", "2025-01-01 12:30:00Z"} {
+		got, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE date = $1", []string{b})
+		if err != nil {
+			t.Fatalf("%q: unexpected error %v", b, err)
+		}
+		want := "'" + b + "'::timestamp"
+		if !strings.Contains(got, want) {
+			t.Fatalf("%q should keep the timestamp cast (%s), got: %s", b, want, got)
+		}
+	}
+}

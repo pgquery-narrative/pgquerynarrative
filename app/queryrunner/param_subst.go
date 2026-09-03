@@ -7,13 +7,23 @@ import (
 	"strings"
 )
 
+// maxBindValueLen bounds a single bind value. Compare/equivalence binds are
+// region names, dates, and small numbers; anything larger is rejected rather
+// than substituted.
+const maxBindValueLen = 4096
+
 // SubstituteParams replaces $1..$n in sql with literal values from binds. It is
 // used only to run an executed compare / equivalence check on a parameterized
 // candidate — the placeholder form is what gets stored and shown.
 //
-// The substitution is text-level but SQL-aware (single-quoted strings and line
-// comments are skipped) and every result is re-parsed to confirm no ParamRef
-// survived. Callers MUST still run the output through the read-only validator.
+// Every bind is emitted either as a strict decimal / boolean token or as a
+// single-quoted string literal with every embedded quote doubled; a value is
+// never emitted bare or cast unless it matches a fully anchored number / date /
+// timestamp pattern end to end. Bind values carrying a NUL or a backslash are
+// rejected outright (a backslash is an escape when standard_conforming_strings
+// is off, so it cannot be quoted portably). The result is re-parsed to confirm
+// it is one param-free SELECT, and callers MUST still run it through the
+// read-only validator.
 func SubstituteParams(sql string, binds []string) (string, error) {
 	trimmed := trimSQL(sql)
 	n := maxParamNumber(trimmed)
@@ -29,6 +39,15 @@ func SubstituteParams(sql string, binds []string) (string, error) {
 
 	lits := make([]string, len(binds))
 	for i, b := range binds {
+		if len(b) > maxBindValueLen {
+			return "", fmt.Errorf("bind $%d is %d bytes; limit is %d", i+1, len(b), maxBindValueLen)
+		}
+		if strings.ContainsRune(b, 0) {
+			return "", fmt.Errorf("bind $%d contains a NUL byte", i+1)
+		}
+		if strings.ContainsRune(b, '\\') {
+			return "", fmt.Errorf("bind $%d contains a backslash, which cannot be substituted safely", i+1)
+		}
 		lits[i] = bindLiteral(b)
 	}
 
@@ -48,8 +67,12 @@ func SubstituteParams(sql string, binds []string) (string, error) {
 var (
 	paramRefLexRe    = regexp.MustCompile(`\$[1-9]\d*`)
 	dollarQuoteTagRe = regexp.MustCompile(`\$[A-Za-z_]\w*\$`)
-	dateOnlyRe       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	timestampRe      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?`)
+	// All three are anchored end to end (`^...$`): a bind takes the bare-number
+	// or date/timestamp-cast path only when it is *entirely* that shape, never
+	// when it merely starts like one (e.g. `2025-01-01T00:00:00'::timestamp OR 1=1 --`).
+	decimalRe   = regexp.MustCompile(`^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$`)
+	dateOnlyRe  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	timestampRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?([+-]\d{2}(:?\d{2})?|Z)?$`)
 )
 
 // maxParamNumber returns the highest $N referenced anywhere in sql (lexical).
@@ -143,29 +166,38 @@ func stripQuotedAndComments(sql string) string {
 	return b.String()
 }
 
-// bindLiteral renders a bind value as a SQL literal. Numbers and booleans go
-// bare; date/timestamp-shaped strings get an explicit cast so date arithmetic in
-// the rewrite (`$1 + INTERVAL '1 month'`) type-checks; everything else is a
-// single-quoted string with quotes escaped.
+// bindLiteral renders a bind value as a SQL literal. A value that is *entirely* a
+// strict decimal number or boolean is emitted bare; one that is *entirely* an
+// ISO date or timestamp is emitted as a quoted, quote-escaped literal with an
+// explicit cast so date arithmetic in the rewrite (`$1 + INTERVAL '1 month'`)
+// type-checks; everything else — including a value that only looks numeric or
+// temporal at the front — becomes a single-quoted string with every embedded
+// quote doubled. `strconv.ParseFloat` is deliberately not used: it accepts
+// `NaN`, `Inf`, hex floats, and digit separators, none of which are safe to emit
+// unquoted.
 func bindLiteral(v string) string {
 	s := strings.TrimSpace(v)
-	if s == "" {
+	switch {
+	case s == "":
 		return "''"
-	}
-	if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+	case decimalRe.MatchString(s):
 		return s
+	case strings.EqualFold(s, "true"):
+		return "true"
+	case strings.EqualFold(s, "false"):
+		return "false"
+	case dateOnlyRe.MatchString(s):
+		return quoteSQLLiteral(s) + "::date"
+	case timestampRe.MatchString(s):
+		return quoteSQLLiteral(s) + "::timestamp"
+	default:
+		return quoteSQLLiteral(s)
 	}
-	if _, err := strconv.ParseFloat(s, 64); err == nil {
-		return s
-	}
-	if s == "true" || s == "false" || s == "TRUE" || s == "FALSE" {
-		return strings.ToLower(s)
-	}
-	if dateOnlyRe.MatchString(s) {
-		return "'" + s + "'::date"
-	}
-	if timestampRe.MatchString(s) {
-		return "'" + s + "'::timestamp"
-	}
+}
+
+// quoteSQLLiteral renders s as a single-quoted SQL string literal with every
+// embedded single quote doubled. Callers reject bind values containing a
+// backslash or NUL, so this is safe regardless of standard_conforming_strings.
+func quoteSQLLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
