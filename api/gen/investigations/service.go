@@ -97,6 +97,8 @@ type CreateInvestigationPayload struct {
 	Title        string
 	SQL          string
 	ConnectionID *string
+	// Run EXPLAIN ANALYZE (executes the query) instead of an estimate-only plan
+	Analyze bool
 	// Optional pg_stat_statements queryid for context
 	Queryid     *string
 	Calls       *int64
@@ -382,6 +384,9 @@ type RankedCandidateBaseline struct {
 type RankedCandidateList struct {
 	Baseline   *RankedCandidateBaseline
 	Candidates []*RankedCandidate
+	// Set when no candidate is recommended (e.g. none improved on the baseline
+	// plan); empty when a Rank 1 candidate exists
+	Recommendation *string
 }
 
 type RewriteCandidate struct {

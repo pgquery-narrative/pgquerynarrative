@@ -282,6 +282,7 @@ var RankedCandidate = Type("RankedCandidate", func() {
 var RankedCandidateList = Type("RankedCandidateList", func() {
 	Attribute("baseline", RankedCandidateBaseline)
 	Attribute("candidates", ArrayOf(RankedCandidate))
+	Attribute("recommendation", String, "Set when no candidate is recommended (e.g. none improved on the baseline plan); empty when a Rank 1 candidate exists")
 	Required("candidates")
 })
 
@@ -432,6 +433,9 @@ var CreateInvestigationPayload = Type("CreateInvestigationPayload", func() {
 		Pattern("^[^;]+$")
 	})
 	Attribute("connection_id", String)
+	Attribute("analyze", Boolean, "Run EXPLAIN ANALYZE (executes the query) instead of an estimate-only plan", func() {
+		Default(false)
+	})
 	Attribute("queryid", String, "Optional pg_stat_statements queryid for context")
 	Attribute("calls", Int64)
 	Attribute("mean_time_ms", Float64)

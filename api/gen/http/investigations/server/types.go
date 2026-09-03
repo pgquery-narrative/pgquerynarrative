@@ -20,6 +20,8 @@ type CreateRequestBody struct {
 	Title        *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
 	SQL          *string `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	// Run EXPLAIN ANALYZE (executes the query) instead of an estimate-only plan
+	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
 	// Optional pg_stat_statements queryid for context
 	Queryid     *string  `form:"queryid,omitempty" json:"queryid,omitempty" xml:"queryid,omitempty"`
 	Calls       *int64   `form:"calls,omitempty" json:"calls,omitempty" xml:"calls,omitempty"`
@@ -240,6 +242,9 @@ type SuggestRewriteResponseBody struct {
 type RankCandidatesResponseBody struct {
 	Baseline   *RankedCandidateBaselineResponseBody `form:"baseline,omitempty" json:"baseline,omitempty" xml:"baseline,omitempty"`
 	Candidates []*RankedCandidateResponseBody       `form:"candidates" json:"candidates" xml:"candidates"`
+	// Set when no candidate is recommended (e.g. none improved on the baseline
+	// plan); empty when a Rank 1 candidate exists
+	Recommendation *string `form:"recommendation,omitempty" json:"recommendation,omitempty" xml:"recommendation,omitempty"`
 }
 
 // GenerateReportResponseBody is the type of the "investigations" service
@@ -957,7 +962,9 @@ func NewSuggestRewriteResponseBody(res *investigations.RewriteSuggestionList) *S
 // NewRankCandidatesResponseBody builds the HTTP response body from the result
 // of the "rank_candidates" endpoint of the "investigations" service.
 func NewRankCandidatesResponseBody(res *investigations.RankedCandidateList) *RankCandidatesResponseBody {
-	body := &RankCandidatesResponseBody{}
+	body := &RankCandidatesResponseBody{
+		Recommendation: res.Recommendation,
+	}
 	if res.Baseline != nil {
 		body.Baseline = marshalInvestigationsRankedCandidateBaselineToRankedCandidateBaselineResponseBody(res.Baseline)
 	}
@@ -1182,6 +1189,12 @@ func NewCreateInvestigationPayload(body *CreateRequestBody) *investigations.Crea
 		MeanTimeMs:   body.MeanTimeMs,
 		TotalTimeMs:  body.TotalTimeMs,
 		Rows:         body.Rows,
+	}
+	if body.Analyze != nil {
+		v.Analyze = *body.Analyze
+	}
+	if body.Analyze == nil {
+		v.Analyze = false
 	}
 
 	return v

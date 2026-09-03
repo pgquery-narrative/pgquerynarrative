@@ -40,13 +40,16 @@ func (s *InvestigationsService) Create(ctx context.Context, payload *investigati
 		connID = *payload.ConnectionID
 	}
 
+	// Estimate-only EXPLAIN by default — creating an investigation must not run a
+	// possibly-expensive production query. ANALYZE only when the caller opts in
+	// (and then still fall back if it is disabled server-side).
+	wantAnalyze := payload.Analyze
 	explainResult, err := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
 		SQL:          payload.SQL,
-		Analyze:      true,
+		Analyze:      wantAnalyze,
 		ConnectionID: &connID,
 	})
-	if err != nil {
-		// Fall back to estimate-only when EXPLAIN ANALYZE is disabled server-side.
+	if err != nil && wantAnalyze {
 		explainResult, err = s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
 			SQL:          payload.SQL,
 			Analyze:      false,
@@ -625,6 +628,9 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 	out := &investigations.RankedCandidateList{
 		Candidates: make([]*investigations.RankedCandidate, 0, len(scored)),
 	}
+	if rec := queryrunner.RankingRecommendation(scored); rec != "" {
+		out.Recommendation = &rec
+	}
 	base := &investigations.RankedCandidateBaseline{
 		TotalCost: &baselineMetrics.TotalCost,
 	}
@@ -809,15 +815,17 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 		return nil, err
 	}
 
-	// Prefer EXPLAIN ANALYZE for credible before/after timings; fall back if disabled.
+	// EXPLAIN ANALYZE only when the caller opts in (payload.analyze); estimate-only
+	// otherwise. When ANALYZE was requested but is disabled server-side, fall back.
+	wantAnalyze := payload.Analyze
 	cmp, err := s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
 		BeforeSQL:    inv.SQL,
 		AfterSQL:     payload.CandidateSQL,
-		Analyze:      true,
+		Analyze:      wantAnalyze,
 		ConnectionID: &inv.ConnectionID,
 		Binds:        payload.Binds,
 	})
-	if err != nil {
+	if err != nil && wantAnalyze {
 		cmp, err = s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
 			BeforeSQL:    inv.SQL,
 			AfterSQL:     payload.CandidateSQL,
