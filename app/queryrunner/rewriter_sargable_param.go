@@ -163,18 +163,6 @@ func tryRewriteDateTruncEqualityParam(ae *pg_query.A_Expr) (*pg_query.Node, date
 		dateTruncRewrite{Unit: normalizeTruncUnit(unit), Column: columnRefName(col), Kind: "date_trunc_param"}, true
 }
 
-// tryRewriteDateTruncBetweenParam is intentionally not rewritten.
-//
-// `DATE_TRUNC(unit, col) BETWEEN $a AND $b` is only equivalent to a plain
-// `col >= $a AND col < $b + INTERVAL '1 <unit>'` range when both binds are on the
-// unit boundary, and — unlike the equality case — there is no single guard that
-// makes every misaligned bind collapse to the correct result (a misaligned lower
-// bound shifts the range up by one period rather than emptying it). We cannot
-// verify bind alignment at rewrite time, so leave the predicate untouched.
-func tryRewriteDateTruncBetweenParam(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
-	return nil, dateTruncRewrite{}, false
-}
-
 // tryRewriteCastDateEqualityParam: col::date = $n / CAST(col AS date) = $n
 //
 //	→ col >= $n::date AND col < ($n::date + INTERVAL '1 day')

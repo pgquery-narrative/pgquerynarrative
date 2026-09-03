@@ -2,6 +2,7 @@ package queryrunner
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -300,12 +301,11 @@ func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*p
 			*out = append(*out, info)
 			return replacement, 1
 		}
-		// Parameterized shapes ($1, $2, ...) — equality / BETWEEN only.
+		// Parameterized shapes ($1, $2, ...) — equality only.
+		// DATE_TRUNC(unit, col) BETWEEN $a AND $b is intentionally not rewritten
+		// (see tryRewriteDateTruncBetweenParam): a misaligned bind bound shifts
+		// the range rather than emptying it, and alignment is unknowable here.
 		if replacement, info, ok := tryRewriteDateTruncEqualityParam(ae); ok {
-			*out = append(*out, info)
-			return replacement, 1
-		}
-		if replacement, info, ok := tryRewriteDateTruncBetweenParam(ae); ok {
 			*out = append(*out, info)
 			return replacement, 1
 		}
@@ -363,6 +363,12 @@ func tryRewriteDateTruncEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTrunc
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
+	// A literal with an explicit non-UTC zone offset is compared as an instant,
+	// while DATE_TRUNC of a timestamptz column uses the session TimeZone — the
+	// range bounds we emit (zoneless `::timestamp`) would not line up. Leave it.
+	if constHasExplicitZoneOffset(constNode) {
+		return nil, dateTruncRewrite{}, false
+	}
 	start := truncateTime(rawConst, unit)
 	// DATE_TRUNC(unit, col) only ever yields a value on the unit boundary, so
 	// `DATE_TRUNC(unit, col) = <const>` with a <const> that is not itself on that
@@ -407,12 +413,22 @@ func tryRewriteCastDateEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncR
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
-	start, typ, ok := parseTemporalConst(constNode)
+	rawConst, typ, ok := parseTemporalConst(constNode)
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
+	if constHasExplicitZoneOffset(constNode) {
+		return nil, dateTruncRewrite{}, false
+	}
 	unit := "day"
-	start = truncateTime(start, unit)
+	start := truncateTime(rawConst, unit)
+	// `col::date = <const>` with a <const> that carries a time component is a
+	// timestamp compared against col::date promoted to midnight, so it matches
+	// no rows. Only a day-aligned constant maps to a real [day, day+1) range;
+	// rewriting a misaligned one would invent a day of matches.
+	if !start.Equal(rawConst) {
+		return nil, dateTruncRewrite{}, false
+	}
 	end, ok := rangeEnd(start, unit)
 	if !ok {
 		return nil, dateTruncRewrite{}, false
@@ -605,6 +621,30 @@ func parseTemporalConst(n *pg_query.Node) (time.Time, temporalType, bool) {
 		return t, temporalTimestamp, true
 	}
 	return time.Time{}, temporalUnknown, false
+}
+
+// zoneOffsetRe matches a trailing explicit numeric UTC offset that follows a
+// time component (e.g. `12:30:00+02`, `08:00 -05:30`). A bare `Z` (UTC), a
+// zoneless timestamp, and a bare date (whose own `-DD` is not an offset) are
+// not flagged.
+var zoneOffsetRe = regexp.MustCompile(`\d{2}:\d{2}(:\d{2})?(\.\d+)?\s*[+-]\d{2}(:?\d{2})?\s*$`)
+
+// constHasExplicitZoneOffset reports whether n's string value carries an
+// explicit numeric timezone offset. Such a literal is an instant, so the
+// zoneless range bounds the date rewrites emit would not line up with a
+// timestamptz column truncated in the session TimeZone.
+func constHasExplicitZoneOffset(n *pg_query.Node) bool {
+	if n == nil {
+		return false
+	}
+	if tc := n.GetTypeCast(); tc != nil {
+		n = tc.Arg
+	}
+	s, ok := stringConstValue(n)
+	if !ok {
+		return false
+	}
+	return zoneOffsetRe.MatchString(strings.TrimSpace(s))
 }
 
 func typeNameLast(tn *pg_query.TypeName) string {
