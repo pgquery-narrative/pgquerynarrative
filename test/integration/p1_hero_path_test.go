@@ -131,14 +131,15 @@ func TestP1HeroPath_ServiceEndToEnd(t *testing.T) {
 	}
 
 	cmp, err := queriesSvc.ComparePlans(reqCtx, &queries.ComparePlansPayload{
-		BeforeSQL: problem,
-		AfterSQL:  rewriteSQL,
-		Analyze:   false,
+		BeforeSQL:     problem,
+		AfterSQL:      rewriteSQL,
+		Analyze:       false,
+		VerifyResults: true,
 	})
 	if err != nil {
 		t.Fatalf("ComparePlans: %v", err)
 	}
-	if cmp.ResultEquivalenceStatus == nil || *cmp.ResultEquivalenceStatus != service.EquivalenceEqual {
+	if cmp.ResultEquivalenceStatus == nil || *cmp.ResultEquivalenceStatus != service.EquivalenceVerifiedEqual {
 		status := "nil"
 		if cmp.ResultEquivalenceStatus != nil {
 			status = *cmp.ResultEquivalenceStatus
@@ -147,14 +148,15 @@ func TestP1HeroPath_ServiceEndToEnd(t *testing.T) {
 	}
 
 	inv, err = invSvc.AddCandidate(reqCtx, &investigations.AddCandidatePayload{
-		ID:           inv.ID,
-		CandidateSQL: rewriteSQL,
+		ID:            inv.ID,
+		CandidateSQL:  rewriteSQL,
+		VerifyResults: true,
 	})
 	if err != nil {
 		t.Fatalf("AddCandidate: %v", err)
 	}
 	if inv.Comparison == nil || inv.Comparison.ResultEquivalenceStatus == nil ||
-		*inv.Comparison.ResultEquivalenceStatus != service.EquivalenceEqual {
+		*inv.Comparison.ResultEquivalenceStatus != service.EquivalenceVerifiedEqual {
 		t.Fatalf("stored comparison should be Equal: %#v", inv.Comparison)
 	}
 
@@ -233,8 +235,9 @@ func TestP0HeroPath_GenerateReportBlocksNonEqual(t *testing.T) {
 	// Deliberately different result set → equivalence Different.
 	badCandidate := `SELECT region FROM demo.sales WHERE region = 'South'`
 	inv, err = invSvc.AddCandidate(reqCtx, &investigations.AddCandidatePayload{
-		ID:           inv.ID,
-		CandidateSQL: badCandidate,
+		ID:            inv.ID,
+		CandidateSQL:  badCandidate,
+		VerifyResults: true,
 	})
 	if err != nil {
 		t.Fatalf("AddCandidate: %v", err)
