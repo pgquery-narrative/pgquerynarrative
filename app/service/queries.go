@@ -263,14 +263,15 @@ func (s *QueriesService) ExplainPlan(ctx context.Context, payload *queries.Expla
 
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, result)
 
-	return &queries.ExplainQueryResult{
-		SQL:             result.SQL,
-		TotalCost:       result.TotalCost,
-		Plan:            plan,
-		Findings:        findings,
-		GenericPlan:     boolPtrIf(result.GenericPlan),
-		ExecutionTimeMs: result.ExecutionTimeMs,
-	}, nil
+	out := &queries.ExplainQueryResult{
+		SQL:         result.SQL,
+		TotalCost:   result.TotalCost,
+		Plan:        plan,
+		Findings:    findings,
+		GenericPlan: boolPtrIf(result.GenericPlan),
+	}
+	applyExplainTiming(out, result)
+	return out, nil
 }
 
 // boolPtrIf returns &true when b, else nil — keeps false out of the JSON.
@@ -798,7 +799,9 @@ func (s *QueriesService) persistExplainSnapshot(ctx context.Context, connectionI
 			total_cost, findings, explain_plan, execution_time_ms, sql_storage_class
 		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`, p.OrgID, p.UserID, connID, hex.EncodeToString(hash[:]), sqlText, analyze,
-		result.TotalCost, findingsJSON, planJSON, result.ExecutionTimeMs, string(storageClass))
+		// execution_time_ms stores the observed server execution time (0 for an
+		// estimate-only EXPLAIN), never the request wall clock.
+		result.TotalCost, findingsJSON, planJSON, int64(result.ServerExecutionTimeMs), string(storageClass))
 }
 
 // CleanupExplainSnapshots deletes stored EXPLAIN snapshots older than olderThan across all

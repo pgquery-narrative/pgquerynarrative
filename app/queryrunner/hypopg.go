@@ -212,11 +212,12 @@ func (r *Runner) projectWithHypopg(ctx context.Context, sql, createIndexSQL stri
 		_, _ = tx.Exec(ctx, resetSQL)
 		return IndexProjection{}, err
 	}
-	totalCost, _, _, err := parseExplainJSON([]byte(planText))
+	parsed, err := parseExplainJSON([]byte(planText))
 	_, _ = tx.Exec(ctx, resetSQL)
 	if err != nil {
 		return IndexProjection{}, err
 	}
+	totalCost := parsed.TotalCost
 	// Keep hypothetical indexes out of the session even if commit fails.
 	_ = tx.Commit(ctx)
 	if baselineCost <= 0 {

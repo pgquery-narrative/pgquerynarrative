@@ -28,6 +28,36 @@ func TestComparePlans(t *testing.T) {
 	}
 }
 
+func TestScanRowsProcessed_LoopsAndScanNodeFilter(t *testing.T) {
+	// Nested loop: the inner Index Scan reports 3 Actual Rows per loop over 100
+	// loops => 300 rows of real work. The Bitmap Index Scan is not a base-relation
+	// scan and must not be counted; the outer Seq Scan (100 rows, 1 loop) is.
+	plan := `[{"Plan":{"Node Type":"Nested Loop","Actual Rows":300,"Actual Loops":1,"Plans":[
+		{"Node Type":"Seq Scan","Relation Name":"a","Actual Rows":100,"Actual Loops":1},
+		{"Node Type":"Index Scan","Relation Name":"b","Actual Rows":3,"Actual Loops":100,"Plans":[
+			{"Node Type":"Bitmap Index Scan","Relation Name":"b_idx","Actual Rows":3,"Actual Loops":100}]}]}}]`
+	root, err := extractPlanRoot(json.RawMessage(plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := collectPlanMetrics(root)
+	if m.RowsScanned != 400 { // 100*1 (Seq) + 3*100 (Index) ; Bitmap Index excluded
+		t.Fatalf("RowsScanned = %v, want 400", m.RowsScanned)
+	}
+	if m.MaxNodeRows != 300 { // the Nested Loop node
+		t.Fatalf("MaxNodeRows = %v, want 300", m.MaxNodeRows)
+	}
+}
+
+func TestScanRowsProcessed_EstimateOnlyUsesPlanRows(t *testing.T) {
+	plan := `[{"Plan":{"Node Type":"Seq Scan","Relation Name":"sales","Plan Rows":48000000,"Plans":[]}}]`
+	root, _ := extractPlanRoot(json.RawMessage(plan))
+	m := collectPlanMetrics(root)
+	if m.RowsScanned != 48000000 {
+		t.Fatalf("RowsScanned = %v, want 48000000 (Plan Rows fallback)", m.RowsScanned)
+	}
+}
+
 func TestFormatChangeAvoidsFakeHundredPercent(t *testing.T) {
 	got := formatChange(206565.94, 0.03, true)
 	if strings.Contains(got, "100.0%") {

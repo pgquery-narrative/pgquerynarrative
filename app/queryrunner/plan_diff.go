@@ -10,9 +10,13 @@ import (
 
 // PlanMetrics summarizes measurable plan evidence.
 type PlanMetrics struct {
-	ExecutionTimeMs    float64
-	TotalCost          float64
-	RowsScanned        float64
+	ExecutionTimeMs float64
+	TotalCost       float64
+	// RowsScanned is the total tuple work of the base-relation scan nodes:
+	// sum of (Actual Rows * Actual Loops) — or Plan Rows when no ANALYZE data.
+	RowsScanned float64
+	// MaxNodeRows is the largest row count at any single plan node.
+	MaxNodeRows        float64
 	TempWrittenBytes   float64
 	PartitionsScanned  float64
 	PartitionsRemoved  float64
@@ -73,6 +77,7 @@ func ComparePlans(beforePlan, afterPlan json.RawMessage) (*PlanComparison, error
 		formatTimingMetric(bm, am),
 		formatMetric("Total cost", bm.TotalCost, am.TotalCost, "cost", true),
 		formatMetric("Rows scanned", bm.RowsScanned, am.RowsScanned, "rows", true),
+		formatMetric("Max node rows", bm.MaxNodeRows, am.MaxNodeRows, "rows", true),
 		formatPartitionsMetric(bm, am),
 		formatMetric("Temp written", bm.TempWrittenBytes, am.TempWrittenBytes, "bytes", true),
 		{
@@ -115,7 +120,8 @@ func collectPlanMetrics(root map[string]interface{}) PlanMetrics {
 	}
 	m.RootNodeType, _ = root["Node Type"].(string)
 	m.NodeTypes = collectNodeTypes(root)
-	m.RowsScanned = sumPlanRows(root)
+	m.RowsScanned = scanRowsProcessed(root)
+	m.MaxNodeRows = maxNodeRows(root)
 	m.TempWrittenBytes = sumTempBytes(root)
 	m.HasSeqScan = containsNodeType(m.NodeTypes, "Seq Scan")
 	m.PartitionsScanned, m.PartitionsRemoved, m.HasPartitionAppend = collectPartitionStats(root)
@@ -179,7 +185,9 @@ func formatNodeLabel(node map[string]interface{}) string {
 	return nodeType
 }
 
-func sumPlanRows(node map[string]interface{}) float64 {
+// maxNodeRows returns the largest per-node row count anywhere in the tree
+// (Actual Rows when present, else Plan Rows).
+func maxNodeRows(node map[string]interface{}) float64 {
 	rows, ok := asFloat64(node["Actual Rows"])
 	if !ok {
 		rows, _ = asFloat64(node["Plan Rows"])
@@ -188,13 +196,56 @@ func sumPlanRows(node map[string]interface{}) float64 {
 	children, _ := node["Plans"].([]interface{})
 	for _, child := range children {
 		if cm, ok := child.(map[string]interface{}); ok {
-			childRows := sumPlanRows(cm)
-			if childRows > maxRows {
+			if childRows := maxNodeRows(cm); childRows > maxRows {
 				maxRows = childRows
 			}
 		}
 	}
 	return maxRows
+}
+
+// baseScanNodeTypes are the node types that read tuples from a relation. Bitmap
+// Index Scan is excluded (it feeds a Bitmap Heap Scan — counting both double
+// counts), as are Subquery/CTE/WorkTable/Function/Values scans (not table reads).
+var baseScanNodeTypes = map[string]struct{}{
+	"Seq Scan":         {},
+	"Index Scan":       {},
+	"Index Only Scan":  {},
+	"Bitmap Heap Scan": {},
+	"Tid Scan":         {},
+	"Tid Range Scan":   {},
+	"Sample Scan":      {},
+	"Foreign Scan":     {},
+}
+
+// scanRowsProcessed sums the real tuple work of the base-relation scan nodes:
+// Actual Rows * Actual Loops (Postgres reports Actual Rows per loop), falling
+// back to Plan Rows when there is no ANALYZE data.
+func scanRowsProcessed(node map[string]interface{}) float64 {
+	var total float64
+	var walk func(map[string]interface{})
+	walk = func(n map[string]interface{}) {
+		nodeType, _ := n["Node Type"].(string)
+		if _, isScan := baseScanNodeTypes[nodeType]; isScan {
+			if actual, ok := asFloat64(n["Actual Rows"]); ok {
+				loops, hasLoops := asFloat64(n["Actual Loops"])
+				if !hasLoops || loops < 1 {
+					loops = 1
+				}
+				total += actual * loops
+			} else if plan, ok := asFloat64(n["Plan Rows"]); ok {
+				total += plan
+			}
+		}
+		children, _ := n["Plans"].([]interface{})
+		for _, child := range children {
+			if cm, ok := child.(map[string]interface{}); ok {
+				walk(cm)
+			}
+		}
+	}
+	walk(node)
+	return total
 }
 
 func sumTempBytes(node map[string]interface{}) float64 {

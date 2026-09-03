@@ -707,8 +707,13 @@ func metricsFromExplainAPI(exp *queries.ExplainQueryResult) (queryrunner.PlanMet
 	if m.TotalCost == 0 && exp.TotalCost > 0 {
 		m.TotalCost = exp.TotalCost
 	}
-	if exp.ExecutionTimeMs > 0 && !m.HasActualTiming {
-		m.ExecutionTimeMs = float64(exp.ExecutionTimeMs)
+	// Only fold in the API's timing when it is an OBSERVED server execution time
+	// (ANALYZE), never the request wall clock. MetricsFromPlan already reads
+	// "Actual Total Time" from the same plan, so this is a belt-and-suspenders
+	// fallback for a trimmed plan payload.
+	if exp.EvidenceMode == queryrunner.EvidenceObserved && exp.ServerExecutionTimeMs != nil &&
+		*exp.ServerExecutionTimeMs > 0 && !m.HasActualTiming {
+		m.ExecutionTimeMs = *exp.ServerExecutionTimeMs
 		m.HasActualTiming = true
 	}
 	return m, nil

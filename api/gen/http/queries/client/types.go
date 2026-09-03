@@ -105,8 +105,16 @@ type ExplainPlanResponseBody struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs *int64 `form:"request_wall_time_ms,omitempty" json:"request_wall_time_ms,omitempty" xml:"request_wall_time_ms,omitempty"`
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64 `form:"planning_time_ms,omitempty" json:"planning_time_ms,omitempty" xml:"planning_time_ms,omitempty"`
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64 `form:"server_execution_time_ms,omitempty" json:"server_execution_time_ms,omitempty" xml:"server_execution_time_ms,omitempty"`
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode *string `form:"evidence_mode,omitempty" json:"evidence_mode,omitempty" xml:"evidence_mode,omitempty"`
 }
 
 // ComparePlansResponseBody is the type of the "queries" service
@@ -393,8 +401,16 @@ type ExplainQueryResultResponseBody struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs *int64 `form:"request_wall_time_ms,omitempty" json:"request_wall_time_ms,omitempty" xml:"request_wall_time_ms,omitempty"`
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64 `form:"planning_time_ms,omitempty" json:"planning_time_ms,omitempty" xml:"planning_time_ms,omitempty"`
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64 `form:"server_execution_time_ms,omitempty" json:"server_execution_time_ms,omitempty" xml:"server_execution_time_ms,omitempty"`
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode *string `form:"evidence_mode,omitempty" json:"evidence_mode,omitempty" xml:"evidence_mode,omitempty"`
 }
 
 // PlanComparisonMetricResponseBody is used to define fields on response body
@@ -605,11 +621,14 @@ func NewStatStatementsValidationError(body *StatStatementsValidationErrorRespons
 // endpoint result from a HTTP "OK" response.
 func NewExplainPlanExplainQueryResultOK(body *ExplainPlanResponseBody) *queries.ExplainQueryResult {
 	v := &queries.ExplainQueryResult{
-		SQL:             *body.SQL,
-		TotalCost:       *body.TotalCost,
-		Plan:            body.Plan,
-		GenericPlan:     body.GenericPlan,
-		ExecutionTimeMs: *body.ExecutionTimeMs,
+		SQL:                   *body.SQL,
+		TotalCost:             *body.TotalCost,
+		Plan:                  body.Plan,
+		GenericPlan:           body.GenericPlan,
+		RequestWallTimeMs:     *body.RequestWallTimeMs,
+		PlanningTimeMs:        body.PlanningTimeMs,
+		ServerExecutionTimeMs: body.ServerExecutionTimeMs,
+		EvidenceMode:          *body.EvidenceMode,
 	}
 	v.Findings = make([]*queries.PlanFinding, len(body.Findings))
 	for i, val := range body.Findings {
@@ -841,8 +860,11 @@ func ValidateExplainPlanResponseBody(body *ExplainPlanResponseBody) (err error) 
 	if body.Findings == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
-	if body.ExecutionTimeMs == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("execution_time_ms", "body"))
+	if body.RequestWallTimeMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_wall_time_ms", "body"))
+	}
+	if body.EvidenceMode == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("evidence_mode", "body"))
 	}
 	for _, e := range body.Findings {
 		if e != nil {
@@ -854,6 +876,11 @@ func ValidateExplainPlanResponseBody(body *ExplainPlanResponseBody) (err error) 
 	if body.Diagnosis != nil {
 		if err2 := ValidatePlanDiagnosisResponseBody(body.Diagnosis); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.EvidenceMode != nil {
+		if !(*body.EvidenceMode == "estimated" || *body.EvidenceMode == "observed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.evidence_mode", *body.EvidenceMode, []any{"estimated", "observed"}))
 		}
 	}
 	return
@@ -1238,8 +1265,11 @@ func ValidateExplainQueryResultResponseBody(body *ExplainQueryResultResponseBody
 	if body.Findings == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
-	if body.ExecutionTimeMs == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("execution_time_ms", "body"))
+	if body.RequestWallTimeMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_wall_time_ms", "body"))
+	}
+	if body.EvidenceMode == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("evidence_mode", "body"))
 	}
 	for _, e := range body.Findings {
 		if e != nil {
@@ -1251,6 +1281,11 @@ func ValidateExplainQueryResultResponseBody(body *ExplainQueryResultResponseBody
 	if body.Diagnosis != nil {
 		if err2 := ValidatePlanDiagnosisResponseBody(body.Diagnosis); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.EvidenceMode != nil {
+		if !(*body.EvidenceMode == "estimated" || *body.EvidenceMode == "observed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.evidence_mode", *body.EvidenceMode, []any{"estimated", "observed"}))
 		}
 	}
 	return

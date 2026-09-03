@@ -6,6 +6,41 @@ import (
 	"testing"
 )
 
+// parseExplainTuple keeps the pre-struct return shape for tests that only need
+// total cost / findings / plan JSON.
+func parseExplainTuple(b []byte) (float64, []PlanFinding, json.RawMessage, error) {
+	p, err := parseExplainJSON(b)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+	return p.TotalCost, p.Findings, p.PlanJSON, nil
+}
+
+func TestParseExplainJSON_TimingFields(t *testing.T) {
+	// ANALYZE output: top-level Planning Time + Execution Time.
+	analyzed := `[{"Plan":{"Node Type":"Result","Total Cost":0.01,"Actual Total Time":4.2},"Planning Time":0.87,"Execution Time":5.13}]`
+	p, err := parseExplainJSON([]byte(analyzed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.PlanningTimeMs != 0.87 || p.ServerExecutionTimeMs != 5.13 {
+		t.Fatalf("planning=%v exec=%v, want 0.87 / 5.13", p.PlanningTimeMs, p.ServerExecutionTimeMs)
+	}
+
+	// Estimate-only output: Planning Time present, no Execution Time.
+	estimated := `[{"Plan":{"Node Type":"Result","Total Cost":0.01},"Planning Time":0.3}]`
+	p, err = parseExplainJSON([]byte(estimated))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.PlanningTimeMs != 0.3 {
+		t.Fatalf("planning=%v, want 0.3", p.PlanningTimeMs)
+	}
+	if p.ServerExecutionTimeMs != 0 {
+		t.Fatalf("estimate-only must have ServerExecutionTimeMs 0, got %v", p.ServerExecutionTimeMs)
+	}
+}
+
 const sampleExplainJSON = `[
   {
     "Plan": {
@@ -38,7 +73,7 @@ const sampleExplainJSON = `[
 ]`
 
 func TestParseExplainJSON(t *testing.T) {
-	totalCost, findings, planJSON, err := parseExplainJSON([]byte(sampleExplainJSON))
+	totalCost, findings, planJSON, err := parseExplainTuple([]byte(sampleExplainJSON))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +109,7 @@ func TestParseExplainJSON(t *testing.T) {
 }
 
 func TestParseExplainJSON_invalid(t *testing.T) {
-	_, _, _, err := parseExplainJSON([]byte("not json"))
+	_, _, _, err := parseExplainTuple([]byte("not json"))
 	if err == nil {
 		t.Fatal("expected error for invalid json")
 	}
@@ -150,7 +185,7 @@ func TestPlanFindingMessage_FunctionWraps(t *testing.T) {
 }
 
 func TestParseExplainJSON_roundTrip(t *testing.T) {
-	_, _, planJSON, err := parseExplainJSON([]byte(sampleExplainJSON))
+	_, _, planJSON, err := parseExplainTuple([]byte(sampleExplainJSON))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -808,11 +808,14 @@ func marshalQueriesPlanDiagnosisIncidentalToPlanDiagnosisIncidentalResponseBody(
 // *queries.ExplainQueryResult.
 func marshalQueriesExplainQueryResultToExplainQueryResultResponseBody(v *queries.ExplainQueryResult) *ExplainQueryResultResponseBody {
 	res := &ExplainQueryResultResponseBody{
-		SQL:             v.SQL,
-		TotalCost:       v.TotalCost,
-		Plan:            v.Plan,
-		GenericPlan:     v.GenericPlan,
-		ExecutionTimeMs: v.ExecutionTimeMs,
+		SQL:                   v.SQL,
+		TotalCost:             v.TotalCost,
+		Plan:                  v.Plan,
+		GenericPlan:           v.GenericPlan,
+		RequestWallTimeMs:     v.RequestWallTimeMs,
+		PlanningTimeMs:        v.PlanningTimeMs,
+		ServerExecutionTimeMs: v.ServerExecutionTimeMs,
+		EvidenceMode:          v.EvidenceMode,
 	}
 	if v.Findings != nil {
 		res.Findings = make([]*PlanFindingResponseBody, len(v.Findings))

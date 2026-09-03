@@ -133,8 +133,13 @@ var ExplainQueryResult = Type("ExplainQueryResult", func() {
 	Attribute("findings", ArrayOf(PlanFinding), "Notable plan nodes (seq scans, high-cost operators)")
 	Attribute("diagnosis", PlanDiagnosis, "Verdict-first rollup of findings into ranked causes")
 	Attribute("generic_plan", Boolean, "True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is parameterized ($1, $2, ...)")
-	Attribute("execution_time_ms", Int64, "Time to run EXPLAIN and parse the plan")
-	Required("sql", "total_cost", "plan", "findings", "execution_time_ms")
+	Attribute("request_wall_time_ms", Int64, "Wall-clock time this server spent issuing the EXPLAIN and parsing the plan — network + planning + (for ANALYZE) execution. NOT the query's execution time.")
+	Attribute("planning_time_ms", Float64, "PostgreSQL's own Planning Time for the statement")
+	Attribute("server_execution_time_ms", Float64, "PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran the query")
+	Attribute("evidence_mode", String, "estimated (plan only) or observed (ANALYZE timings)", func() {
+		Enum("estimated", "observed")
+	})
+	Required("sql", "total_cost", "plan", "findings", "request_wall_time_ms", "evidence_mode")
 })
 
 // PlanDiagnosisCause is one distinct, deduplicated reason a query is slow.

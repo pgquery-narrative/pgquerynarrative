@@ -115,16 +115,32 @@ type ExplainOptions struct {
 
 // ExplainResult is the outcome of EXPLAIN (FORMAT JSON) on a read-only query.
 type ExplainResult struct {
-	SQL             string
-	TotalCost       float64
-	Plan            json.RawMessage
-	Findings        []PlanFinding
-	ExecutionTimeMs int64
+	SQL       string
+	TotalCost float64
+	Plan      json.RawMessage
+	Findings  []PlanFinding
+	// RequestWallTimeMs is the wall-clock time this process spent issuing the
+	// EXPLAIN and parsing the plan — network + planning + (for ANALYZE) execution.
+	// It is NOT the query's execution time; see ServerExecutionTimeMs.
+	RequestWallTimeMs int64
+	// PlanningTimeMs is PostgreSQL's own "Planning Time" for the statement.
+	PlanningTimeMs float64
+	// ServerExecutionTimeMs is PostgreSQL's own "Execution Time" — non-zero only
+	// when ANALYZE actually ran the query.
+	ServerExecutionTimeMs float64
+	// EvidenceMode is "observed" when ANALYZE produced real timings, else "estimated".
+	EvidenceMode string
 	// GenericPlan is true when the plan came from EXPLAIN (GENERIC_PLAN) because
 	// the query is parameterized — costs and structure are real, but row counts
 	// use planner defaults for the unbound params.
 	GenericPlan bool
 }
+
+// EvidenceMode values.
+const (
+	EvidenceEstimated = "estimated"
+	EvidenceObserved  = "observed"
+)
 
 // Explain runs EXPLAIN (FORMAT JSON) on a validated read-only query and analyzes the plan.
 // When analyze is true, uses EXPLAIN (ANALYZE, FORMAT JSON) (executes the query; timeout-guarded).
@@ -191,18 +207,26 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 	}
 
 	elapsed := time.Since(start).Milliseconds()
-	totalCost, findings, planJSON, err := parseExplainJSON([]byte(planText))
+	parsed, err := parseExplainJSON([]byte(planText))
 	if err != nil {
 		return nil, apperrors.ErrQueryExecutionFailed
 	}
 
+	evidence := EvidenceEstimated
+	if analyze && parsed.ServerExecutionTimeMs > 0 {
+		evidence = EvidenceObserved
+	}
+
 	return &ExplainResult{
-		SQL:             strings.TrimSpace(innerSQL),
-		TotalCost:       totalCost,
-		Plan:            planJSON,
-		Findings:        r.enrichExplainFindings(queryCtx, findings),
-		ExecutionTimeMs: elapsed,
-		GenericPlan:     genericPlan,
+		SQL:                   strings.TrimSpace(innerSQL),
+		TotalCost:             parsed.TotalCost,
+		Plan:                  parsed.PlanJSON,
+		Findings:              r.enrichExplainFindings(queryCtx, parsed.Findings),
+		RequestWallTimeMs:     elapsed,
+		PlanningTimeMs:        parsed.PlanningTimeMs,
+		ServerExecutionTimeMs: parsed.ServerExecutionTimeMs,
+		EvidenceMode:          evidence,
+		GenericPlan:           genericPlan,
 	}, nil
 }
 
@@ -267,28 +291,49 @@ func queryHasPositionalParams(sql string) bool {
 
 type explainRoot []struct {
 	Plan map[string]interface{} `json:"Plan"`
+	// Planning Time is present on every EXPLAIN; Execution Time only under ANALYZE.
+	PlanningTime  *float64 `json:"Planning Time"`
+	ExecutionTime *float64 `json:"Execution Time"`
 }
 
-// parseExplainJSON extracts total cost, raw plan JSON, and findings from PostgreSQL EXPLAIN output.
-func parseExplainJSON(planBytes []byte) (float64, []PlanFinding, json.RawMessage, error) {
+// explainParse is the structured outcome of parsing EXPLAIN (FORMAT JSON).
+type explainParse struct {
+	TotalCost             float64
+	PlanningTimeMs        float64
+	ServerExecutionTimeMs float64 // 0 unless ANALYZE ran
+	Findings              []PlanFinding
+	PlanJSON              json.RawMessage
+}
+
+// parseExplainJSON extracts total cost, planning/execution time, raw plan JSON,
+// and findings from PostgreSQL EXPLAIN (FORMAT JSON) output.
+func parseExplainJSON(planBytes []byte) (*explainParse, error) {
 	planBytes = json.RawMessage(bytesTrimSpace(planBytes))
 	if len(planBytes) == 0 {
-		return 0, nil, nil, fmt.Errorf("empty explain output")
+		return nil, fmt.Errorf("empty explain output")
 	}
 
 	var roots explainRoot
 	if err := json.Unmarshal(planBytes, &roots); err != nil {
-		return 0, nil, nil, fmt.Errorf("invalid explain json: %w", err)
+		return nil, fmt.Errorf("invalid explain json: %w", err)
 	}
 	if len(roots) == 0 || roots[0].Plan == nil {
-		return 0, nil, nil, fmt.Errorf("explain json has no plan")
+		return nil, fmt.Errorf("explain json has no plan")
 	}
 
 	root := roots[0].Plan
-	totalCost, _ := asFloat64(root["Total Cost"])
-	findings := collectPlanFindings(root)
-
-	return totalCost, findings, json.RawMessage(planBytes), nil
+	out := &explainParse{
+		PlanJSON: json.RawMessage(planBytes),
+		Findings: collectPlanFindings(root),
+	}
+	out.TotalCost, _ = asFloat64(root["Total Cost"])
+	if roots[0].PlanningTime != nil {
+		out.PlanningTimeMs = *roots[0].PlanningTime
+	}
+	if roots[0].ExecutionTime != nil {
+		out.ServerExecutionTimeMs = *roots[0].ExecutionTime
+	}
+	return out, nil
 }
 
 func collectPlanFindings(node map[string]interface{}) []PlanFinding {
