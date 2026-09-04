@@ -42,8 +42,11 @@ export default function InvestigatePage() {
   const [trust, setTrust] = useState<SecurityTrust | null>(null);
 
   useEffect(() => {
-    api.getSecurityTrust().then(setTrust).catch(() => setTrust(null));
-  }, []);
+    // Reflect the investigation's own connection once it's loaded, not
+    // always the server default — an investigation can run against a
+    // different connection with a different real security posture.
+    api.getSecurityTrust(investigation?.connection_id).then(setTrust).catch(() => setTrust(null));
+  }, [investigation?.connection_id]);
 
   const load = useCallback(async (investigationId: string, candidateHint?: string) => {
     setLoading(true);

@@ -305,6 +305,9 @@ func EncodeSecurityTrustRequest(encoder func(*http.Request) goahttp.Encoder) fun
 // DecodeSecurityTrustResponse returns a decoder for responses returned by the
 // workspace security_trust endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
+// DecodeSecurityTrustResponse may return the following errors:
+//   - "validation_error" (type *workspace.ValidationError): http.StatusBadRequest
+//   - error: internal error
 func DecodeSecurityTrustResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
 		if restoreBody {
@@ -335,6 +338,20 @@ func DecodeSecurityTrustResponse(decoder func(*http.Response) goahttp.Decoder, r
 			}
 			res := NewSecurityTrust2OK(&body)
 			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body SecurityTrustValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspace", "security_trust", err)
+			}
+			err = ValidateSecurityTrustValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("workspace", "security_trust", err)
+			}
+			return nil, NewSecurityTrustValidationError(&body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("workspace", "security_trust", resp.StatusCode, string(body))

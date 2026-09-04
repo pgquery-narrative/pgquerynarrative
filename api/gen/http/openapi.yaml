@@ -1649,6 +1649,13 @@ paths:
                             - external_llm_data
                             - authorization_state
                             - analyze_policy
+                "400":
+                    description: Bad Request response.
+                    schema:
+                        $ref: '#/definitions/ValidationError'
+                        required:
+                            - name
+                            - message
             schemes:
                 - http
     /api/v1/webhook-deliveries:
@@ -1784,36 +1791,36 @@ definitions:
         properties:
             avg:
                 type: number
-                example: 0.7700623282531166
+                example: 0.6076052535278944
                 format: double
             count:
                 type: integer
-                example: 467619116
+                example: 106227192
                 format: int32
             max:
                 type: number
-                example: 0.11158990836189155
+                example: 0.494979566409487
                 format: double
             min:
                 type: number
-                example: 0.436305721198746
+                example: 0.7126393565579084
                 format: double
             std_dev:
                 type: number
                 description: Standard deviation (stats)
-                example: 0.9493452874971036
+                example: 0.47688873698471634
                 format: double
             sum:
                 type: number
-                example: 0.1053521027082071
+                example: 0.8781025858325188
                 format: double
         example:
-            avg: 0.879110375602643
-            count: 1196747961
-            max: 0.10371766795257611
-            min: 0.03970602411668943
-            std_dev: 0.1623572738372395
-            sum: 0.20874016617773872
+            avg: 0.506802840482607
+            count: 1952549061
+            max: 0.9962642875327774
+            min: 0.6563668066795224
+            std_dev: 0.06914212933646913
+            sum: 0.4455701328512939
     AnomalyPointData:
         title: AnomalyPointData
         type: object
@@ -1821,22 +1828,22 @@ definitions:
             explanation:
                 type: string
                 description: One-sentence explanation for why this period may be anomalous
-                example: Occaecati id et neque aut.
+                example: Ea consequatur cupiditate omnis itaque repellendus.
             period_label:
                 type: string
-                example: Debitis optio dignissimos molestiae rerum.
+                example: Molestiae et.
             reason:
                 type: string
-                example: In consequuntur praesentium aut ea minus.
+                example: Aut necessitatibus dolor ipsum aut.
             value:
                 type: number
-                example: 0.43824239188559005
+                example: 0.031338746728525844
                 format: double
         example:
-            explanation: Neque nihil eum dolor autem aut.
-            period_label: Repellendus temporibus rerum nam.
-            reason: Quas rerum doloribus perferendis adipisci.
-            value: 0.2739893132863736
+            explanation: Et quibusdam eum molestiae adipisci dolorum laudantium.
+            period_label: Doloremque tenetur.
+            reason: Excepturi aut quos est at nihil ea.
+            value: 0.4880786587638647
         required:
             - period_label
             - value
@@ -1848,15 +1855,15 @@ definitions:
             question:
                 type: string
                 description: The original natural-language question
-                example: Officiis amet vel facere quia.
+                example: Natus libero harum accusantium.
             report:
                 $ref: '#/definitions/Report'
             sql:
                 type: string
                 description: The generated and executed SQL
-                example: Nemo et perferendis.
+                example: Et placeat veritatis nobis.
         example:
-            question: Distinctio sint veniam nulla molestiae eos.
+            question: Aut suscipit officiis eius accusamus.
             report:
                 chart_suggestions:
                     - chart_type: Eius sequi ad.
@@ -2050,7 +2057,7 @@ definitions:
                         - Inventore voluptas itaque molestiae.
                 saved_query_id: 7259c730-8f81-4b2a-a06c-1529855b2902
                 sql: Perspiciatis qui.
-            sql: Totam voluptas temporibus rerum libero.
+            sql: Cupiditate sit et.
         required:
             - question
             - sql
@@ -2062,19 +2069,19 @@ definitions:
             chart_type:
                 type: string
                 description: 'Chart type identifier: bar, line, pie, area, table'
-                example: Ullam ut voluptate vel eligendi.
+                example: Sed eum consectetur.
             label:
                 type: string
                 description: Human-readable label
-                example: Et deleniti voluptatem blanditiis.
+                example: Ut qui et autem sint molestiae officiis.
             reason:
                 type: string
                 description: Why this chart fits the data
-                example: Aliquid porro sit voluptatibus qui voluptas voluptatum.
+                example: Assumenda ut aut dolorem aliquid praesentium dolorum.
         example:
-            chart_type: Officia qui id voluptatem rerum odio.
-            label: Sed eum consectetur.
-            reason: Ut qui et autem sint molestiae officiis.
+            chart_type: Velit sed inventore voluptatem ipsam.
+            label: Debitis nihil non.
+            reason: Adipisci sint distinctio quis.
         required:
             - chart_type
             - label
@@ -2087,10 +2094,10 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Facere iure et molestiae aliquam delectus.
+                    example: Illum eos.
                 example:
-                    - Voluptatem corrupti id hic.
-                    - Numquam et dicta aut qui.
+                    - Iure quam.
+                    - Sint atque beatae et expedita et quis.
             history:
                 type: array
                 items:
@@ -2102,22 +2109,28 @@ definitions:
                     - created_at: "2003-02-14T22:42:38Z"
                       question: Optio quia est.
                       sql: Omnis omnis ab officia ut ut.
+                    - created_at: "2003-02-14T22:42:38Z"
+                      question: Optio quia est.
+                      sql: Omnis omnis ab officia ut ut.
+                    - created_at: "2003-02-14T22:42:38Z"
+                      question: Optio quia est.
+                      sql: Omnis omnis ab officia ut ut.
             question:
                 type: string
-                example: Voluptatem est molestiae pariatur ex molestias.
+                example: Quaerat quam.
             report:
                 $ref: '#/definitions/Report'
             session_id:
                 type: string
-                example: Autem corporis et.
+                example: Quia omnis harum.
             sql:
                 type: string
-                example: Iusto delectus fugit deserunt adipisci.
+                example: Sunt dolorum magnam.
         example:
             follow_ups:
-                - Ipsum fuga doloremque pariatur in molestiae culpa.
-                - Enim rerum est.
-                - Sunt nihil et ex.
+                - Maxime facilis aspernatur aspernatur.
+                - Praesentium doloremque veritatis.
+                - Quibusdam dolor earum et.
             history:
                 - created_at: "2003-02-14T22:42:38Z"
                   question: Optio quia est.
@@ -2131,7 +2144,7 @@ definitions:
                 - created_at: "2003-02-14T22:42:38Z"
                   question: Optio quia est.
                   sql: Omnis omnis ab officia ut ut.
-            question: Sit iure quam.
+            question: Culpa voluptatum enim rerum.
             report:
                 chart_suggestions:
                     - chart_type: Eius sequi ad.
@@ -2325,8 +2338,8 @@ definitions:
                         - Inventore voluptas itaque molestiae.
                 saved_query_id: 7259c730-8f81-4b2a-a06c-1529855b2902
                 sql: Perspiciatis qui.
-            session_id: Et eligendi optio perspiciatis illum eos.
-            sql: Sint atque beatae et expedita et quis.
+            session_id: Consectetur non ipsum fuga doloremque pariatur in.
+            sql: Nobis sunt nihil et ex.
         required:
             - session_id
             - question
@@ -2340,18 +2353,18 @@ definitions:
         properties:
             created_at:
                 type: string
-                example: "1994-12-24T06:22:10Z"
+                example: "1970-05-22T00:35:57Z"
                 format: date-time
             question:
                 type: string
-                example: Est fuga est voluptatem.
+                example: Itaque delectus adipisci laudantium id laboriosam.
             sql:
                 type: string
-                example: Ullam officiis unde.
+                example: Impedit pariatur reiciendis earum quae esse et.
         example:
-            created_at: "1988-12-30T06:46:44Z"
-            question: Totam sint cupiditate.
-            sql: Cumque autem non cumque nihil recusandae.
+            created_at: "2000-05-25T21:24:34Z"
+            question: Dicta autem eos et.
+            sql: Facere a ducimus.
         required:
             - question
             - sql
@@ -2362,7 +2375,7 @@ definitions:
         properties:
             cohort_label:
                 type: string
-                example: At architecto fugiat dolores rerum.
+                example: Qui sed.
             periods:
                 type: array
                 items:
@@ -2376,10 +2389,10 @@ definitions:
                       value: 0.19607747664058567
             retention_pct:
                 type: number
-                example: 0.2266475180840149
+                example: 0.8273860257986105
                 format: double
         example:
-            cohort_label: Quaerat voluptate accusantium.
+            cohort_label: Sint veritatis voluptates ad explicabo tenetur.
             periods:
                 - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
                   value: 0.19607747664058567
@@ -2387,9 +2400,7 @@ definitions:
                   value: 0.19607747664058567
                 - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
                   value: 0.19607747664058567
-                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
-                  value: 0.19607747664058567
-            retention_pct: 0.4572902379043666
+            retention_pct: 0.753202778905793
         required:
             - cohort_label
     CohortPeriodPointData:
@@ -2398,14 +2409,14 @@ definitions:
         properties:
             period_label:
                 type: string
-                example: Minus sequi et sunt sunt aut quia.
+                example: Enim provident qui velit et consequatur.
             value:
                 type: number
-                example: 0.08785042565640913
+                example: 0.6987439130239373
                 format: double
         example:
-            period_label: Quo eum a id dolores.
-            value: 0.9954910617333406
+            period_label: Vel cum ut cupiditate neque et iste.
+            value: 0.5001788298991762
         required:
             - period_label
             - value
@@ -2415,13 +2426,13 @@ definitions:
         properties:
             name:
                 type: string
-                example: Non dicta enim et ratione.
+                example: Explicabo sed et.
             type:
                 type: string
-                example: Quia nesciunt laboriosam.
+                example: Est ipsa quisquam et.
         example:
-            name: Minima est ut omnis provident nesciunt.
-            type: Explicabo sed et.
+            name: Rerum sit natus molestias.
+            type: Quibusdam veniam.
         required:
             - name
             - type
@@ -2431,26 +2442,26 @@ definitions:
         properties:
             distinct_count:
                 type: integer
-                example: 658825277
+                example: 1907619551
                 format: int32
             null_count:
                 type: integer
-                example: 1669806463
+                example: 921010467
                 format: int32
             null_pct:
                 type: number
                 description: Null percentage 0–100
-                example: 0.4484357126528529
+                example: 0.5350309263308215
                 format: double
             total_rows:
                 type: integer
-                example: 1990668697
+                example: 1743983892
                 format: int32
         example:
-            distinct_count: 1447581294
-            null_count: 264601047
-            null_pct: 0.9678733885441164
-            total_rows: 711911267
+            distinct_count: 1146034659
+            null_count: 716949573
+            null_pct: 0.9631294116318617
+            total_rows: 271451384
         required:
             - null_count
             - distinct_count
@@ -3164,13 +3175,13 @@ definitions:
         properties:
             id:
                 type: string
-                example: Nihil quo facere rem est.
+                example: Voluptate aperiam nihil ex minima a eaque.
             name:
                 type: string
-                example: Molestiae voluptate id eum perspiciatis autem deleniti.
+                example: Excepturi dicta ut id.
         example:
-            id: Occaecati doloribus explicabo est perspiciatis quae.
-            name: Voluptate aperiam nihil ex minima a eaque.
+            id: Sed quia vero maiores.
+            name: Non dicta enim et ratione.
         required:
             - id
             - name
@@ -3205,25 +3216,25 @@ definitions:
         properties:
             column_a:
                 type: string
-                example: Facilis est itaque aut atque.
+                example: Quo eum a id dolores.
             column_b:
                 type: string
-                example: Enim tempore soluta quibusdam incidunt.
+                example: Dolorum dolor qui quaerat.
             pearson:
                 type: number
                 description: Pearson correlation -1 to 1
-                example: 0.6631085715229056
+                example: 0.34384018539139877
                 format: double
             spearman:
                 type: number
                 description: Spearman rank correlation -1 to 1
-                example: 0.3348545294898283
+                example: 0.9360967451183343
                 format: double
         example:
-            column_a: Velit aspernatur.
-            column_b: Voluptatem vel facere incidunt.
-            pearson: 0.4058511673874046
-            spearman: 0.08772603658105865
+            column_a: Impedit eius dolores fugiat ut at.
+            column_b: Expedita similique sit illo est.
+            pearson: 0.9269773483130871
+            spearman: 0.4484357126528529
         required:
             - column_a
             - column_b
@@ -5770,14 +5781,14 @@ definitions:
             explanation:
                 type: string
                 description: Plain-English explanation (one or two sentences)
-                example: Architecto nisi dolorum neque in.
+                example: Quam recusandae incidunt nam.
             sql:
                 type: string
                 description: The SQL that was explained
-                example: Animi velit.
+                example: Incidunt impedit sed maxime accusantium vel.
         example:
-            explanation: Impedit sed maxime accusantium vel.
-            sql: Nobis fugiat sequi non.
+            explanation: Repudiandae aut aut natus.
+            sql: Explicabo voluptatem sit.
         required:
             - sql
             - explanation
@@ -5787,21 +5798,21 @@ definitions:
         properties:
             connection_id:
                 type: string
-                example: Magni et perspiciatis.
+                example: Id voluptatem.
             saved_query_id:
                 type: string
-                example: 77a046be-acef-4335-9105-f0942d121171
+                example: e7ad8e66-669a-4206-9ed5-a4c9001202f1
                 format: uuid
             sql:
                 type: string
-                example: igt
+                example: 4s
                 pattern: ^[^;]+$
                 minLength: 1
                 maxLength: 10000
         example:
-            connection_id: Quia ut praesentium magni.
-            saved_query_id: 907d593a-1fc9-489d-ac45-c248652c3890
-            sql: "y"
+            connection_id: Qui quisquam id est.
+            saved_query_id: a2300009-7c38-4cd9-8d41-4ffd898db4f3
+            sql: f1
         required:
             - sql
     IndexAdvice:
@@ -36457,17 +36468,17 @@ definitions:
         properties:
             code:
                 type: string
-                example: Atque occaecati.
+                example: Velit repellendus quidem ut officia.
             message:
                 type: string
-                example: Mollitia est.
+                example: Nam et ut eveniet quo.
             name:
                 type: string
-                example: Modi ut odio.
+                example: Quo quia nisi aspernatur.
         example:
-            code: Nam et ut eveniet quo.
-            message: Quo quia nisi aspernatur.
-            name: Ut aliquam nihil.
+            code: Est molestiae pariatur ex.
+            message: Et veniam.
+            name: Consectetur suscipit quia autem dolor dolorem autem.
         required:
             - name
             - message
@@ -36478,14 +36489,7 @@ definitions:
             aggregates:
                 type: object
                 example:
-                    Alias omnis ut suscipit.:
-                        avg: 0.958905837251907
-                        count: 1874456724
-                        max: 0.21622351541777582
-                        min: 0.31989460044492696
-                        std_dev: 0.8344978696820511
-                        sum: 0.11922688727534661
-                    Quis quas sint iste hic in.:
+                    Sit a asperiores ducimus est.:
                         avg: 0.958905837251907
                         count: 1874456724
                         max: 0.21622351541777582
@@ -36547,16 +36551,20 @@ definitions:
                       column_b: Cumque est assumenda.
                       pearson: 0.18609932409142407
                       spearman: 0.8641065593670391
+                    - column_a: Atque eveniet voluptas maiores consequatur.
+                      column_b: Cumque est assumenda.
+                      pearson: 0.18609932409142407
+                      spearman: 0.8641065593670391
             data_quality:
                 type: object
                 description: Per-column data quality (nulls, distinct)
                 example:
-                    Provident qui velit et consequatur officia.:
+                    Non quia quo.:
                         distinct_count: 1224338335
                         null_count: 2050662567
                         null_pct: 0.13900154605639425
                         total_rows: 1172492811
-                    Vel cum ut cupiditate neque et iste.:
+                    Quae inventore ex enim et officia amet.:
                         distinct_count: 1224338335
                         null_count: 2050662567
                         null_pct: 0.13900154605639425
@@ -36565,30 +36573,30 @@ definitions:
                     $ref: '#/definitions/ColumnQualityData'
             investigation:
                 description: Structured Query Investigation report payload when a report was generated from an investigation
-                example: Molestiae ut consectetur quae.
+                example: Eum rem nihil dicta.
             perf_suggestions:
                 type: array
                 items:
                     type: string
-                    example: Quis dolor corrupti sint.
+                    example: Quae distinctio nihil officiis.
                 description: Performance suggestions from execution time/row count
                 example:
-                    - Ad explicabo tenetur cumque reprehenderit et.
-                    - Eum enim perspiciatis hic.
-                    - At velit.
-                    - Optio autem perferendis iste fugiat.
+                    - Quaerat accusantium porro pariatur.
+                    - Non doloremque amet.
+                    - Qui placeat.
+                    - Excepturi iusto natus nesciunt.
             period_current_label:
                 type: string
                 description: Label for current period when time_series is present
-                example: Fugiat ut.
+                example: Eum enim perspiciatis hic.
             period_previous_label:
                 type: string
                 description: Label for previous period
-                example: Eius expedita similique sit.
+                example: At velit.
             time_series:
                 type: object
                 example:
-                    Dolores eos et voluptatem.:
+                    Aut quia ab.:
                         anomalies:
                             - explanation: Aliquid et quos eveniet ut.
                               period_label: Repudiandae veritatis optio.
@@ -36638,7 +36646,7 @@ definitions:
             top_categories:
                 type: object
                 example:
-                    Incidunt numquam ea enim officiis enim.:
+                    Minus iste occaecati id et neque aut.:
                         - category: Qui ducimus et nihil quibusdam rerum.
                           percentage: 0.8761862032780722
                           value: 0.7514791449922089
@@ -36648,16 +36656,17 @@ definitions:
                         - category: Qui ducimus et nihil quibusdam rerum.
                           percentage: 0.8761862032780722
                           value: 0.7514791449922089
+                    Molestiae rerum pariatur odio in consequuntur praesentium.:
                         - category: Qui ducimus et nihil quibusdam rerum.
                           percentage: 0.8761862032780722
                           value: 0.7514791449922089
-                    Quia iure ut assumenda.:
                         - category: Qui ducimus et nihil quibusdam rerum.
                           percentage: 0.8761862032780722
                           value: 0.7514791449922089
                         - category: Qui ducimus et nihil quibusdam rerum.
                           percentage: 0.8761862032780722
                           value: 0.7514791449922089
+                    Temporibus rerum.:
                         - category: Qui ducimus et nihil quibusdam rerum.
                           percentage: 0.8761862032780722
                           value: 0.7514791449922089
@@ -36677,21 +36686,7 @@ definitions:
                           value: 0.7514791449922089
         example:
             aggregates:
-                Enim et officia.:
-                    avg: 0.958905837251907
-                    count: 1874456724
-                    max: 0.21622351541777582
-                    min: 0.31989460044492696
-                    std_dev: 0.8344978696820511
-                    sum: 0.11922688727534661
-                Quasi quae distinctio nihil officiis.:
-                    avg: 0.958905837251907
-                    count: 1874456724
-                    max: 0.21622351541777582
-                    min: 0.31989460044492696
-                    std_dev: 0.8344978696820511
-                    sum: 0.11922688727534661
-                Sit non quia.:
+                Quia hic deserunt.:
                     avg: 0.958905837251907
                     count: 1874456724
                     max: 0.21622351541777582
@@ -36741,25 +36736,26 @@ definitions:
                   column_b: Cumque est assumenda.
                   pearson: 0.18609932409142407
                   spearman: 0.8641065593670391
-                - column_a: Atque eveniet voluptas maiores consequatur.
-                  column_b: Cumque est assumenda.
-                  pearson: 0.18609932409142407
-                  spearman: 0.8641065593670391
             data_quality:
-                Et odit.:
+                Placeat et deleniti voluptatem.:
                     distinct_count: 1224338335
                     null_count: 2050662567
                     null_pct: 0.13900154605639425
                     total_rows: 1172492811
-            investigation: Recusandae fugit.
+                Recusandae fugit.:
+                    distinct_count: 1224338335
+                    null_count: 2050662567
+                    null_pct: 0.13900154605639425
+                    total_rows: 1172492811
+            investigation: Officia qui id voluptatem rerum odio.
             perf_suggestions:
-                - Et sequi vitae suscipit dolores repudiandae.
-                - Molestiae reiciendis facilis ipsum voluptates rerum quia.
-                - Placeat et deleniti voluptatem.
-            period_current_label: Praesentium quidem temporibus deserunt ex labore.
-            period_previous_label: Quia iste fugiat odit.
+                - Ut voluptate vel eligendi.
+                - Et deleniti voluptatem blanditiis.
+                - Aliquid porro sit voluptatibus qui voluptas voluptatum.
+            period_current_label: Voluptatem consequatur et sequi vitae suscipit dolores.
+            period_previous_label: Minus molestiae reiciendis facilis ipsum voluptates rerum.
             time_series:
-                Deserunt repellendus tenetur error.:
+                Ex labore quis quia iste.:
                     anomalies:
                         - explanation: Aliquid et quos eveniet ut.
                           period_label: Repudiandae veritatis optio.
@@ -36804,52 +36800,7 @@ definitions:
                         periods_used: 845977661
                         slope: 0.19643546551825128
                         summary: Voluptatem et nesciunt voluptatem corrupti.
-                Dolorem eius autem ipsam voluptatum nam consequuntur.:
-                    anomalies:
-                        - explanation: Aliquid et quos eveniet ut.
-                          period_label: Repudiandae veritatis optio.
-                          reason: Blanditiis quis enim atque mollitia.
-                          value: 0.41657953227959466
-                        - explanation: Aliquid et quos eveniet ut.
-                          period_label: Repudiandae veritatis optio.
-                          reason: Blanditiis quis enim atque mollitia.
-                          value: 0.41657953227959466
-                        - explanation: Aliquid et quos eveniet ut.
-                          period_label: Repudiandae veritatis optio.
-                          reason: Blanditiis quis enim atque mollitia.
-                          value: 0.41657953227959466
-                        - explanation: Aliquid et quos eveniet ut.
-                          period_label: Repudiandae veritatis optio.
-                          reason: Blanditiis quis enim atque mollitia.
-                          value: 0.41657953227959466
-                    change: 0.2787130313674615
-                    change_percentage: 0.19741879011633995
-                    current_period: 0.2655350416666836
-                    exponential_smooth_forecast: 0.1471357892022923
-                    forecast_ci_lower: 0.11401219384978035
-                    forecast_ci_upper: 0.6229584142130195
-                    holt_forecast: 0.2892483624687754
-                    moving_average: 0.050659849406670586
-                    next_period_forecast: 0.010412416917676191
-                    periods:
-                        - label: Error minus explicabo et fugiat sed ut.
-                          value: 0.7942544508587773
-                        - label: Error minus explicabo et fugiat sed ut.
-                          value: 0.7942544508587773
-                        - label: Error minus explicabo et fugiat sed ut.
-                          value: 0.7942544508587773
-                    predictive_summary: Voluptatem quod natus est voluptas.
-                    previous_period: 0.2528332681836219
-                    seasonal_period: 960120451
-                    seasonally_adjusted_forecast: 0.3644985816151926
-                    trend: Porro magni non quibusdam.
-                    trend_summary:
-                        direction: At ut voluptas neque ex quod.
-                        explanation: Non maiores.
-                        periods_used: 845977661
-                        slope: 0.19643546551825128
-                        summary: Voluptatem et nesciunt voluptatem corrupti.
-                Nihil dicta ut porro quia.:
+                Odit quasi.:
                     anomalies:
                         - explanation: Aliquid et quos eveniet ut.
                           period_label: Repudiandae veritatis optio.
@@ -36895,21 +36846,23 @@ definitions:
                         slope: 0.19643546551825128
                         summary: Voluptatem et nesciunt voluptatem corrupti.
             top_categories:
-                Doloremque amet nam qui placeat.:
+                Error et dolorem eius autem.:
                     - category: Qui ducimus et nihil quibusdam rerum.
                       percentage: 0.8761862032780722
                       value: 0.7514791449922089
                     - category: Qui ducimus et nihil quibusdam rerum.
                       percentage: 0.8761862032780722
                       value: 0.7514791449922089
-                Iusto natus nesciunt.:
+                    - category: Qui ducimus et nihil quibusdam rerum.
+                      percentage: 0.8761862032780722
+                      value: 0.7514791449922089
+                Nam consequuntur non architecto doloremque praesentium.:
                     - category: Qui ducimus et nihil quibusdam rerum.
                       percentage: 0.8761862032780722
                       value: 0.7514791449922089
                     - category: Qui ducimus et nihil quibusdam rerum.
                       percentage: 0.8761862032780722
                       value: 0.7514791449922089
-                Quaerat accusantium porro pariatur.:
                     - category: Qui ducimus et nihil quibusdam rerum.
                       percentage: 0.8761862032780722
                       value: 0.7514791449922089
@@ -36924,57 +36877,59 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Quibusdam illo mollitia.
+                    example: Beatae doloribus.
                 example:
-                    - Voluptates ea accusantium aliquam deserunt.
-                    - Nihil quod necessitatibus est quis.
-                    - Accusamus quaerat ut quam.
-                    - Fuga accusantium.
-            headline:
-                type: string
-                example: Cumque ipsum illum earum nobis aut.
-            limitations:
-                type: array
-                items:
-                    type: string
-                    example: At aut et sint corrupti voluptatem eos.
-                example:
-                    - Nemo rerum officiis.
-                    - Est commodi.
-                    - Doloribus odio voluptatem hic hic molestias.
-            recommendations:
-                type: array
-                items:
-                    type: string
-                    example: Sit incidunt.
-                example:
+                    - Hic hic molestias aut sit incidunt consequatur.
                     - Aliquid eum eaque rerum ut sequi.
                     - Illum tempora incidunt.
                     - Maxime rerum error nam voluptatem eum excepturi.
-                    - Quae omnis enim libero sint amet dolore.
+            headline:
+                type: string
+                example: Quod necessitatibus est.
+            limitations:
+                type: array
+                items:
+                    type: string
+                    example: Quae omnis enim libero sint amet dolore.
+                example:
+                    - Similique aspernatur quisquam error rem accusantium.
+                    - Cum facere.
+                    - Qui corporis eligendi animi assumenda repellat commodi.
+            recommendations:
+                type: array
+                items:
+                    type: string
+                    example: Quae excepturi temporibus ratione.
+                example:
+                    - In consequatur.
+                    - Dolores sed.
+                    - Qui rem.
             takeaways:
                 type: array
                 items:
                     type: string
-                    example: Voluptatem maxime iure.
+                    example: Molestiae accusamus quaerat ut quam ratione fuga.
                 example:
-                    - Suscipit non.
-                    - Qui omnis.
+                    - At aut et sint corrupti voluptatem eos.
+                    - Non nemo rerum officiis reiciendis est.
         example:
             drivers:
-                - Repellat commodi sint quae excepturi temporibus ratione.
-                - Alias in.
-                - Minima dolores sed in qui rem.
-            headline: Voluptas similique aspernatur quisquam.
+                - Nesciunt ex minima beatae.
+                - Neque laborum quam sit iusto itaque sint.
+                - Quo voluptatem quo.
+            headline: Totam ducimus id ducimus ratione ratione ipsa.
             limitations:
-                - Ducimus id ducimus ratione ratione ipsa magnam.
-                - Suscipit ut quia adipisci quia deserunt et.
+                - Quas sint iste hic.
+                - Impedit alias omnis ut suscipit.
             recommendations:
-                - Est saepe illum unde sit ducimus.
-                - Quam aut voluptas nesciunt ex minima.
+                - Id non hic voluptas illo dolor quia.
+                - Error iusto ex sunt facere repellat nihil.
+                - Numquam ea.
+                - Officiis enim dolore laborum.
             takeaways:
-                - Accusantium et.
-                - Facere distinctio qui corporis eligendi.
+                - Suscipit ut quia adipisci quia deserunt et.
+                - Eos est saepe illum unde sit.
+                - Non quam.
         required:
             - headline
             - takeaways
@@ -36984,17 +36939,17 @@ definitions:
         properties:
             code:
                 type: string
-                example: Veritatis et voluptatem consequatur officia magnam.
+                example: Quos voluptatem voluptatem tenetur cupiditate numquam.
             message:
                 type: string
-                example: Voluptate qui quisquam id est tempora aut.
+                example: Consequatur officia magnam quis debitis aut.
             name:
                 type: string
-                example: Quasi error.
+                example: Aut aut veritatis et.
         example:
-            code: Voluptatem minus sit.
-            message: Voluptatem tenetur cupiditate numquam quaerat dolorum et.
-            name: Debitis aut neque quos.
+            code: Ut iusto non ut pariatur.
+            message: Occaecati nam.
+            name: Dolorum et odio voluptatem minus sit.
         required:
             - name
             - message
@@ -37047,14 +37002,14 @@ definitions:
         properties:
             label:
                 type: string
-                example: Ducimus est vitae officiis laboriosam aperiam.
+                example: Neque nihil eum dolor autem aut.
             value:
                 type: number
-                example: 0.7662989421452485
+                example: 0.970908196914715
                 format: double
         example:
-            label: Voluptatem laborum voluptates placeat aut aut unde.
-            value: 0.545822938720474
+            label: Rerum repellat omnis doloribus voluptas.
+            value: 0.8965315144725471
         required:
             - label
             - value
@@ -37542,19 +37497,19 @@ definitions:
             source:
                 type: string
                 description: 'Where the suggestion came from: curated or saved'
-                example: Ut qui odit facere.
+                example: Consequatur ut vitae dolores.
             sql:
                 type: string
                 description: Suggested SQL (use with run_query or refine)
-                example: Dicta ipsum asperiores.
+                example: Iure esse maiores est doloribus aut.
             title:
                 type: string
                 description: Short label for the suggestion
-                example: Vero molestias sapiente suscipit.
+                example: Quis eum quia alias quis ex.
         example:
-            source: Aut unde quis eum quia.
-            sql: Et est eligendi laboriosam.
-            title: Excepturi et iure esse maiores est.
+            source: Odit corrupti officiis molestiae voluptas quos voluptatem.
+            sql: Et consequuntur autem.
+            title: Sit repellendus sed aspernatur quo sint ut.
         required:
             - sql
             - title
@@ -38000,32 +37955,32 @@ definitions:
                       reason: Sed iste laudantium.
             connection_id:
                 type: string
-                example: Incidunt quis alias.
+                example: Aliquam voluptates ea accusantium aliquam deserunt minima.
             created_at:
                 type: string
-                example: "1978-09-06T13:04:01Z"
+                example: "2001-11-20T22:46:11Z"
                 format: date-time
             id:
                 type: string
-                example: 151982a9-1d59-4178-b1a6-c041ceff2070
+                example: 15198234-3f00-4b28-b0cd-7f2c3c214883
                 format: uuid
             llm_model:
                 type: string
-                example: Tempore reprehenderit omnis.
+                example: Nihil aut.
             llm_provider:
                 type: string
-                example: Commodi dolores commodi consequuntur ut.
+                example: Veniam cupiditate ullam saepe quo est.
             metrics:
                 $ref: '#/definitions/MetricsData'
             narrative:
                 $ref: '#/definitions/NarrativeContent'
             saved_query_id:
                 type: string
-                example: dff71d4e-c90d-482f-bf2e-c1eb9694f360
+                example: 0a13af06-d18e-4ef4-8beb-f01d9deac235
                 format: uuid
             sql:
                 type: string
-                example: Omnis repellendus rerum.
+                example: Omnis ex quibusdam illo mollitia.
         example:
             chart_suggestions:
                 - chart_type: Eius sequi ad.
@@ -38034,14 +37989,11 @@ definitions:
                 - chart_type: Eius sequi ad.
                   label: Possimus laboriosam.
                   reason: Sed iste laudantium.
-                - chart_type: Eius sequi ad.
-                  label: Possimus laboriosam.
-                  reason: Sed iste laudantium.
-            connection_id: Quis nihil iusto ea accusantium tenetur quasi.
-            created_at: "1999-04-24T09:20:06Z"
-            id: 911bdfc6-4886-4fc7-9485-2c78152b7907
-            llm_model: Accusantium omnis dolorem.
-            llm_provider: Necessitatibus dolores accusantium sit.
+            connection_id: Sed id est.
+            created_at: "1996-11-29T09:23:47Z"
+            id: 3fc807c1-3de0-4fe1-ab03-b9349cd1a3c5
+            llm_model: Rerum libero in.
+            llm_provider: Excepturi molestiae sint minus a fugiat.
             metrics:
                 aggregates:
                     Omnis et alias id illo sed dolores.:
@@ -38214,8 +38166,8 @@ definitions:
                 takeaways:
                     - Ad dicta ut dolorum voluptates.
                     - Inventore voluptas itaque molestiae.
-            saved_query_id: c0ac7fba-d5c1-4a8e-a37f-6761e4f85605
-            sql: Eius omnis.
+            saved_query_id: 51931e1f-7e54-4d8a-b6b3-abd6fe1844a0
+            sql: Modi quisquam.
         required:
             - id
             - sql
@@ -38618,13 +38570,205 @@ definitions:
                             - Inventore voluptas itaque molestiae.
                       saved_query_id: 7259c730-8f81-4b2a-a06c-1529855b2902
                       sql: Perspiciatis qui.
+                    - chart_suggestions:
+                        - chart_type: Eius sequi ad.
+                          label: Possimus laboriosam.
+                          reason: Sed iste laudantium.
+                        - chart_type: Eius sequi ad.
+                          label: Possimus laboriosam.
+                          reason: Sed iste laudantium.
+                        - chart_type: Eius sequi ad.
+                          label: Possimus laboriosam.
+                          reason: Sed iste laudantium.
+                        - chart_type: Eius sequi ad.
+                          label: Possimus laboriosam.
+                          reason: Sed iste laudantium.
+                      connection_id: Sed adipisci tenetur et.
+                      created_at: "2003-07-28T12:02:27Z"
+                      id: b2198f75-05c1-42f5-ba66-a34be75f9d97
+                      llm_model: Rerum sed animi in delectus.
+                      llm_provider: Eveniet ducimus quia.
+                      metrics:
+                        aggregates:
+                            Omnis et alias id illo sed dolores.:
+                                avg: 0.958905837251907
+                                count: 1874456724
+                                max: 0.21622351541777582
+                                min: 0.31989460044492696
+                                std_dev: 0.8344978696820511
+                                sum: 0.11922688727534661
+                            Qui autem.:
+                                avg: 0.958905837251907
+                                count: 1874456724
+                                max: 0.21622351541777582
+                                min: 0.31989460044492696
+                                std_dev: 0.8344978696820511
+                                sum: 0.11922688727534661
+                            Voluptatibus dolore quia doloremque labore sint saepe.:
+                                avg: 0.958905837251907
+                                count: 1874456724
+                                max: 0.21622351541777582
+                                min: 0.31989460044492696
+                                std_dev: 0.8344978696820511
+                                sum: 0.11922688727534661
+                        cohorts:
+                            - cohort_label: Atque deleniti consequuntur.
+                              periods:
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                              retention_pct: 0.6554806853586426
+                            - cohort_label: Atque deleniti consequuntur.
+                              periods:
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                              retention_pct: 0.6554806853586426
+                            - cohort_label: Atque deleniti consequuntur.
+                              periods:
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                                - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                                  value: 0.19607747664058567
+                              retention_pct: 0.6554806853586426
+                        correlations:
+                            - column_a: Atque eveniet voluptas maiores consequatur.
+                              column_b: Cumque est assumenda.
+                              pearson: 0.18609932409142407
+                              spearman: 0.8641065593670391
+                            - column_a: Atque eveniet voluptas maiores consequatur.
+                              column_b: Cumque est assumenda.
+                              pearson: 0.18609932409142407
+                              spearman: 0.8641065593670391
+                        data_quality:
+                            Doloribus quasi qui ex dolorem.:
+                                distinct_count: 1224338335
+                                null_count: 2050662567
+                                null_pct: 0.13900154605639425
+                                total_rows: 1172492811
+                            Impedit explicabo voluptas quaerat.:
+                                distinct_count: 1224338335
+                                null_count: 2050662567
+                                null_pct: 0.13900154605639425
+                                total_rows: 1172492811
+                        investigation: Molestiae commodi delectus odit.
+                        perf_suggestions:
+                            - Sunt quia veritatis laudantium.
+                            - Quidem sequi mollitia aperiam aut molestiae.
+                        period_current_label: Quidem est ex ut aspernatur optio.
+                        period_previous_label: Est doloremque sed.
+                        time_series:
+                            Neque minima pariatur possimus.:
+                                anomalies:
+                                    - explanation: Aliquid et quos eveniet ut.
+                                      period_label: Repudiandae veritatis optio.
+                                      reason: Blanditiis quis enim atque mollitia.
+                                      value: 0.41657953227959466
+                                    - explanation: Aliquid et quos eveniet ut.
+                                      period_label: Repudiandae veritatis optio.
+                                      reason: Blanditiis quis enim atque mollitia.
+                                      value: 0.41657953227959466
+                                    - explanation: Aliquid et quos eveniet ut.
+                                      period_label: Repudiandae veritatis optio.
+                                      reason: Blanditiis quis enim atque mollitia.
+                                      value: 0.41657953227959466
+                                    - explanation: Aliquid et quos eveniet ut.
+                                      period_label: Repudiandae veritatis optio.
+                                      reason: Blanditiis quis enim atque mollitia.
+                                      value: 0.41657953227959466
+                                change: 0.2787130313674615
+                                change_percentage: 0.19741879011633995
+                                current_period: 0.2655350416666836
+                                exponential_smooth_forecast: 0.1471357892022923
+                                forecast_ci_lower: 0.11401219384978035
+                                forecast_ci_upper: 0.6229584142130195
+                                holt_forecast: 0.2892483624687754
+                                moving_average: 0.050659849406670586
+                                next_period_forecast: 0.010412416917676191
+                                periods:
+                                    - label: Error minus explicabo et fugiat sed ut.
+                                      value: 0.7942544508587773
+                                    - label: Error minus explicabo et fugiat sed ut.
+                                      value: 0.7942544508587773
+                                    - label: Error minus explicabo et fugiat sed ut.
+                                      value: 0.7942544508587773
+                                predictive_summary: Voluptatem quod natus est voluptas.
+                                previous_period: 0.2528332681836219
+                                seasonal_period: 960120451
+                                seasonally_adjusted_forecast: 0.3644985816151926
+                                trend: Porro magni non quibusdam.
+                                trend_summary:
+                                    direction: At ut voluptas neque ex quod.
+                                    explanation: Non maiores.
+                                    periods_used: 845977661
+                                    slope: 0.19643546551825128
+                                    summary: Voluptatem et nesciunt voluptatem corrupti.
+                        top_categories:
+                            Id iste.:
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                            Maiores nesciunt laborum rerum dolores.:
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                            Sunt impedit et.:
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                                - category: Qui ducimus et nihil quibusdam rerum.
+                                  percentage: 0.8761862032780722
+                                  value: 0.7514791449922089
+                      narrative:
+                        drivers:
+                            - Omnis neque id.
+                            - Beatae et fugiat.
+                            - Atque eaque sapiente doloribus omnis.
+                        headline: Provident eius.
+                        limitations:
+                            - Sequi ipsum.
+                            - Aut fuga aliquid in veniam sit.
+                        recommendations:
+                            - Animi vero sit.
+                            - Voluptatem eius.
+                        takeaways:
+                            - Ad dicta ut dolorum voluptates.
+                            - Inventore voluptas itaque molestiae.
+                      saved_query_id: 7259c730-8f81-4b2a-a06c-1529855b2902
+                      sql: Perspiciatis qui.
             limit:
                 type: integer
-                example: 1647544236
+                example: 269488723
                 format: int32
             offset:
                 type: integer
-                example: 153023613
+                example: 1995232052
                 format: int32
         example:
             items:
@@ -39204,8 +39348,200 @@ definitions:
                         - Inventore voluptas itaque molestiae.
                   saved_query_id: 7259c730-8f81-4b2a-a06c-1529855b2902
                   sql: Perspiciatis qui.
-            limit: 340566350
-            offset: 266918895
+                - chart_suggestions:
+                    - chart_type: Eius sequi ad.
+                      label: Possimus laboriosam.
+                      reason: Sed iste laudantium.
+                    - chart_type: Eius sequi ad.
+                      label: Possimus laboriosam.
+                      reason: Sed iste laudantium.
+                    - chart_type: Eius sequi ad.
+                      label: Possimus laboriosam.
+                      reason: Sed iste laudantium.
+                    - chart_type: Eius sequi ad.
+                      label: Possimus laboriosam.
+                      reason: Sed iste laudantium.
+                  connection_id: Sed adipisci tenetur et.
+                  created_at: "2003-07-28T12:02:27Z"
+                  id: b2198f75-05c1-42f5-ba66-a34be75f9d97
+                  llm_model: Rerum sed animi in delectus.
+                  llm_provider: Eveniet ducimus quia.
+                  metrics:
+                    aggregates:
+                        Omnis et alias id illo sed dolores.:
+                            avg: 0.958905837251907
+                            count: 1874456724
+                            max: 0.21622351541777582
+                            min: 0.31989460044492696
+                            std_dev: 0.8344978696820511
+                            sum: 0.11922688727534661
+                        Qui autem.:
+                            avg: 0.958905837251907
+                            count: 1874456724
+                            max: 0.21622351541777582
+                            min: 0.31989460044492696
+                            std_dev: 0.8344978696820511
+                            sum: 0.11922688727534661
+                        Voluptatibus dolore quia doloremque labore sint saepe.:
+                            avg: 0.958905837251907
+                            count: 1874456724
+                            max: 0.21622351541777582
+                            min: 0.31989460044492696
+                            std_dev: 0.8344978696820511
+                            sum: 0.11922688727534661
+                    cohorts:
+                        - cohort_label: Atque deleniti consequuntur.
+                          periods:
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                          retention_pct: 0.6554806853586426
+                        - cohort_label: Atque deleniti consequuntur.
+                          periods:
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                          retention_pct: 0.6554806853586426
+                        - cohort_label: Atque deleniti consequuntur.
+                          periods:
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                            - period_label: Officia accusantium accusantium voluptas numquam sequi esse.
+                              value: 0.19607747664058567
+                          retention_pct: 0.6554806853586426
+                    correlations:
+                        - column_a: Atque eveniet voluptas maiores consequatur.
+                          column_b: Cumque est assumenda.
+                          pearson: 0.18609932409142407
+                          spearman: 0.8641065593670391
+                        - column_a: Atque eveniet voluptas maiores consequatur.
+                          column_b: Cumque est assumenda.
+                          pearson: 0.18609932409142407
+                          spearman: 0.8641065593670391
+                    data_quality:
+                        Doloribus quasi qui ex dolorem.:
+                            distinct_count: 1224338335
+                            null_count: 2050662567
+                            null_pct: 0.13900154605639425
+                            total_rows: 1172492811
+                        Impedit explicabo voluptas quaerat.:
+                            distinct_count: 1224338335
+                            null_count: 2050662567
+                            null_pct: 0.13900154605639425
+                            total_rows: 1172492811
+                    investigation: Molestiae commodi delectus odit.
+                    perf_suggestions:
+                        - Sunt quia veritatis laudantium.
+                        - Quidem sequi mollitia aperiam aut molestiae.
+                    period_current_label: Quidem est ex ut aspernatur optio.
+                    period_previous_label: Est doloremque sed.
+                    time_series:
+                        Neque minima pariatur possimus.:
+                            anomalies:
+                                - explanation: Aliquid et quos eveniet ut.
+                                  period_label: Repudiandae veritatis optio.
+                                  reason: Blanditiis quis enim atque mollitia.
+                                  value: 0.41657953227959466
+                                - explanation: Aliquid et quos eveniet ut.
+                                  period_label: Repudiandae veritatis optio.
+                                  reason: Blanditiis quis enim atque mollitia.
+                                  value: 0.41657953227959466
+                                - explanation: Aliquid et quos eveniet ut.
+                                  period_label: Repudiandae veritatis optio.
+                                  reason: Blanditiis quis enim atque mollitia.
+                                  value: 0.41657953227959466
+                                - explanation: Aliquid et quos eveniet ut.
+                                  period_label: Repudiandae veritatis optio.
+                                  reason: Blanditiis quis enim atque mollitia.
+                                  value: 0.41657953227959466
+                            change: 0.2787130313674615
+                            change_percentage: 0.19741879011633995
+                            current_period: 0.2655350416666836
+                            exponential_smooth_forecast: 0.1471357892022923
+                            forecast_ci_lower: 0.11401219384978035
+                            forecast_ci_upper: 0.6229584142130195
+                            holt_forecast: 0.2892483624687754
+                            moving_average: 0.050659849406670586
+                            next_period_forecast: 0.010412416917676191
+                            periods:
+                                - label: Error minus explicabo et fugiat sed ut.
+                                  value: 0.7942544508587773
+                                - label: Error minus explicabo et fugiat sed ut.
+                                  value: 0.7942544508587773
+                                - label: Error minus explicabo et fugiat sed ut.
+                                  value: 0.7942544508587773
+                            predictive_summary: Voluptatem quod natus est voluptas.
+                            previous_period: 0.2528332681836219
+                            seasonal_period: 960120451
+                            seasonally_adjusted_forecast: 0.3644985816151926
+                            trend: Porro magni non quibusdam.
+                            trend_summary:
+                                direction: At ut voluptas neque ex quod.
+                                explanation: Non maiores.
+                                periods_used: 845977661
+                                slope: 0.19643546551825128
+                                summary: Voluptatem et nesciunt voluptatem corrupti.
+                    top_categories:
+                        Id iste.:
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                        Maiores nesciunt laborum rerum dolores.:
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                        Sunt impedit et.:
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                            - category: Qui ducimus et nihil quibusdam rerum.
+                              percentage: 0.8761862032780722
+                              value: 0.7514791449922089
+                  narrative:
+                    drivers:
+                        - Omnis neque id.
+                        - Beatae et fugiat.
+                        - Atque eaque sapiente doloribus omnis.
+                    headline: Provident eius.
+                    limitations:
+                        - Sequi ipsum.
+                        - Aut fuga aliquid in veniam sit.
+                    recommendations:
+                        - Animi vero sit.
+                        - Voluptatem eius.
+                    takeaways:
+                        - Ad dicta ut dolorum voluptates.
+                        - Inventore voluptas itaque molestiae.
+                  saved_query_id: 7259c730-8f81-4b2a-a06c-1529855b2902
+                  sql: Perspiciatis qui.
+            limit: 1514574481
+            offset: 442234601
         required:
             - items
             - limit
@@ -39216,33 +39552,33 @@ definitions:
         properties:
             access_count:
                 type: integer
-                example: 1596990148
+                example: 1215367985
                 format: int32
             created_at:
                 type: string
-                example: "2011-12-16T01:20:26Z"
+                example: "1980-11-19T21:12:24Z"
                 format: date-time
             expires_at:
                 type: string
-                example: "1986-05-01T06:57:25Z"
+                example: "2015-12-28T07:57:38Z"
                 format: date-time
             id:
                 type: string
-                example: f872e5f7-c646-45a8-b608-1b4b0fe94635
+                example: e7826879-3feb-4dcc-a934-206fcc8b01f6
                 format: uuid
             last_accessed_at:
                 type: string
-                example: "1989-09-19T06:04:51Z"
+                example: "1992-02-16T18:34:15Z"
                 format: date-time
             revoked_at:
                 type: string
-                example: "1979-08-11T07:59:33Z"
+                example: "2009-02-14T02:17:42Z"
                 format: date-time
         example:
             access_count: 1425843068
-            created_at: "1994-12-14T15:15:04Z"
-            expires_at: "1984-08-04T14:01:17Z"
-            id: 29ca5cf2-aef4-4fe1-9c08-558785d8f131
+            created_at: "2002-03-17T21:08:34Z"
+            expires_at: "1996-08-25T21:32:43Z"
+            id: 4c45f317-e246-417a-8129-034a2257af4c
             last_accessed_at: "1988-10-25T09:50:41Z"
             revoked_at: "2002-05-19T19:47:47Z"
         required:
@@ -39255,18 +39591,18 @@ definitions:
         properties:
             expires_at:
                 type: string
-                example: "1974-02-06T03:40:13Z"
+                example: "1979-07-21T19:55:38Z"
                 format: date-time
             token:
                 type: string
-                example: Dignissimos eaque officiis sapiente aut.
+                example: Officiis sapiente aut laborum exercitationem.
             url:
                 type: string
-                example: Exercitationem nisi sit qui sunt asperiores occaecati.
+                example: Sit qui sunt asperiores occaecati quo.
         example:
-            expires_at: "1976-09-28T21:52:45Z"
-            token: Magni animi.
-            url: Quod rerum praesentium explicabo excepturi.
+            expires_at: "1984-12-27T14:03:27Z"
+            token: Quod rerum praesentium explicabo excepturi.
+            url: Aperiam occaecati rerum atque repudiandae.
         required:
             - token
             - url
@@ -39358,20 +39694,14 @@ definitions:
                       id: f419f81f-9e49-490a-af8d-6a4f252cf133
                       similarity: 0.403405154652786
                       sql: Recusandae aut architecto nostrum debitis.
+                    - connection_id: Sed nesciunt.
+                      created_at: "1989-04-17T03:18:56Z"
+                      headline: Et fugiat est vel.
+                      id: f419f81f-9e49-490a-af8d-6a4f252cf133
+                      similarity: 0.403405154652786
+                      sql: Recusandae aut architecto nostrum debitis.
         example:
             items:
-                - connection_id: Sed nesciunt.
-                  created_at: "1989-04-17T03:18:56Z"
-                  headline: Et fugiat est vel.
-                  id: f419f81f-9e49-490a-af8d-6a4f252cf133
-                  similarity: 0.403405154652786
-                  sql: Recusandae aut architecto nostrum debitis.
-                - connection_id: Sed nesciunt.
-                  created_at: "1989-04-17T03:18:56Z"
-                  headline: Et fugiat est vel.
-                  id: f419f81f-9e49-490a-af8d-6a4f252cf133
-                  similarity: 0.403405154652786
-                  sql: Recusandae aut architecto nostrum debitis.
                 - connection_id: Sed nesciunt.
                   created_at: "1989-04-17T03:18:56Z"
                   headline: Et fugiat est vel.
@@ -39393,17 +39723,17 @@ definitions:
             expires_in_hours:
                 type: integer
                 description: Optional expiry in hours (1-720). Omit for no expiry.
-                example: 66
+                example: 269
                 format: int32
                 minimum: 1
                 maximum: 720
             report_id:
                 type: string
-                example: 5b7d4972-2de6-49a6-a601-b040d3fabc67
+                example: e71ec425-ac09-4e86-8b2d-a11aefda0f8c
                 format: uuid
         example:
-            expires_in_hours: 451
-            report_id: eef6f207-3157-446f-82a6-51a1dc05347c
+            expires_in_hours: 708
+            report_id: e4952587-c6ee-4db6-97eb-954487c4946a
         required:
             - report_id
     ReportsRewriteRequestBody:
@@ -39413,17 +39743,17 @@ definitions:
             instruction:
                 type: string
                 description: How to rewrite the narrative (e.g. concise, executive summary, Spanish)
-                example: f6q
+                example: bgk
                 minLength: 1
                 maxLength: 1000
             report_id:
                 type: string
                 description: Report ID to rewrite
-                example: f4a734c6-58e8-49f9-8318-52c594c07e0f
+                example: 4117336a-73c4-44f2-8f3a-6e54b7cc9227
                 format: uuid
         example:
-            instruction: zf6
-            report_id: c90fb8c3-2400-4093-948f-fe479c210df5
+            instruction: "1"
+            report_id: cab7f1e0-7e52-4ba7-8b70-8ac6ccb2cb36
         required:
             - report_id
             - instruction
@@ -40368,7 +40698,7 @@ definitions:
             name:
                 type: string
                 description: Schema name (e.g. demo)
-                example: Ut id.
+                example: Laboriosam dolorem minima est ut.
             tables:
                 type: array
                 items:
@@ -40406,8 +40736,28 @@ definitions:
                           type: Alias sed.
                       name: Similique dolor quis iusto ea earum sunt.
         example:
-            name: Sit natus.
+            name: Qui odit facere necessitatibus et est eligendi.
             tables:
+                - columns:
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                  name: Similique dolor quis iusto ea earum sunt.
+                - columns:
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                  name: Similique dolor quis iusto ea earum sunt.
                 - columns:
                     - name: Commodi delectus.
                       type: Alias sed.
@@ -40722,32 +41072,32 @@ definitions:
         properties:
             connection_id:
                 type: string
-                example: Sapiente sed praesentium quos modi eum.
+                example: Et ea quia.
             created_at:
                 type: string
-                example: "1970-08-24T02:59:00Z"
+                example: "2010-01-08T02:08:02Z"
                 format: date-time
             headline:
                 type: string
-                example: Necessitatibus enim.
+                example: Quia dolorum enim et sapiente.
             id:
                 type: string
-                example: e2742d8b-c6fa-43d0-841b-94c551d8aebf
+                example: a225d1d0-d8b6-41df-b489-8610e25c40d4
                 format: uuid
             similarity:
                 type: number
-                example: 0.14358062371518934
+                example: 0.18231792713865205
                 format: double
             sql:
                 type: string
-                example: Modi et ullam dolores quia dolorum enim.
+                example: Praesentium quos modi eum.
         example:
-            connection_id: Saepe repudiandae.
-            created_at: "2000-07-12T15:28:39Z"
-            headline: Et deleniti doloremque voluptatem.
-            id: a2ce155c-901b-4d4f-9178-4fb9a11d711a
-            similarity: 0.20108823912846088
-            sql: Ut dolorem eum officiis sunt fugit minus.
+            connection_id: Eligendi incidunt excepturi.
+            created_at: "1982-02-27T11:03:44Z"
+            headline: Ut dolorem eum officiis sunt fugit minus.
+            id: 328244da-d269-4906-8a31-ed38c7226e41
+            similarity: 0.8505464693347959
+            sql: Saepe repudiandae.
         required:
             - id
             - headline
@@ -40930,16 +41280,16 @@ definitions:
                 type: array
                 items:
                     type: string
-                    example: Voluptate consequatur ut vitae dolores eveniet.
+                    example: Dolorem laudantium illum.
                 example:
-                    - Autem optio sit repellendus sed aspernatur.
-                    - Sint ut consectetur.
+                    - Quis iste fuga et ratione excepturi.
+                    - Est fuga.
+                    - Qui officiis amet vel facere.
+                    - Vel nemo et perferendis nihil alias.
         example:
             questions:
-                - Officiis molestiae voluptas.
-                - Voluptatem ut numquam laudantium dolorem laudantium illum.
-                - Voluptatem quis iste.
-                - Et ratione excepturi delectus est fuga sint.
+                - Illum voluptatem et totam est consequuntur tenetur.
+                - Temporibus voluptate qui.
         required:
             - questions
     SuggestionsAskRequestBody:
@@ -40949,16 +41299,16 @@ definitions:
             connection_id:
                 type: string
                 description: Optional connection ID; defaults to server default connection
-                example: Quidem ut.
+                example: Delectus fugit deserunt adipisci distinctio.
             question:
                 type: string
                 description: Natural-language question (e.g. 'What were top 5 products by revenue last month?')
-                example: "6"
+                example: h
                 minLength: 1
                 maxLength: 1000
         example:
-            connection_id: Suscipit quia autem dolor.
-            question: c
+            connection_id: Ullam officiis unde.
+            question: o3q
         required:
             - question
     SuggestionsChatRequestBody:
@@ -40968,19 +41318,19 @@ definitions:
             connection_id:
                 type: string
                 description: Optional connection ID; defaults to server default connection
-                example: Quibusdam dolor earum et.
+                example: Dolorum accusamus aspernatur.
             question:
                 type: string
-                example: jyv
+                example: q
                 minLength: 1
                 maxLength: 1000
             session_id:
                 type: string
-                example: Aspernatur aspernatur dolorum praesentium doloremque veritatis.
+                example: Earum ipsum nulla eos dolorem aut tempore.
         example:
-            connection_id: Dolorum accusamus aspernatur.
-            question: q
-            session_id: Earum ipsum nulla eos dolorem aut tempore.
+            connection_id: Neque in qui nobis fugiat sequi.
+            question: "3"
+            session_id: Id architecto nisi.
         required:
             - question
     SuggestionsExplainRequestBody:
@@ -40990,11 +41340,11 @@ definitions:
             sql:
                 type: string
                 description: Read-only SQL to explain (SELECT or WITH).
-                example: ah
+                example: "1"
                 minLength: 1
                 maxLength: 10000
         example:
-            sql: 5p
+            sql: d
         required:
             - sql
     TableInfo:
@@ -41011,10 +41361,14 @@ definitions:
                       type: Alias sed.
                     - name: Commodi delectus.
                       type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
+                    - name: Commodi delectus.
+                      type: Alias sed.
             name:
                 type: string
                 description: Table name
-                example: Sed quia vero maiores.
+                example: Provident nesciunt.
         example:
             columns:
                 - name: Commodi delectus.
@@ -41023,9 +41377,7 @@ definitions:
                   type: Alias sed.
                 - name: Commodi delectus.
                   type: Alias sed.
-                - name: Commodi delectus.
-                  type: Alias sed.
-            name: Ipsa quisquam.
+            name: Asperiores totam vero molestias sapiente.
         required:
             - name
             - columns
@@ -41051,51 +41403,47 @@ definitions:
                       period_label: Repudiandae veritatis optio.
                       reason: Blanditiis quis enim atque mollitia.
                       value: 0.41657953227959466
-                    - explanation: Aliquid et quos eveniet ut.
-                      period_label: Repudiandae veritatis optio.
-                      reason: Blanditiis quis enim atque mollitia.
-                      value: 0.41657953227959466
             change:
                 type: number
-                example: 0.506802840482607
+                example: 0.5109861543205391
                 format: double
             change_percentage:
                 type: number
-                example: 0.6563668066795224
+                example: 0.3648994888248081
                 format: double
             current_period:
                 type: number
-                example: 0.47688873698471634
+                example: 0.2739893132863736
                 format: double
             exponential_smooth_forecast:
                 type: number
                 description: One-step-ahead forecast from simple exponential smoothing
-                example: 0.43176510386656936
+                example: 0.022481209989476333
                 format: double
             forecast_ci_lower:
                 type: number
                 description: Lower bound of confidence interval for next-period forecast
-                example: 0.18459173366110415
+                example: 0.14511795007133518
                 format: double
             forecast_ci_upper:
                 type: number
                 description: Upper bound of confidence interval for next-period forecast
-                example: 0.13578069701420928
+                example: 0.1758708231700488
                 format: double
             holt_forecast:
                 type: number
                 description: One-step-ahead forecast from Holt linear trend
-                example: 0.01628751408906683
+                example: 0.5197176477494722
                 format: double
             moving_average:
                 type: number
                 description: Simple moving average for latest period (e.g. 3-period SMA)
-                example: 0.17219308115358536
+                example: 0.22774216516835766
                 format: double
             next_period_forecast:
                 type: number
                 description: 'Simple predictive: last value + trend slope'
-                example: 0.7396102286057533
+                example: 0.12962310825247655
                 format: double
             periods:
                 type: array
@@ -41107,29 +41455,27 @@ definitions:
                       value: 0.7942544508587773
                     - label: Error minus explicabo et fugiat sed ut.
                       value: 0.7942544508587773
-                    - label: Error minus explicabo et fugiat sed ut.
-                      value: 0.7942544508587773
             predictive_summary:
                 type: string
                 description: Human-readable predictive sentence for the narrative
-                example: Eum molestiae adipisci dolorum laudantium.
+                example: Aspernatur enim.
             previous_period:
                 type: number
-                example: 0.4455701328512939
+                example: 0.2633850452897764
                 format: double
             seasonal_period:
                 type: integer
                 description: Detected seasonal period (0=none, e.g. 4=quarterly, 12=monthly)
-                example: 586185210
+                example: 1557594549
                 format: int32
             seasonally_adjusted_forecast:
                 type: number
                 description: Next-period forecast with seasonal component
-                example: 0.6191135534924598
+                example: 0.7620152825730956
                 format: double
             trend:
                 type: string
-                example: Dolores et commodi iusto sit a.
+                example: Perferendis adipisci.
             trend_summary:
                 $ref: '#/definitions/TrendSummaryData'
         example:
@@ -41142,25 +41488,33 @@ definitions:
                   period_label: Repudiandae veritatis optio.
                   reason: Blanditiis quis enim atque mollitia.
                   value: 0.41657953227959466
-            change: 0.5226779641218403
-            change_percentage: 0.6635656777424945
-            current_period: 0.5198268259707638
-            exponential_smooth_forecast: 0.9593754926954414
-            forecast_ci_lower: 0.08134344171923924
-            forecast_ci_upper: 0.3668138231773846
-            holt_forecast: 0.04719685594824246
-            moving_average: 0.0922757429293207
-            next_period_forecast: 0.3902947922442017
+                - explanation: Aliquid et quos eveniet ut.
+                  period_label: Repudiandae veritatis optio.
+                  reason: Blanditiis quis enim atque mollitia.
+                  value: 0.41657953227959466
+                - explanation: Aliquid et quos eveniet ut.
+                  period_label: Repudiandae veritatis optio.
+                  reason: Blanditiis quis enim atque mollitia.
+                  value: 0.41657953227959466
+            change: 0.06364291627879269
+            change_percentage: 0.3882289622976622
+            current_period: 0.6631085715229056
+            exponential_smooth_forecast: 0.6818651880054077
+            forecast_ci_lower: 0.08772603658105865
+            forecast_ci_upper: 0.9860406010487042
+            holt_forecast: 0.3911699468378248
+            moving_average: 0.1078037045390291
+            next_period_forecast: 0.4058511673874046
             periods:
                 - label: Error minus explicabo et fugiat sed ut.
                   value: 0.7942544508587773
                 - label: Error minus explicabo et fugiat sed ut.
                   value: 0.7942544508587773
-            predictive_summary: Est possimus et consequatur occaecati.
-            previous_period: 0.8218139460142726
-            seasonal_period: 1031304744
-            seasonally_adjusted_forecast: 0.8246547115543981
-            trend: Vel veritatis provident architecto.
+            predictive_summary: At architecto fugiat dolores rerum.
+            previous_period: 0.3348545294898283
+            seasonal_period: 1228173614
+            seasonally_adjusted_forecast: 0.8185532956742351
+            trend: Aut voluptatem.
             trend_summary:
                 direction: At ut voluptas neque ex quod.
                 explanation: Non maiores.
@@ -41176,19 +41530,19 @@ definitions:
         properties:
             category:
                 type: string
-                example: Quas id non hic.
+                example: Officiis laboriosam aperiam commodi dignissimos voluptatem laborum.
             percentage:
                 type: number
-                example: 0.528413684053506
+                example: 0.036773637707299314
                 format: double
             value:
                 type: number
-                example: 0.9271121235788499
+                example: 0.9938651715471386
                 format: double
         example:
-            category: Quia suscipit error iusto.
-            percentage: 0.4364903602781691
-            value: 0.3470670581623116
+            category: Aut unde asperiores distinctio.
+            percentage: 0.9153009755526773
+            value: 0.17219308115358536
         required:
             - category
             - value
@@ -41200,30 +41554,30 @@ definitions:
             direction:
                 type: string
                 description: increasing, decreasing, or stable
-                example: Rerum repellat omnis doloribus voluptas.
+                example: Rem earum minima possimus.
             explanation:
                 type: string
                 description: One-sentence explanation of what the trend suggests
-                example: Ipsum aut voluptatum ea.
+                example: Ut adipisci voluptatem consequatur asperiores dolores est.
             periods_used:
                 type: integer
-                example: 618107802
+                example: 1424996442
                 format: int32
             slope:
                 type: number
                 description: Change per period from linear regression
-                example: 0.8965315144725471
+                example: 0.5226779641218403
                 format: double
             summary:
                 type: string
                 description: Human-readable trend description
-                example: Dolores molestiae et ut dolores aut necessitatibus.
+                example: Vel veritatis provident architecto.
         example:
-            direction: Cupiditate omnis itaque.
-            explanation: At nihil.
-            periods_used: 1005563568
-            slope: 0.7309401417192662
-            summary: Tenetur ea impedit excepturi aut quos.
+            direction: Et consequatur occaecati consequatur.
+            explanation: Eos et voluptatem ut facilis.
+            periods_used: 1031304744
+            slope: 0.04719685594824246
+            summary: Ea voluptatem.
         required:
             - direction
             - summary
@@ -41256,17 +41610,17 @@ definitions:
         properties:
             code:
                 type: string
-                example: Aut suscipit officiis eius accusamus.
+                example: Modi ut odio.
             message:
                 type: string
-                example: Sint minus a fugiat.
+                example: Nesciunt et nihil aut aut vitae.
             name:
                 type: string
-                example: Fugit excepturi.
+                example: Assumenda nemo quae aut.
         example:
-            code: Nesciunt et nihil aut aut vitae.
-            message: Assumenda nemo quae aut.
-            name: Cupiditate sit et.
+            code: Ut aliquam nihil.
+            message: Atque occaecati.
+            name: Mollitia est.
         required:
             - name
             - message

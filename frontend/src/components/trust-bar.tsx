@@ -26,7 +26,13 @@ export function TrustBar({ connectionName, trust, className }: TrustBarProps) {
       label: "Access",
       value: !trust ? UNKNOWN : trust.readonly ? "Read-only (confirmed)" : "Not confirmed read-only",
     },
-    { icon: Shield, label: "Schemas", value: trust?.allowed_schemas?.length ? trust.allowed_schemas.join(", ") : UNKNOWN },
+    {
+      icon: Shield,
+      label: "Schemas",
+      // An empty list is a real, security-relevant "no schemas allowed" state
+      // — it must read differently from "still loading" (UNKNOWN), not the same "—".
+      value: !trust ? UNKNOWN : trust.allowed_schemas.length ? trust.allowed_schemas.join(", ") : "none",
+    },
     {
       icon: Clock,
       label: "Timeout",

@@ -319,7 +319,7 @@ func NewSecurityTrustHandler(
 	var (
 		decodeRequest  = DecodeSecurityTrustRequest(mux, decoder)
 		encodeResponse = EncodeSecurityTrustResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeSecurityTrustError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))

@@ -227,11 +227,14 @@ var _ = Service("workspace", func() {
 			Attribute("connection_id", String, "Optional connection ID; defaults to server default connection")
 		})
 		Result(SecurityTrust)
+		Error("validation_error", ValidationError)
 		HTTP(func() {
 			GET("/api/v1/trust")
 			Params(func() {
 				Param("connection_id")
 			})
+			Response(StatusOK)
+			Response(StatusBadRequest, "validation_error")
 		})
 	})
 })

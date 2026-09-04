@@ -189,6 +189,35 @@ func DecodeSecurityTrustRequest(mux goahttp.Muxer, decoder func(*http.Request) g
 	}
 }
 
+// EncodeSecurityTrustError returns an encoder for errors returned by the
+// security_trust workspace endpoint.
+func EncodeSecurityTrustError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "validation_error":
+			var res *workspace.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewSecurityTrustValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // marshalWorkspaceRegressionAlertToRegressionAlertResponseBody builds a value
 // of type *RegressionAlertResponseBody from a value of type
 // *workspace.RegressionAlert.

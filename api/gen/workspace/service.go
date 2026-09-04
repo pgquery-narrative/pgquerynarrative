@@ -154,6 +154,12 @@ type SecurityTrustPayload struct {
 	ConnectionID *string
 }
 
+type ValidationError struct {
+	Name    string
+	Message string
+	Code    *string
+}
+
 // WorkspaceOverview is the result type of the workspace service overview
 // method.
 type WorkspaceOverview struct {
@@ -182,4 +188,21 @@ func (e *NotFoundError) ErrorName() string {
 // GoaErrorName returns "NotFoundError".
 func (e *NotFoundError) GoaErrorName() string {
 	return "not_found"
+}
+
+// Error returns an error description.
+func (e *ValidationError) Error() string {
+	return ""
+}
+
+// ErrorName returns "ValidationError".
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e *ValidationError) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns "ValidationError".
+func (e *ValidationError) GoaErrorName() string {
+	return "validation_error"
 }

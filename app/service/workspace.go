@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -291,19 +292,41 @@ func (s *WorkspaceService) SecurityTrust(ctx context.Context, payload *workspace
 	if payload != nil {
 		reqID = payload.ConnectionID
 	}
+
 	connID := s.defaultConnectionID
-	var runner *queryrunner.Runner
+	var authz ConnectionAuthorizer
 	if s.queriesSvc != nil {
+		authz = s.queriesSvc.authz
 		id, err := s.queriesSvc.resolveConnectionID(reqID)
 		if err != nil {
-			return nil, err
+			return nil, connectionNotFoundWorkspaceError(err)
 		}
 		connID = id
-		if r, err := s.queriesSvc.runnerFor(&connID); err == nil {
-			runner = r
-		}
 	} else if reqID != nil && strings.TrimSpace(*reqID) != "" {
 		connID = strings.TrimSpace(*reqID)
+	}
+
+	// Gate the whole posture on the caller actually being allowed to see this
+	// connection at all. Without this, any authenticated caller could read
+	// another org's connection's TLS mode, schemas, and timeout just by
+	// passing its connection_id — the per-action checks below only ever
+	// affected the display-only authorization_state/analyze_policy fields,
+	// never whether the rest of the response was returned at all.
+	if err := checkConnectionAccess(ctx, authz, connID, auth.ActionStats); err != nil {
+		return nil, connectionForbiddenWorkspaceError(err)
+	}
+
+	var runner *queryrunner.Runner
+	if s.queriesSvc != nil {
+		r, err := s.queriesSvc.runnerFor(&connID)
+		if err != nil {
+			// connID was just resolved successfully above, so this would mean
+			// the runner and connection resolvers disagree — surface it
+			// rather than silently reporting zero-value timeout/limit/readonly
+			// as if they were real (permissive) configuration.
+			return nil, connectionNotFoundWorkspaceError(err)
+		}
+		runner = r
 	}
 
 	authStatus := "Enabled"
@@ -325,29 +348,22 @@ func (s *WorkspaceService) SecurityTrust(ctx context.Context, payload *workspace
 
 	var timeout, resultLimit int32
 	if runner != nil {
-		timeout = int32(runner.QueryTimeout().Seconds())
+		timeout = timeoutSecondsCeil(runner.QueryTimeout())
 		resultLimit = int32(runner.MaxRows())
 	}
 
 	// Fail closed: an unconfirmed probe reports false, never an assumed-safe true.
 	readonly := s.probeReadOnly(ctx, runner)
 
-	p := auth.PrincipalFromContext(ctx)
 	authzState := make([]string, 0, len(securityTrustActions))
 	canAnalyze := false
-	if s.queriesSvc != nil && s.queriesSvc.authz != nil {
-		for _, action := range securityTrustActions {
-			if err := s.queriesSvc.authz.AuthorizeConnection(ctx, p.OrgID, p.UserID, p.Role, connID, action); err == nil {
-				authzState = append(authzState, action)
-				if action == auth.ActionAnalyze {
-					canAnalyze = true
-				}
+	for _, action := range securityTrustActions {
+		if err := checkConnectionAccess(ctx, authz, connID, action); err == nil {
+			authzState = append(authzState, action)
+			if action == auth.ActionAnalyze {
+				canAnalyze = true
 			}
 		}
-	} else {
-		// No authorizer wired (permissive mode): every action is implicitly allowed.
-		authzState = append(authzState, securityTrustActions...)
-		canAnalyze = true
 	}
 
 	analyzePolicy := "Disabled (server policy)"
@@ -383,6 +399,42 @@ func (s *WorkspaceService) SecurityTrust(ctx context.Context, payload *workspace
 		// so this is always absent — the UI shows "never" rather than a made-up date.
 		LastSecurityVerification: nil,
 	}, nil
+}
+
+// timeoutSecondsCeil converts a configured timeout to whole seconds, rounding
+// up. A sub-second timeout (e.g. 500ms) is real enforcement and must not
+// truncate to 0, which the API represents as "no timeout enforced".
+func timeoutSecondsCeil(d time.Duration) int32 {
+	if d <= 0 {
+		return 0
+	}
+	secs := (d + time.Second - 1) / time.Second
+	if secs > time.Duration(math.MaxInt32) {
+		return math.MaxInt32
+	}
+	return int32(secs)
+}
+
+func connectionNotFoundWorkspaceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &workspace.ValidationError{
+		Name:    "validation_error",
+		Message: "connection not found",
+		Code:    strPtr("CONNECTION_NOT_FOUND"),
+	}
+}
+
+func connectionForbiddenWorkspaceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &workspace.ValidationError{
+		Name:    "validation_error",
+		Message: "connection access denied",
+		Code:    strPtr("CONNECTION_FORBIDDEN"),
+	}
 }
 
 // probeReadOnly asks the live connection whether its role is actually

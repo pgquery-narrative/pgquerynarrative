@@ -74,6 +74,9 @@ func (c *Client) DemoScenarios(ctx context.Context) (res *DemoScenarioList, err 
 }
 
 // SecurityTrust calls the "security_trust" endpoint of the "workspace" service.
+// SecurityTrust may return the following errors:
+//   - "validation_error" (type *ValidationError)
+//   - error: internal error
 func (c *Client) SecurityTrust(ctx context.Context, p *SecurityTrustPayload) (res *SecurityTrust2, err error) {
 	var ires any
 	ires, err = c.SecurityTrustEndpoint(ctx, p)

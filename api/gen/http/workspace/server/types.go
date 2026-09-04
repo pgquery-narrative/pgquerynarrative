@@ -74,6 +74,15 @@ type AcknowledgeRegressionNotFoundResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// SecurityTrustValidationErrorResponseBody is the type of the "workspace"
+// service "security_trust" endpoint HTTP response body for the
+// "validation_error" error.
+type SecurityTrustValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // RegressionAlertResponseBody is used to define fields on response body types.
 type RegressionAlertResponseBody struct {
 	ID            string `form:"id" json:"id" xml:"id"`
@@ -218,6 +227,17 @@ func NewSecurityTrustResponseBody(res *workspace.SecurityTrust2) *SecurityTrustR
 // service.
 func NewAcknowledgeRegressionNotFoundResponseBody(res *workspace.NotFoundError) *AcknowledgeRegressionNotFoundResponseBody {
 	body := &AcknowledgeRegressionNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewSecurityTrustValidationErrorResponseBody builds the HTTP response body
+// from the result of the "security_trust" endpoint of the "workspace" service.
+func NewSecurityTrustValidationErrorResponseBody(res *workspace.ValidationError) *SecurityTrustValidationErrorResponseBody {
+	body := &SecurityTrustValidationErrorResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,

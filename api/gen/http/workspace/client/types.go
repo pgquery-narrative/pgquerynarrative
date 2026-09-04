@@ -75,6 +75,15 @@ type AcknowledgeRegressionNotFoundResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// SecurityTrustValidationErrorResponseBody is the type of the "workspace"
+// service "security_trust" endpoint HTTP response body for the
+// "validation_error" error.
+type SecurityTrustValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // RegressionAlertResponseBody is used to define fields on response body types.
 type RegressionAlertResponseBody struct {
 	ID            *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
@@ -214,6 +223,18 @@ func NewSecurityTrust2OK(body *SecurityTrustResponseBody) *workspace.SecurityTru
 	return v
 }
 
+// NewSecurityTrustValidationError builds a workspace service security_trust
+// endpoint validation_error error.
+func NewSecurityTrustValidationError(body *SecurityTrustValidationErrorResponseBody) *workspace.ValidationError {
+	v := &workspace.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
 // ValidateOverviewResponseBody runs the validations defined on
 // OverviewResponseBody
 func ValidateOverviewResponseBody(body *OverviewResponseBody) (err error) {
@@ -330,6 +351,18 @@ func ValidateSecurityTrustResponseBody(body *SecurityTrustResponseBody) (err err
 // ValidateAcknowledgeRegressionNotFoundResponseBody runs the validations
 // defined on acknowledge_regression_not_found_response_body
 func ValidateAcknowledgeRegressionNotFoundResponseBody(body *AcknowledgeRegressionNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateSecurityTrustValidationErrorResponseBody runs the validations
+// defined on security_trust_validation_error_response_body
+func ValidateSecurityTrustValidationErrorResponseBody(body *SecurityTrustValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

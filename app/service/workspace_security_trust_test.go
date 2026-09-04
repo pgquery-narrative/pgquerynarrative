@@ -100,7 +100,10 @@ func TestSecurityTrust_AuthorizationStateReflectsRealGrants(t *testing.T) {
 		map[string]*queryrunner.Runner{"default": testRunner(500, 0)},
 		"default", config.MetricsConfig{}, nil, nil, "", nil)
 	qs.SetAuthorizer(&mockConnectionAuthorizer{granted: map[string]map[string]bool{
-		"default": {auth.ActionQuery: true, auth.ActionExplain: true},
+		// ActionStats must be granted or SecurityTrust denies the whole
+		// request before it ever builds authorization_state (see the
+		// ungranted-connection test below).
+		"default": {auth.ActionQuery: true, auth.ActionExplain: true, auth.ActionStats: true},
 	}})
 	s := NewWorkspaceService(nil, qs, true, false, true, "off", false,
 		[]config.DataConnectionConfig{{ID: "default", SSLMode: "require", AllowedSchemas: []string{"demo"}}},
@@ -110,16 +113,50 @@ func TestSecurityTrust_AuthorizationStateReflectsRealGrants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SecurityTrust: %v", err)
 	}
-	if len(got.AuthorizationState) != 2 {
-		t.Fatalf("authorization_state: got %v, want exactly the two granted actions", got.AuthorizationState)
+	if len(got.AuthorizationState) != 3 {
+		t.Fatalf("authorization_state: got %v, want exactly the three granted actions", got.AuthorizationState)
 	}
 	for _, a := range got.AuthorizationState {
-		if a != auth.ActionQuery && a != auth.ActionExplain {
+		if a != auth.ActionQuery && a != auth.ActionExplain && a != auth.ActionStats {
 			t.Fatalf("authorization_state contains ungranted action %q", a)
 		}
 	}
 	if got.AnalyzePolicy != "Disabled (no permission)" {
 		t.Fatalf("analyze_policy: got %q, want %q since analyze was not granted", got.AnalyzePolicy, "Disabled (no permission)")
+	}
+}
+
+func TestSecurityTrust_DeniesConnectionTheCallerHasNoAccessTo(t *testing.T) {
+	qs := NewQueriesServiceMultiConnection(nil,
+		map[string]*queryrunner.Runner{"default": testRunner(500, 0)},
+		"default", config.MetricsConfig{}, nil, nil, "", nil)
+	// No grants at all for "default": simulates a connection never assigned
+	// to the caller's org (e.g. it belongs to a different org).
+	qs.SetAuthorizer(&mockConnectionAuthorizer{granted: map[string]map[string]bool{}})
+	s := NewWorkspaceService(nil, qs, true, false, true, "off", false,
+		[]config.DataConnectionConfig{{ID: "default", SSLMode: "require", AllowedSchemas: []string{"demo"}}},
+		"default")
+
+	got, err := s.SecurityTrust(context.Background(), &workspace.SecurityTrustPayload{})
+	if err == nil {
+		t.Fatalf("expected an error for a connection the caller has no access to, got a full posture: %+v", got)
+	}
+}
+
+func TestSecurityTrust_SubSecondTimeoutNeverReportsAsUnenforced(t *testing.T) {
+	qs := NewQueriesServiceMultiConnection(nil,
+		map[string]*queryrunner.Runner{"default": testRunner(500, 500*time.Millisecond)},
+		"default", config.MetricsConfig{}, nil, nil, "", nil)
+	s := NewWorkspaceService(nil, qs, true, false, false, "off", false,
+		[]config.DataConnectionConfig{{ID: "default", SSLMode: "require", AllowedSchemas: []string{"demo"}}},
+		"default")
+
+	got, err := s.SecurityTrust(context.Background(), &workspace.SecurityTrustPayload{})
+	if err != nil {
+		t.Fatalf("SecurityTrust: %v", err)
+	}
+	if got.QueryTimeoutSeconds != 1 {
+		t.Fatalf("query_timeout_seconds: got %d for a real 500ms timeout, want 1 (must round up, never down to 0/\"none enforced\")", got.QueryTimeoutSeconds)
 	}
 }
 

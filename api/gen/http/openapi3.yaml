@@ -40814,6 +40814,16 @@ paths:
                                 result_limit: 2034379730
                                 tenant_isolation: Error odio sit aut.
                                 tls: Vitae alias perspiciatis et.
+                "400":
+                    description: 'validation_error: Bad Request response.'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ValidationError'
+                            example:
+                                code: Occaecati doloribus explicabo est perspiciatis quae.
+                                message: Molestiae voluptate id eum perspiciatis autem deleniti.
+                                name: Nihil quo facere rem est.
     /api/v1/webhook-deliveries:
         get:
             tags:
