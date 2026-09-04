@@ -66,8 +66,8 @@ func TestSecurityTrust_ReportsRawSSLModeNeverSubstituted(t *testing.T) {
 func TestSecurityTrust_SelectsRequestedConnection(t *testing.T) {
 	qs := NewQueriesServiceMultiConnection(nil,
 		map[string]*queryrunner.Runner{
-			"default":   testRunner(500, 5 * time.Second),
-			"analytics": testRunner(2000, 30 * time.Second),
+			"default":   testRunner(500, 5*time.Second),
+			"analytics": testRunner(2000, 30*time.Second),
 		},
 		"default", config.MetricsConfig{}, nil, nil, "", nil)
 	s := NewWorkspaceService(nil, qs, true, false, true, "off", false,
