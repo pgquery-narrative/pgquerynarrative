@@ -25,6 +25,15 @@ Typical UI path: **Investigate** → guided scenario or paste SQL → review fin
 
 Guided demo scenarios ship **problem SQL only** — no answer-key rewrite is prefilled.
 
+### Visibility
+
+Investigations are **organization-wide**. Every member of the organization can
+view and act on any investigation in it — this is deliberate: an investigation
+is a shared debugging record that a teammate should be able to pick up.
+`created_by` records who opened it, and row-level security still confines each
+investigation (and its candidate history and linked regression alerts) to its
+own organization. There is no per-user "private until shared" mode.
+
 ## Rewrite engine
 
 **Suggest rewrite** analyzes the query AST (and optional plan findings) and proposes candidates such as:
