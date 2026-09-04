@@ -22,7 +22,7 @@ type Service interface {
 	// Guided demo scenarios for Query Investigation
 	DemoScenarios(context.Context) (res *DemoScenarioList, err error)
 	// Security and trust posture for the Security & Trust page
-	SecurityTrust(context.Context) (res *SecurityTrust2, err error)
+	SecurityTrust(context.Context, *SecurityTrustPayload) (res *SecurityTrust2, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -121,16 +121,37 @@ type RegressionsPayload struct {
 // SecurityTrust2 is the result type of the workspace service security_trust
 // method.
 type SecurityTrust2 struct {
-	Authentication      string
-	ConnectionMode      string
-	AllowedSchemas      []string
-	TenantIsolation     string
-	TLS                 string
-	AuditMode           string
+	// The connection this posture reflects
+	ConnectionID   string
+	Authentication string
+	ConnectionMode string
+	// Whether the connection's role is confirmed read-only by a live probe
+	Readonly        bool
+	AllowedSchemas  []string
+	TenantIsolation string
+	// Raw sslmode this connection is configured with
+	// (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
+	TLS       string
+	AuditMode string
+	// Statement timeout in seconds; 0 means no timeout is enforced
 	QueryTimeoutSeconds int32
 	ResultLimit         int32
 	ExplainAnalyze      string
 	ExternalLlmData     string
+	// Actions the current caller is authorized for on this connection
+	AuthorizationState []string
+	// Effective EXPLAIN ANALYZE policy for the current caller on this connection
+	AnalyzePolicy string
+	// Timestamp of the last recorded security verification, or absent if none has
+	// been recorded
+	LastSecurityVerification *string
+}
+
+// SecurityTrustPayload is the payload type of the workspace service
+// security_trust method.
+type SecurityTrustPayload struct {
+	// Optional connection ID; defaults to server default connection
+	ConnectionID *string
 }
 
 // WorkspaceOverview is the result type of the workspace service overview

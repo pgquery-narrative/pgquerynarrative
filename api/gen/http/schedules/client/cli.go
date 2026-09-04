@@ -24,7 +24,7 @@ func BuildCreatePayload(schedulesCreateBody string) (*schedules.ScheduleInput, e
 	{
 		err = json.Unmarshal([]byte(schedulesCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Quia illum reprehenderit quis a.\",\n      \"destination_target\": \"Voluptatum quia.\",\n      \"destination_type\": \"Voluptate dolores molestiae iure molestiae.\",\n      \"enabled\": false,\n      \"interval_expr\": \"Et iure nostrum a minima dolor.\",\n      \"name\": \"cb4\",\n      \"saved_query_id\": \"e0116b0a-713f-4c61-82be-e5efeff571fe\",\n      \"sql\": \"fa0\",\n      \"timezone\": \"Incidunt aut provident est similique.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Atque debitis similique quia illum reprehenderit.\",\n      \"destination_target\": \"Dolores molestiae iure molestiae.\",\n      \"destination_type\": \"Provident est similique minima.\",\n      \"enabled\": true,\n      \"interval_expr\": \"A expedita et iure.\",\n      \"name\": \"r\",\n      \"saved_query_id\": \"036e0ead-7475-4a1d-8f36-e61d00295e84\",\n      \"sql\": \"z3g\",\n      \"timezone\": \"A minima dolor placeat incidunt.\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))
@@ -67,7 +67,7 @@ func BuildUpdatePayload(schedulesUpdateBody string, schedulesUpdateID string) (*
 	{
 		err = json.Unmarshal([]byte(schedulesUpdateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Alias enim earum et.\",\n      \"destination_target\": \"Tempore quod vel.\",\n      \"destination_type\": \"Rem suscipit corrupti et id nihil et.\",\n      \"enabled\": true,\n      \"interval_expr\": \"Veniam quia quo enim voluptas reprehenderit.\",\n      \"name\": \"sq\",\n      \"saved_query_id\": \"3db39372-dcb7-441b-a1a7-88d65ef3c464\",\n      \"sql\": \"69i\",\n      \"timezone\": \"Reprehenderit qui sed itaque doloribus.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Voluptas consequatur et totam qui.\",\n      \"destination_target\": \"Aliquid reprehenderit qui.\",\n      \"destination_type\": \"Quo enim voluptas.\",\n      \"enabled\": false,\n      \"interval_expr\": \"Ab beatae nam voluptatem alias.\",\n      \"name\": \"mm\",\n      \"saved_query_id\": \"bee739b4-b5af-4b07-810a-1492eb7fb943\",\n      \"sql\": \"1ex\",\n      \"timezone\": \"Earum et voluptas veniam.\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))

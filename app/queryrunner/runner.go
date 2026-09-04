@@ -107,6 +107,11 @@ func NewRunnerForConnection(resolver poolResolver, connectionID string, validato
 	return r
 }
 
+// MaxRows returns the row cap this runner enforces on Run results.
+func (r *Runner) MaxRows() int {
+	return r.maxRows
+}
+
 // StatsPool returns the analytical pool used for catalog/stats queries on this runner.
 func (r *Runner) StatsPool() *pgxpool.Pool {
 	return r.activePool(context.Background())

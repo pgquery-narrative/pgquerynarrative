@@ -285,6 +285,23 @@ func (c *Client) BuildSecurityTrustRequest(ctx context.Context, v any) (*http.Re
 	return req, nil
 }
 
+// EncodeSecurityTrustRequest returns an encoder for requests sent to the
+// workspace security_trust server.
+func EncodeSecurityTrustRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*workspace.SecurityTrustPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("workspace", "security_trust", "*workspace.SecurityTrustPayload", v)
+		}
+		values := req.URL.Query()
+		if p.ConnectionID != nil {
+			values.Add("connection_id", *p.ConnectionID)
+		}
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
 // DecodeSecurityTrustResponse returns a decoder for responses returned by the
 // workspace security_trust endpoint. restoreBody controls whether the response
 // body should be restored after having been read.

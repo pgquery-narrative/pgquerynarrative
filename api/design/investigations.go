@@ -223,9 +223,15 @@ var _ = Service("workspace", func() {
 
 	Method("security_trust", func() {
 		Description("Security and trust posture for the Security & Trust page")
+		Payload(func() {
+			Attribute("connection_id", String, "Optional connection ID; defaults to server default connection")
+		})
 		Result(SecurityTrust)
 		HTTP(func() {
 			GET("/api/v1/trust")
+			Params(func() {
+				Param("connection_id")
+			})
 		})
 	})
 })

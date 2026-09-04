@@ -80,6 +80,7 @@ func NewDemoScenariosEndpoint(s Service) goa.Endpoint {
 // "security_trust" of service "workspace".
 func NewSecurityTrustEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
-		return s.SecurityTrust(ctx)
+		p := req.(*SecurityTrustPayload)
+		return s.SecurityTrust(ctx, p)
 	}
 }

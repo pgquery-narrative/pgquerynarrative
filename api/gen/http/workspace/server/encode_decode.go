@@ -172,6 +172,23 @@ func EncodeSecurityTrustResponse(encoder func(context.Context, http.ResponseWrit
 	}
 }
 
+// DecodeSecurityTrustRequest returns a decoder for requests sent to the
+// workspace security_trust endpoint.
+func DecodeSecurityTrustRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*workspace.SecurityTrustPayload, error) {
+	return func(r *http.Request) (*workspace.SecurityTrustPayload, error) {
+		var (
+			connectionID *string
+		)
+		connectionIDRaw := r.URL.Query().Get("connection_id")
+		if connectionIDRaw != "" {
+			connectionID = &connectionIDRaw
+		}
+		payload := NewSecurityTrustPayload(connectionID)
+
+		return payload, nil
+	}
+}
+
 // marshalWorkspaceRegressionAlertToRegressionAlertResponseBody builds a value
 // of type *RegressionAlertResponseBody from a value of type
 // *workspace.RegressionAlert.
