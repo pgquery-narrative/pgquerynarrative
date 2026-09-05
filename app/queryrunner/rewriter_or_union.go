@@ -44,7 +44,10 @@ func suggestOrToUnion(sql string, findings []PlanFinding) *RewriteCandidate {
 		preds := make([]*pg_query.Node, 0, 2+len(seen))
 		preds = append(preds, shared, leaf)
 		for _, prev := range seen {
-			preds = append(preds, notExpr(prev))
+			// NULL-safe: `(prev) IS NOT TRUE`, not `NOT (prev)`. A plain NOT is
+			// NULL when prev is NULL, which would drop rows the original OR keeps
+			// (e.g. a IS NULL, b = 2 for `a = 1 OR b = 2`).
+			preds = append(preds, isNotTrueExpr(prev))
 		}
 		branchSel.WhereClause = combineAnd(preds)
 		branchSel.SortClause = nil
@@ -84,7 +87,7 @@ func suggestOrToUnion(sql string, findings []PlanFinding) *RewriteCandidate {
 	}
 	return &RewriteCandidate{
 		SQL:        outSQL,
-		Rationale:  "split OR predicates on different columns into UNION ALL branches so each side can use its own index; NOT of prior branches preserves OR multiplicity",
+		Rationale:  "split OR predicates on different columns into UNION ALL branches so each side can use its own index; `IS NOT TRUE` of prior branches preserves OR multiplicity even when a branch column is NULL",
 		Category:   "or_to_union",
 		Confidence: confidence,
 	}

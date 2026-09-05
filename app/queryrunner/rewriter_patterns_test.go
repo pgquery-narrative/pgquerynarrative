@@ -104,8 +104,14 @@ func TestSuggestRewrites_OrToUnion(t *testing.T) {
 	if !strings.Contains(got, "region") || !strings.Contains(got, "product_category") {
 		t.Fatalf("expected both predicates, got: %s", c.SQL)
 	}
-	if !strings.Contains(got, "not") {
-		t.Fatalf("expected NOT of prior branch to preserve OR multiplicity, got: %s", c.SQL)
+	// The later branch must subtract the earlier one with a NULL-safe negation:
+	// `(region = 'North') IS NOT TRUE`, never a bare `NOT (region = 'North')`
+	// (which is NULL — and drops the row — when region is NULL).
+	if !strings.Contains(got, "is not true") {
+		t.Fatalf("expected `IS NOT TRUE` of the prior branch, got: %s", c.SQL)
+	}
+	if strings.Contains(got, "not (region") || strings.Contains(got, "not region") {
+		t.Fatalf("bare NOT drops NULL-column rows; expected IS NOT TRUE, got: %s", c.SQL)
 	}
 }
 
@@ -219,11 +225,15 @@ func TestSuggestRewrites_ParamEqualityRewritten(t *testing.T) {
 	sql := `SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) = $1`
 	c := mustFindCategory(t, SuggestRewrites(sql, nil), "function_wrap")
 	got := normalizeSQL(c.SQL)
-	if strings.Contains(strings.ToLower(got), "date_trunc") {
-		t.Fatalf("expected unwrap, got: %s", c.SQL)
+	// The column is unwrapped; DATE_TRUNC survives only as the param-alignment guard.
+	if strings.Contains(strings.ToLower(got), "date_trunc('month', date)") {
+		t.Fatalf("expected the column wrap to be unwrapped, got: %s", c.SQL)
 	}
 	if !strings.Contains(got, "date >= $1") || !strings.Contains(got, "date < ($1 + '1 month'::interval)") {
 		t.Fatalf("expected placeholder-preserving month range, got: %s", c.SQL)
+	}
+	if !strings.Contains(got, "date_trunc('month', $1) = $1") {
+		t.Fatalf("expected the param-alignment guard, got: %s", c.SQL)
 	}
 }
 

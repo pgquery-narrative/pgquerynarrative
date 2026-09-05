@@ -104,6 +104,12 @@ func tryRewriteCastDateBetween(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRe
 		return nil, dateTruncRewrite{}, false
 	}
 	start := truncateTime(low, "day")
+	if !start.Equal(low) {
+		// A lower bound carrying a time component excludes its own day: col::date
+		// (always midnight) is never >= a mid-day timestamp. Round the range start
+		// up to the next day so the rewrite matches the original.
+		start = start.AddDate(0, 0, 1)
+	}
 	endEx := truncateTime(high, "day").AddDate(0, 0, 1)
 	return rangeOnColumn(colNode, start, endEx, "day", "cast_date")
 }
