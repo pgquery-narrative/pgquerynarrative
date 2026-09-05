@@ -225,17 +225,86 @@ func (s *WorkspaceService) AcknowledgeRegression(ctx context.Context, payload *w
 	return nil
 }
 
+// demoScenarioMonthTimeout bounds the demo.sales range probe so the Investigate
+// page never blocks on it; on timeout the caller falls back to a computed month.
+const demoScenarioMonthTimeout = 2 * time.Second
+
+// demoScenarioMonth returns the first day of a month that actually contains
+// demo.sales rows, so guided scenario SQL returns rows instead of an empty
+// result.
+//
+// Both seeds generate dates rolling backwards from CURRENT_DATE
+// (tools/db/seed.sql: 365 days, tools/db/seed-large.sql: 730 days), so a
+// hardcoded calendar month goes empty as soon as the window moves past it.
+// The seeds document this contract ("Investigate sample SQL reads live
+// MIN/MAX(date)"); this is that read.
+//
+// The month of MAX(date) is only partially filled (the seed stops at today), so
+// prefer the month before it, clamped to the month of MIN(date) for datasets
+// that span less than one month.
+func (s *WorkspaceService) demoScenarioMonth(ctx context.Context) time.Time {
+	// Fallback matches the seeds' own shape: one whole month back from today is
+	// inside both the 365- and 730-day windows.
+	fallback := monthStart(time.Now().UTC().AddDate(0, -1, 0))
+	if s.queriesSvc == nil {
+		return fallback
+	}
+	runner, err := s.queriesSvc.runnerFor(nil)
+	if err != nil || runner == nil {
+		return fallback
+	}
+	pool := runner.StatsPoolFor(ctx)
+	if pool == nil {
+		return fallback
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, demoScenarioMonthTimeout)
+	defer cancel()
+
+	var minDate, maxDate time.Time
+	if err := pool.QueryRow(probeCtx, `
+		SELECT min(date)::date, max(date)::date FROM demo.sales
+	`).Scan(&minDate, &maxDate); err != nil {
+		return fallback
+	}
+	if minDate.IsZero() || maxDate.IsZero() {
+		return fallback
+	}
+
+	month := monthStart(maxDate.AddDate(0, -1, 0))
+	if month.Before(monthStart(minDate)) {
+		month = monthStart(maxDate)
+	}
+	return month
+}
+
+// monthStart truncates t to the first day of its month, in UTC.
+func monthStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
 // DemoScenarios returns sample problem SQL for guided walkthroughs.
 // CandidateSQL is intentionally omitted: the rewrite must come from Suggest rewrite /
 // Rank candidates (or a human), not a hardcoded answer key.
-func (s *WorkspaceService) DemoScenarios(_ context.Context) (*workspace.DemoScenarioList, error) {
+//
+// Date literals are injected from the live demo.sales range (see
+// demoScenarioMonth) rather than hardcoded, so the first click of the guided
+// demo returns rows on any seed age.
+func (s *WorkspaceService) DemoScenarios(ctx context.Context) (*workspace.DemoScenarioList, error) {
+	month := s.demoScenarioMonth(ctx)
+	monthLiteral := month.Format("2006-01-02")
+	nextMonthLiteral := month.AddDate(0, 1, 0).Format("2006-01-02")
+	monthLabel := month.Format("January 2006")
+	year := month.Year()
+	monthNum := int(month.Month())
+
 	return &workspace.DemoScenarioList{
 		Items: []*workspace.DemoScenario{
 			{
 				ID:                  "slow-dashboard",
 				Title:               "Slow dashboard query",
 				Problem:             "Revenue rollup uses DATE_TRUNC on the partition key, so PostgreSQL cannot prune partitions or use a date index. Use Suggest rewrite to propose a sargable range.",
-				SQL:                 `SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '2025-01-01' GROUP BY product_category ORDER BY revenue DESC`,
+				SQL:                 fmt.Sprintf(`SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('month', date) = DATE '%s' GROUP BY product_category ORDER BY revenue DESC`, monthLiteral),
 				ExpectedImprovement: "Many partitions → 1 month (range rewrite via Suggest rewrite)",
 				Category:            "function_wrap",
 			},
@@ -243,8 +312,8 @@ func (s *WorkspaceService) DemoScenarios(_ context.Context) (*workspace.DemoScen
 				ID:                  "extract-year-month",
 				Title:               "EXTRACT wraps the partition key",
 				Problem:             "EXTRACT(YEAR/MONTH FROM date) is another function wrap that blocks partition pruning. Suggest rewrite should propose a January range from the AST — not a DATE_TRUNC answer key.",
-				SQL:                 `SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE EXTRACT(YEAR FROM date) = 2025 AND EXTRACT(MONTH FROM date) = 1 GROUP BY product_category ORDER BY revenue DESC`,
-				ExpectedImprovement: "Year+month EXTRACT → January range (partition prune via Suggest rewrite)",
+				SQL:                 fmt.Sprintf(`SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE EXTRACT(YEAR FROM date) = %d AND EXTRACT(MONTH FROM date) = %d GROUP BY product_category ORDER BY revenue DESC`, year, monthNum),
+				ExpectedImprovement: fmt.Sprintf("Year+month EXTRACT → %s range (partition prune via Suggest rewrite)", monthLabel),
 				Category:            "function_wrap",
 			},
 			{
@@ -258,16 +327,16 @@ func (s *WorkspaceService) DemoScenarios(_ context.Context) (*workspace.DemoScen
 			{
 				ID:                  "partition-pruning",
 				Title:               "Partition pruning failure",
-				Problem:             "Open-ended date predicate still scans far more partitions than a closed month range.",
-				SQL:                 `SELECT COUNT(*), SUM(total_amount) FROM demo.sales WHERE date >= '2025-01-01'`,
-				ExpectedImprovement: "Open range → single-month prune (edit candidate SQL, then Compare)",
+				Problem:             fmt.Sprintf("Open-ended date predicate still scans far more partitions than a closed month range (e.g. >= '%s' AND < '%s').", monthLiteral, nextMonthLiteral),
+				SQL:                 fmt.Sprintf(`SELECT COUNT(*), SUM(total_amount) FROM demo.sales WHERE date >= '%s'`, monthLiteral),
+				ExpectedImprovement: fmt.Sprintf("Open range → single-month prune to %s (edit candidate SQL, then Compare)", monthLabel),
 				Category:            "partition_pruning",
 			},
 			{
 				ID:                  "cardinality-misestimate",
 				Title:               "Cardinality misestimate",
 				Problem:             "Planner row estimates disagree with ANALYZE reality — investigate statistics and predicate selectivity.",
-				SQL:                 `SELECT s.product_category, COUNT(*) FROM demo.sales s WHERE s.region = 'North' AND s.date >= '2025-06-01' GROUP BY s.product_category`,
+				SQL:                 fmt.Sprintf(`SELECT s.product_category, COUNT(*) FROM demo.sales s WHERE s.region = 'North' AND s.date >= '%s' GROUP BY s.product_category`, monthLiteral),
 				ExpectedImprovement: "EXPLAIN ANALYZE row estimate check",
 				Category:            "cardinality",
 			},
