@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -252,7 +251,17 @@ func webhookBackoff(attemptCount int) time.Duration {
 	if attemptCount < 0 {
 		attemptCount = 0
 	}
-	d := time.Duration(math.Pow(2, float64(attemptCount))) * webhookRetryBaseBackoff
+	// Double toward the cap rather than computing base * 2^attemptCount: that
+	// product overflows int64 somewhere past attempt 29 and wraps negative, which
+	// would schedule the next attempt in the past and spin the outbox. Bailing out
+	// once the next double would pass the cap keeps every value in range.
+	d := webhookRetryBaseBackoff
+	for i := 0; i < attemptCount; i++ {
+		if d >= webhookRetryMaxBackoff/2 {
+			return webhookRetryMaxBackoff
+		}
+		d *= 2
+	}
 	if d > webhookRetryMaxBackoff {
 		return webhookRetryMaxBackoff
 	}
