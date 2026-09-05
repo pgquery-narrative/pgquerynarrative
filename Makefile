@@ -379,10 +379,23 @@ migrate-docker: postgres-up
 	@echo "📦 Running migrations via Docker (no host Go required)..."
 	@docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1 || \
 		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
+	@chmod +x ./tools/db/migrate_preflight.sh ./tools/db/migrate_fail_hint.sh
+	@sh ./tools/db/migrate_preflight.sh
 	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
 		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
-		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
+		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up' \
+		|| sh ./tools/db/migrate_fail_hint.sh
 	@echo "✅ Migrations applied"
+
+# Clear a dirty migration flag against the Compose Postgres (no host Go required).
+# Use the version you want recorded as applied, e.g. the one before the failure:
+#   make migrate-force-docker VERSION=54
+migrate-force-docker: postgres-up
+	@if [ -z "$(VERSION)" ]; then echo "❌ Set VERSION, e.g. make migrate-force-docker VERSION=54"; exit 1; fi
+	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
+		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" force $(VERSION)'
+	@echo "✅ schema_migrations forced to $(VERSION) (dirty flag cleared)"
 
 # Migration reversibility check: up -> down -all -> up via Docker (no host Go required).
 # Prerequisite: docker compose up -d postgres (or: make postgres-up)

@@ -10,23 +10,28 @@ Product vocabulary: [Concepts](../concepts.md).
 
 Create an investigation from SQL, get a **system-proposed rewrite**, compare plans, then generate a report.
 
+`demo.sales` is seeded as a **rolling window** ending today (365 days for the
+default seed, 730 for `make seed-large-docker`), so a hardcoded calendar date
+returns zero rows once the window moves past it. Take the SQL from the demo
+scenarios endpoint, which injects date literals from the live data range:
+
 ```bash
+# 0) Problem SQL with a date that is actually in the seeded range
+SQL=$(curl -s http://localhost:8080/api/v1/demo/scenarios | jq -r '.items[0].sql')
+
 # 1) Create — returns id, explain findings, status
 INV=$(curl -s -X POST http://localhost:8080/api/v1/investigations \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "Slow dashboard query",
-    "sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('\''month'\'', date) = DATE '\''2025-01-01'\'' GROUP BY product_category ORDER BY revenue DESC"
-  }')
-echo "$INV" | jq '{id, status, findings: [.explain.findings[]?.message][:3]}'
-ID=$(echo "$INV" | jq -r .id)
+  -d "$(jq -n --arg sql "$SQL" '{title: "Slow dashboard query", sql: $sql}')")
+printf \'%s\' "$INV" | jq '{id, status, findings: [.explain.findings[]?.message][:3]}'
+ID=$(printf \'%s\' "$INV" | jq -r .id)
 
 # 2) System-proposed rewrite (AST engine)
 SUGGEST=$(curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/suggest-rewrite" \
   -H "Content-Type: application/json" \
   -d "{}")
-echo "$SUGGEST" | jq '{candidates: [.candidates[]? | {sql, rationale, category}]}'
-REWRITE=$(echo "$SUGGEST" | jq -r '.candidates[0].sql')
+printf \'%s\' "$SUGGEST" | jq '{candidates: [.candidates[]? | {sql, rationale, category}]}'
+REWRITE=$(printf \'%s\' "$SUGGEST" | jq -r '.candidates[0].sql')
 
 # 3) Compare plans + equivalence (set "analyze": true when server allows EXPLAIN ANALYZE)
 curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/candidate" \
@@ -74,8 +79,8 @@ Same before/after proof without an investigation record:
 curl -s -X POST http://localhost:8080/api/v1/queries/explain/compare \
   -H "Content-Type: application/json" \
   -d '{
-    "before_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('\''month'\'', date) = DATE '\''2025-01-01'\'' GROUP BY product_category ORDER BY revenue DESC",
-    "after_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE date >= '\''2025-01-01'\'' AND date < '\''2025-02-01'\'' GROUP BY product_category ORDER BY revenue DESC",
+    "before_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE DATE_TRUNC('\''month'\'', date) = DATE '\''2026-08-01'\'' GROUP BY product_category ORDER BY revenue DESC",
+    "after_sql": "SELECT product_category, SUM(total_amount) AS revenue FROM demo.sales WHERE date >= '\''2026-08-01'\'' AND date < '\''2026-09-01'\'' GROUP BY product_category ORDER BY revenue DESC",
     "analyze": true,
     "connection_id": "default"
   }' | jq .

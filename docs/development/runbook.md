@@ -180,7 +180,7 @@ Full analytics live in **reports** only. Generate a report, then inspect `metric
 RESP=$(curl -s -X POST http://localhost:8080/api/v1/reports/generate \
   -H "Content-Type: application/json" \
   -d '{"sql":"SELECT date_trunc('\''month'\'', date)::date AS month, SUM(total_amount) AS monthly_total, SUM(quantity) AS units_sold FROM demo.sales GROUP BY 1 ORDER BY 1"}')
-ID=$(echo "$RESP" | jq -r '.id')
+ID=$(printf \'%s\' "$RESP" | jq -r '.id')
 # 2. Get report and spot-check metrics
 curl -s "http://localhost:8080/api/v1/reports/${ID}" | jq '{
   forecast: .metrics.time_series.monthly_total.next_period_forecast,
