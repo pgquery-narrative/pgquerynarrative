@@ -43,6 +43,10 @@ type ComparePlansRequestBody struct {
 	AfterSQL string `form:"after_sql" json:"after_sql" xml:"after_sql"`
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
+	// Execute both queries (COUNT(*) + bounded sample) to check result
+	// equivalence. Requires the `query` permission on the connection; off by
+	// default so a compare only plans.
+	VerifyResults bool `form:"verify_results" json:"verify_results" xml:"verify_results"`
 	// Optional connection ID
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 	// Sample bind values for parameterized before/after SQL ($1, $2, ...);
@@ -126,7 +130,7 @@ type ComparePlansResponseBody struct {
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff,omitempty" json:"diff,omitempty" xml:"diff,omitempty"`
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
@@ -487,15 +491,22 @@ func NewExplainPlanRequestBody(p *queries.ExplainQueryPayload) *ExplainPlanReque
 // the "compare_plans" endpoint of the "queries" service.
 func NewComparePlansRequestBody(p *queries.ComparePlansPayload) *ComparePlansRequestBody {
 	body := &ComparePlansRequestBody{
-		BeforeSQL:    p.BeforeSQL,
-		AfterSQL:     p.AfterSQL,
-		Analyze:      p.Analyze,
-		ConnectionID: p.ConnectionID,
+		BeforeSQL:     p.BeforeSQL,
+		AfterSQL:      p.AfterSQL,
+		Analyze:       p.Analyze,
+		VerifyResults: p.VerifyResults,
+		ConnectionID:  p.ConnectionID,
 	}
 	{
 		var zero bool
 		if body.Analyze == zero {
 			body.Analyze = false
+		}
+	}
+	{
+		var zero bool
+		if body.VerifyResults == zero {
+			body.VerifyResults = false
 		}
 	}
 	if p.Binds != nil {
@@ -916,6 +927,11 @@ func ValidateComparePlansResponseBody(body *ComparePlansResponseBody) (err error
 			if err2 := ValidatePlanComparisonMetricResponseBody(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	if body.ResultEquivalenceStatus != nil {
+		if !(*body.ResultEquivalenceStatus == "VerifiedEqual" || *body.ResultEquivalenceStatus == "SampleMatch" || *body.ResultEquivalenceStatus == "Different" || *body.ResultEquivalenceStatus == "Unverified" || *body.ResultEquivalenceStatus == "NotRequested") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.result_equivalence_status", *body.ResultEquivalenceStatus, []any{"VerifiedEqual", "SampleMatch", "Different", "Unverified", "NotRequested"}))
 		}
 	}
 	return

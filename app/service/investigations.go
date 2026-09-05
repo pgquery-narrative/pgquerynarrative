@@ -362,13 +362,22 @@ func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investig
 			fix_applied_at = CASE WHEN $5 THEN now() ELSE fix_applied_at END,
 			fix_baseline_mean_ms = CASE
 				WHEN $5 THEN COALESCE(
-					(SELECT s.mean_time_ms
-					 FROM app.stat_statement_snapshots s
-					 JOIN app.stat_statement_polls p ON p.id = s.poll_id
-					 JOIN app.regression_alerts ra ON ra.queryid = s.queryid
-					   AND ra.investigation_id = app.investigations.id
-					 WHERE p.organization_id = $2
-					 ORDER BY p.captured_at DESC LIMIT 1),
+					-- latest *interval* mean latency for the linked query, to match
+					-- what reconcileAppliedFixes re-measures against.
+					(SELECT r.d_total / r.d_calls
+					 FROM (
+					   SELECT s.queryid,
+					          s.total_time_ms - lag(s.total_time_ms) OVER w AS d_total,
+					          s.calls         - lag(s.calls)         OVER w AS d_calls,
+					          row_number() OVER (PARTITION BY s.queryid ORDER BY p.captured_at DESC) AS rn
+					   FROM app.stat_statement_snapshots s
+					   JOIN app.stat_statement_polls p ON p.id = s.poll_id
+					   JOIN app.regression_alerts ra ON ra.queryid = s.queryid
+					     AND ra.investigation_id = app.investigations.id
+					   WHERE p.organization_id = $2
+					   WINDOW w AS (PARTITION BY s.queryid ORDER BY p.captured_at)
+					 ) r
+					 WHERE r.rn = 1 AND r.d_calls > 0 AND r.d_total >= 0),
 					(stat_snapshot->>'mean_time_ms')::float,
 					fix_baseline_mean_ms)
 				ELSE fix_baseline_mean_ms END,
@@ -816,19 +825,21 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 
 	// Prefer EXPLAIN ANALYZE for credible before/after timings; fall back if disabled.
 	cmp, err := s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
-		BeforeSQL:    inv.SQL,
-		AfterSQL:     payload.CandidateSQL,
-		Analyze:      true,
-		ConnectionID: &inv.ConnectionID,
-		Binds:        payload.Binds,
+		BeforeSQL:     inv.SQL,
+		AfterSQL:      payload.CandidateSQL,
+		Analyze:       true,
+		VerifyResults: payload.VerifyResults,
+		ConnectionID:  &inv.ConnectionID,
+		Binds:         payload.Binds,
 	})
 	if err != nil {
 		cmp, err = s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
-			BeforeSQL:    inv.SQL,
-			AfterSQL:     payload.CandidateSQL,
-			Analyze:      false,
-			ConnectionID: &inv.ConnectionID,
-			Binds:        payload.Binds,
+			BeforeSQL:     inv.SQL,
+			AfterSQL:      payload.CandidateSQL,
+			Analyze:       false,
+			VerifyResults: payload.VerifyResults,
+			ConnectionID:  &inv.ConnectionID,
+			Binds:         payload.Binds,
 		})
 	}
 	if err != nil {
@@ -949,10 +960,13 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 
 	if inv.Comparison != nil {
 		status := equivalenceStatusFromComparison(inv.Comparison)
-		if status != "Equal" {
-			msg := "result equivalence is Unverified — re-run Compare plans until status is Equal before generating a shippable report"
-			if status == "Different" {
+		if !equivalenceIsShippable(status) {
+			msg := "result equivalence was not verified — re-run Compare plans with result verification until status is VerifiedEqual (or SampleMatch for a large result) before generating a shippable report"
+			switch status {
+			case EquivalenceDifferent:
 				msg = "result equivalence is Different — reconcile the candidate rewrite before generating a shippable report"
+			case EquivalenceNotRequested:
+				msg = "result equivalence was not checked — re-run Compare plans with result verification enabled before generating a shippable report"
 			}
 			return nil, &investigations.ValidationError{
 				Name:    "validation_error",
@@ -1072,18 +1086,27 @@ func sqlFingerprint(sql string) string {
 
 func equivalenceStatusFromComparison(cmp *investigations.ComparePlansResult) string {
 	if cmp == nil {
-		return "Unverified"
+		return EquivalenceUnverified
 	}
 	if cmp.ResultEquivalenceStatus != nil && *cmp.ResultEquivalenceStatus != "" {
-		return *cmp.ResultEquivalenceStatus
+		return normalizeEquivalenceStatus(*cmp.ResultEquivalenceStatus)
 	}
+	// Legacy comparisons stored before result_equivalence_status existed: derive
+	// from the checksum flag, which was only ever set true for a full compare.
 	if cmp.ResultChecksumEqual == nil {
-		return "Unverified"
+		return EquivalenceUnverified
 	}
 	if *cmp.ResultChecksumEqual {
-		return "Equal"
+		return EquivalenceVerifiedEqual
 	}
-	return "Different"
+	return EquivalenceDifferent
+}
+
+// equivalenceIsShippable reports whether a report may be generated for this
+// equivalence status. VerifiedEqual is a full-result proof; SampleMatch is
+// accepted with the caveat carried in the report's equivalence notes.
+func equivalenceIsShippable(status string) bool {
+	return status == EquivalenceVerifiedEqual || status == EquivalenceSampleMatch
 }
 
 func normalizeInvestigationError(err error) error {

@@ -16,6 +16,7 @@ import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
 import { cn, formatFloat, timeAgo, truncate } from "@/lib/utils";
+import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence, normalizeEquivalenceStatus } from "@/lib/equivalence";
 
 const STEPS = [
   { id: "select", label: "Find query" },
@@ -35,6 +36,7 @@ export default function InvestigatePage() {
   const [error, setError] = useState("");
   const [candidateSql, setCandidateSql] = useState("");
   const [bindsText, setBindsText] = useState("");
+  const [verifyResults, setVerifyResults] = useState(true);
   const [suggestRationale, setSuggestRationale] = useState("");
   const [rankedCandidates, setRankedCandidates] = useState<RankedCandidate[]>([]);
   const [suggestedCandidates, setSuggestedCandidates] = useState<RewriteCandidate[]>([]);
@@ -104,6 +106,7 @@ export default function InvestigatePage() {
         candidateSql.trim(),
         true,
         parseBinds(bindsText),
+        verifyResults,
       );
       setInvestigation(inv);
     } catch (e) {
@@ -162,17 +165,14 @@ export default function InvestigatePage() {
   const generateReport = async () => {
     if (!investigation) return;
     if (investigation.comparison) {
-      const eq = investigation.comparison.result_equivalence_status
-        ?? (investigation.comparison.result_checksum_equal === true
-          ? "Equal"
-          : investigation.comparison.result_checksum_equal === false
-            ? "Different"
-            : "Unverified");
-      if (eq !== "Equal") {
+      const eq = equivalenceStatusOf(investigation.comparison);
+      if (!isShippableEquivalence(eq)) {
         setError(
           eq === "Different"
             ? "Cannot generate a shippable report while result equivalence is Different. Fix the candidate rewrite first."
-            : "Cannot generate a shippable report while result equivalence is Unverified. Re-run Compare plans until status is Equal."
+            : eq === "NotRequested"
+              ? "Result equivalence was not checked. Re-run Compare plans with result verification enabled."
+              : "Cannot generate a shippable report until result equivalence is VerifiedEqual (or SampleMatch for a large result). Re-run Compare plans with result verification."
         );
         return;
       }
@@ -412,6 +412,15 @@ export default function InvestigatePage() {
               />
             </div>
           )}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={verifyResults}
+              onChange={(e) => setVerifyResults(e.target.checked)}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            Verify result equivalence — runs both queries (COUNT(*) + a bounded sample). Requires the query permission.
+          </label>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -544,14 +553,26 @@ export default function InvestigatePage() {
                     {c.source && c.source !== "manual" && (
                       <Badge variant="outline" className="text-[10px]">{c.source}</Badge>
                     )}
-                    {c.equivalence_status && (
-                      <Badge
-                        variant={c.equivalence_status === "Equal" ? "success" : c.equivalence_status === "Different" ? "destructive" : "outline"}
-                        className="text-[10px]"
-                      >
-                        {c.equivalence_status}
-                      </Badge>
-                    )}
+                    {c.equivalence_status && (() => {
+                      const st = normalizeEquivalenceStatus(c.equivalence_status);
+                      const tone = equivalenceTone(st);
+                      return (
+                        <Badge
+                          variant={
+                            tone === "success"
+                              ? "success"
+                              : tone === "warning"
+                                ? "warning"
+                                : tone === "destructive"
+                                  ? "destructive"
+                                  : "outline"
+                          }
+                          className="text-[10px]"
+                        >
+                          {equivalenceLabel(st)}
+                        </Badge>
+                      );
+                    })()}
                     {typeof c.cost_delta === "number" && (
                       <span className="text-muted-foreground">
                         cost Δ {formatDelta(c.cost_delta)}
@@ -591,7 +612,7 @@ export default function InvestigatePage() {
             <p className="font-medium">Engineering investigation report</p>
             <p className="text-xs text-muted-foreground mt-1">
               {investigation.comparison
-                ? "Result equivalence must be Equal to ship a report with a rewrite."
+                ? "Result equivalence must be VerifiedEqual (or SampleMatch for a large result) to ship a report with a rewrite."
                 : "Generates a findings-only report from the diagnosis above."}
             </p>
           </div>
@@ -600,12 +621,7 @@ export default function InvestigatePage() {
             disabled={
               actionLoading === "report" ||
               (!!investigation.comparison &&
-                (investigation.comparison.result_equivalence_status ??
-                  (investigation.comparison.result_checksum_equal === true
-                    ? "Equal"
-                    : investigation.comparison.result_checksum_equal === false
-                      ? "Different"
-                      : "Unverified")) !== "Equal")
+                !isShippableEquivalence(equivalenceStatusOf(investigation.comparison)))
             }
           >
             {actionLoading === "report" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}

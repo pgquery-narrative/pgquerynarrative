@@ -305,6 +305,9 @@ var ComparePlansPayload = Type("ComparePlansPayload", func() {
 	Attribute("analyze", Boolean, "Run EXPLAIN ANALYZE when enabled server-side", func() {
 		Default(false)
 	})
+	Attribute("verify_results", Boolean, "Execute both queries (COUNT(*) + bounded sample) to check result equivalence. Requires the `query` permission on the connection; off by default so a compare only plans.", func() {
+		Default(false)
+	})
 	Attribute("connection_id", String, "Optional connection ID")
 	Attribute("binds", ArrayOf(String), "Sample bind values for parameterized before/after SQL ($1, $2, ...); substituted for the compare/equivalence run")
 	Required("before_sql", "after_sql")
@@ -333,7 +336,9 @@ var ComparePlansResult = Type("ComparePlansResult", func() {
 	Attribute("metrics", ArrayOf(PlanComparisonMetric))
 	Attribute("diff", PlanComparisonDiff)
 	Attribute("result_checksum_equal", Boolean, "True when results match; false when they differ; omitted/null when unverified")
-	Attribute("result_equivalence_status", String, "Equal | Different | Unverified")
+	Attribute("result_equivalence_status", String, "How far result equivalence was checked", func() {
+		Enum("VerifiedEqual", "SampleMatch", "Different", "Unverified", "NotRequested")
+	})
 	Attribute("result_equivalence_notes", String, "Human-readable equivalence caveats (COUNT(*), sample size, failures)")
 	Attribute("result_before_row_count", Int64, "COUNT(*) of before SQL when computable")
 	Attribute("result_after_row_count", Int64, "COUNT(*) of after SQL when computable")
@@ -360,7 +365,9 @@ var InvestigationCandidate = Type("InvestigationCandidate", func() {
 	Attribute("binds", ArrayOf(String), "Sample bind values used for the executed compare, when parameterized")
 	Attribute("candidate_explain", ExplainQueryResult)
 	Attribute("comparison", ComparePlansResult)
-	Attribute("equivalence_status", String, "Equal | Different | Unverified")
+	Attribute("equivalence_status", String, "How far result equivalence was checked", func() {
+		Enum("VerifiedEqual", "SampleMatch", "Different", "Unverified", "NotRequested")
+	})
 	Attribute("cost_delta", Float64, "after - before total cost (negative is better)")
 	Attribute("source", String, "manual | suggested | ranked")
 	Attribute("is_current", Boolean, "True for the candidate currently attached to the investigation")
@@ -455,6 +462,9 @@ var AddCandidatePayload = Type("AddCandidatePayload", func() {
 		Pattern("^[^;]+$")
 	})
 	Attribute("analyze", Boolean, func() {
+		Default(false)
+	})
+	Attribute("verify_results", Boolean, "Execute the candidate and the original to check result equivalence. Requires the `query` permission on the connection.", func() {
 		Default(false)
 	})
 	Attribute("binds", ArrayOf(String), "Sample bind values for a parameterized candidate ($1, $2, ...); used only for the compare/equivalence run, not stored")

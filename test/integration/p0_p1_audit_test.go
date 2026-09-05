@@ -96,9 +96,10 @@ func TestP0Audit_EquivalenceRunErrorIsUnverified(t *testing.T) {
 	afterSQL := `SELECT 1/(quantity-quantity) AS x FROM demo.sales WHERE region = 'North'`
 
 	cmp, err := st.queriesSvc.ComparePlans(st.ctx, &queries.ComparePlansPayload{
-		BeforeSQL: beforeSQL,
-		AfterSQL:  afterSQL,
-		Analyze:   false,
+		BeforeSQL:     beforeSQL,
+		AfterSQL:      afterSQL,
+		Analyze:       false,
+		VerifyResults: true,
 	})
 	if err != nil {
 		t.Fatalf("ComparePlans: %v", err)
@@ -136,8 +137,9 @@ func TestP0Audit_GenerateReportBlocksUnverified(t *testing.T) {
 	}
 
 	inv, err = st.invSvc.AddCandidate(st.ctx, &investigations.AddCandidatePayload{
-		ID:           inv.ID,
-		CandidateSQL: `SELECT 1/(quantity-quantity) AS x FROM demo.sales WHERE region = 'North'`,
+		ID:            inv.ID,
+		CandidateSQL:  `SELECT 1/(quantity-quantity) AS x FROM demo.sales WHERE region = 'North'`,
+		VerifyResults: true,
 	})
 	if err != nil {
 		t.Fatalf("AddCandidate: %v", err)
@@ -183,8 +185,9 @@ func TestP0Audit_ComparisonRoundTrip(t *testing.T) {
 	}
 
 	inv, err = st.invSvc.AddCandidate(st.ctx, &investigations.AddCandidatePayload{
-		ID:           inv.ID,
-		CandidateSQL: problem,
+		ID:            inv.ID,
+		CandidateSQL:  problem,
+		VerifyResults: true,
 	})
 	if err != nil {
 		t.Fatalf("AddCandidate: %v", err)
@@ -198,7 +201,7 @@ func TestP0Audit_ComparisonRoundTrip(t *testing.T) {
 		t.Fatal("comparison missing after reload")
 	}
 	if reloaded.Comparison.ResultEquivalenceStatus == nil ||
-		*reloaded.Comparison.ResultEquivalenceStatus != service.EquivalenceEqual {
+		*reloaded.Comparison.ResultEquivalenceStatus != service.EquivalenceVerifiedEqual {
 		t.Fatalf("expected Equal after reload, got %#v", reloaded.Comparison.ResultEquivalenceStatus)
 	}
 	if reloaded.Comparison.ResultBeforeRowCount == nil || *reloaded.Comparison.ResultBeforeRowCount <= 0 {

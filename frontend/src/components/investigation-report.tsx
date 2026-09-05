@@ -1,6 +1,13 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  equivalenceStatusOf,
+  equivalenceLabel,
+  equivalenceBlurb,
+  equivalenceTone,
+  isShippableEquivalence,
+} from "@/lib/equivalence";
 
 export interface InvestigationReportPayload {
   report_type?: string;
@@ -150,38 +157,52 @@ export function InvestigationReportView({ report }: { report: InvestigationRepor
         </Section>
       )}
 
-      {report.equivalence_validation && (
-        <Section title="Result-equivalence validation">
-          <div
-            className={
-              report.equivalence_validation.status === "Different" || report.equivalence_validation.status === "Unverified"
-                ? "rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1"
-                : "space-y-1"
-            }
-          >
-            <p className="text-sm">
-              <strong>Status:</strong>{" "}
-              <Badge
-                variant={
-                  report.equivalence_validation.status === "Equal"
-                    ? "success"
-                    : report.equivalence_validation.status === "Different"
-                      ? "destructive"
-                      : "secondary"
-                }
-              >
-                {report.equivalence_validation.status}
-              </Badge>
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">{report.equivalence_validation.notes}</p>
-            {(report.equivalence_validation.status === "Different" || report.equivalence_validation.status === "Unverified") && (
-              <p className="text-xs font-medium text-destructive mt-2">
-                Not shippable — resolve equivalence before treating this report as deployment evidence.
+      {report.equivalence_validation && (() => {
+        const status = equivalenceStatusOf({
+          result_equivalence_status: report.equivalence_validation.status,
+          result_checksum_equal: report.equivalence_validation.checksum_equal ?? null,
+        });
+        const shippable = isShippableEquivalence(status);
+        const tone = equivalenceTone(status);
+        return (
+          <Section title="Result-equivalence validation">
+            <div className={!shippable && tone === "destructive"
+              ? "rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1"
+              : "space-y-1"}
+            >
+              <p className="text-sm">
+                <strong>Status:</strong>{" "}
+                <Badge
+                  variant={
+                    tone === "success"
+                      ? "success"
+                      : tone === "warning"
+                        ? "warning"
+                        : tone === "destructive"
+                          ? "destructive"
+                          : "secondary"
+                  }
+                >
+                  {equivalenceLabel(status)}
+                </Badge>
               </p>
-            )}
-          </div>
-        </Section>
-      )}
+              <p className="text-sm text-muted-foreground mt-1">
+                {report.equivalence_validation.notes || equivalenceBlurb(status)}
+              </p>
+              {!shippable && (
+                <p className="text-xs font-medium text-destructive mt-2">
+                  Not shippable — verify result equivalence before treating this report as deployment evidence.
+                </p>
+              )}
+              {status === "SampleMatch" && (
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mt-2">
+                  Large result — the sample matched, but re-check on a representative parameter set before deploying.
+                </p>
+              )}
+            </div>
+          </Section>
+        );
+      })()}
 
       {report.risks_and_tradeoffs && report.risks_and_tradeoffs.length > 0 && (
         <Section title="Risks and tradeoffs">

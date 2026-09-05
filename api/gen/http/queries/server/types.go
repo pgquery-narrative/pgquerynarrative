@@ -45,6 +45,10 @@ type ComparePlansRequestBody struct {
 	AfterSQL *string `form:"after_sql,omitempty" json:"after_sql,omitempty" xml:"after_sql,omitempty"`
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+	// Execute both queries (COUNT(*) + bounded sample) to check result
+	// equivalence. Requires the `query` permission on the connection; off by
+	// default so a compare only plans.
+	VerifyResults *bool `form:"verify_results,omitempty" json:"verify_results,omitempty" xml:"verify_results,omitempty"`
 	// Optional connection ID
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 	// Sample bind values for parameterized before/after SQL ($1, $2, ...);
@@ -128,7 +132,7 @@ type ComparePlansResponseBody struct {
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff" json:"diff" xml:"diff"`
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
@@ -780,8 +784,14 @@ func NewComparePlansPayload(body *ComparePlansRequestBody) *queries.ComparePlans
 	if body.Analyze != nil {
 		v.Analyze = *body.Analyze
 	}
+	if body.VerifyResults != nil {
+		v.VerifyResults = *body.VerifyResults
+	}
 	if body.Analyze == nil {
 		v.Analyze = false
+	}
+	if body.VerifyResults == nil {
+		v.VerifyResults = false
 	}
 	if body.Binds != nil {
 		v.Binds = make([]string, len(body.Binds))
