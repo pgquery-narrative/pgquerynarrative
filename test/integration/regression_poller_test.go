@@ -64,7 +64,7 @@ func seedPoll(t *testing.T, ctx context.Context, pool *pgxpool.Pool, org, connID
 	var pollID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO app.stat_statement_polls (organization_id, connection_id, captured_at)
-		VALUES ($1, $4, now() - make_interval(mins => $2))
+		VALUES ($1, $3, now() - make_interval(mins => $2))
 		RETURNING id::text
 	`, org, ageMin, connID).Scan(&pollID); err != nil {
 		t.Fatalf("seed poll: %v", err)
