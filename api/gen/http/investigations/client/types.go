@@ -18,6 +18,8 @@ type CreateRequestBody struct {
 	Title        string  `form:"title" json:"title" xml:"title"`
 	SQL          string  `form:"sql" json:"sql" xml:"sql"`
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	// Run EXPLAIN ANALYZE (executes the query) instead of an estimate-only plan
+	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
 	// Optional pg_stat_statements queryid for context
 	Queryid     *string  `form:"queryid,omitempty" json:"queryid,omitempty" xml:"queryid,omitempty"`
 	Calls       *int64   `form:"calls,omitempty" json:"calls,omitempty" xml:"calls,omitempty"`
@@ -241,6 +243,9 @@ type SuggestRewriteResponseBody struct {
 type RankCandidatesResponseBody struct {
 	Baseline   *RankedCandidateBaselineResponseBody `form:"baseline,omitempty" json:"baseline,omitempty" xml:"baseline,omitempty"`
 	Candidates []*RankedCandidateResponseBody       `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Set when no candidate is recommended (e.g. none improved on the baseline
+	// plan); empty when a Rank 1 candidate exists
+	Recommendation *string `form:"recommendation,omitempty" json:"recommendation,omitempty" xml:"recommendation,omitempty"`
 }
 
 // GenerateReportResponseBody is the type of the "investigations" service
@@ -698,11 +703,18 @@ func NewCreateRequestBody(p *investigations.CreateInvestigationPayload) *CreateR
 		Title:        p.Title,
 		SQL:          p.SQL,
 		ConnectionID: p.ConnectionID,
+		Analyze:      p.Analyze,
 		Queryid:      p.Queryid,
 		Calls:        p.Calls,
 		MeanTimeMs:   p.MeanTimeMs,
 		TotalTimeMs:  p.TotalTimeMs,
 		Rows:         p.Rows,
+	}
+	{
+		var zero bool
+		if body.Analyze == zero {
+			body.Analyze = false
+		}
 	}
 	return body
 }
@@ -1151,7 +1163,9 @@ func NewSuggestRewriteNotFound(body *SuggestRewriteNotFoundResponseBody) *invest
 // NewRankCandidatesRankedCandidateListOK builds a "investigations" service
 // "rank_candidates" endpoint result from a HTTP "OK" response.
 func NewRankCandidatesRankedCandidateListOK(body *RankCandidatesResponseBody) *investigations.RankedCandidateList {
-	v := &investigations.RankedCandidateList{}
+	v := &investigations.RankedCandidateList{
+		Recommendation: body.Recommendation,
+	}
 	if body.Baseline != nil {
 		v.Baseline = unmarshalRankedCandidateBaselineResponseBodyToInvestigationsRankedCandidateBaseline(body.Baseline)
 	}

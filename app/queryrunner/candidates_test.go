@@ -30,6 +30,50 @@ func TestRankScoredCandidates_OrdersByCostThenPartitions(t *testing.T) {
 	}
 }
 
+func TestRankScoredCandidates_NonImprovingIsNotRanked(t *testing.T) {
+	cands := []ScoredCandidate{
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "worse", Rationale: "swap join order", CostDelta: 25},
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "same", Rationale: "reorder predicates", CostDelta: 0},
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "better", Rationale: "unwrap DATE_TRUNC", CostDelta: -40},
+	}
+	got := RankScoredCandidates(cands)
+	if got[0].SQL != "better" || got[0].Rank != 1 {
+		t.Fatalf("only the improving candidate is ranked: %+v", got[0])
+	}
+	for _, c := range got[1:] {
+		if c.Rank != 0 {
+			t.Fatalf("non-improving candidate must keep Rank 0: %+v", c)
+		}
+		if !strings.Contains(c.Rationale, "not recommended") {
+			t.Fatalf("non-improving rationale should carry the note: %q", c.Rationale)
+		}
+	}
+}
+
+func TestRankingRecommendation(t *testing.T) {
+	improving := RankScoredCandidates([]ScoredCandidate{
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "x", CostDelta: -5},
+	})
+	if got := RankingRecommendation(improving); got != "" {
+		t.Fatalf("a Rank 1 candidate means no recommendation string, got %q", got)
+	}
+
+	allWorse := RankScoredCandidates([]ScoredCandidate{
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "x", CostDelta: 10},
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "y", CostDelta: 0},
+	})
+	if got := RankingRecommendation(allWorse); !strings.Contains(got, "No improving candidate") {
+		t.Fatalf("all-worse should recommend against, got %q", got)
+	}
+
+	reviewOnly := RankScoredCandidates([]ScoredCandidate{
+		{Kind: CandidateKindIndexDDL, Rankable: false, DDL: "CREATE INDEX ..."},
+	})
+	if got := RankingRecommendation(reviewOnly); !strings.Contains(got, "review-only") {
+		t.Fatalf("review-only list, got %q", got)
+	}
+}
+
 func TestScoreIndexProjection_UnavailableStaysReviewOnly(t *testing.T) {
 	base := ScoredCandidate{Kind: CandidateKindIndexDDL, Rankable: false, DDL: "CREATE INDEX ON t(a)"}
 	sc := ScoreIndexProjection(base, IndexProjection{Method: IndexProjectionNone, Available: false})

@@ -39,6 +39,7 @@ export default function InvestigatePage() {
   const [verifyResults, setVerifyResults] = useState(true);
   const [suggestRationale, setSuggestRationale] = useState("");
   const [rankedCandidates, setRankedCandidates] = useState<RankedCandidate[]>([]);
+  const [rankRecommendation, setRankRecommendation] = useState("");
   const [suggestedCandidates, setSuggestedCandidates] = useState<RewriteCandidate[]>([]);
   const [actionLoading, setActionLoading] = useState("");
 
@@ -148,10 +149,15 @@ export default function InvestigatePage() {
       const res = await api.rankInvestigationCandidates(investigation.id);
       const items = res.candidates ?? [];
       setRankedCandidates(items);
-      const topRewrite = items.find((c) => c.rankable && c.sql);
-      if (topRewrite?.sql) {
-        setCandidateSql(topRewrite.sql);
-        setSuggestRationale(topRewrite.rationale || "");
+      setRankRecommendation(res.recommendation ?? "");
+      // Only prefill from a candidate that actually ranked #1 (improved on the
+      // baseline) — never from a "not recommended" rewrite.
+      const best = items.find((c) => c.rank === 1 && c.sql);
+      if (best?.sql) {
+        setCandidateSql(best.sql);
+        setSuggestRationale(best.rationale || "");
+      } else if (res.recommendation) {
+        setError(res.recommendation);
       } else if (items.length === 0) {
         setError("No ranked candidates for this query yet.");
       }
@@ -211,7 +217,7 @@ export default function InvestigatePage() {
     : investigation?.explain ? 2 : 0;
 
   const candidateRef = useRef<HTMLDivElement>(null);
-  const topRanked = rankedCandidates.find((c) => c.rankable && c.sql);
+  const topRanked = rankedCandidates.find((c) => c.rank === 1 && c.sql);
   const baselineCost = investigation?.explain?.total_cost;
   const projected = topRanked
     ? {
@@ -472,6 +478,11 @@ export default function InvestigatePage() {
               ))}
             </div>
           )}
+          {rankRecommendation && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+              {rankRecommendation}
+            </p>
+          )}
           {rankedCandidates.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ranked candidates</p>
@@ -480,6 +491,8 @@ export default function InvestigatePage() {
                   <div className="flex flex-wrap items-center gap-2">
                     {c.rankable && c.rank != null ? (
                       <Badge variant="secondary">#{c.rank}</Badge>
+                    ) : c.rankable ? (
+                      <Badge variant="outline" className="border-amber-500/50 text-amber-800 dark:text-amber-200">not recommended</Badge>
                     ) : (
                       <Badge variant="outline">review</Badge>
                     )}

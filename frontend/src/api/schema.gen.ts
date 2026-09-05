@@ -136,6 +136,7 @@ export interface CreateFromRegressionRequestBody {
 }
 
 export interface CreateInvestigationPayload {
+  analyze?: boolean;
   calls?: number;
   connection_id?: string;
   mean_time_ms?: number;
@@ -456,6 +457,7 @@ export interface RankedCandidateBaseline {
 export interface RankedCandidateList {
   baseline?: RankedCandidateBaseline;
   candidates: RankedCandidate[];
+  recommendation?: string;
 }
 
 export interface RegressionAlert {
