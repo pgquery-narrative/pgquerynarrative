@@ -8,6 +8,8 @@
 
 replicaCount: 1
 
+# Single-image deployment model: this one image serves both the JSON API and the
+# built React SPA (see deploy/README.md). There is no separate frontend image.
 image:
   repository: pgquerynarrative
   tag: latest

@@ -42,7 +42,7 @@ All responses include `X-Request-ID` when request ID middleware is used. **Limit
 
 ### Deploy (standard)
 
-1. Build and push: `docker build -f deploy/docker/Dockerfile -t your-registry/pgquerynarrative:<tag> .` then `docker push ...`.
+1. Build and push: `docker build -t your-registry/pgquerynarrative:<tag> .` then `docker push ...` (or pull the published `ghcr.io/pgquery-narrative/pgquerynarrative:<tag>`).
 2. **Compose:** `docker compose -f deploy/docker/docker-compose.yml up -d` (or set `image:` to new tag).
 3. **Kubernetes:** Update `image` in `deployment.yaml`; `kubectl apply -f deploy/kubernetes/deployment.yaml`.
 4. **Helm:** `helm upgrade pgqn ./deploy/helm/pgquerynarrative -n pgquerynarrative --set image.tag=<tag>`.

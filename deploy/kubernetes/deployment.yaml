@@ -22,6 +22,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
+        # Single-image deployment model: this one container serves both the JSON API
+        # and the built React SPA (see deploy/README.md). No frontend sidecar.
         - name: app
           image: pgquerynarrative:1.0.0
           imagePullPolicy: IfNotPresent

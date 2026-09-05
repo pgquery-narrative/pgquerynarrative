@@ -282,6 +282,8 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
+          # The single blessed image: Go server + built SPA (see deploy/README.md).
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |

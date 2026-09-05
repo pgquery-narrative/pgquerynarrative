@@ -33,7 +33,7 @@ Pushing a tag `v*.*.*` (e.g. `v1.0.0`) triggers the Release workflow. It runs `m
 | Artifact | How |
 |----------|-----|
 | **Binaries** | CI on tag push, or local `make build-release`. |
-| **Docker image** | `docker build -t pgquerynarrative:<tag> .` (root Dockerfile with frontend) or `docker build -f deploy/docker/Dockerfile -t pgquerynarrative:<tag> .` (slim production image). Push to your registry and reference in Compose/K8s/Helm. |
+| **Docker image** | `docker build -t pgquerynarrative:<tag> .` — the single image (API + built SPA). CI publishes and signs the same image as `ghcr.io/pgquery-narrative/pgquerynarrative:<tag>` on tag push. See [deploy/README.md](../../deploy/README.md). |
 | **Changelog** | `make changelog`; commit and include in the release commit before tagging. |
 
 ## One-time release checklist
