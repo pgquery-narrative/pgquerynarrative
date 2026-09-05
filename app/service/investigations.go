@@ -362,13 +362,22 @@ func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investig
 			fix_applied_at = CASE WHEN $5 THEN now() ELSE fix_applied_at END,
 			fix_baseline_mean_ms = CASE
 				WHEN $5 THEN COALESCE(
-					(SELECT s.mean_time_ms
-					 FROM app.stat_statement_snapshots s
-					 JOIN app.stat_statement_polls p ON p.id = s.poll_id
-					 JOIN app.regression_alerts ra ON ra.queryid = s.queryid
-					   AND ra.investigation_id = app.investigations.id
-					 WHERE p.organization_id = $2
-					 ORDER BY p.captured_at DESC LIMIT 1),
+					-- latest *interval* mean latency for the linked query, to match
+					-- what reconcileAppliedFixes re-measures against.
+					(SELECT r.d_total / r.d_calls
+					 FROM (
+					   SELECT s.queryid,
+					          s.total_time_ms - lag(s.total_time_ms) OVER w AS d_total,
+					          s.calls         - lag(s.calls)         OVER w AS d_calls,
+					          row_number() OVER (PARTITION BY s.queryid ORDER BY p.captured_at DESC) AS rn
+					   FROM app.stat_statement_snapshots s
+					   JOIN app.stat_statement_polls p ON p.id = s.poll_id
+					   JOIN app.regression_alerts ra ON ra.queryid = s.queryid
+					     AND ra.investigation_id = app.investigations.id
+					   WHERE p.organization_id = $2
+					   WINDOW w AS (PARTITION BY s.queryid ORDER BY p.captured_at)
+					 ) r
+					 WHERE r.rn = 1 AND r.d_calls > 0 AND r.d_total >= 0),
 					(stat_snapshot->>'mean_time_ms')::float,
 					fix_baseline_mean_ms)
 				ELSE fix_baseline_mean_ms END,
