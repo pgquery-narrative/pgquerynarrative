@@ -70,6 +70,10 @@ type ComparePlansPayload struct {
 	AfterSQL string
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze bool
+	// Execute both queries (COUNT(*) + bounded sample) to check result
+	// equivalence. Requires the `query` permission on the connection; off by
+	// default so a compare only plans.
+	VerifyResults bool
 	// Optional connection ID
 	ConnectionID *string
 	// Sample bind values for parameterized before/after SQL ($1, $2, ...);
@@ -86,7 +90,7 @@ type ComparePlansResult struct {
 	Diff    *PlanComparisonDiff
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string

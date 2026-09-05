@@ -45,24 +45,47 @@ func regressionTestPool(t *testing.T, ctx context.Context) *pgxpool.Pool {
 	return pool
 }
 
-// seedPoll inserts one poll captured `ageMin` minutes ago with one snapshot row.
-func seedPoll(t *testing.T, ctx context.Context, pool *pgxpool.Pool, org string, ageMin int, queryID, queryText string, mean, total float64, calls, rows int64) string {
+// cumCounters tracks a query's running pg_stat_statements totals so a test can
+// describe traffic per interval and let the helper accumulate.
+type cumCounters struct {
+	calls   int64
+	totalMs float64
+	rows    int64
+}
+
+// seedPoll inserts one poll captured `ageMin` minutes ago holding one snapshot
+// row with CUMULATIVE counters (as pg_stat_statements reports them).
+func seedPoll(t *testing.T, ctx context.Context, pool *pgxpool.Pool, org, connID string, ageMin int, queryID, queryText string, cum cumCounters) string {
 	t.Helper()
+	mean := 0.0
+	if cum.calls > 0 {
+		mean = cum.totalMs / float64(cum.calls)
+	}
 	var pollID string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO app.stat_statement_polls (organization_id, connection_id, captured_at)
-		VALUES ($1, 'default', now() - make_interval(mins => $2))
+		VALUES ($1, $3, now() - make_interval(mins => $2))
 		RETURNING id::text
-	`, org, ageMin).Scan(&pollID); err != nil {
+	`, org, ageMin, connID).Scan(&pollID); err != nil {
 		t.Fatalf("seed poll: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO app.stat_statement_snapshots (poll_id, queryid, query_text, calls, mean_time_ms, total_time_ms, rows)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, pollID, queryID, queryText, calls, mean, total, rows); err != nil {
+	`, pollID, queryID, queryText, cum.calls, mean, cum.totalMs, cum.rows); err != nil {
 		t.Fatalf("seed snapshot: %v", err)
 	}
 	return pollID
+}
+
+// addInterval advances the running counters by one interval's traffic and seeds
+// a poll for it.
+func addInterval(t *testing.T, ctx context.Context, pool *pgxpool.Pool, org, connID string, cum *cumCounters, ageMin int, qid, qtext string, dCalls int64, dTotalMs float64, dRows int64) string {
+	t.Helper()
+	cum.calls += dCalls
+	cum.totalMs += dTotalMs
+	cum.rows += dRows
+	return seedPoll(t, ctx, pool, org, connID, ageMin, qid, qtext, *cum)
 }
 
 func newTestPoller(pool *pgxpool.Pool) *service.RegressionPoller {
@@ -97,11 +120,14 @@ func TestRegressionPoller_BaselineLifecycle(t *testing.T) {
 	const qid = "12345"
 	const qtext = "SELECT * FROM orders WHERE customer_id = 42"
 
-	// 5 baseline polls around 100ms mean with mild jitter, then a steady current poll.
-	for i, mean := range []float64{96, 104, 99, 101, 103} {
-		seedPoll(t, ctx, pool, org, 100-(i*10), qid, qtext, mean, mean*50, 50, 500)
+	// Anchor snapshot (lag origin), then five ~100ms/50-call baseline intervals.
+	cum := cumCounters{}
+	seedPoll(t, ctx, pool, org, "default", 120, qid, qtext, cum)
+	for i, dTotal := range []float64{5000, 5200, 4950, 5050, 5150} { // per-interval ms
+		addInterval(t, ctx, pool, org, "default", &cum, 105-(i*15), qid, qtext, 50, dTotal, 500)
 	}
-	seedPoll(t, ctx, pool, org, 5, qid, qtext, 108, 108*50, 50, 500)
+	// Current interval ~108ms — mild jitter, no alert.
+	addInterval(t, ctx, pool, org, "default", &cum, 20, qid, qtext, 50, 5400, 500)
 
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (normal): %v", err)
@@ -110,9 +136,8 @@ func TestRegressionPoller_BaselineLifecycle(t *testing.T) {
 		t.Fatalf("normal variance must not alert, got %d open alerts", n)
 	}
 
-	// Now a real regression: current mean 3x the baseline.
-	regPoll := seedPoll(t, ctx, pool, org, 1, qid, qtext, 320, 320*50, 50, 500)
-	_ = regPoll
+	// Real regression: this interval is ~320ms/call, ~3x the baseline.
+	addInterval(t, ctx, pool, org, "default", &cum, 15, qid, qtext, 50, 16000, 500)
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (regression): %v", err)
 	}
@@ -128,8 +153,8 @@ func TestRegressionPoller_BaselineLifecycle(t *testing.T) {
 		t.Fatalf("alert change_type=%q occurrences=%d, want latency/1", changeType, occ)
 	}
 
-	// Same regression persists on the next poll → occurrence bump, still one alert.
-	seedPoll(t, ctx, pool, org, 0, qid, qtext, 300, 300*50, 50, 500)
+	// Same regression persists next interval → occurrence bump, still one alert.
+	addInterval(t, ctx, pool, org, "default", &cum, 10, qid, qtext, 50, 15000, 500)
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (persist): %v", err)
 	}
@@ -143,8 +168,8 @@ func TestRegressionPoller_BaselineLifecycle(t *testing.T) {
 		t.Fatalf("occurrences=%d err=%v, want >= 2", occ, err)
 	}
 
-	// Query recovers to baseline → alert auto-resolves.
-	seedPoll(t, ctx, pool, org, 0, qid, qtext, 102, 102*50, 50, 500)
+	// Query recovers — this interval is back to ~102ms/call → alert auto-resolves.
+	addInterval(t, ctx, pool, org, "default", &cum, 5, qid, qtext, 50, 5100, 500)
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (recover): %v", err)
 	}
@@ -158,7 +183,7 @@ func TestRegressionPoller_BaselineLifecycle(t *testing.T) {
 	}
 
 	// Regresses again → a NEW alert linked to the resolved one.
-	seedPoll(t, ctx, pool, org, 0, qid, qtext, 340, 340*50, 50, 500)
+	addInterval(t, ctx, pool, org, "default", &cum, 1, qid, qtext, 50, 17000, 500)
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (re-regress): %v", err)
 	}
@@ -182,16 +207,59 @@ func TestRegressionPoller_SelfObservedNeverAlerts(t *testing.T) {
 	const qid = "999"
 	const explainText = "EXPLAIN (GENERIC_PLAN, FORMAT JSON) SELECT * FROM orders WHERE id = 42"
 
-	for i := range []int{0, 1, 2, 3} {
-		seedPoll(t, ctx, pool, org, 40-(i*10), qid, explainText, 10, 500, 50, 0)
+	cum := cumCounters{}
+	seedPoll(t, ctx, pool, org, "default", 60, qid, explainText, cum)
+	for i := 0; i < 4; i++ {
+		addInterval(t, ctx, pool, org, "default", &cum, 50-(i*10), qid, explainText, 50, 500, 0) // ~10ms/call
 	}
-	seedPoll(t, ctx, pool, org, 0, qid, explainText, 900, 45000, 50, 0) // 90x jump
+	addInterval(t, ctx, pool, org, "default", &cum, 0, qid, explainText, 50, 45000, 0) // 90x jump
 
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll: %v", err)
 	}
 	if n := openAlertCount(t, ctx, pool, org, qid); n != 0 {
 		t.Fatalf("self-observed EXPLAIN must never alert, got %d", n)
+	}
+}
+
+// The same queryid on two connections is baselined and alerted independently:
+// a regression on "analytics" must not be diluted by, or leak onto, "default".
+func TestRegressionPoller_PerConnectionIsolation(t *testing.T) {
+	ctx := context.Background()
+	pool := regressionTestPool(t, ctx)
+	org := auth.DefaultOrganizationID
+	poller := newTestPoller(pool)
+	const qid = "55555"
+	const qtext = "SELECT * FROM orders WHERE customer_id = 42"
+
+	// "default": flat ~100ms baseline, latest poll older than the analytics one.
+	defCum := cumCounters{}
+	seedPoll(t, ctx, pool, org, "default", 200, qid, qtext, defCum)
+	for i := 0; i < 5; i++ {
+		addInterval(t, ctx, pool, org, "default", &defCum, 180-(i*20), qid, qtext, 50, 5000, 500)
+	}
+
+	// "analytics": flat ~100ms baseline, then a 3x spike as the org-latest poll.
+	anCum := cumCounters{}
+	seedPoll(t, ctx, pool, org, "analytics", 120, qid, qtext, anCum)
+	for i := 0; i < 5; i++ {
+		addInterval(t, ctx, pool, org, "analytics", &anCum, 100-(i*15), qid, qtext, 50, 5000, 500)
+	}
+	addInterval(t, ctx, pool, org, "analytics", &anCum, 1, qid, qtext, 50, 16000, 500) // ~320ms/call
+
+	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
+		t.Fatalf("EvaluateLatestPoll: %v", err)
+	}
+
+	var conn, changeType string
+	if err := pool.QueryRow(ctx, `
+		SELECT connection_id, change_type FROM app.regression_alerts
+		WHERE organization_id=$1 AND queryid=$2 AND resolved_at IS NULL AND acknowledged_at IS NULL
+	`, org, qid).Scan(&conn, &changeType); err != nil {
+		t.Fatalf("expected exactly one open alert: %v", err)
+	}
+	if conn != "analytics" || changeType != "latency" {
+		t.Fatalf("alert connection_id=%q change_type=%q, want analytics/latency", conn, changeType)
 	}
 }
 
@@ -220,9 +288,12 @@ func TestInvestigationFix_LifecycleAndReconcile(t *testing.T) {
 		t.Fatalf("seed linked alert: %v", err)
 	}
 
-	// Baseline the linked query at 200ms across enough polls, then mark applied.
-	for i := range []int{0, 1, 2} {
-		seedPoll(t, ctx, pool, org, 30-(i*10), qid, "SELECT * FROM orders WHERE customer_id = 42", 200, 10000, 50, 500)
+	// Baseline the linked query at ~200ms/call across a few intervals, then mark applied.
+	fixText := "SELECT * FROM orders WHERE customer_id = 42"
+	fixCum := cumCounters{}
+	seedPoll(t, ctx, pool, org, "default", 45, qid, fixText, fixCum)
+	for i := 0; i < 3; i++ {
+		addInterval(t, ctx, pool, org, "default", &fixCum, 35-(i*10), qid, fixText, 50, 10000, 500) // 200ms/call
 	}
 
 	// Invalid transition rejected.
@@ -243,8 +314,8 @@ func TestInvestigationFix_LifecycleAndReconcile(t *testing.T) {
 		t.Fatalf("fix baseline mean not snapshotted from the linked query: %+v", upd.FixBaselineMeanMs)
 	}
 
-	// A later poll shows the query is 3x faster → reconcile marks it confirmed.
-	seedPoll(t, ctx, pool, org, 0, qid, "SELECT * FROM orders WHERE customer_id = 42", 65, 3250, 50, 500)
+	// A later interval shows the query is ~3x faster (65ms/call) → reconcile confirms.
+	addInterval(t, ctx, pool, org, "default", &fixCum, 0, qid, fixText, 50, 3250, 500)
 	poller := newTestPoller(pool)
 	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
 		t.Fatalf("EvaluateLatestPoll (reconcile): %v", err)
