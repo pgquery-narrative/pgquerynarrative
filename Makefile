@@ -225,9 +225,17 @@ run:
 
 test: test-unit test-integration
 
+# In-package tests live alongside the code they cover, so every package holding
+# them has to be listed here. app/service, app/security, app/llm, app/audit and
+# app/story were previously reachable only through the CI coverage step, which
+# meant a failure there surfaced as a confusing coverage error rather than a
+# failed test.
 test-unit:
 	@echo "🧪 Running unit tests..."
-	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... ./app/metrics/... ./web/... -v
+	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./app/service/... \
+		./app/security/... ./app/llm/... ./app/audit/... ./app/story/... \
+		./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... \
+		./app/metrics/... ./web/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:

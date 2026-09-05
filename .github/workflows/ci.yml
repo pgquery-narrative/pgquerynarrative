@@ -71,7 +71,7 @@ jobs:
           go tool cover -func=coverage.out | tail -1
           total="$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')"
           echo "Core package coverage: ${total}%"
-          awk -v t="$total" 'BEGIN { if (t+0 < 18) { print "Coverage below 18% floor on core packages: " t "%"; exit 1 } }'
+          awk -v t="$total" 'BEGIN { if (t+0 < 35) { print "Coverage below 35% floor on core packages: " t "%"; exit 1 } }'
       - name: Enforce per-package coverage floors (auth, queryrunner, security)
         env:
           CGO_ENABLED: "1"
@@ -90,21 +90,27 @@ jobs:
             echo "$pkg coverage: ${pct}% (floor ${floor}%)"
             awk -v t="$pct" -v f="$floor" -v p="$pkg" 'BEGIN { if (t+0 < f+0) { print "Coverage below floor for " p ": " t "% < " f "%"; exit 1 } }'
           }
+          # Floors are ratchets, not targets: each sits a few points under the
+          # measured value so an unrelated PR cannot quietly delete coverage, while
+          # normal churn does not turn the gate red. Raise a floor when the real
+          # number moves up, never lower one to make a build pass.
           check_pkg_coverage ./app/auth 35
-          check_pkg_coverage ./app/queryrunner 40
-          check_pkg_coverage ./app/security 40
+          check_pkg_coverage ./app/queryrunner 65
+          check_pkg_coverage ./app/security 50
           # llm has rich unit suite under test/unit/app/llm
           check_pkg_coverage ./app/llm 30
           # metrics: pure numeric primitives in calculator.go + black-box suite
           check_pkg_coverage ./app/metrics 65
           # service: integration-heavy; this floor covers the pure decision logic
-          # (regression eval, fix transitions, error mapping, report helpers)
-          check_pkg_coverage ./app/service 12
+          # (regression eval, fix transitions, error mapping, API converters,
+          # schedule validation, SQL visibility). The DB-backed paths are covered
+          # by test/integration, which does not feed this profile.
+          check_pkg_coverage ./app/service 25
           # audit package tests are primarily in-package
           go test -coverprofile=cov_audit.out -covermode=atomic -coverpkg=./app/audit/... ./app/audit/...
           pct="$(go tool cover -func=cov_audit.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
-          echo "./app/audit coverage: ${pct}% (floor 20%)"
-          awk -v t="$pct" 'BEGIN { if (t+0 < 20) { print "Coverage below floor for ./app/audit: " t "% < 20%"; exit 1 } }'
+          echo "./app/audit coverage: ${pct}% (floor 45%)"
+          awk -v t="$pct" 'BEGIN { if (t+0 < 45) { print "Coverage below floor for ./app/audit: " t "% < 45%"; exit 1 } }'
 
   schedule-multireplica:
     name: Schedule multi-replica
