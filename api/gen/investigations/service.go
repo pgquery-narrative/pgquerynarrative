@@ -61,6 +61,9 @@ type AddCandidatePayload struct {
 	ID           string
 	CandidateSQL string
 	Analyze      bool
+	// Execute the candidate and the original to check result equivalence. Requires
+	// the `query` permission on the connection.
+	VerifyResults bool
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string
@@ -73,7 +76,7 @@ type ComparePlansResult struct {
 	Diff    *PlanComparisonDiff
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string
@@ -209,7 +212,7 @@ type InvestigationCandidate struct {
 	Binds            []string
 	CandidateExplain *ExplainQueryResult
 	Comparison       *ComparePlansResult
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	EquivalenceStatus *string
 	// after - before total cost (negative is better)
 	CostDelta *float64
