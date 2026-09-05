@@ -657,12 +657,17 @@ export interface SchemaResult {
 
 export interface SecurityTrust {
   allowed_schemas: string[];
+  analyze_policy: string;
   audit_mode: string;
   authentication: string;
+  authorization_state: string[];
+  connection_id: string;
   connection_mode: string;
   explain_analyze: string;
   external_llm_data: string;
+  last_security_verification?: string;
   query_timeout_seconds: number;
+  readonly: boolean;
   result_limit: number;
   tenant_isolation: string;
   tls: string;

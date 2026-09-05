@@ -259,7 +259,8 @@ export const api = {
 
   getDemoScenarios: () => request<{ items: DemoScenario[] }>("/demo/scenarios"),
 
-  getSecurityTrust: () => request<SecurityTrust>("/trust"),
+  getSecurityTrust: (connectionId?: string) =>
+    request<SecurityTrust>(`/trust${connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : ""}`),
 
   listSaved: (limit = 50, offset = 0, connectionId?: string) =>
     request<{ items: SavedQuery[]; limit: number; offset: number }>(`/queries/saved?limit=${limit}&offset=${offset}${connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ""}`),

@@ -72,3 +72,18 @@ func BuildAcknowledgeRegressionPayload(workspaceAcknowledgeRegressionID string) 
 
 	return v, nil
 }
+
+// BuildSecurityTrustPayload builds the payload for the workspace
+// security_trust endpoint from CLI flags.
+func BuildSecurityTrustPayload(workspaceSecurityTrustConnectionID string) (*workspace.SecurityTrustPayload, error) {
+	var connectionID *string
+	{
+		if workspaceSecurityTrustConnectionID != "" {
+			connectionID = &workspaceSecurityTrustConnectionID
+		}
+	}
+	v := &workspace.SecurityTrustPayload{}
+	v.ConnectionID = connectionID
+
+	return v, nil
+}

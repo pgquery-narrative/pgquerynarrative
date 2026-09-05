@@ -39,22 +39,45 @@ type DemoScenariosResponseBody struct {
 // SecurityTrustResponseBody is the type of the "workspace" service
 // "security_trust" endpoint HTTP response body.
 type SecurityTrustResponseBody struct {
-	Authentication      string   `form:"authentication" json:"authentication" xml:"authentication"`
-	ConnectionMode      string   `form:"connection_mode" json:"connection_mode" xml:"connection_mode"`
-	AllowedSchemas      []string `form:"allowed_schemas" json:"allowed_schemas" xml:"allowed_schemas"`
-	TenantIsolation     string   `form:"tenant_isolation" json:"tenant_isolation" xml:"tenant_isolation"`
-	TLS                 string   `form:"tls" json:"tls" xml:"tls"`
-	AuditMode           string   `form:"audit_mode" json:"audit_mode" xml:"audit_mode"`
-	QueryTimeoutSeconds int32    `form:"query_timeout_seconds" json:"query_timeout_seconds" xml:"query_timeout_seconds"`
-	ResultLimit         int32    `form:"result_limit" json:"result_limit" xml:"result_limit"`
-	ExplainAnalyze      string   `form:"explain_analyze" json:"explain_analyze" xml:"explain_analyze"`
-	ExternalLlmData     string   `form:"external_llm_data" json:"external_llm_data" xml:"external_llm_data"`
+	// The connection this posture reflects
+	ConnectionID   string `form:"connection_id" json:"connection_id" xml:"connection_id"`
+	Authentication string `form:"authentication" json:"authentication" xml:"authentication"`
+	ConnectionMode string `form:"connection_mode" json:"connection_mode" xml:"connection_mode"`
+	// Whether the connection's role is confirmed read-only by a live probe
+	Readonly        bool     `form:"readonly" json:"readonly" xml:"readonly"`
+	AllowedSchemas  []string `form:"allowed_schemas" json:"allowed_schemas" xml:"allowed_schemas"`
+	TenantIsolation string   `form:"tenant_isolation" json:"tenant_isolation" xml:"tenant_isolation"`
+	// Raw sslmode this connection is configured with
+	// (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
+	TLS       string `form:"tls" json:"tls" xml:"tls"`
+	AuditMode string `form:"audit_mode" json:"audit_mode" xml:"audit_mode"`
+	// Statement timeout in seconds; 0 means no timeout is enforced
+	QueryTimeoutSeconds int32  `form:"query_timeout_seconds" json:"query_timeout_seconds" xml:"query_timeout_seconds"`
+	ResultLimit         int32  `form:"result_limit" json:"result_limit" xml:"result_limit"`
+	ExplainAnalyze      string `form:"explain_analyze" json:"explain_analyze" xml:"explain_analyze"`
+	ExternalLlmData     string `form:"external_llm_data" json:"external_llm_data" xml:"external_llm_data"`
+	// Actions the current caller is authorized for on this connection
+	AuthorizationState []string `form:"authorization_state" json:"authorization_state" xml:"authorization_state"`
+	// Effective EXPLAIN ANALYZE policy for the current caller on this connection
+	AnalyzePolicy string `form:"analyze_policy" json:"analyze_policy" xml:"analyze_policy"`
+	// Timestamp of the last recorded security verification, or absent if none has
+	// been recorded
+	LastSecurityVerification *string `form:"last_security_verification,omitempty" json:"last_security_verification,omitempty" xml:"last_security_verification,omitempty"`
 }
 
 // AcknowledgeRegressionNotFoundResponseBody is the type of the "workspace"
 // service "acknowledge_regression" endpoint HTTP response body for the
 // "not_found" error.
 type AcknowledgeRegressionNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// SecurityTrustValidationErrorResponseBody is the type of the "workspace"
+// service "security_trust" endpoint HTTP response body for the
+// "validation_error" error.
+type SecurityTrustValidationErrorResponseBody struct {
 	Name    string  `form:"name" json:"name" xml:"name"`
 	Message string  `form:"message" json:"message" xml:"message"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -166,15 +189,19 @@ func NewDemoScenariosResponseBody(res *workspace.DemoScenarioList) *DemoScenario
 // of the "security_trust" endpoint of the "workspace" service.
 func NewSecurityTrustResponseBody(res *workspace.SecurityTrust2) *SecurityTrustResponseBody {
 	body := &SecurityTrustResponseBody{
-		Authentication:      res.Authentication,
-		ConnectionMode:      res.ConnectionMode,
-		TenantIsolation:     res.TenantIsolation,
-		TLS:                 res.TLS,
-		AuditMode:           res.AuditMode,
-		QueryTimeoutSeconds: res.QueryTimeoutSeconds,
-		ResultLimit:         res.ResultLimit,
-		ExplainAnalyze:      res.ExplainAnalyze,
-		ExternalLlmData:     res.ExternalLlmData,
+		ConnectionID:             res.ConnectionID,
+		Authentication:           res.Authentication,
+		ConnectionMode:           res.ConnectionMode,
+		Readonly:                 res.Readonly,
+		TenantIsolation:          res.TenantIsolation,
+		TLS:                      res.TLS,
+		AuditMode:                res.AuditMode,
+		QueryTimeoutSeconds:      res.QueryTimeoutSeconds,
+		ResultLimit:              res.ResultLimit,
+		ExplainAnalyze:           res.ExplainAnalyze,
+		ExternalLlmData:          res.ExternalLlmData,
+		AnalyzePolicy:            res.AnalyzePolicy,
+		LastSecurityVerification: res.LastSecurityVerification,
 	}
 	if res.AllowedSchemas != nil {
 		body.AllowedSchemas = make([]string, len(res.AllowedSchemas))
@@ -184,6 +211,14 @@ func NewSecurityTrustResponseBody(res *workspace.SecurityTrust2) *SecurityTrustR
 	} else {
 		body.AllowedSchemas = []string{}
 	}
+	if res.AuthorizationState != nil {
+		body.AuthorizationState = make([]string, len(res.AuthorizationState))
+		for i, val := range res.AuthorizationState {
+			body.AuthorizationState[i] = val
+		}
+	} else {
+		body.AuthorizationState = []string{}
+	}
 	return body
 }
 
@@ -192,6 +227,17 @@ func NewSecurityTrustResponseBody(res *workspace.SecurityTrust2) *SecurityTrustR
 // service.
 func NewAcknowledgeRegressionNotFoundResponseBody(res *workspace.NotFoundError) *AcknowledgeRegressionNotFoundResponseBody {
 	body := &AcknowledgeRegressionNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewSecurityTrustValidationErrorResponseBody builds the HTTP response body
+// from the result of the "security_trust" endpoint of the "workspace" service.
+func NewSecurityTrustValidationErrorResponseBody(res *workspace.ValidationError) *SecurityTrustValidationErrorResponseBody {
+	body := &SecurityTrustValidationErrorResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,
@@ -214,6 +260,15 @@ func NewRegressionsPayload(limit int32, includeAcknowledged bool) *workspace.Reg
 func NewAcknowledgeRegressionPayload(id string) *workspace.AcknowledgeRegressionPayload {
 	v := &workspace.AcknowledgeRegressionPayload{}
 	v.ID = id
+
+	return v
+}
+
+// NewSecurityTrustPayload builds a workspace service security_trust endpoint
+// payload.
+func NewSecurityTrustPayload(connectionID *string) *workspace.SecurityTrustPayload {
+	v := &workspace.SecurityTrustPayload{}
+	v.ConnectionID = connectionID
 
 	return v
 }

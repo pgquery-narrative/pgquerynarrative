@@ -4,50 +4,59 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
+	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
 // WorkspaceService provides landing dashboard data, regression inbox, demo scenarios, and trust.
 type WorkspaceService struct {
-	appPool             db.DB
-	queriesSvc          *QueriesService
-	authEnabled         bool
-	allowInsecureNoAuth bool
-	explainAnalyze      bool
-	queryTimeoutSec     int32
-	sslMode             string
-	auditMode           string
-	llmAllowExternal    bool
-	allowedSchemas      []string
+	appPool               db.DB
+	queriesSvc            *QueriesService
+	authEnabled           bool
+	allowInsecureNoAuth   bool
+	explainAnalyzeEnabled bool // server-wide EXPLAIN ANALYZE gate; same for every connection
+	auditMode             string
+	llmAllowExternal      bool
+	connections           map[string]config.DataConnectionConfig // per-connection raw config, keyed by ID
+	defaultConnectionID   string
 }
 
-// NewWorkspaceService creates a workspace service.
+// NewWorkspaceService creates a workspace service. connections carries each
+// data connection's already-resolved raw configuration (SSLMode, AllowedSchemas,
+// ...); SecurityTrust reports those values as configured, it does not re-derive
+// or substitute friendlier-looking defaults for them.
 func NewWorkspaceService(
 	appPool db.DB,
 	queriesSvc *QueriesService,
-	authEnabled, allowInsecureNoAuth, explainAnalyze bool,
-	queryTimeoutSec int32,
-	sslMode, auditMode string,
+	authEnabled, allowInsecureNoAuth, explainAnalyzeEnabled bool,
+	auditMode string,
 	llmAllowExternal bool,
-	allowedSchemas []string,
+	connections []config.DataConnectionConfig,
+	defaultConnectionID string,
 ) *WorkspaceService {
+	byID := make(map[string]config.DataConnectionConfig, len(connections))
+	for _, c := range connections {
+		byID[c.ID] = c
+	}
 	return &WorkspaceService{
-		appPool:             appPool,
-		queriesSvc:          queriesSvc,
-		authEnabled:         authEnabled,
-		allowInsecureNoAuth: allowInsecureNoAuth,
-		explainAnalyze:      explainAnalyze,
-		queryTimeoutSec:     queryTimeoutSec,
-		sslMode:             sslMode,
-		auditMode:           auditMode,
-		llmAllowExternal:    llmAllowExternal,
-		allowedSchemas:      allowedSchemas,
+		appPool:               appPool,
+		queriesSvc:            queriesSvc,
+		authEnabled:           authEnabled,
+		allowInsecureNoAuth:   allowInsecureNoAuth,
+		explainAnalyzeEnabled: explainAnalyzeEnabled,
+		auditMode:             auditMode,
+		llmAllowExternal:      llmAllowExternal,
+		connections:           byID,
+		defaultConnectionID:   defaultConnectionID,
 	}
 }
 
@@ -266,44 +275,185 @@ func (s *WorkspaceService) DemoScenarios(_ context.Context) (*workspace.DemoScen
 	}, nil
 }
 
-// SecurityTrust returns the security posture for the Security & Trust page.
-func (s *WorkspaceService) SecurityTrust(_ context.Context) (*workspace.SecurityTrust2, error) {
+// securityTrustActions lists every connection action reflected in
+// authorization_state, in the order they are checked.
+var securityTrustActions = []string{
+	auth.ActionQuery, auth.ActionExplain, auth.ActionAnalyze, auth.ActionSchema,
+	auth.ActionReport, auth.ActionSchedule, auth.ActionStats, auth.ActionAsk,
+}
+
+// SecurityTrust returns the real, per-connection security posture for the
+// Security & Trust page. Every field is the connection's actual configured or
+// observed state — it never substitutes a friendlier-looking value for a real
+// one (sslmode=disable reports "disable", never "prefer"; a zero timeout
+// reports 0, never a synthetic default).
+func (s *WorkspaceService) SecurityTrust(ctx context.Context, payload *workspace.SecurityTrustPayload) (*workspace.SecurityTrust2, error) {
+	var reqID *string
+	if payload != nil {
+		reqID = payload.ConnectionID
+	}
+
+	connID := s.defaultConnectionID
+	var authz ConnectionAuthorizer
+	if s.queriesSvc != nil {
+		authz = s.queriesSvc.authz
+		id, err := s.queriesSvc.resolveConnectionID(reqID)
+		if err != nil {
+			return nil, connectionNotFoundWorkspaceError(err)
+		}
+		connID = id
+	} else if reqID != nil && strings.TrimSpace(*reqID) != "" {
+		connID = strings.TrimSpace(*reqID)
+	}
+
+	// Gate the whole posture on the caller actually being allowed to see this
+	// connection at all. Without this, any authenticated caller could read
+	// another org's connection's TLS mode, schemas, and timeout just by
+	// passing its connection_id — the per-action checks below only ever
+	// affected the display-only authorization_state/analyze_policy fields,
+	// never whether the rest of the response was returned at all.
+	if err := checkConnectionAccess(ctx, authz, connID, auth.ActionStats); err != nil {
+		return nil, connectionForbiddenWorkspaceError(err)
+	}
+
+	var runner *queryrunner.Runner
+	if s.queriesSvc != nil {
+		r, err := s.queriesSvc.runnerFor(&connID)
+		if err != nil {
+			// connID was just resolved successfully above, so this would mean
+			// the runner and connection resolvers disagree — surface it
+			// rather than silently reporting zero-value timeout/limit/readonly
+			// as if they were real (permissive) configuration.
+			return nil, connectionNotFoundWorkspaceError(err)
+		}
+		runner = r
+	}
+
 	authStatus := "Enabled"
 	if !s.authEnabled || s.allowInsecureNoAuth {
 		authStatus = "Disabled (dev mode)"
-	}
-	explainAnalyze := "Disabled"
-	if s.explainAnalyze {
-		explainAnalyze = "Enabled"
 	}
 	llmData := "Disabled"
 	if s.llmAllowExternal {
 		llmData = "Enabled"
 	}
-	timeout := s.queryTimeoutSec
-	if timeout <= 0 {
-		timeout = 30
+
+	conn, knownConn := s.connections[connID]
+	tls := "unknown"
+	schemas := []string{}
+	if knownConn {
+		tls = conn.SSLMode
+		schemas = append([]string(nil), conn.AllowedSchemas...)
 	}
-	schemas := s.allowedSchemas
-	if len(schemas) == 0 {
-		schemas = []string{"demo"}
+
+	var timeout, resultLimit int32
+	if runner != nil {
+		timeout = timeoutSecondsCeil(runner.QueryTimeout())
+		resultLimit = int32(runner.MaxRows())
 	}
-	tls := s.sslMode
-	if tls == "" || tls == "disable" {
-		tls = "prefer"
+
+	// Fail closed: an unconfirmed probe reports false, never an assumed-safe true.
+	readonly := s.probeReadOnly(ctx, runner)
+
+	authzState := make([]string, 0, len(securityTrustActions))
+	canAnalyze := false
+	for _, action := range securityTrustActions {
+		if err := checkConnectionAccess(ctx, authz, connID, action); err == nil {
+			authzState = append(authzState, action)
+			if action == auth.ActionAnalyze {
+				canAnalyze = true
+			}
+		}
 	}
+
+	analyzePolicy := "Disabled (server policy)"
+	if s.explainAnalyzeEnabled {
+		if canAnalyze {
+			analyzePolicy = "Enabled"
+		} else {
+			analyzePolicy = "Disabled (no permission)"
+		}
+	}
+	explainAnalyze := "Disabled"
+	if s.explainAnalyzeEnabled {
+		explainAnalyze = "Enabled"
+	}
+
 	return &workspace.SecurityTrust2{
+		ConnectionID:        connID,
 		Authentication:      authStatus,
 		ConnectionMode:      "Read-only",
+		Readonly:            readonly,
 		AllowedSchemas:      schemas,
 		TenantIsolation:     "Dedicated database (RLS)",
 		TLS:                 tls,
 		AuditMode:           s.auditMode,
 		QueryTimeoutSeconds: timeout,
-		ResultLimit:         10000,
+		ResultLimit:         resultLimit,
 		ExplainAnalyze:      explainAnalyze,
 		ExternalLlmData:     llmData,
+		AuthorizationState:  authzState,
+		AnalyzePolicy:       analyzePolicy,
+		// No security-verification marker is persisted anywhere yet (the
+		// db-security CI check is CI-only and writes nothing to the app DB),
+		// so this is always absent — the UI shows "never" rather than a made-up date.
+		LastSecurityVerification: nil,
 	}, nil
+}
+
+// timeoutSecondsCeil converts a configured timeout to whole seconds, rounding
+// up. A sub-second timeout (e.g. 500ms) is real enforcement and must not
+// truncate to 0, which the API represents as "no timeout enforced".
+func timeoutSecondsCeil(d time.Duration) int32 {
+	if d <= 0 {
+		return 0
+	}
+	secs := (d + time.Second - 1) / time.Second
+	if secs > time.Duration(math.MaxInt32) {
+		return math.MaxInt32
+	}
+	return int32(secs)
+}
+
+func connectionNotFoundWorkspaceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &workspace.ValidationError{
+		Name:    "validation_error",
+		Message: "connection not found",
+		Code:    strPtr("CONNECTION_NOT_FOUND"),
+	}
+}
+
+func connectionForbiddenWorkspaceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &workspace.ValidationError{
+		Name:    "validation_error",
+		Message: "connection access denied",
+		Code:    strPtr("CONNECTION_FORBIDDEN"),
+	}
+}
+
+// probeReadOnly asks the live connection whether its role is actually
+// read-only right now. It reports false (not confirmed) rather than true
+// whenever the probe cannot run, so a broken probe never claims safety it
+// hasn't verified.
+func (s *WorkspaceService) probeReadOnly(ctx context.Context, runner *queryrunner.Runner) bool {
+	if runner == nil {
+		return false
+	}
+	pool := runner.StatsPoolFor(ctx)
+	if pool == nil {
+		return false
+	}
+	var mode string
+	if err := pool.QueryRow(ctx, `SHOW transaction_read_only`).Scan(&mode); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(mode), "on")
 }
 
 func (s *WorkspaceService) seedDemoRegressions(ctx context.Context, orgID string) error {

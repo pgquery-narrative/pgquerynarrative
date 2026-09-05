@@ -40,22 +40,45 @@ type DemoScenariosResponseBody struct {
 // SecurityTrustResponseBody is the type of the "workspace" service
 // "security_trust" endpoint HTTP response body.
 type SecurityTrustResponseBody struct {
-	Authentication      *string  `form:"authentication,omitempty" json:"authentication,omitempty" xml:"authentication,omitempty"`
-	ConnectionMode      *string  `form:"connection_mode,omitempty" json:"connection_mode,omitempty" xml:"connection_mode,omitempty"`
-	AllowedSchemas      []string `form:"allowed_schemas,omitempty" json:"allowed_schemas,omitempty" xml:"allowed_schemas,omitempty"`
-	TenantIsolation     *string  `form:"tenant_isolation,omitempty" json:"tenant_isolation,omitempty" xml:"tenant_isolation,omitempty"`
-	TLS                 *string  `form:"tls,omitempty" json:"tls,omitempty" xml:"tls,omitempty"`
-	AuditMode           *string  `form:"audit_mode,omitempty" json:"audit_mode,omitempty" xml:"audit_mode,omitempty"`
-	QueryTimeoutSeconds *int32   `form:"query_timeout_seconds,omitempty" json:"query_timeout_seconds,omitempty" xml:"query_timeout_seconds,omitempty"`
-	ResultLimit         *int32   `form:"result_limit,omitempty" json:"result_limit,omitempty" xml:"result_limit,omitempty"`
-	ExplainAnalyze      *string  `form:"explain_analyze,omitempty" json:"explain_analyze,omitempty" xml:"explain_analyze,omitempty"`
-	ExternalLlmData     *string  `form:"external_llm_data,omitempty" json:"external_llm_data,omitempty" xml:"external_llm_data,omitempty"`
+	// The connection this posture reflects
+	ConnectionID   *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	Authentication *string `form:"authentication,omitempty" json:"authentication,omitempty" xml:"authentication,omitempty"`
+	ConnectionMode *string `form:"connection_mode,omitempty" json:"connection_mode,omitempty" xml:"connection_mode,omitempty"`
+	// Whether the connection's role is confirmed read-only by a live probe
+	Readonly        *bool    `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
+	AllowedSchemas  []string `form:"allowed_schemas,omitempty" json:"allowed_schemas,omitempty" xml:"allowed_schemas,omitempty"`
+	TenantIsolation *string  `form:"tenant_isolation,omitempty" json:"tenant_isolation,omitempty" xml:"tenant_isolation,omitempty"`
+	// Raw sslmode this connection is configured with
+	// (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
+	TLS       *string `form:"tls,omitempty" json:"tls,omitempty" xml:"tls,omitempty"`
+	AuditMode *string `form:"audit_mode,omitempty" json:"audit_mode,omitempty" xml:"audit_mode,omitempty"`
+	// Statement timeout in seconds; 0 means no timeout is enforced
+	QueryTimeoutSeconds *int32  `form:"query_timeout_seconds,omitempty" json:"query_timeout_seconds,omitempty" xml:"query_timeout_seconds,omitempty"`
+	ResultLimit         *int32  `form:"result_limit,omitempty" json:"result_limit,omitempty" xml:"result_limit,omitempty"`
+	ExplainAnalyze      *string `form:"explain_analyze,omitempty" json:"explain_analyze,omitempty" xml:"explain_analyze,omitempty"`
+	ExternalLlmData     *string `form:"external_llm_data,omitempty" json:"external_llm_data,omitempty" xml:"external_llm_data,omitempty"`
+	// Actions the current caller is authorized for on this connection
+	AuthorizationState []string `form:"authorization_state,omitempty" json:"authorization_state,omitempty" xml:"authorization_state,omitempty"`
+	// Effective EXPLAIN ANALYZE policy for the current caller on this connection
+	AnalyzePolicy *string `form:"analyze_policy,omitempty" json:"analyze_policy,omitempty" xml:"analyze_policy,omitempty"`
+	// Timestamp of the last recorded security verification, or absent if none has
+	// been recorded
+	LastSecurityVerification *string `form:"last_security_verification,omitempty" json:"last_security_verification,omitempty" xml:"last_security_verification,omitempty"`
 }
 
 // AcknowledgeRegressionNotFoundResponseBody is the type of the "workspace"
 // service "acknowledge_regression" endpoint HTTP response body for the
 // "not_found" error.
 type AcknowledgeRegressionNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// SecurityTrustValidationErrorResponseBody is the type of the "workspace"
+// service "security_trust" endpoint HTTP response body for the
+// "validation_error" error.
+type SecurityTrustValidationErrorResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -174,19 +197,39 @@ func NewDemoScenariosDemoScenarioListOK(body *DemoScenariosResponseBody) *worksp
 // result from a HTTP "OK" response.
 func NewSecurityTrust2OK(body *SecurityTrustResponseBody) *workspace.SecurityTrust2 {
 	v := &workspace.SecurityTrust2{
-		Authentication:      *body.Authentication,
-		ConnectionMode:      *body.ConnectionMode,
-		TenantIsolation:     *body.TenantIsolation,
-		TLS:                 *body.TLS,
-		AuditMode:           *body.AuditMode,
-		QueryTimeoutSeconds: *body.QueryTimeoutSeconds,
-		ResultLimit:         *body.ResultLimit,
-		ExplainAnalyze:      *body.ExplainAnalyze,
-		ExternalLlmData:     *body.ExternalLlmData,
+		ConnectionID:             *body.ConnectionID,
+		Authentication:           *body.Authentication,
+		ConnectionMode:           *body.ConnectionMode,
+		Readonly:                 *body.Readonly,
+		TenantIsolation:          *body.TenantIsolation,
+		TLS:                      *body.TLS,
+		AuditMode:                *body.AuditMode,
+		QueryTimeoutSeconds:      *body.QueryTimeoutSeconds,
+		ResultLimit:              *body.ResultLimit,
+		ExplainAnalyze:           *body.ExplainAnalyze,
+		ExternalLlmData:          *body.ExternalLlmData,
+		AnalyzePolicy:            *body.AnalyzePolicy,
+		LastSecurityVerification: body.LastSecurityVerification,
 	}
 	v.AllowedSchemas = make([]string, len(body.AllowedSchemas))
 	for i, val := range body.AllowedSchemas {
 		v.AllowedSchemas[i] = val
+	}
+	v.AuthorizationState = make([]string, len(body.AuthorizationState))
+	for i, val := range body.AuthorizationState {
+		v.AuthorizationState[i] = val
+	}
+
+	return v
+}
+
+// NewSecurityTrustValidationError builds a workspace service security_trust
+// endpoint validation_error error.
+func NewSecurityTrustValidationError(body *SecurityTrustValidationErrorResponseBody) *workspace.ValidationError {
+	v := &workspace.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
 	}
 
 	return v
@@ -257,11 +300,17 @@ func ValidateDemoScenariosResponseBody(body *DemoScenariosResponseBody) (err err
 // ValidateSecurityTrustResponseBody runs the validations defined on
 // security_trust_response_body
 func ValidateSecurityTrustResponseBody(body *SecurityTrustResponseBody) (err error) {
+	if body.ConnectionID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
+	}
 	if body.Authentication == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("authentication", "body"))
 	}
 	if body.ConnectionMode == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("connection_mode", "body"))
+	}
+	if body.Readonly == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("readonly", "body"))
 	}
 	if body.AllowedSchemas == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("allowed_schemas", "body"))
@@ -287,12 +336,33 @@ func ValidateSecurityTrustResponseBody(body *SecurityTrustResponseBody) (err err
 	if body.ExternalLlmData == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("external_llm_data", "body"))
 	}
+	if body.AuthorizationState == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("authorization_state", "body"))
+	}
+	if body.AnalyzePolicy == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analyze_policy", "body"))
+	}
+	if body.LastSecurityVerification != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.last_security_verification", *body.LastSecurityVerification, goa.FormatDateTime))
+	}
 	return
 }
 
 // ValidateAcknowledgeRegressionNotFoundResponseBody runs the validations
 // defined on acknowledge_regression_not_found_response_body
 func ValidateAcknowledgeRegressionNotFoundResponseBody(body *AcknowledgeRegressionNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateSecurityTrustValidationErrorResponseBody runs the validations
+// defined on security_trust_validation_error_response_body
+func ValidateSecurityTrustValidationErrorResponseBody(body *SecurityTrustValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

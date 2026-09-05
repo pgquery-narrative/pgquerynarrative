@@ -231,9 +231,8 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	workspaceService := service.NewWorkspaceService(
 		appDB, queriesService,
 		cfg.Security.AuthEnabled, cfg.Security.AllowInsecureNoAuth, cfg.Security.ExplainAnalyzeEnabled,
-		int32(cfg.Database.QueryTimeout.Seconds()),
-		cfg.Database.SSLMode, cfg.Security.AuditMode,
-		cfg.LLM.AllowExternalData, allowedSchemas,
+		cfg.Security.AuditMode,
+		cfg.LLM.AllowExternalData, dbCfg.Connections, defaultConnectionID,
 	)
 	schedulesService.SetRawPool(pools.App)
 	schedulesService.ConfigureWebhook(cfg.Security.WebhookSigningSecret, cfg.Security.WebhookAllowedHosts)

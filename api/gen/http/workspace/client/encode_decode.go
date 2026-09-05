@@ -285,9 +285,29 @@ func (c *Client) BuildSecurityTrustRequest(ctx context.Context, v any) (*http.Re
 	return req, nil
 }
 
+// EncodeSecurityTrustRequest returns an encoder for requests sent to the
+// workspace security_trust server.
+func EncodeSecurityTrustRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*workspace.SecurityTrustPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("workspace", "security_trust", "*workspace.SecurityTrustPayload", v)
+		}
+		values := req.URL.Query()
+		if p.ConnectionID != nil {
+			values.Add("connection_id", *p.ConnectionID)
+		}
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
 // DecodeSecurityTrustResponse returns a decoder for responses returned by the
 // workspace security_trust endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
+// DecodeSecurityTrustResponse may return the following errors:
+//   - "validation_error" (type *workspace.ValidationError): http.StatusBadRequest
+//   - error: internal error
 func DecodeSecurityTrustResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
 		if restoreBody {
@@ -318,6 +338,20 @@ func DecodeSecurityTrustResponse(decoder func(*http.Response) goahttp.Decoder, r
 			}
 			res := NewSecurityTrust2OK(&body)
 			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body SecurityTrustValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("workspace", "security_trust", err)
+			}
+			err = ValidateSecurityTrustValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("workspace", "security_trust", err)
+			}
+			return nil, NewSecurityTrustValidationError(&body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("workspace", "security_trust", resp.StatusCode, string(body))

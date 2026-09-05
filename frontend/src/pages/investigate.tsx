@@ -11,7 +11,7 @@ import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
 import { InvestigationVerdict } from "@/components/investigation-verdict";
 import { InvestigationFix } from "@/components/investigation-fix";
-import { api, type Investigation, type RankedCandidate, type RewriteCandidate, ApiError } from "@/api/client";
+import { api, type Investigation, type RankedCandidate, type RewriteCandidate, type SecurityTrust, ApiError } from "@/api/client";
 import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
@@ -42,6 +42,14 @@ export default function InvestigatePage() {
   const [rankRecommendation, setRankRecommendation] = useState("");
   const [suggestedCandidates, setSuggestedCandidates] = useState<RewriteCandidate[]>([]);
   const [actionLoading, setActionLoading] = useState("");
+  const [trust, setTrust] = useState<SecurityTrust | null>(null);
+
+  useEffect(() => {
+    // Reflect the investigation's own connection once it's loaded, not
+    // always the server default — an investigation can run against a
+    // different connection with a different real security posture.
+    api.getSecurityTrust(investigation?.connection_id).then(setTrust).catch(() => setTrust(null));
+  }, [investigation?.connection_id]);
 
   const load = useCallback(async (investigationId: string, candidateHint?: string) => {
     setLoading(true);
@@ -282,7 +290,7 @@ export default function InvestigatePage() {
         )}
       </div>
 
-      <TrustBar />
+      <TrustBar trust={trust} />
 
       {/* Workflow steps */}
       <div className="flex flex-wrap gap-2">

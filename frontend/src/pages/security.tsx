@@ -2,19 +2,30 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type SecurityTrust } from "@/api/client";
-import { Shield, Lock, Database, Clock, Eye, Cloud } from "lucide-react";
+import { api, type SecurityTrust, type ConnectionInfo } from "@/api/client";
+import { Shield, Lock, Database, Clock, Eye, Cloud, KeyRound, History } from "lucide-react";
 
 export default function SecurityPage() {
   const [trust, setTrust] = useState<SecurityTrust | null>(null);
   const [loading, setLoading] = useState(true);
+  const [connections, setConnections] = useState<ConnectionInfo[]>([]);
+  const [connectionId, setConnectionId] = useState<string>("");
 
   useEffect(() => {
-    api.getSecurityTrust()
-      .then(setTrust)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    api.listConnections().then((r) => {
+      const items = r.items ?? [];
+      setConnections(items);
+      setConnectionId((prev) => prev || items[0]?.id || "");
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    api.getSecurityTrust(connectionId || undefined)
+      .then(setTrust)
+      .catch(() => setTrust(null))
+      .finally(() => setLoading(false));
+  }, [connectionId]);
 
   return (
     <div className="space-y-8">
@@ -29,6 +40,19 @@ export default function SecurityPage() {
         </p>
       </div>
 
+      {connections.length > 1 && (
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          Connection
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            value={connectionId}
+            onChange={(e) => setConnectionId(e.target.value)}
+          >
+            {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+      )}
+
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 w-full" />)}
@@ -37,14 +61,28 @@ export default function SecurityPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <TrustRow icon={Lock} label="Authentication" value={trust.authentication} status={trust.authentication === "Enabled"} />
           <TrustRow icon={Database} label="Connection mode" value={trust.connection_mode} status />
-          <TrustRow icon={Database} label="Allowed schemas" value={trust.allowed_schemas.join(", ")} status />
+          <TrustRow icon={Lock} label="Read-only (live probe)" value={trust.readonly ? "Confirmed" : "Not confirmed"} status={trust.readonly} />
+          <TrustRow icon={Database} label="Allowed schemas" value={trust.allowed_schemas.length ? trust.allowed_schemas.join(", ") : "none"} status={trust.allowed_schemas.length > 0} />
           <TrustRow icon={Shield} label="Tenant isolation" value={trust.tenant_isolation} status />
-          <TrustRow icon={Lock} label="TLS" value={trust.tls} status={trust.tls !== "disable"} />
+          <TrustRow icon={Lock} label="TLS" value={trust.tls} status={trust.tls !== "disable" && trust.tls !== "unknown"} />
           <TrustRow icon={Eye} label="Audit mode" value={trust.audit_mode} status={trust.audit_mode === "required"} />
-          <TrustRow icon={Clock} label="Query timeout" value={`${trust.query_timeout_seconds} seconds`} status />
-          <TrustRow icon={Database} label="Result limit" value={`${trust.result_limit.toLocaleString()} rows`} status />
+          <TrustRow icon={Clock} label="Query timeout" value={trust.query_timeout_seconds > 0 ? `${trust.query_timeout_seconds} seconds` : "none enforced"} status={trust.query_timeout_seconds > 0} />
+          <TrustRow icon={Database} label="Result limit" value={`${trust.result_limit.toLocaleString()} rows`} status={trust.result_limit > 0} />
           <TrustRow icon={Eye} label="EXPLAIN ANALYZE" value={trust.explain_analyze} status={trust.explain_analyze === "Disabled"} />
+          <TrustRow icon={KeyRound} label="Analyze policy (you)" value={trust.analyze_policy} status={trust.analyze_policy !== "Disabled (no permission)"} />
           <TrustRow icon={Cloud} label="External LLM data" value={trust.external_llm_data} status={trust.external_llm_data === "Disabled"} />
+          <TrustRow
+            icon={KeyRound}
+            label="Your permissions"
+            value={trust.authorization_state.length ? trust.authorization_state.join(", ") : "none"}
+            status={trust.authorization_state.length > 0}
+          />
+          <TrustRow
+            icon={History}
+            label="Last security verification"
+            value={trust.last_security_verification ?? "never"}
+            status={!!trust.last_security_verification}
+          />
         </div>
       ) : (
         <p className="text-muted-foreground">Unable to load security configuration.</p>

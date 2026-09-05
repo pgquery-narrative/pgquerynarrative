@@ -155,10 +155,15 @@ func (c *Client) DemoScenarios() goa.Endpoint {
 // service security_trust server.
 func (c *Client) SecurityTrust() goa.Endpoint {
 	var (
+		encodeRequest  = EncodeSecurityTrustRequest(c.encoder)
 		decodeResponse = DecodeSecurityTrustResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
 		req, err := c.BuildSecurityTrustRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
 		if err != nil {
 			return nil, err
 		}

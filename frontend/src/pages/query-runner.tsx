@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type RunQueryResult, type ExplainQueryResult, type Report, type ConnectionInfo, type ChatTurn, ApiError } from "@/api/client";
+import { api, type RunQueryResult, type ExplainQueryResult, type Report, type ConnectionInfo, type ChatTurn, type SecurityTrust, ApiError } from "@/api/client";
 import { Play, FileText, AlertCircle, Clock, Rows3, Download, BarChart3, PieChart as PieChartIcon, LineChart as LineChartIcon, Table2, Sparkles, History, Lightbulb, BookmarkPlus, Binary } from "lucide-react";
 import { SchemaBrowser } from "@/components/schema-browser";
 import { useAnnounce } from "@/contexts/announce-context";
@@ -71,6 +71,7 @@ export default function QueryRunner() {
   const [saveSuccess, setSaveSuccess] = useState("");
   const [connections, setConnections] = useState<ConnectionInfo[]>([]);
   const [connectionId, setConnectionId] = useState<string>("");
+  const [trust, setTrust] = useState<SecurityTrust | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const announce = useAnnounce();
@@ -93,6 +94,11 @@ export default function QueryRunner() {
 
   useEffect(() => {
     api.getSuggestedQuestions(8, connectionId || undefined).then((r) => setQuestionSuggestions(r.questions ?? [])).catch(() => {});
+  }, [connectionId]);
+
+  useEffect(() => {
+    setTrust(null);
+    api.getSecurityTrust(connectionId || undefined).then(setTrust).catch(() => setTrust(null));
   }, [connectionId]);
 
   useEffect(() => {
@@ -272,7 +278,7 @@ export default function QueryRunner() {
         <p className="text-muted-foreground mt-1">Run read-only SQL, inspect execution plans, compare improvements, and generate reports.</p>
       </div>
 
-      <TrustBar connectionName={connections.find((c) => c.id === connectionId)?.name} />
+      <TrustBar connectionName={connections.find((c) => c.id === connectionId)?.name} trust={trust} />
 
       <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4 xl:gap-6">
         <aside className="xl:sticky xl:top-4 xl:self-start shrink-0">

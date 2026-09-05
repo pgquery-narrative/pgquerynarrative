@@ -1,28 +1,45 @@
 import { cn } from "@/lib/utils";
+import type { SecurityTrust } from "@/api/client";
 import { Shield, Database, Clock, Rows3, Lock } from "lucide-react";
 
 export interface TrustBarProps {
   connectionName?: string;
-  schemas?: string[];
-  timeoutSeconds?: number;
-  resultLimit?: number;
+  /** Real posture for the active connection, from GET /trust. Undefined while
+   * loading — the bar shows "—" rather than a guessed number in that state. */
+  trust?: SecurityTrust | null;
   className?: string;
 }
 
-/** Permanent trust bar showing connection safety posture. */
-export function TrustBar({
-  connectionName = "Analytics Replica",
-  schemas = ["demo"],
-  timeoutSeconds = 30,
-  resultLimit = 10000,
-  className,
-}: TrustBarProps) {
+const UNKNOWN = "—";
+
+/**
+ * Permanent trust bar showing the active connection's real, live safety
+ * posture. Every value comes from the Security & Trust API response for the
+ * resolved connection — there is no hardcoded fallback, so a misconfigured or
+ * insecure connection shows as such instead of a plausible-looking default.
+ */
+export function TrustBar({ connectionName, trust, className }: TrustBarProps) {
   const items = [
-    { icon: Database, label: "Connection", value: connectionName },
-    { icon: Lock, label: "Access", value: "Read-only" },
-    { icon: Shield, label: "Schemas", value: schemas.join(", ") },
-    { icon: Clock, label: "Timeout", value: `${timeoutSeconds} seconds` },
-    { icon: Rows3, label: "Result limit", value: `${resultLimit.toLocaleString()} rows` },
+    { icon: Database, label: "Connection", value: connectionName || trust?.connection_id || UNKNOWN },
+    {
+      icon: Lock,
+      label: "Access",
+      value: !trust ? UNKNOWN : trust.readonly ? "Read-only (confirmed)" : "Not confirmed read-only",
+    },
+    {
+      icon: Shield,
+      label: "Schemas",
+      // An empty list is a real, security-relevant "no schemas allowed" state
+      // — it must read differently from "still loading" (UNKNOWN), not the same "—".
+      value: !trust ? UNKNOWN : trust.allowed_schemas.length ? trust.allowed_schemas.join(", ") : "none",
+    },
+    {
+      icon: Clock,
+      label: "Timeout",
+      value: trust ? (trust.query_timeout_seconds > 0 ? `${trust.query_timeout_seconds} seconds` : "none enforced") : UNKNOWN,
+    },
+    { icon: Rows3, label: "Result limit", value: trust ? `${trust.result_limit.toLocaleString()} rows` : UNKNOWN },
+    { icon: Lock, label: "TLS", value: trust?.tls || UNKNOWN },
   ];
 
   return (

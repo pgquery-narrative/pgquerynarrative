@@ -549,19 +549,28 @@ var DemoScenarioList = Type("DemoScenarioList", func() {
 	Required("items")
 })
 
-// SecurityTrust documents the security posture.
+// SecurityTrust documents the security posture. Every field reports the
+// connection's actual configured/observed state — no substituting a friendlier
+// value for a real one (e.g. sslmode=disable must show "disable", never "prefer").
 var SecurityTrust = Type("SecurityTrust", func() {
+	Attribute("connection_id", String, "The connection this posture reflects")
 	Attribute("authentication", String)
 	Attribute("connection_mode", String)
+	Attribute("readonly", Boolean, "Whether the connection's role is confirmed read-only by a live probe")
 	Attribute("allowed_schemas", ArrayOf(String))
 	Attribute("tenant_isolation", String)
-	Attribute("tls", String)
+	Attribute("tls", String, "Raw sslmode this connection is configured with (disable/allow/prefer/require/verify-ca/verify-full), reported as-is")
 	Attribute("audit_mode", String)
-	Attribute("query_timeout_seconds", Int32)
+	Attribute("query_timeout_seconds", Int32, "Statement timeout in seconds; 0 means no timeout is enforced")
 	Attribute("result_limit", Int32)
 	Attribute("explain_analyze", String)
 	Attribute("external_llm_data", String)
-	Required("authentication", "connection_mode", "allowed_schemas", "tenant_isolation",
+	Attribute("authorization_state", ArrayOf(String), "Actions the current caller is authorized for on this connection")
+	Attribute("analyze_policy", String, "Effective EXPLAIN ANALYZE policy for the current caller on this connection")
+	Attribute("last_security_verification", String, "Timestamp of the last recorded security verification, or absent if none has been recorded", func() {
+		Format(FormatDateTime)
+	})
+	Required("connection_id", "authentication", "connection_mode", "readonly", "allowed_schemas", "tenant_isolation",
 		"tls", "audit_mode", "query_timeout_seconds", "result_limit",
-		"explain_analyze", "external_llm_data")
+		"explain_analyze", "external_llm_data", "authorization_state", "analyze_policy")
 })
