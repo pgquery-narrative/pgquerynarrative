@@ -164,16 +164,23 @@ export const api = {
       signal: AbortSignal.timeout(analyze ? 120_000 : 60_000),
     }),
 
-  comparePlans: (beforeSql: string, afterSql: string, analyze = false, connectionId?: string) =>
+  comparePlans: (
+    beforeSql: string,
+    afterSql: string,
+    analyze = false,
+    connectionId?: string,
+    verifyResults = false,
+  ) =>
     request<ComparePlansResult>("/queries/explain/compare", {
       method: "POST",
       body: JSON.stringify({
         before_sql: normalizeSql(beforeSql),
         after_sql: normalizeSql(afterSql),
         analyze,
+        verify_results: verifyResults,
         connection_id: connectionId,
       }),
-      signal: AbortSignal.timeout(analyze ? 120_000 : 90_000),
+      signal: AbortSignal.timeout(analyze || verifyResults ? 120_000 : 90_000),
     }),
 
   listInvestigations: (limit = 20, offset = 0) =>
@@ -201,14 +208,22 @@ export const api = {
       signal: AbortSignal.timeout(120_000),
     }),
 
-  addInvestigationCandidate: (id: string, candidateSql: string, analyze = true, binds?: string[]) =>
+  addInvestigationCandidate: (
+    id: string,
+    candidateSql: string,
+    analyze = true,
+    binds?: string[],
+    verifyResults = false,
+  ) =>
     request<Investigation>(`/investigations/${id}/candidate`, {
       method: "POST",
       body: JSON.stringify({
         candidate_sql: candidateSql,
         analyze,
+        verify_results: verifyResults,
         ...(binds && binds.length ? { binds } : {}),
       }),
+      signal: AbortSignal.timeout(verifyResults ? 120_000 : 90_000),
     }),
 
   suggestInvestigationRewrite: (id: string) =>

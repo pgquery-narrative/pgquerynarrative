@@ -45,6 +45,10 @@ type ComparePlansRequestBody struct {
 	AfterSQL *string `form:"after_sql,omitempty" json:"after_sql,omitempty" xml:"after_sql,omitempty"`
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+	// Execute both queries (COUNT(*) + bounded sample) to check result
+	// equivalence. Requires the `query` permission on the connection; off by
+	// default so a compare only plans.
+	VerifyResults *bool `form:"verify_results,omitempty" json:"verify_results,omitempty" xml:"verify_results,omitempty"`
 	// Optional connection ID
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 	// Sample bind values for parameterized before/after SQL ($1, $2, ...);
@@ -107,8 +111,16 @@ type ExplainPlanResponseBody struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs int64 `form:"request_wall_time_ms" json:"request_wall_time_ms" xml:"request_wall_time_ms"`
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64 `form:"planning_time_ms,omitempty" json:"planning_time_ms,omitempty" xml:"planning_time_ms,omitempty"`
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64 `form:"server_execution_time_ms,omitempty" json:"server_execution_time_ms,omitempty" xml:"server_execution_time_ms,omitempty"`
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode string `form:"evidence_mode" json:"evidence_mode" xml:"evidence_mode"`
 }
 
 // ComparePlansResponseBody is the type of the "queries" service
@@ -120,7 +132,7 @@ type ComparePlansResponseBody struct {
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff" json:"diff" xml:"diff"`
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
@@ -395,8 +407,16 @@ type ExplainQueryResultResponseBody struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs int64 `form:"execution_time_ms" json:"execution_time_ms" xml:"execution_time_ms"`
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs int64 `form:"request_wall_time_ms" json:"request_wall_time_ms" xml:"request_wall_time_ms"`
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64 `form:"planning_time_ms,omitempty" json:"planning_time_ms,omitempty" xml:"planning_time_ms,omitempty"`
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64 `form:"server_execution_time_ms,omitempty" json:"server_execution_time_ms,omitempty" xml:"server_execution_time_ms,omitempty"`
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode string `form:"evidence_mode" json:"evidence_mode" xml:"evidence_mode"`
 }
 
 // PlanComparisonMetricResponseBody is used to define fields on response body
@@ -517,11 +537,14 @@ func NewStatStatementsResponseBody(res *queries.StatStatementsResult) *StatState
 // the "explain_plan" endpoint of the "queries" service.
 func NewExplainPlanResponseBody(res *queries.ExplainQueryResult) *ExplainPlanResponseBody {
 	body := &ExplainPlanResponseBody{
-		SQL:             res.SQL,
-		TotalCost:       res.TotalCost,
-		Plan:            res.Plan,
-		GenericPlan:     res.GenericPlan,
-		ExecutionTimeMs: res.ExecutionTimeMs,
+		SQL:                   res.SQL,
+		TotalCost:             res.TotalCost,
+		Plan:                  res.Plan,
+		GenericPlan:           res.GenericPlan,
+		RequestWallTimeMs:     res.RequestWallTimeMs,
+		PlanningTimeMs:        res.PlanningTimeMs,
+		ServerExecutionTimeMs: res.ServerExecutionTimeMs,
+		EvidenceMode:          res.EvidenceMode,
 	}
 	if res.Findings != nil {
 		body.Findings = make([]*PlanFindingResponseBody, len(res.Findings))
@@ -761,8 +784,14 @@ func NewComparePlansPayload(body *ComparePlansRequestBody) *queries.ComparePlans
 	if body.Analyze != nil {
 		v.Analyze = *body.Analyze
 	}
+	if body.VerifyResults != nil {
+		v.VerifyResults = *body.VerifyResults
+	}
 	if body.Analyze == nil {
 		v.Analyze = false
+	}
+	if body.VerifyResults == nil {
+		v.VerifyResults = false
 	}
 	if body.Binds != nil {
 		v.Binds = make([]string, len(body.Binds))

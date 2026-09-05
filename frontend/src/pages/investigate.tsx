@@ -16,6 +16,7 @@ import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
 import { cn, formatFloat, timeAgo, truncate } from "@/lib/utils";
+import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence, normalizeEquivalenceStatus } from "@/lib/equivalence";
 
 const STEPS = [
   { id: "select", label: "Find query" },
@@ -35,8 +36,10 @@ export default function InvestigatePage() {
   const [error, setError] = useState("");
   const [candidateSql, setCandidateSql] = useState("");
   const [bindsText, setBindsText] = useState("");
+  const [verifyResults, setVerifyResults] = useState(true);
   const [suggestRationale, setSuggestRationale] = useState("");
   const [rankedCandidates, setRankedCandidates] = useState<RankedCandidate[]>([]);
+  const [rankRecommendation, setRankRecommendation] = useState("");
   const [suggestedCandidates, setSuggestedCandidates] = useState<RewriteCandidate[]>([]);
   const [actionLoading, setActionLoading] = useState("");
   const [trust, setTrust] = useState<SecurityTrust | null>(null);
@@ -112,6 +115,7 @@ export default function InvestigatePage() {
         candidateSql.trim(),
         true,
         parseBinds(bindsText),
+        verifyResults,
       );
       setInvestigation(inv);
     } catch (e) {
@@ -153,10 +157,15 @@ export default function InvestigatePage() {
       const res = await api.rankInvestigationCandidates(investigation.id);
       const items = res.candidates ?? [];
       setRankedCandidates(items);
-      const topRewrite = items.find((c) => c.rankable && c.sql);
-      if (topRewrite?.sql) {
-        setCandidateSql(topRewrite.sql);
-        setSuggestRationale(topRewrite.rationale || "");
+      setRankRecommendation(res.recommendation ?? "");
+      // Only prefill from a candidate that actually ranked #1 (improved on the
+      // baseline) — never from a "not recommended" rewrite.
+      const best = items.find((c) => c.rank === 1 && c.sql);
+      if (best?.sql) {
+        setCandidateSql(best.sql);
+        setSuggestRationale(best.rationale || "");
+      } else if (res.recommendation) {
+        setError(res.recommendation);
       } else if (items.length === 0) {
         setError("No ranked candidates for this query yet.");
       }
@@ -170,17 +179,14 @@ export default function InvestigatePage() {
   const generateReport = async () => {
     if (!investigation) return;
     if (investigation.comparison) {
-      const eq = investigation.comparison.result_equivalence_status
-        ?? (investigation.comparison.result_checksum_equal === true
-          ? "Equal"
-          : investigation.comparison.result_checksum_equal === false
-            ? "Different"
-            : "Unverified");
-      if (eq !== "Equal") {
+      const eq = equivalenceStatusOf(investigation.comparison);
+      if (!isShippableEquivalence(eq)) {
         setError(
           eq === "Different"
             ? "Cannot generate a shippable report while result equivalence is Different. Fix the candidate rewrite first."
-            : "Cannot generate a shippable report while result equivalence is Unverified. Re-run Compare plans until status is Equal."
+            : eq === "NotRequested"
+              ? "Result equivalence was not checked. Re-run Compare plans with result verification enabled."
+              : "Cannot generate a shippable report until result equivalence is VerifiedEqual (or SampleMatch for a large result). Re-run Compare plans with result verification."
         );
         return;
       }
@@ -219,7 +225,7 @@ export default function InvestigatePage() {
     : investigation?.explain ? 2 : 0;
 
   const candidateRef = useRef<HTMLDivElement>(null);
-  const topRanked = rankedCandidates.find((c) => c.rankable && c.sql);
+  const topRanked = rankedCandidates.find((c) => c.rank === 1 && c.sql);
   const baselineCost = investigation?.explain?.total_cost;
   const projected = topRanked
     ? {
@@ -420,6 +426,15 @@ export default function InvestigatePage() {
               />
             </div>
           )}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={verifyResults}
+              onChange={(e) => setVerifyResults(e.target.checked)}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            Verify result equivalence — runs both queries (COUNT(*) + a bounded sample). Requires the query permission.
+          </label>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -471,6 +486,11 @@ export default function InvestigatePage() {
               ))}
             </div>
           )}
+          {rankRecommendation && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-100">
+              {rankRecommendation}
+            </p>
+          )}
           {rankedCandidates.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ranked candidates</p>
@@ -479,6 +499,8 @@ export default function InvestigatePage() {
                   <div className="flex flex-wrap items-center gap-2">
                     {c.rankable && c.rank != null ? (
                       <Badge variant="secondary">#{c.rank}</Badge>
+                    ) : c.rankable ? (
+                      <Badge variant="outline" className="border-amber-500/50 text-amber-800 dark:text-amber-200">not recommended</Badge>
                     ) : (
                       <Badge variant="outline">review</Badge>
                     )}
@@ -552,14 +574,26 @@ export default function InvestigatePage() {
                     {c.source && c.source !== "manual" && (
                       <Badge variant="outline" className="text-[10px]">{c.source}</Badge>
                     )}
-                    {c.equivalence_status && (
-                      <Badge
-                        variant={c.equivalence_status === "Equal" ? "success" : c.equivalence_status === "Different" ? "destructive" : "outline"}
-                        className="text-[10px]"
-                      >
-                        {c.equivalence_status}
-                      </Badge>
-                    )}
+                    {c.equivalence_status && (() => {
+                      const st = normalizeEquivalenceStatus(c.equivalence_status);
+                      const tone = equivalenceTone(st);
+                      return (
+                        <Badge
+                          variant={
+                            tone === "success"
+                              ? "success"
+                              : tone === "warning"
+                                ? "warning"
+                                : tone === "destructive"
+                                  ? "destructive"
+                                  : "outline"
+                          }
+                          className="text-[10px]"
+                        >
+                          {equivalenceLabel(st)}
+                        </Badge>
+                      );
+                    })()}
                     {typeof c.cost_delta === "number" && (
                       <span className="text-muted-foreground">
                         cost Δ {formatDelta(c.cost_delta)}
@@ -599,7 +633,7 @@ export default function InvestigatePage() {
             <p className="font-medium">Engineering investigation report</p>
             <p className="text-xs text-muted-foreground mt-1">
               {investigation.comparison
-                ? "Result equivalence must be Equal to ship a report with a rewrite."
+                ? "Result equivalence must be VerifiedEqual (or SampleMatch for a large result) to ship a report with a rewrite."
                 : "Generates a findings-only report from the diagnosis above."}
             </p>
           </div>
@@ -608,12 +642,7 @@ export default function InvestigatePage() {
             disabled={
               actionLoading === "report" ||
               (!!investigation.comparison &&
-                (investigation.comparison.result_equivalence_status ??
-                  (investigation.comparison.result_checksum_equal === true
-                    ? "Equal"
-                    : investigation.comparison.result_checksum_equal === false
-                      ? "Different"
-                      : "Unverified")) !== "Equal")
+                !isShippableEquivalence(equivalenceStatusOf(investigation.comparison)))
             }
           >
             {actionLoading === "report" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}

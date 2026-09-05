@@ -134,24 +134,40 @@ func ScoreSQLRewrite(c RewriteCandidate, baseline, after PlanMetrics, improved [
 	return sc
 }
 
-// RankScoredCandidates sorts rankable candidates by improvement (cost delta,
-// then partitions delta, then execution time when present) and assigns Rank
-// starting at 1. Non-rankable candidates keep Rank 0 and are appended after.
+// candidateImproves reports whether c measurably beats the baseline plan on a
+// tracked metric — lower total cost, fewer partitions scanned, or a detected
+// structural improvement. A candidate that only ties the baseline is not an
+// improvement.
+func (c ScoredCandidate) candidateImproves() bool {
+	return c.CostDelta < 0 || c.PartitionsDelta < 0 || len(c.Improved) > 0
+}
+
+// RankScoredCandidates assigns Rank 1..n to the planner-backed candidates that
+// actually improve on the baseline, best first (cost delta, then partitions
+// delta, then execution time). A rankable candidate that does not beat the
+// baseline keeps Rank 0, is appended after the ranked ones with a
+// "not recommended" note, and never displaces a real improvement. Review-only
+// (non-rankable) candidates keep Rank 0 and come last, unchanged.
 func RankScoredCandidates(cands []ScoredCandidate) []ScoredCandidate {
 	if len(cands) == 0 {
 		return nil
 	}
-	rankable := make([]ScoredCandidate, 0, len(cands))
+	improving := make([]ScoredCandidate, 0, len(cands))
+	notImproving := make([]ScoredCandidate, 0, len(cands))
 	other := make([]ScoredCandidate, 0, len(cands))
 	for _, c := range cands {
-		if c.Rankable {
-			rankable = append(rankable, c)
-		} else {
+		switch {
+		case c.Rankable && c.candidateImproves():
+			improving = append(improving, c)
+		case c.Rankable:
+			c.Rationale = strings.TrimSpace(c.Rationale + " — not recommended: no measured improvement over the baseline plan")
+			notImproving = append(notImproving, c)
+		default:
 			other = append(other, c)
 		}
 	}
-	sort.SliceStable(rankable, func(i, j int) bool {
-		a, b := rankable[i], rankable[j]
+	sort.SliceStable(improving, func(i, j int) bool {
+		a, b := improving[i], improving[j]
 		if a.CostDelta != b.CostDelta {
 			return a.CostDelta < b.CostDelta
 		}
@@ -163,10 +179,35 @@ func RankScoredCandidates(cands []ScoredCandidate) []ScoredCandidate {
 		}
 		return a.SQL < b.SQL
 	})
-	for i := range rankable {
-		rankable[i].Rank = i + 1
+	for i := range improving {
+		improving[i].Rank = i + 1
 	}
-	return append(rankable, other...)
+	out := make([]ScoredCandidate, 0, len(cands))
+	out = append(out, improving...)
+	out = append(out, notImproving...)
+	out = append(out, other...)
+	return out
+}
+
+// RankingRecommendation is a one-line verdict for a ranked candidate list: empty
+// when there is a recommended (Rank 1) candidate, otherwise an explanation.
+func RankingRecommendation(ranked []ScoredCandidate) string {
+	for _, c := range ranked {
+		if c.Rank == 1 {
+			return ""
+		}
+	}
+	testedRewrite := false
+	for _, c := range ranked {
+		if c.Kind == CandidateKindSQLRewrite {
+			testedRewrite = true
+			break
+		}
+	}
+	if testedRewrite {
+		return "No improving candidate found — every tested rewrite scored equal to or worse than the baseline plan. Not recommended."
+	}
+	return "No planner-backed candidate to rank — the suggestions are review-only."
 }
 
 func partitionCountForRanking(m PlanMetrics) float64 {

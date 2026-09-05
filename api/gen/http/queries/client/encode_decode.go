@@ -929,11 +929,14 @@ func unmarshalPlanDiagnosisIncidentalResponseBodyToQueriesPlanDiagnosisIncidenta
 // *ExplainQueryResultResponseBody.
 func unmarshalExplainQueryResultResponseBodyToQueriesExplainQueryResult(v *ExplainQueryResultResponseBody) *queries.ExplainQueryResult {
 	res := &queries.ExplainQueryResult{
-		SQL:             *v.SQL,
-		TotalCost:       *v.TotalCost,
-		Plan:            v.Plan,
-		GenericPlan:     v.GenericPlan,
-		ExecutionTimeMs: *v.ExecutionTimeMs,
+		SQL:                   *v.SQL,
+		TotalCost:             *v.TotalCost,
+		Plan:                  v.Plan,
+		GenericPlan:           v.GenericPlan,
+		RequestWallTimeMs:     *v.RequestWallTimeMs,
+		PlanningTimeMs:        v.PlanningTimeMs,
+		ServerExecutionTimeMs: v.ServerExecutionTimeMs,
+		EvidenceMode:          *v.EvidenceMode,
 	}
 	res.Findings = make([]*queries.PlanFinding, len(v.Findings))
 	for i, val := range v.Findings {

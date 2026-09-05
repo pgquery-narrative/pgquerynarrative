@@ -18,6 +18,8 @@ type CreateRequestBody struct {
 	Title        string  `form:"title" json:"title" xml:"title"`
 	SQL          string  `form:"sql" json:"sql" xml:"sql"`
 	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	// Run EXPLAIN ANALYZE (executes the query) instead of an estimate-only plan
+	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
 	// Optional pg_stat_statements queryid for context
 	Queryid     *string  `form:"queryid,omitempty" json:"queryid,omitempty" xml:"queryid,omitempty"`
 	Calls       *int64   `form:"calls,omitempty" json:"calls,omitempty" xml:"calls,omitempty"`
@@ -37,6 +39,9 @@ type CreateFromRegressionRequestBody struct {
 type AddCandidateRequestBody struct {
 	CandidateSQL string `form:"candidate_sql" json:"candidate_sql" xml:"candidate_sql"`
 	Analyze      bool   `form:"analyze" json:"analyze" xml:"analyze"`
+	// Execute the candidate and the original to check result equivalence. Requires
+	// the `query` permission on the connection.
+	VerifyResults bool `form:"verify_results" json:"verify_results" xml:"verify_results"`
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
@@ -238,6 +243,9 @@ type SuggestRewriteResponseBody struct {
 type RankCandidatesResponseBody struct {
 	Baseline   *RankedCandidateBaselineResponseBody `form:"baseline,omitempty" json:"baseline,omitempty" xml:"baseline,omitempty"`
 	Candidates []*RankedCandidateResponseBody       `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Set when no candidate is recommended (e.g. none improved on the baseline
+	// plan); empty when a Rank 1 candidate exists
+	Recommendation *string `form:"recommendation,omitempty" json:"recommendation,omitempty" xml:"recommendation,omitempty"`
 }
 
 // GenerateReportResponseBody is the type of the "investigations" service
@@ -411,8 +419,16 @@ type ExplainQueryResultResponseBody struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool `form:"generic_plan,omitempty" json:"generic_plan,omitempty" xml:"generic_plan,omitempty"`
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs *int64 `form:"execution_time_ms,omitempty" json:"execution_time_ms,omitempty" xml:"execution_time_ms,omitempty"`
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs *int64 `form:"request_wall_time_ms,omitempty" json:"request_wall_time_ms,omitempty" xml:"request_wall_time_ms,omitempty"`
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64 `form:"planning_time_ms,omitempty" json:"planning_time_ms,omitempty" xml:"planning_time_ms,omitempty"`
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64 `form:"server_execution_time_ms,omitempty" json:"server_execution_time_ms,omitempty" xml:"server_execution_time_ms,omitempty"`
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode *string `form:"evidence_mode,omitempty" json:"evidence_mode,omitempty" xml:"evidence_mode,omitempty"`
 }
 
 // PlanFindingResponseBody is used to define fields on response body types.
@@ -539,7 +555,7 @@ type ComparePlansResultResponseBody struct {
 	Diff    *PlanComparisonDiffResponseBody     `form:"diff,omitempty" json:"diff,omitempty" xml:"diff,omitempty"`
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool `form:"result_checksum_equal,omitempty" json:"result_checksum_equal,omitempty" xml:"result_checksum_equal,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string `form:"result_equivalence_status,omitempty" json:"result_equivalence_status,omitempty" xml:"result_equivalence_status,omitempty"`
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string `form:"result_equivalence_notes,omitempty" json:"result_equivalence_notes,omitempty" xml:"result_equivalence_notes,omitempty"`
@@ -584,7 +600,7 @@ type InvestigationCandidateResponseBody struct {
 	Binds            []string                        `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
 	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
 	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	EquivalenceStatus *string `form:"equivalence_status,omitempty" json:"equivalence_status,omitempty" xml:"equivalence_status,omitempty"`
 	// after - before total cost (negative is better)
 	CostDelta *float64 `form:"cost_delta,omitempty" json:"cost_delta,omitempty" xml:"cost_delta,omitempty"`
@@ -687,11 +703,18 @@ func NewCreateRequestBody(p *investigations.CreateInvestigationPayload) *CreateR
 		Title:        p.Title,
 		SQL:          p.SQL,
 		ConnectionID: p.ConnectionID,
+		Analyze:      p.Analyze,
 		Queryid:      p.Queryid,
 		Calls:        p.Calls,
 		MeanTimeMs:   p.MeanTimeMs,
 		TotalTimeMs:  p.TotalTimeMs,
 		Rows:         p.Rows,
+	}
+	{
+		var zero bool
+		if body.Analyze == zero {
+			body.Analyze = false
+		}
 	}
 	return body
 }
@@ -710,13 +733,20 @@ func NewCreateFromRegressionRequestBody(p *investigations.CreateFromRegressionPa
 // the "add_candidate" endpoint of the "investigations" service.
 func NewAddCandidateRequestBody(p *investigations.AddCandidatePayload) *AddCandidateRequestBody {
 	body := &AddCandidateRequestBody{
-		CandidateSQL: p.CandidateSQL,
-		Analyze:      p.Analyze,
+		CandidateSQL:  p.CandidateSQL,
+		Analyze:       p.Analyze,
+		VerifyResults: p.VerifyResults,
 	}
 	{
 		var zero bool
 		if body.Analyze == zero {
 			body.Analyze = false
+		}
+	}
+	{
+		var zero bool
+		if body.VerifyResults == zero {
+			body.VerifyResults = false
 		}
 	}
 	if p.Binds != nil {
@@ -1133,7 +1163,9 @@ func NewSuggestRewriteNotFound(body *SuggestRewriteNotFoundResponseBody) *invest
 // NewRankCandidatesRankedCandidateListOK builds a "investigations" service
 // "rank_candidates" endpoint result from a HTTP "OK" response.
 func NewRankCandidatesRankedCandidateListOK(body *RankCandidatesResponseBody) *investigations.RankedCandidateList {
-	v := &investigations.RankedCandidateList{}
+	v := &investigations.RankedCandidateList{
+		Recommendation: body.Recommendation,
+	}
 	if body.Baseline != nil {
 		v.Baseline = unmarshalRankedCandidateBaselineResponseBodyToInvestigationsRankedCandidateBaseline(body.Baseline)
 	}
@@ -1850,8 +1882,11 @@ func ValidateExplainQueryResultResponseBody(body *ExplainQueryResultResponseBody
 	if body.Findings == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
-	if body.ExecutionTimeMs == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("execution_time_ms", "body"))
+	if body.RequestWallTimeMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_wall_time_ms", "body"))
+	}
+	if body.EvidenceMode == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("evidence_mode", "body"))
 	}
 	for _, e := range body.Findings {
 		if e != nil {
@@ -1863,6 +1898,11 @@ func ValidateExplainQueryResultResponseBody(body *ExplainQueryResultResponseBody
 	if body.Diagnosis != nil {
 		if err2 := ValidatePlanDiagnosisResponseBody(body.Diagnosis); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.EvidenceMode != nil {
+		if !(*body.EvidenceMode == "estimated" || *body.EvidenceMode == "observed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.evidence_mode", *body.EvidenceMode, []any{"estimated", "observed"}))
 		}
 	}
 	return
@@ -2007,6 +2047,11 @@ func ValidateComparePlansResultResponseBody(body *ComparePlansResultResponseBody
 			}
 		}
 	}
+	if body.ResultEquivalenceStatus != nil {
+		if !(*body.ResultEquivalenceStatus == "VerifiedEqual" || *body.ResultEquivalenceStatus == "SampleMatch" || *body.ResultEquivalenceStatus == "Different" || *body.ResultEquivalenceStatus == "Unverified" || *body.ResultEquivalenceStatus == "NotRequested") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.result_equivalence_status", *body.ResultEquivalenceStatus, []any{"VerifiedEqual", "SampleMatch", "Different", "Unverified", "NotRequested"}))
+		}
+	}
 	return
 }
 
@@ -2051,6 +2096,11 @@ func ValidateInvestigationCandidateResponseBody(body *InvestigationCandidateResp
 	if body.Comparison != nil {
 		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.EquivalenceStatus != nil {
+		if !(*body.EquivalenceStatus == "VerifiedEqual" || *body.EquivalenceStatus == "SampleMatch" || *body.EquivalenceStatus == "Different" || *body.EquivalenceStatus == "Unverified" || *body.EquivalenceStatus == "NotRequested") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.equivalence_status", *body.EquivalenceStatus, []any{"VerifiedEqual", "SampleMatch", "Different", "Unverified", "NotRequested"}))
 		}
 	}
 	if body.CreatedAt != nil {

@@ -53,6 +53,7 @@ export default function QueryRunner() {
   const [compareSql, setCompareSql] = useState("");
   const [compareResult, setCompareResult] = useState<ComparePlansResult | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
+  const [compareVerify, setCompareVerify] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [askLoading, setAskLoading] = useState(false);
   const [error, setError] = useState("");
@@ -601,13 +602,22 @@ export default function QueryRunner() {
             <CardHeader><CardTitle className="text-base">Compare plans</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <Textarea value={compareSql} onChange={(e) => setCompareSql(e.target.value)} placeholder="Candidate SQL rewrite..." className="font-mono text-xs min-h-[80px]" />
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={compareVerify}
+                  onChange={(e) => setCompareVerify(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+                Verify result equivalence — runs both queries (COUNT(*) + a bounded sample). Requires the query permission.
+              </label>
               <Button
                 variant="outline"
                 disabled={!sql.trim() || !compareSql.trim() || compareLoading}
                 onClick={async () => {
                   setCompareLoading(true);
                   try {
-                    const r = await api.comparePlans(sql, compareSql, explainAnalyze, connectionId || undefined);
+                    const r = await api.comparePlans(sql, compareSql, explainAnalyze, connectionId || undefined, compareVerify);
                     setCompareResult(r);
                     setWorkbenchTab("compare");
                   } catch (e) {
