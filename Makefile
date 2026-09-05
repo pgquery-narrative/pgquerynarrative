@@ -167,8 +167,22 @@ generate:
 	goa gen github.com/pgquerynarrative/pgquerynarrative/api/design
 	@sh ./tools/fix-gen-metrics-validator.sh
 	@sh ./tools/copy-gen-to-api-gen.sh
+	@$(MAKE) --no-print-directory strip-openapi-examples
 	@$(MAKE) --no-print-directory generate-api-types
 	@echo "✅ Code generated"
+
+# goa seeds an example payload for every schema, which is ~97% of the OpenAPI
+# artifacts and re-expands everywhere a changed type is referenced — one added
+# field rewrote 55,000 lines of openapi3.yaml. Examples carry no contract
+# information (shapes come from the schemas, which is also all openapi-ts
+# reads), so they are stripped here, before generate-api-types consumes the
+# spec. This keeps the specs committed and inside the codegen diff gate while
+# leaving their diffs small enough to actually review.
+strip-openapi-examples:
+	@echo "✂️  Stripping seeded OpenAPI examples..."
+	@$(GO) run ./tools/openapi-strip-examples \
+		api/gen/http/openapi.json api/gen/http/openapi.yaml \
+		api/gen/http/openapi3.json api/gen/http/openapi3.yaml
 
 # Frontend TS types from the committed OpenAPI spec. Pure Go, no npm — runs in
 # every CI job that runs `make generate`. Keeps frontend/src/api/schema.gen.ts
@@ -595,3 +609,13 @@ install-extension-docker:
 docs:
 	docker build -t pgquerynarrative-docs ./docs
 	docker run --rm -it -p 8000:8000 -v ${PWD}:/docs pgquerynarrative-docs
+
+# Build the docs the way CI does: --strict turns every broken link, dead anchor
+# and missing nav entry into a failure. The image's entrypoint is already
+# `mkdocs`, so only the subcommand is passed. Output goes to a throwaway path
+# inside the container so no site/ directory appears in the working tree.
+docs-check:
+	@echo "📚 Building documentation with --strict..."
+	@docker build -q -t pgquerynarrative-docs ./docs >/dev/null
+	@docker run --rm -v "$(CURDIR):/docs" pgquerynarrative-docs build --strict -d /tmp/site
+	@echo "✅ Documentation builds clean"

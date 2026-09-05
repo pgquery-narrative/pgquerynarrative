@@ -49,6 +49,7 @@ Names must match exactly. These are the job names as they appear on a pull reque
 - `Load smoke`
 - `Release build smoke`
 - `Docker image smoke`
+- `Docs`
 
 **Security** (`.github/workflows/security.yml`)
 
@@ -93,11 +94,11 @@ required checks looks identical to a working one from the PR page.
 ## When CI gains a job
 
 New blocking jobs must be added here **and** to the protection rule; a job that runs but is
-not required is advisory only. Jobs planned but not yet merged (for example a `Docs` job
-running `mkdocs build --strict`) must **not** be added to the rule before they exist on
-`main`, for the "waiting for status" reason above.
+not required is advisory only. A job must not be added to the rule before it exists on
+`main`, for the "waiting for status" reason above — every open PR would block on a check
+that never reports.
 
 ## Related
 
-- [RELEASING.md](../../RELEASING.md) — the release gate these checks feed
-- [Deployment model](../../deploy/README.md)
+- [RELEASING.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/RELEASING.md) — the release gate these checks feed
+- [Deployment model](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/deploy/README.md)

@@ -30,7 +30,7 @@ Compose without the demo helper:
 make start-docker
 ```
 
-- **Stack:** Root [docker-compose.yml](../../docker-compose.yml) (PostgreSQL + app). App image from root [Dockerfile](../../Dockerfile).
+- **Stack:** Root [docker-compose.yml](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/docker-compose.yml) (PostgreSQL + app). App image from root [Dockerfile](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/Dockerfile).
 - **Endpoints:** Web UI and API at **http://localhost:8080**. Health: [GET /health](../reference/operations.md#health-checks), [GET /ready](../reference/operations.md#health-checks).
 
 For production-style image and Compose, see [Deployment – Docker](../reference/deployment.md#docker).

@@ -1,9 +1,9 @@
-# Generated code — kept in the tree (and CI-checked with `make generate` +
-# `git diff --exit-code`) but collapsed in review. goa re-seeds the OpenAPI
-# example placeholders on any design change, so these files churn heavily
-# without an API-surface change.
+# Generated code — kept in the tree and CI-checked with `make generate` +
+# `git diff --exit-code`. Collapsed in review by default, but still diffable:
+# `make generate` strips goa's seeded OpenAPI examples (see the
+# strip-openapi-examples target), which were ~97% of those artifacts and
+# re-expanded across the whole document whenever a referenced type changed.
+# Without that step the specs had to be marked `-diff`, which hid genuine API
+# surface changes from review along with the noise.
 api/gen/** linguist-generated=true
-api/gen/http/openapi*.json -diff
-api/gen/http/openapi*.yaml -diff
-api/gen/http/**/cli.go -diff
 frontend/src/api/schema.gen.ts linguist-generated=true

@@ -86,4 +86,4 @@ All responses include `X-Request-ID` when request ID middleware is used. **Limit
 - [Deployment](deployment.md) — Build, Docker, Kubernetes, Helm
 - [Troubleshooting](troubleshooting.md) — Common issues
 - [Configuration](../configuration.md) — Environment variables
-- [Documentation index](../README.md)
+- [Documentation index](../index.md)

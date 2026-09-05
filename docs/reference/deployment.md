@@ -2,7 +2,7 @@
 
 Build and deploy PgQueryNarrative with Docker, Kubernetes, or Helm. For first-time run see [Quick start](../getting-started/quickstart.md) or [Installation](../getting-started/installation.md).
 
-**One image for every environment.** PgQueryNarrative ships as a single container image built from the repository-root [Dockerfile](../../Dockerfile): the Go server serves both the JSON API and the built React SPA. Dev and production differ only in configuration and Compose overlay, never in the image. See [deploy/README.md](../../deploy/README.md) for the deployment model.
+**One image for every environment.** PgQueryNarrative ships as a single container image built from the repository-root [Dockerfile](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/Dockerfile): the Go server serves both the JSON API and the built React SPA. Dev and production differ only in configuration and Compose overlay, never in the image. See [deploy/README.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/deploy/README.md) for the deployment model.
 
 ---
 
@@ -110,4 +110,4 @@ See `deploy/helm/pgquerynarrative/values.yaml`. Key keys: **image**, **database*
 
 ## See also
 
-- [Configuration](../configuration.md) · [Operations](operations.md) · [Installation](../getting-started/installation.md) · [Documentation index](../README.md)
+- [Configuration](../configuration.md) · [Operations](operations.md) · [Installation](../getting-started/installation.md) · [Documentation index](../index.md)
