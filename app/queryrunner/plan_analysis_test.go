@@ -35,7 +35,7 @@ func TestPlanSignalFixtures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.fixture, func(t *testing.T) {
-			_, findings, _, err := parseExplainJSON(loadExplainFixture(t, tt.fixture))
+			_, findings, _, err := parseExplainTuple(loadExplainFixture(t, tt.fixture))
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -57,7 +57,7 @@ func TestPlanSignalFixtures(t *testing.T) {
 
 // TestPlanSignalEvidence ensures findings carry raw plan metrics as evidence.
 func TestPlanSignalEvidence(t *testing.T) {
-	_, findings, _, err := parseExplainJSON(loadExplainFixture(t, "cardinality_misestimate.json"))
+	_, findings, _, err := parseExplainTuple(loadExplainFixture(t, "cardinality_misestimate.json"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,6 +92,6 @@ func FuzzParseExplainJSON(f *testing.F) {
 	f.Add([]byte(`[{"Plan": {"Node Type": 42, "Plans": [{"Plans": "bogus"}]}}]`))
 	f.Add([]byte(`not json`))
 	f.Fuzz(func(t *testing.T, data []byte) {
-		_, _, _, _ = parseExplainJSON(data)
+		_, _, _, _ = parseExplainTuple(data)
 	})
 }

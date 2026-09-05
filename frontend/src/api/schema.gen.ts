@@ -224,10 +224,13 @@ export interface ExplainQueryPayload {
 
 export interface ExplainQueryResult {
   diagnosis?: PlanDiagnosis;
-  execution_time_ms: number;
+  evidence_mode: "estimated" | "observed";
   findings: PlanFinding[];
   generic_plan?: boolean;
   plan: unknown;
+  planning_time_ms?: number;
+  request_wall_time_ms: number;
+  server_execution_time_ms?: number;
   sql: string;
   total_cost: number;
 }

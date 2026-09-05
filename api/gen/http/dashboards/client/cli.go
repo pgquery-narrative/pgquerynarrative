@@ -24,7 +24,7 @@ func BuildCreatePayload(dashboardsCreateBody string) (*dashboards.CreatePayload,
 	{
 		err = json.Unmarshal([]byte(dashboardsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"kj9\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"tc4\"\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))
@@ -69,7 +69,7 @@ func BuildUpdatePayload(dashboardsUpdateBody string, dashboardsUpdateID string) 
 	{
 		err = json.Unmarshal([]byte(dashboardsUpdateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"ndm\",\n      \"widgets\": [\n         {\n            \"position\": 521658331,\n            \"refresh_seconds\": 2060371794,\n            \"report_id\": \"7804e77f-8099-47e0-a85c-ede3c24b8510\",\n            \"saved_query_id\": \"e565ed42-80fc-4553-9856-15fd48ada146\",\n            \"title\": \"Tenetur minima eveniet.\",\n            \"widget_type\": \"Voluptas iusto sint non voluptatum.\"\n         },\n         {\n            \"position\": 521658331,\n            \"refresh_seconds\": 2060371794,\n            \"report_id\": \"7804e77f-8099-47e0-a85c-ede3c24b8510\",\n            \"saved_query_id\": \"e565ed42-80fc-4553-9856-15fd48ada146\",\n            \"title\": \"Tenetur minima eveniet.\",\n            \"widget_type\": \"Voluptas iusto sint non voluptatum.\"\n         }\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"name\": \"qsr\",\n      \"widgets\": [\n         {\n            \"position\": 603537365,\n            \"refresh_seconds\": 1667254383,\n            \"report_id\": \"33a53cf2-ee08-40d8-92a1-acb0a102deb1\",\n            \"saved_query_id\": \"08eb899a-2056-43d7-9c48-be1eaeafbb8f\",\n            \"title\": \"Voluptatem est.\",\n            \"widget_type\": \"Perferendis at corrupti.\"\n         },\n         {\n            \"position\": 603537365,\n            \"refresh_seconds\": 1667254383,\n            \"report_id\": \"33a53cf2-ee08-40d8-92a1-acb0a102deb1\",\n            \"saved_query_id\": \"08eb899a-2056-43d7-9c48-be1eaeafbb8f\",\n            \"title\": \"Voluptatem est.\",\n            \"widget_type\": \"Perferendis at corrupti.\"\n         },\n         {\n            \"position\": 603537365,\n            \"refresh_seconds\": 1667254383,\n            \"report_id\": \"33a53cf2-ee08-40d8-92a1-acb0a102deb1\",\n            \"saved_query_id\": \"08eb899a-2056-43d7-9c48-be1eaeafbb8f\",\n            \"title\": \"Voluptatem est.\",\n            \"widget_type\": \"Perferendis at corrupti.\"\n         },\n         {\n            \"position\": 603537365,\n            \"refresh_seconds\": 1667254383,\n            \"report_id\": \"33a53cf2-ee08-40d8-92a1-acb0a102deb1\",\n            \"saved_query_id\": \"08eb899a-2056-43d7-9c48-be1eaeafbb8f\",\n            \"title\": \"Voluptatem est.\",\n            \"widget_type\": \"Perferendis at corrupti.\"\n         }\n      ]\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))

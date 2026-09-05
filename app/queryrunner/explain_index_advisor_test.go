@@ -496,7 +496,7 @@ func TestDetectIndexIssues_NoIssues(t *testing.T) {
 // TestWalkPlanNode_AttachesRelatedColumns checks the full parseExplainJSON
 // pipeline attaches RelatedColumns to a seq-scan finding from a real fixture.
 func TestWalkPlanNode_AttachesRelatedColumns(t *testing.T) {
-	_, findings, _, err := parseExplainJSON(loadExplainFixture(t, "seq_scan.json"))
+	_, findings, _, err := parseExplainTuple(loadExplainFixture(t, "seq_scan.json"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestWalkPlanNode_AttachesRelatedColumns(t *testing.T) {
 // "Relation Name" of its own is attributed to the single underlying table so
 // sort-spill findings can be related to that table's indexes.
 func TestDetectPlanSignals_InfersRelationForSort(t *testing.T) {
-	_, findings, _, err := parseExplainJSON(loadExplainFixture(t, "sort_spill.json"))
+	_, findings, _, err := parseExplainTuple(loadExplainFixture(t, "sort_spill.json"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

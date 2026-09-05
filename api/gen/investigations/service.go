@@ -122,8 +122,16 @@ type ExplainQueryResult struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs int64
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs int64
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode string
 }
 
 // GenerateReportPayload is the payload type of the investigations service

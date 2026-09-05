@@ -139,12 +139,32 @@ func explainResultToAPI(result *queryrunner.ExplainResult) *queries.ExplainQuery
 	if len(result.Plan) > 0 {
 		_ = json.Unmarshal(result.Plan, &plan)
 	}
-	return &queries.ExplainQueryResult{
-		SQL:             result.SQL,
-		TotalCost:       result.TotalCost,
-		Plan:            plan,
-		Findings:        findings,
-		ExecutionTimeMs: result.ExecutionTimeMs,
+	out := &queries.ExplainQueryResult{
+		SQL:       result.SQL,
+		TotalCost: result.TotalCost,
+		Plan:      plan,
+		Findings:  findings,
+	}
+	applyExplainTiming(out, result)
+	return out
+}
+
+// applyExplainTiming copies the timing/evidence fields off an ExplainResult.
+// RequestWallTimeMs is deliberately kept separate from any "execution time" — it
+// includes network + planning and, for ANALYZE, execution.
+func applyExplainTiming(dst *queries.ExplainQueryResult, r *queryrunner.ExplainResult) {
+	dst.RequestWallTimeMs = r.RequestWallTimeMs
+	if r.PlanningTimeMs > 0 {
+		v := r.PlanningTimeMs
+		dst.PlanningTimeMs = &v
+	}
+	if r.ServerExecutionTimeMs > 0 {
+		v := r.ServerExecutionTimeMs
+		dst.ServerExecutionTimeMs = &v
+	}
+	dst.EvidenceMode = r.EvidenceMode
+	if dst.EvidenceMode == "" {
+		dst.EvidenceMode = queryrunner.EvidenceEstimated
 	}
 }
 
