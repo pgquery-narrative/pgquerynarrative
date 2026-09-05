@@ -1,6 +1,6 @@
 # Dev runbook
 
-Daily developer workflow for running, testing, and shipping PgQueryNarrative. This is **not** a system architecture overview — for product vocabulary see [Concepts](../concepts.md); for structure see the [root README](../../README.md#project-structure).
+Daily developer workflow for running, testing, and shipping PgQueryNarrative. This is **not** a system architecture overview — for product vocabulary see [Concepts](../concepts.md); for structure see the [root README](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/README.md#project-structure).
 
 Also: [Setup](setup.md) · [Testing](testing.md).
 
@@ -208,4 +208,4 @@ You should see `forecast`, `ci` (two numbers), `correlations` ≥ 1 (one pair fo
 
 ## See also
 
-- [Setup](setup.md) · [Testing](testing.md) · [Configuration](../configuration.md) · [Documentation index](../README.md)
+- [Setup](setup.md) · [Testing](testing.md) · [Configuration](../configuration.md) · [Documentation index](../index.md)

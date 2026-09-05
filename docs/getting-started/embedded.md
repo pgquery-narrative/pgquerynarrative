@@ -48,4 +48,4 @@ Use empty prefix `""` to mount at root (e.g. `/query/run`).
 
 ## See also
 
-- [Configuration](../configuration.md) · [API reference](../api/README.md) · [Documentation index](../README.md)
+- [Configuration](../configuration.md) · [API reference](../api/README.md) · [Documentation index](../index.md)

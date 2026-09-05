@@ -132,4 +132,4 @@ psql -d pgquerynarrative -c "SELECT event_type, details, user_id, ip_address, cr
 
 ## See also
 
-- [Development setup](setup.md) · [API example](../api/examples.md) · [Documentation index](../README.md)
+- [Development setup](setup.md) · [API example](../api/examples.md) · [Documentation index](../index.md)

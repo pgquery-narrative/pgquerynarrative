@@ -1,6 +1,6 @@
 # Development setup
 
-Build, test, and contribute to PgQueryNarrative. See also [Testing](testing.md) and [Contributing](../../.github/CONTRIBUTING.md).
+Build, test, and contribute to PgQueryNarrative. See also [Testing](testing.md) and [Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md).
 
 ## Prerequisites
 
@@ -59,4 +59,4 @@ App: http://localhost:8080. Verbose logging: `LOG_DEBUG=1 make run`. The server 
 
 ## See also
 
-- [Testing](testing.md) · [API reference](../api/README.md) · [Documentation index](../README.md) · [Contributing](../../.github/CONTRIBUTING.md)
+- [Testing](testing.md) · [API reference](../api/README.md) · [Documentation index](../index.md) · [Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md)

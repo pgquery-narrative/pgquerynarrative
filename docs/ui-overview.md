@@ -1,6 +1,6 @@
 # UI overview
 
-The web UI is a React SPA (Vite, Tailwind CSS, shadcn/ui) built from [`frontend/`](../frontend/) and served at `/`.
+The web UI is a React SPA (Vite, Tailwind CSS, shadcn/ui) built from [`frontend/`](https://github.com/pgquery-narrative/pgquerynarrative/tree/main/frontend) and served at `/`.
 
 ## Flagship: Query Investigation
 

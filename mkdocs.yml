@@ -1,12 +1,45 @@
 site_name: PgQueryNarrative
 site_description: PostgreSQL query intelligence — safe read-only SQL, plan analysis, and evidence-backed reports.
-site_url: https://github.com/pgquery-narrative/pgquerynarrative
+
+# site_url is the canonical address of the *published documentation*, used for
+# canonical tags and sitemap.xml. There is no docs host yet, so it stays unset
+# rather than pointing at the repository — a repo URL there emits canonical tags
+# claiming every page lives at github.com, which is worse than having none.
+# Set it when docs are actually hosted somewhere.
+
+# repo_url / repo_name are top-level MkDocs settings; the theme reads them to
+# render the repository link in the header. They were previously under `extra`,
+# where MkDocs ignores them, so the link never appeared.
+repo_url: https://github.com/pgquery-narrative/pgquerynarrative
+repo_name: pgquery-narrative/pgquerynarrative
+edit_uri: edit/main/docs/
+
+# docs/README.md duplicates index.md for people browsing the repo on GitHub.
+# It is not part of the built site, and saying so here keeps the build clean.
+# The leading slash anchors this to the docs root: docs/api/README.md is a real
+# nav page and must keep building.
+exclude_docs: |
+  /README.md
+
+# Broken links and anchors are errors, not notes. Without this they are logged
+# at INFO and --strict lets them through, which is how a docs gate ends up
+# passing over links that 404.
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
 
 extra_css:
   - stylesheets/extra.css
 
 markdown_extensions:
   - admonition
+  # Pages set explicit heading ids ("## LLM {#llm}") so cross-page anchors stay
+  # stable when a heading is reworded. Without attr_list those braces render as
+  # literal text in the heading and the id is never created, which is why the
+  # #llm / #health-checks / #reports-and-llm links were all dead.
+  - attr_list
   - pymdownx.details
   - pymdownx.superfences:
       custom_fences:
@@ -48,7 +81,6 @@ theme:
 
 extra:
   generator: false
-  repo_url: https://github.com/pgquery-narrative/pgquerynarrative
 
 nav:
   - Overview: index.md

@@ -45,4 +45,4 @@ Common issues and fixes. For deployment and monitoring see [Deployment](deployme
 
 ## See also
 
-- [Configuration](../configuration.md) · [Installation](../getting-started/installation.md) · [Operations](operations.md) · [Documentation index](../README.md)
+- [Configuration](../configuration.md) · [Installation](../getting-started/installation.md) · [Operations](operations.md) · [Documentation index](../index.md)

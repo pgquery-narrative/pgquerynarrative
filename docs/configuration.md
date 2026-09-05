@@ -8,7 +8,7 @@ PgQueryNarrative is configured via **environment variables** only. Sensible defa
 |--------|--------|
 | **Env** | `export PGQUERYNARRATIVE_PORT=8081` then start. |
 | **.env** | Create `.env` in project root (gitignored); `export $(cat .env | xargs)` before starting. Do not commit secrets. |
-| **Docker Compose** | Set `environment` under `app` in [docker-compose.yml](../docker-compose.yml). |
+| **Docker Compose** | Set `environment` under `app` in [docker-compose.yml](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/docker-compose.yml). |
 
 ---
 
@@ -243,4 +243,4 @@ See [Deployment](reference/deployment.md) and [Operations](reference/operations.
 
 ## See also
 
-- [Installation](getting-started/installation.md) · [API reference](api/README.md) · [Deployment](reference/deployment.md) · [Documentation index](README.md)
+- [Installation](getting-started/installation.md) · [API reference](api/README.md) · [Deployment](reference/deployment.md) · [Documentation index](index.md)

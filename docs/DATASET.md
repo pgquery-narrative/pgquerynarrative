@@ -54,8 +54,8 @@ Files are downloaded from the TLC CDN as Parquet and loaded into Postgres.
 | Schema / table | `opendata.yellow_trips` (range-partitioned by `tpep_pickup_datetime`) |
 | Default months | `2024-01`, `2024-02`, `2024-03` (~8–10M trips) |
 | Migration | `000026_opendata_nyc_taxi` |
-| Loader | [`tools/db/load_nyc_taxi.py`](../tools/db/load_nyc_taxi.py) |
-| Showcase SQL | [`tools/db/opendata-showcase.sql`](../tools/db/opendata-showcase.sql) |
+| Loader | [`tools/db/load_nyc_taxi.py`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/tools/db/load_nyc_taxi.py) |
+| Showcase SQL | [`tools/db/opendata-showcase.sql`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/tools/db/opendata-showcase.sql) |
 | Allowlist | Set `DATABASE_ALLOWED_SCHEMAS=demo,opendata` (default is `demo` only) |
 
 ```bash

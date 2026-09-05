@@ -32,7 +32,7 @@ No API key. **Docker Compose (default):** `make demo` or `make ollama-up` starts
 - **API key:** [Groq Console](https://console.groq.com/keys). OpenAI-compatible; fast inference.
 - **Config:** `LLM_PROVIDER=groq`, `LLM_MODEL=llama-3.3-70b-versatile`, `LLM_API_KEY=your_key`. Others: `llama-3.1-8b-instant`, `mixtral-8x7b-32768`.
 
-## MCP (Claude desktop / Cursor)
+## MCP (Claude desktop / Cursor) {#mcp-claude-desktop--cursor}
 
 Use PgQueryNarrative as tools (run query, generate report, list saved/reports) from Claude or Cursor.
 
@@ -41,7 +41,7 @@ Use PgQueryNarrative as tools (run query, generate report, list saved/reports) f
 3. Add the `pgquerynarrative` server; **command** = path to `bin/mcp-server`. Example: `config/mcp-example.json`; copy the `pgquerynarrative` block into `mcpServers`.
 4. Restart the client. Then use the tools in chat (see [How to use MCP tools in Cursor / Claude](#how-to-use-mcp-tools-in-cursor--claude)).
 
-### How to use MCP tools in Cursor / Claude
+### How to use MCP tools in Cursor / Claude {#how-to-use-mcp-tools-in-cursor--claude}
 
 Once the MCP server is connected, the AI can call tools when you ask. You don’t run the tools yourself; you ask in natural language and the client invokes the right tool(s).
 
@@ -96,4 +96,4 @@ The exact error (e.g. `API POST /api/v1/queries/run: 401` or `connection refused
 - [Deployment](../reference/deployment.md) — Docker/Helm (e.g. LLM_BASE_URL in containers)
 - [Embedded integration](embedded.md) — Library and middleware (same config)
 - [Troubleshooting](../reference/troubleshooting.md) — Report and connection issues
-- [Documentation index](../README.md)
+- [Documentation index](../index.md)

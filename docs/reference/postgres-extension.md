@@ -51,4 +51,4 @@ SELECT pgquerynarrative_run_query('SELECT product_category, SUM(total_amount) FR
 - [API reference](../api/README.md) — REST endpoints used by the extension
 - [Configuration](../configuration.md) — Server and database
 - [Troubleshooting](troubleshooting.md) — Common issues
-- [Documentation index](../README.md)
+- [Documentation index](../index.md)
