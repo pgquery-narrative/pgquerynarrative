@@ -100,15 +100,59 @@ func (p *RegressionPoller) pollAllOrgs(ctx context.Context) {
 	p.cleanupOldPolls(ctx)
 }
 
+// pollOrg polls every analytical connection the org is authorized to read
+// pg_stat_statements from. Each connection is snapshotted and evaluated
+// independently.
 func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
 	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: "regression-poller", OrgID: orgID, Role: auth.RoleAdmin})
 	if !p.queriesSvc.statStatementsEnabled {
 		return nil
 	}
 
+	connIDs := p.queriesSvc.connectionIDs()
+	if p.queriesSvc.authz != nil {
+		connIDs = p.queriesSvc.authz.AllowedConnections(ctx, orgID, "regression-poller", auth.RoleAdmin, connIDs, auth.ActionStats)
+	}
+
+	var firstErr error
+	for _, connID := range connIDs {
+		if err := p.pollOrgConnection(ctx, orgID, connID); err != nil {
+			log.Printf("regression poller org %s conn %s: %v", orgID, connID, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// pollOrgConnection snapshots and evaluates one (org, connection). A session
+// advisory lock keyed on the pair makes only one app replica run a given
+// (org, connection) cycle at a time; other replicas skip it silently.
+func (p *RegressionPoller) pollOrgConnection(ctx context.Context, orgID, connID string) error {
+	lockConn, err := p.rawPool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer lockConn.Release()
+
+	lockKey := "regression-poll:" + orgID + ":" + connID
+	var got bool
+	if err := lockConn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtextextended($1, 0))`, lockKey).Scan(&got); err != nil {
+		return err
+	}
+	if !got {
+		return nil // another replica holds this (org, connection) — skip
+	}
+	defer func() {
+		_, _ = lockConn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, lockKey)
+	}()
+
+	connIDPtr := connID
 	stats, err := p.queriesSvc.StatStatements(ctx, &queries.StatStatementsPayload{
-		OrderBy: "total_time",
-		Limit:   50,
+		OrderBy:      "total_time",
+		Limit:        50,
+		ConnectionID: &connIDPtr,
 	})
 	if err != nil || stats == nil || len(stats.Items) == 0 {
 		return err
@@ -118,9 +162,9 @@ func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
 	var pollID string
 	if err := appDB.QueryRow(ctx, `
 		INSERT INTO app.stat_statement_polls (organization_id, connection_id)
-		VALUES ($1, 'default')
+		VALUES ($1, $2)
 		RETURNING id::text
-	`, orgID).Scan(&pollID); err != nil {
+	`, orgID, connID).Scan(&pollID); err != nil {
 		return fmt.Errorf("insert poll: %w", err)
 	}
 
@@ -149,7 +193,7 @@ func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
 		return nil
 	}
 
-	if err := p.detectRegressions(ctx, appDB, orgID, pollID); err != nil {
+	if err := p.detectRegressions(ctx, appDB, orgID, connID, pollID); err != nil {
 		return err
 	}
 	return p.reconcileAppliedFixes(ctx, appDB, orgID)
@@ -161,14 +205,14 @@ func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
 func (p *RegressionPoller) EvaluateLatestPoll(ctx context.Context, orgID string) error {
 	appDB := db.NewOrgScoped(p.rawPool)
 	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: "regression-poller", OrgID: orgID, Role: auth.RoleAdmin})
-	var pollID string
+	var pollID, connID string
 	if err := appDB.QueryRow(ctx, `
-		SELECT id::text FROM app.stat_statement_polls
+		SELECT id::text, connection_id FROM app.stat_statement_polls
 		WHERE organization_id = $1 ORDER BY captured_at DESC LIMIT 1
-	`, orgID).Scan(&pollID); err != nil {
+	`, orgID).Scan(&pollID, &connID); err != nil {
 		return err
 	}
-	if err := p.detectRegressions(ctx, appDB, orgID, pollID); err != nil {
+	if err := p.detectRegressions(ctx, appDB, orgID, connID, pollID); err != nil {
 		return err
 	}
 	return p.reconcileAppliedFixes(ctx, appDB, orgID)
@@ -181,7 +225,7 @@ func (p *RegressionPoller) EvaluateLatestPoll(ctx context.Context, orgID string)
 // reset (negative delta) or with no calls are dropped. It opens or refreshes
 // alerts for regressions and auto-resolves open alerts whose query is back to
 // baseline.
-func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, orgID, currentPollID string) error {
+func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, orgID, connID, currentPollID string) error {
 	rows, err := appDB.Query(ctx, `
 		WITH windowed AS (
 			SELECT s.queryid, s.query_text, b.captured_at,
@@ -192,6 +236,7 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 			FROM app.stat_statement_snapshots s
 			JOIN app.stat_statement_polls b ON b.id = s.poll_id
 			WHERE b.organization_id = $1
+			  AND b.connection_id = $4
 			  AND b.captured_at >= now() - make_interval(days => $3)
 			WINDOW w AS (PARTITION BY s.queryid ORDER BY b.captured_at)
 		),
@@ -227,7 +272,7 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 		       bl.base_mean, bl.base_total, bl.base_calls, bl.base_rows, bl.base_intervals
 		FROM current c
 		JOIN baseline bl ON bl.queryid = c.queryid
-	`, orgID, currentPollID, p.cfg.baselineWindowDays())
+	`, orgID, currentPollID, p.cfg.baselineWindowDays(), connID)
 	if err != nil {
 		return err
 	}
@@ -260,7 +305,7 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 
 		if v, ok := evaluateRegression(cur, base, p.cfg); ok {
 			impact := classifyImpact(math.Abs(v.ChangePct), p.cfg)
-			if err := p.upsertAlert(ctx, appDB, orgID, queryID, regressionTitle(queryText), queryText, v, impact, cur, base.MeanMs); err != nil {
+			if err := p.upsertAlert(ctx, appDB, orgID, connID, queryID, regressionTitle(queryText), queryText, v, impact, cur, base.MeanMs); err != nil {
 				return err
 			}
 		}
@@ -269,7 +314,7 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 		return err
 	}
 
-	return p.resolveRecoveredAlerts(ctx, appDB, orgID, func(queryID string) (bool, bool) {
+	return p.resolveRecoveredAlerts(ctx, appDB, orgID, connID, func(queryID string) (bool, bool) {
 		s, ok := byQuery[queryID]
 		if !ok {
 			return false, false // query not in this poll — leave the alert alone
@@ -278,37 +323,18 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 	})
 }
 
-// upsertAlert opens a new alert, refreshes an already-open one (bumping the
-// occurrence count and the frozen stat snapshot), or re-opens with a link to the
-// prior alert when the same query regressed again after recovering.
-func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, queryID, title, queryText string, v regressionVerdict, impact string, cur intervalStats, baselineMean float64) error {
-	var openID, resolvedID string
+// upsertAlert opens a new alert for (org, connection, query), refreshes the
+// already-open one (bumping occurrences and the frozen interval snapshot) via
+// ON CONFLICT against the partial unique index, and links a fresh alert to the
+// prior resolved one when the query regressed again after recovering.
+func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, connID, queryID, title, queryText string, v regressionVerdict, impact string, cur intervalStats, baselineMean float64) error {
+	var resolvedID string
 	_ = appDB.QueryRow(ctx, `
-		SELECT
-			COALESCE((SELECT id::text FROM app.regression_alerts
-			          WHERE organization_id = $1 AND queryid = $2
-			            AND acknowledged_at IS NULL AND resolved_at IS NULL
-			          ORDER BY first_detected_at DESC LIMIT 1), ''),
-			COALESCE((SELECT id::text FROM app.regression_alerts
-			          WHERE organization_id = $1 AND queryid = $2
-			            AND resolved_at IS NOT NULL
-			          ORDER BY resolved_at DESC LIMIT 1), '')
-	`, orgID, queryID).Scan(&openID, &resolvedID)
-
-	if openID != "" {
-		_, err := appDB.Exec(ctx, `
-			UPDATE app.regression_alerts SET
-				last_seen_at = now(),
-				occurrences = occurrences + 1,
-				change_type = $3, change_summary = $4,
-				change_percent = GREATEST(COALESCE(change_percent, 0), $5),
-				impact = $6,
-				calls = $7, mean_time_ms = $8, total_time_ms = $9, rows_count = $10
-			WHERE id = $1 AND organization_id = $2
-		`, openID, orgID, v.ChangeType, v.Summary, math.Abs(v.ChangePct), impact,
-			cur.DeltaCalls, cur.MeanMs, cur.DeltaTotalMs, cur.DeltaRows)
-		return err
-	}
+		SELECT COALESCE((SELECT id::text FROM app.regression_alerts
+		          WHERE organization_id = $1 AND connection_id = $2 AND queryid = $3
+		            AND resolved_at IS NOT NULL
+		          ORDER BY resolved_at DESC LIMIT 1), '')
+	`, orgID, connID, queryID).Scan(&resolvedID)
 
 	var prevID any
 	if resolvedID != "" {
@@ -320,9 +346,22 @@ func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, 
 			change_percent, change_summary, impact, source, connection_id,
 			calls, mean_time_ms, total_time_ms, rows_count,
 			last_seen_at, baseline_mean_time_ms, previous_alert_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', 'default', $9, $10, $11, $12, now(), $13, $14)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', $9, $10, $11, $12, $13, now(), $14, $15)
+		ON CONFLICT (organization_id, connection_id, queryid)
+		  WHERE resolved_at IS NULL AND acknowledged_at IS NULL AND queryid IS NOT NULL
+		DO UPDATE SET
+			last_seen_at   = now(),
+			occurrences    = app.regression_alerts.occurrences + 1,
+			change_type    = EXCLUDED.change_type,
+			change_summary = EXCLUDED.change_summary,
+			change_percent = GREATEST(COALESCE(app.regression_alerts.change_percent, 0), EXCLUDED.change_percent),
+			impact         = EXCLUDED.impact,
+			calls          = EXCLUDED.calls,
+			mean_time_ms   = EXCLUDED.mean_time_ms,
+			total_time_ms  = EXCLUDED.total_time_ms,
+			rows_count     = EXCLUDED.rows_count
 	`, orgID, title, truncateQuery(queryText, queryrunner.StatStatementsQueryMaxLen), queryID,
-		v.ChangeType, math.Abs(v.ChangePct), v.Summary, impact,
+		v.ChangeType, math.Abs(v.ChangePct), v.Summary, impact, connID,
 		cur.DeltaCalls, cur.MeanMs, cur.DeltaTotalMs, cur.DeltaRows, baselineMean, prevID)
 	return err
 }
@@ -330,13 +369,13 @@ func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, 
 // resolveRecoveredAlerts closes open poller alerts whose query is back to
 // baseline. recoveredFn returns (recovered, known) for a queryid — known=false
 // means the query wasn't in the latest poll, so its alert is left untouched.
-func (p *RegressionPoller) resolveRecoveredAlerts(ctx context.Context, appDB db.DB, orgID string, recoveredFn func(queryID string) (recovered, known bool)) error {
+func (p *RegressionPoller) resolveRecoveredAlerts(ctx context.Context, appDB db.DB, orgID, connID string, recoveredFn func(queryID string) (recovered, known bool)) error {
 	rows, err := appDB.Query(ctx, `
 		SELECT id::text, queryid FROM app.regression_alerts
-		WHERE organization_id = $1 AND source = 'poller'
+		WHERE organization_id = $1 AND connection_id = $2 AND source = 'poller'
 		  AND acknowledged_at IS NULL AND resolved_at IS NULL
 		  AND queryid IS NOT NULL
-	`, orgID)
+	`, orgID, connID)
 	if err != nil {
 		return err
 	}
