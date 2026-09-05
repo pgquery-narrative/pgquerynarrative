@@ -55,6 +55,10 @@ func main() {
 }
 
 func stripFile(path string) (before, after int, err error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, 0, err
+	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return 0, 0, err
@@ -78,7 +82,10 @@ func stripFile(path string) (before, after int, err error) {
 	if string(out) == string(raw) {
 		return before, before, nil
 	}
-	if err := os.WriteFile(path, out, 0o644); err != nil {
+	// Rewrite in place with the mode goa already gave the file, rather than
+	// imposing one: these are published artifacts, and the generator owns their
+	// permissions.
+	if err := os.WriteFile(path, out, info.Mode().Perm()); err != nil {
 		return 0, 0, err
 	}
 	return before, len(out), nil
