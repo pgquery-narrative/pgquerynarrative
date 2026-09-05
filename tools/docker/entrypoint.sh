@@ -27,7 +27,7 @@ export DB_URL="postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_N
 /app/bin/migrate -path /app/app/db/migrations -database "${DB_URL}" up
 
 if [ "${PGQUERYNARRATIVE_SEED:-false}" = "true" ]; then
-  psql "${DB_URL}" -f ./tools/db/seed.sql
+  psql "${DB_URL}" -f /app/tools/db/seed.sql
 fi
 
 exec /app/bin/server

@@ -25,6 +25,8 @@ COPY --from=go-build /out/server /app/bin/server
 COPY --from=go-build /go/bin/migrate /app/bin/migrate
 COPY --from=frontend-build /frontend/dist /app/frontend/dist
 COPY app/db/migrations /app/app/db/migrations
+# Optional seed data, used only when PGQUERYNARRATIVE_SEED=true (see entrypoint).
+COPY tools/db/seed.sql /app/tools/db/seed.sql
 COPY tools/docker/entrypoint.sh /app/tools/docker/entrypoint.sh
 RUN chmod +x /app/tools/docker/entrypoint.sh && chown -R appuser:appuser /app
 

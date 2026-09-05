@@ -69,7 +69,7 @@ Include:
 - **StrictMode** (`APP_ENV=production` / `SECURITY_STRICT=true`): process refuses to start on unsafe config; Helm chart fails install on placeholder secrets
 - Open-admin disabled unless `SECURITY_ALLOW_INSECURE_NO_AUTH=true` (forbidden in production)
 - Default query schema allowlist is `demo` only; `app` / system catalogs rejected; readonly role cannot read `app.*`
-- Root `docker-compose.yml` is localhost-bound local/dev only; production-shaped compose lives under `deploy/docker/`
+- Root `docker-compose.yml` is localhost-bound local/dev only; production-shaped compose lives under `deploy/docker/` (both build the same root `Dockerfile`)
 - Webhook hostname allowlist is **required** (empty fails closed); NetworkPolicy + HSTS (when HTTPS) in deploy templates
 - Query/EXPLAIN errors do not embed Postgres driver detail; SQL at-rest seal fails closed when a key is configured
 - Rate-limit failure mode cannot be `open` when auth is enabled

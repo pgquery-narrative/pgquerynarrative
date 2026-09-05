@@ -2,7 +2,7 @@
 
 Build and deploy PgQueryNarrative with Docker, Kubernetes, or Helm. For first-time run see [Quick start](../getting-started/quickstart.md) or [Installation](../getting-started/installation.md).
 
-**Development vs production:** `make start-docker` uses root [docker-compose.yml](../../docker-compose.yml) and [Dockerfile](../../Dockerfile) (includes React frontend build). Below: **production** image (`deploy/docker/Dockerfile`) and Compose/Kubernetes/Helm.
+**One image for every environment.** PgQueryNarrative ships as a single container image built from the repository-root [Dockerfile](../../Dockerfile): the Go server serves both the JSON API and the built React SPA. Dev and production differ only in configuration and Compose overlay, never in the image. See [deploy/README.md](../../deploy/README.md) for the deployment model.
 
 ---
 
@@ -13,10 +13,10 @@ Build and deploy PgQueryNarrative with Docker, Kubernetes, or Helm. For first-ti
 From repo root:
 
 ```bash
-docker build -f deploy/docker/Dockerfile -t pgquerynarrative:latest .
+docker build -t pgquerynarrative:latest .
 ```
 
-Multi-stage build: Go app + migrate binary, then minimal Alpine image (server binary, migrations, entrypoint). Production image does not bundle the React SPA; for full UI use the root Dockerfile or serve static assets separately.
+Multi-stage build: the SPA (`npm run build`), then the Go server and migrate binary, then a minimal Alpine runtime holding the server binary, the built SPA, migrations, the optional seed, and the entrypoint. The published release image (`ghcr.io/pgquery-narrative/pgquerynarrative:<version>`) is this same image.
 
 ### Run with Docker Compose
 
@@ -104,7 +104,7 @@ See `deploy/helm/pgquerynarrative/values.yaml`. Key keys: **image**, **database*
 
 | Method | Path | Use case |
 |--------|------|----------|
-| Docker Compose | `deploy/docker/` | Single host, dev or staging |
+| Docker Compose | `deploy/docker/` | Single host, staging or small production (builds the root Dockerfile) |
 | Kubernetes | `deploy/kubernetes/` | Raw manifests |
 | Helm | `deploy/helm/pgquerynarrative/` | Parameterized K8s install |
 

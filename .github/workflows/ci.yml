@@ -348,3 +348,39 @@ jobs:
         run: |
           chmod +x test/load/smoke.sh
           LOAD_BASE_URL=http://127.0.0.1:8080 LOAD_REQUESTS=30 ./test/load/smoke.sh
+
+  docker-image:
+    name: Docker image smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+      # Builds the single blessed image (API + SPA) the release workflow publishes.
+      # Without this, a Dockerfile regression is only found when a tag is cut.
+      - name: Build image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: pgquerynarrative:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Assert the image is the single-image model
+        run: |
+          set -euo pipefail
+          # The SPA must be bundled: a release image that serves an empty UI is the
+          # exact failure the single-image model exists to prevent.
+          docker run --rm --entrypoint sh pgquerynarrative:ci -c \
+            'test -s /app/frontend/dist/index.html' \
+            || { echo "::error::/app/frontend/dist/index.html missing — image does not bundle the SPA"; exit 1; }
+          # Files the entrypoint dereferences must exist, or startup fails at runtime.
+          docker run --rm --entrypoint sh pgquerynarrative:ci -c \
+            'test -x /app/bin/server && test -x /app/bin/migrate && test -s /app/tools/db/seed.sql && test -d /app/app/db/migrations' \
+            || { echo "::error::image is missing a binary, migrations, or the seed file"; exit 1; }
+          # Must not run as root.
+          uid="$(docker run --rm --entrypoint sh pgquerynarrative:ci -c 'id -u')"
+          test "$uid" != "0" || { echo "::error::image runs as root"; exit 1; }
+          echo "image OK: SPA bundled, entrypoint inputs present, non-root (uid $uid)"

@@ -76,6 +76,7 @@ nav:
       - Versioning and releases: reference/versioning-and-releases.md
       - Dataset and schema: DATASET.md
   - Operations:
+      - Branch protection: ops/branch-protection.md
       - RLS demo: ops/rls-demo.md
   - Development:
       - Setup: development/setup.md
