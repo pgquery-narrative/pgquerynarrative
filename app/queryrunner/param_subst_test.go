@@ -91,3 +91,145 @@ func TestSubstituteParams_InjectionNeutralized(t *testing.T) {
 		t.Fatalf("result is not a clean param-free SELECT: %s", got)
 	}
 }
+
+// A bind that starts like an ISO timestamp but carries a SQL payload must not
+// take the bare `'..'::timestamp` path: the value has to end up fully inside a
+// single-quoted, quote-doubled literal (or be rejected). This is the
+// unanchored-timestampRe / unescaped-timestamp-branch regression.
+func TestSubstituteParams_HostileTimestampPrefixBinds(t *testing.T) {
+	sql := "SELECT 1 FROM demo.sales WHERE date >= $1 AND date < ($1 + '1 month'::interval)"
+
+	// The SQL skeleton with every string literal and -- comment blanked. A hostile
+	// bind that stays inside its quotes leaves this identical to a benign plain
+	// string bind (which, like the hostile ones, takes the unquoted-cast-free path).
+	benign, err := SubstituteParams(sql, []string{"North"})
+	if err != nil {
+		t.Fatalf("benign substitution failed: %v", err)
+	}
+	wantSkeleton := stripQuotedAndComments(benign)
+
+	hostile := []string{
+		`2025-01-01T00:00:00'::timestamp OR 1=1 --`,
+		`2025-01-01 00:00' OR '1'='1`,
+		`2025-01-01T00:00:00'::text || (SELECT current_user) --`,
+		`2025-01-01' ; DROP TABLE demo.sales -- `,
+		`2025-01-01T00:00:00) OR 1=1 --`,
+	}
+	for _, b := range hostile {
+		t.Run(b, func(t *testing.T) {
+			got, err := SubstituteParams(sql, []string{b})
+			if err != nil {
+				return // rejecting outright is a valid neutralization
+			}
+			// Every caller quote must be doubled (breakout neutralized).
+			esc := "'" + strings.ReplaceAll(strings.TrimSpace(b), "'", "''") + "'"
+			if !strings.Contains(got, esc) {
+				t.Fatalf("hostile bind not emitted as a quote-doubled literal:\n bind: %q\n  got: %s", b, got)
+			}
+			// Nothing the caller supplied may appear outside a string literal.
+			if skel := stripQuotedAndComments(got); skel != wantSkeleton {
+				t.Fatalf("hostile bind changed the SQL skeleton:\n want: %s\n  got: %s\n from: %s", wantSkeleton, skel, got)
+			}
+			if _, sel, ok := parseSingleSelect(got); !ok || selectTreeContainsParamRef(sel) {
+				t.Fatalf("result is not a clean param-free SELECT: %s", got)
+			}
+		})
+	}
+}
+
+func TestSubstituteParams_RejectsUnsafeBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		bind string
+	}{
+		{"nul byte", "a\x00b"},
+		{"over length", strings.Repeat("x", maxBindValueLen+1)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE region = $1", []string{tc.bind}); err == nil {
+				t.Fatalf("expected %s bind to be rejected", tc.name)
+			}
+		})
+	}
+}
+
+func TestSubstituteParams_BackslashBindIsQuotedNotRejected(t *testing.T) {
+	// Under standard_conforming_strings=on a backslash in a single-quoted string
+	// is a literal char, so a LIKE / path bind must still work.
+	got, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE path LIKE $1", []string{`C:\logs\%`})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `'C:\logs\%'`) {
+		t.Fatalf("backslash bind should be quoted literally, got: %s", got)
+	}
+	if _, sel, ok := parseSingleSelect(got); !ok || selectTreeContainsParamRef(sel) {
+		t.Fatalf("result is not a clean param-free SELECT: %s", got)
+	}
+}
+
+func TestSubstituteParams_BlockCommentDollarIsNotAParam(t *testing.T) {
+	// `$1` only appears inside a /* */ block comment, so it is not a parameter:
+	// nothing is substituted and the hostile bind is never used. This closes the
+	// `... /* $1 */` + `x */ OR pg_sleep(10) --` injection.
+	sql := "SELECT * FROM demo.sales WHERE id = 5 /* $1 */"
+	got, err := SubstituteParams(sql, []string{`x */ OR pg_sleep(10) --`})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != sql {
+		t.Fatalf("a $N inside a block comment must not be substituted, got: %s", got)
+	}
+	if strings.Contains(stripQuotedAndComments(got), "pg_sleep") {
+		t.Fatalf("block-comment payload escaped: %s", got)
+	}
+}
+
+func TestSubstituteParams_RealParamBesideBlockComment(t *testing.T) {
+	// A real $1 is still substituted when a decoy $2 sits in a block comment.
+	got, err := SubstituteParams(
+		"SELECT 1 FROM demo.sales WHERE region = $1 /* keep $2 out */",
+		[]string{"North"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "region = 'North'") || !strings.Contains(got, "/* keep $2 out */") {
+		t.Fatalf("real param not substituted / comment altered: %s", got)
+	}
+}
+
+func TestSubstituteParams_NonFiniteNumbersAreQuoted(t *testing.T) {
+	// strconv.ParseFloat would accept these; emitting them bare would let the
+	// planner read `NaN` / `Infinity` as column references or worse.
+	for _, b := range []string{"NaN", "Infinity", "-Inf", "0x1p4", "1_000"} {
+		got, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE quantity > $1", []string{b})
+		if err != nil {
+			t.Fatalf("%q: unexpected error %v", b, err)
+		}
+		if !strings.Contains(got, "'"+b+"'") {
+			t.Fatalf("%q must be quoted, got: %s", b, got)
+		}
+	}
+}
+
+func TestSubstituteParams_TimestampBindKeepsCast(t *testing.T) {
+	cases := []struct{ bind, want string }{
+		{"2025-01-01 12:30:00", "'2025-01-01 12:30:00'::timestamp"},
+		{"2025-01-01T12:30:00.123456", "'2025-01-01T12:30:00.123456'::timestamp"},
+		// Zone offset / Z → timestamptz so the offset is not dropped.
+		{"2025-01-01T12:30:00.123456+00:00", "'2025-01-01T12:30:00.123456+00:00'::timestamptz"},
+		{"2025-01-01 12:30:00Z", "'2025-01-01 12:30:00Z'::timestamptz"},
+		{"2025-01-01T12:30:00-05:00", "'2025-01-01T12:30:00-05:00'::timestamptz"},
+	}
+	for _, tc := range cases {
+		got, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE date = $1", []string{tc.bind})
+		if err != nil {
+			t.Fatalf("%q: unexpected error %v", tc.bind, err)
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Fatalf("%q should produce %s, got: %s", tc.bind, tc.want, got)
+		}
+	}
+}
