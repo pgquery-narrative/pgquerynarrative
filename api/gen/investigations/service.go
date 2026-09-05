@@ -61,6 +61,9 @@ type AddCandidatePayload struct {
 	ID           string
 	CandidateSQL string
 	Analyze      bool
+	// Execute the candidate and the original to check result equivalence. Requires
+	// the `query` permission on the connection.
+	VerifyResults bool
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string
@@ -73,7 +76,7 @@ type ComparePlansResult struct {
 	Diff    *PlanComparisonDiff
 	// True when results match; false when they differ; omitted/null when unverified
 	ResultChecksumEqual *bool
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	ResultEquivalenceStatus *string
 	// Human-readable equivalence caveats (COUNT(*), sample size, failures)
 	ResultEquivalenceNotes *string
@@ -121,8 +124,16 @@ type ExplainQueryResult struct {
 	// True when the plan came from EXPLAIN (GENERIC_PLAN) because the query is
 	// parameterized ($1, $2, ...)
 	GenericPlan *bool
-	// Time to run EXPLAIN and parse the plan
-	ExecutionTimeMs int64
+	// Wall-clock time this server spent issuing the EXPLAIN and parsing the plan —
+	// network + planning + (for ANALYZE) execution. NOT the query's execution time.
+	RequestWallTimeMs int64
+	// PostgreSQL's own Planning Time for the statement
+	PlanningTimeMs *float64
+	// PostgreSQL's own Execution Time — non-zero only when ANALYZE actually ran
+	// the query
+	ServerExecutionTimeMs *float64
+	// estimated (plan only) or observed (ANALYZE timings)
+	EvidenceMode string
 }
 
 // GenerateReportPayload is the payload type of the investigations service
@@ -211,7 +222,7 @@ type InvestigationCandidate struct {
 	Binds            []string
 	CandidateExplain *ExplainQueryResult
 	Comparison       *ComparePlansResult
-	// Equal | Different | Unverified
+	// How far result equivalence was checked
 	EquivalenceStatus *string
 	// after - before total cost (negative is better)
 	CostDelta *float64

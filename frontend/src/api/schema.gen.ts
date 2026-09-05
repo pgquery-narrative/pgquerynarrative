@@ -6,12 +6,14 @@ export interface AddCandidatePayload {
   binds?: string[];
   candidate_sql: string;
   id: string;
+  verify_results?: boolean;
 }
 
 export interface AddCandidatePayload2 {
   analyze?: boolean;
   binds?: string[];
   candidate_sql: string;
+  verify_results?: boolean;
 }
 
 export interface AggregateData {
@@ -97,6 +99,7 @@ export interface ComparePlansPayload {
   before_sql: string;
   binds?: string[];
   connection_id?: string;
+  verify_results?: boolean;
 }
 
 export interface ComparePlansResult {
@@ -108,7 +111,7 @@ export interface ComparePlansResult {
   result_before_row_count?: number;
   result_checksum_equal?: boolean;
   result_equivalence_notes?: string;
-  result_equivalence_status?: string;
+  result_equivalence_status?: "VerifiedEqual" | "SampleMatch" | "Different" | "Unverified" | "NotRequested";
   result_sample_rows?: number;
 }
 
@@ -222,10 +225,13 @@ export interface ExplainQueryPayload {
 
 export interface ExplainQueryResult {
   diagnosis?: PlanDiagnosis;
-  execution_time_ms: number;
+  evidence_mode: "estimated" | "observed";
   findings: PlanFinding[];
   generic_plan?: boolean;
   plan: unknown;
+  planning_time_ms?: number;
+  request_wall_time_ms: number;
+  server_execution_time_ms?: number;
   sql: string;
   total_cost: number;
 }
@@ -301,7 +307,7 @@ export interface InvestigationCandidate {
   comparison?: ComparePlansResult;
   cost_delta?: number;
   created_at: string;
-  equivalence_status?: string;
+  equivalence_status?: "VerifiedEqual" | "SampleMatch" | "Different" | "Unverified" | "NotRequested";
   id: string;
   is_current?: boolean;
   source?: string;

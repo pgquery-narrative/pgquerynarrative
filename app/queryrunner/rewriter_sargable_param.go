@@ -87,9 +87,58 @@ func paramRangePred(col, lowParam, highParam *pg_query.Node, spec string) *pg_qu
 	)
 }
 
+// dateCastNode builds `<n>::date` (deparses as `$1::date`).
+func dateCastNode(n *pg_query.Node) *pg_query.Node {
+	return &pg_query.Node{Node: &pg_query.Node_TypeCast{TypeCast: &pg_query.TypeCast{
+		Arg: n,
+		TypeName: &pg_query.TypeName{
+			Names:   []*pg_query.Node{stringNode("date")},
+			Typemod: -1,
+		},
+	}}}
+}
+
+// castDateParamRangePred builds `col >= $low::date AND col < ($high::date + INTERVAL '1 day')`.
+// Casting each bind to date first strips any time component, so the range is
+// equivalent to `col::date = $n` / `col::date BETWEEN $a AND $b` for every bind
+// value, not only midnight-aligned ones.
+func castDateParamRangePred(col, lowParam, highParam *pg_query.Node) *pg_query.Node {
+	colLow := cloneColumnRef(col)
+	colHigh := cloneColumnRef(col)
+	low := cloneParamRef(lowParam)
+	high := cloneParamRef(highParam)
+	if colLow == nil || colHigh == nil || low == nil || high == nil {
+		return nil
+	}
+	return andExpr(
+		cmpExpr(">=", colLow, dateCastNode(low)),
+		cmpExpr("<", colHigh, cmpExpr("+", dateCastNode(high), intervalConst("1 day"))),
+	)
+}
+
+// paramAlignmentGuard builds `date_trunc('<unit>', $n) = $n`. AND-ing this into a
+// parameterized DATE_TRUNC equality rewrite keeps it correct for binds that are
+// not on the unit boundary: the guard is false (so the whole predicate is empty),
+// which matches `DATE_TRUNC(unit, col) = $n` — always empty for a misaligned $n.
+func paramAlignmentGuard(unit string, param *pg_query.Node) *pg_query.Node {
+	p := cloneParamRef(param)
+	if p == nil {
+		return nil
+	}
+	call := &pg_query.Node{Node: &pg_query.Node_FuncCall{FuncCall: &pg_query.FuncCall{
+		Funcname: []*pg_query.Node{stringNode("date_trunc")},
+		Args:     []*pg_query.Node{aConstString(normalizeTruncUnit(unit)), cloneParamRef(param)},
+	}}}
+	return cmpExpr("=", call, p)
+}
+
 // tryRewriteDateTruncEqualityParam: DATE_TRUNC(unit, col) = $n
 //
-//	→ col >= $n AND col < $n + INTERVAL '1 <unit>'
+//	→ col >= $n AND col < $n + INTERVAL '1 <unit>' AND date_trunc('<unit>', $n) = $n
+//
+// The trailing guard keeps the rewrite correct when $n is bound to a value that
+// is not on the unit boundary: `DATE_TRUNC(unit, col) = $n` is then always empty,
+// and so is the guarded range.
 func tryRewriteDateTruncEqualityParam(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
 	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_OP || !aExprOpIs(ae, "=") {
 		return nil, dateTruncRewrite{}, false
@@ -105,42 +154,21 @@ func tryRewriteDateTruncEqualityParam(ae *pg_query.A_Expr) (*pg_query.Node, date
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
-	pred := paramRangePred(col, param, param, spec)
-	if pred == nil {
+	rangePred := paramRangePred(col, param, param, spec)
+	guard := paramAlignmentGuard(unit, param)
+	if rangePred == nil || guard == nil {
 		return nil, dateTruncRewrite{}, false
 	}
-	return pred, dateTruncRewrite{Unit: normalizeTruncUnit(unit), Column: columnRefName(col), Kind: "date_trunc_param"}, true
-}
-
-// tryRewriteDateTruncBetweenParam: DATE_TRUNC(unit, col) BETWEEN $a AND $b
-//
-//	→ col >= $a AND col < $b + INTERVAL '1 <unit>'
-func tryRewriteDateTruncBetweenParam(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
-	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_BETWEEN {
-		return nil, dateTruncRewrite{}, false
-	}
-	unit, col, ok := splitDateTruncFunc(ae.Lexpr)
-	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	low, high, ok := splitBetweenParams(ae.Rexpr)
-	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	spec, ok := paramIntervalSpec(unit)
-	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	pred := paramRangePred(col, low, high, spec)
-	if pred == nil {
-		return nil, dateTruncRewrite{}, false
-	}
-	return pred, dateTruncRewrite{Unit: normalizeTruncUnit(unit), Column: columnRefName(col), Kind: "date_trunc_param"}, true
+	return andExpr(rangePred, guard),
+		dateTruncRewrite{Unit: normalizeTruncUnit(unit), Column: columnRefName(col), Kind: "date_trunc_param"}, true
 }
 
 // tryRewriteCastDateEqualityParam: col::date = $n / CAST(col AS date) = $n
 //
-//	→ col >= $n AND col < $n + INTERVAL '1 day'
+//	→ col >= $n::date AND col < ($n::date + INTERVAL '1 day')
+//
+// `$n::date` mirrors the `= $n` comparison's own cast of the bind to date, so the
+// rewrite holds for a bind carrying a time component, not only a bare date.
 func tryRewriteCastDateEqualityParam(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
 	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_OP || !aExprOpIs(ae, "=") {
 		return nil, dateTruncRewrite{}, false
@@ -152,7 +180,7 @@ func tryRewriteCastDateEqualityParam(ae *pg_query.A_Expr) (*pg_query.Node, dateT
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
-	pred := paramRangePred(col, param, param, "1 day")
+	pred := castDateParamRangePred(col, param, param)
 	if pred == nil {
 		return nil, dateTruncRewrite{}, false
 	}
@@ -161,7 +189,7 @@ func tryRewriteCastDateEqualityParam(ae *pg_query.A_Expr) (*pg_query.Node, dateT
 
 // tryRewriteCastDateBetweenParam: col::date BETWEEN $a AND $b
 //
-//	→ col >= $a AND col < $b + INTERVAL '1 day'
+//	→ col >= $a::date AND col < ($b::date + INTERVAL '1 day')
 func tryRewriteCastDateBetweenParam(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
 	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_BETWEEN {
 		return nil, dateTruncRewrite{}, false
@@ -174,7 +202,7 @@ func tryRewriteCastDateBetweenParam(ae *pg_query.A_Expr) (*pg_query.Node, dateTr
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
-	pred := paramRangePred(col, low, high, "1 day")
+	pred := castDateParamRangePred(col, low, high)
 	if pred == nil {
 		return nil, dateTruncRewrite{}, false
 	}

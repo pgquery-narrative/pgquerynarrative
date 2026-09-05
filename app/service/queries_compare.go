@@ -23,6 +23,13 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 	if err := checkConnectionAccess(ctx, s.authz, connID, explainAction); err != nil {
 		return nil, connectionForbiddenQueriesError(err)
 	}
+	// Result verification actually executes both queries (COUNT(*) + a bounded
+	// sample), which is a separate capability from planning them.
+	if payload.VerifyResults {
+		if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionQuery); err != nil {
+			return nil, connectionForbiddenQueriesError(err)
+		}
+	}
 	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
 	if err != nil {
 		return nil, connectionNotFoundQueriesError(err)
@@ -84,7 +91,10 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 		})
 	}
 
-	equiv := compareResultEquivalence(ctx, runner, beforeSQL, afterSQL)
+	equiv := notRequestedEquivalence()
+	if payload.VerifyResults {
+		equiv = compareResultEquivalence(ctx, runner, beforeSQL, afterSQL)
+	}
 
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, beforeResult)
 	s.persistExplainSnapshot(ctx, ptrString(payload.ConnectionID), payload.Analyze, afterResult)
@@ -105,10 +115,14 @@ func (s *QueriesService) ComparePlans(ctx context.Context, payload *queries.Comp
 	out.ResultEquivalenceStatus = &status
 	notes := equiv.Notes
 	out.ResultEquivalenceNotes = &notes
-	bc := equiv.BeforeCount
-	out.ResultBeforeRowCount = &bc
-	ac := equiv.AfterCount
-	out.ResultAfterRowCount = &ac
+	// Only surface row counts when COUNT(*) actually ran — otherwise the UI would
+	// render a misleading "COUNT(*)=0" for a compare that never executed a query.
+	if equiv.CountsComputed {
+		bc := equiv.BeforeCount
+		out.ResultBeforeRowCount = &bc
+		ac := equiv.AfterCount
+		out.ResultAfterRowCount = &ac
+	}
 	if equiv.SampleRows > 0 {
 		sr := int32(equiv.SampleRows)
 		out.ResultSampleRows = &sr
@@ -125,12 +139,32 @@ func explainResultToAPI(result *queryrunner.ExplainResult) *queries.ExplainQuery
 	if len(result.Plan) > 0 {
 		_ = json.Unmarshal(result.Plan, &plan)
 	}
-	return &queries.ExplainQueryResult{
-		SQL:             result.SQL,
-		TotalCost:       result.TotalCost,
-		Plan:            plan,
-		Findings:        findings,
-		ExecutionTimeMs: result.ExecutionTimeMs,
+	out := &queries.ExplainQueryResult{
+		SQL:       result.SQL,
+		TotalCost: result.TotalCost,
+		Plan:      plan,
+		Findings:  findings,
+	}
+	applyExplainTiming(out, result)
+	return out
+}
+
+// applyExplainTiming copies the timing/evidence fields off an ExplainResult.
+// RequestWallTimeMs is deliberately kept separate from any "execution time" — it
+// includes network + planning and, for ANALYZE, execution.
+func applyExplainTiming(dst *queries.ExplainQueryResult, r *queryrunner.ExplainResult) {
+	dst.RequestWallTimeMs = r.RequestWallTimeMs
+	if r.PlanningTimeMs > 0 {
+		v := r.PlanningTimeMs
+		dst.PlanningTimeMs = &v
+	}
+	if r.ServerExecutionTimeMs > 0 {
+		v := r.ServerExecutionTimeMs
+		dst.ServerExecutionTimeMs = &v
+	}
+	dst.EvidenceMode = r.EvidenceMode
+	if dst.EvidenceMode == "" {
+		dst.EvidenceMode = queryrunner.EvidenceEstimated
 	}
 }
 

@@ -25,7 +25,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 	{
 		err = json.Unmarshal([]byte(investigationsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"calls\": 3439638300417451818,\n      \"connection_id\": \"Hic qui.\",\n      \"mean_time_ms\": 0.20510759442827314,\n      \"queryid\": \"Sapiente voluptas.\",\n      \"rows\": 2590913448452992526,\n      \"sql\": \"8\",\n      \"title\": \"xvf\",\n      \"total_time_ms\": 0.7795758733788772\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"calls\": 1943930557020909777,\n      \"connection_id\": \"Quaerat debitis labore consectetur sit molestiae.\",\n      \"mean_time_ms\": 0.6018849204931298,\n      \"queryid\": \"Magnam in aliquam magni praesentium hic qui.\",\n      \"rows\": 7909452844427791865,\n      \"sql\": \"n7o\",\n      \"title\": \"6q\",\n      \"total_time_ms\": 0.1979747650276593\n   }'")
 		}
 		if utf8.RuneCountInString(body.Title) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 1, true))
@@ -73,7 +73,7 @@ func BuildCreateFromRegressionPayload(investigationsCreateFromRegressionBody str
 	{
 		err = json.Unmarshal([]byte(investigationsCreateFromRegressionBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"b8714305-f1a2-4623-945b-508213566ad8\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"b28947d5-547f-46a5-93ab-0ca098b1f567\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.regression_alert_id", body.RegressionAlertID, goa.FormatUUID))
 		if err != nil {
@@ -161,7 +161,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 	{
 		err = json.Unmarshal([]byte(investigationsAddCandidateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"binds\": [\n         \"Voluptatem dolorum quas.\",\n         \"Hic voluptatem quibusdam consequatur accusantium.\",\n         \"Vel qui repellendus ea quis debitis tempore.\"\n      ],\n      \"candidate_sql\": \"3\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Architecto quo vero et numquam unde.\",\n         \"Saepe itaque quas consequatur perferendis voluptatem labore.\",\n         \"Et aliquid consequatur asperiores temporibus debitis facilis.\"\n      ],\n      \"candidate_sql\": \"bzd\",\n      \"verify_results\": true\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
@@ -183,13 +183,20 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		}
 	}
 	v := &investigations.AddCandidatePayload{
-		CandidateSQL: body.CandidateSQL,
-		Analyze:      body.Analyze,
+		CandidateSQL:  body.CandidateSQL,
+		Analyze:       body.Analyze,
+		VerifyResults: body.VerifyResults,
 	}
 	{
 		var zero bool
 		if v.Analyze == zero {
 			v.Analyze = false
+		}
+	}
+	{
+		var zero bool
+		if v.VerifyResults == zero {
+			v.VerifyResults = false
 		}
 	}
 	if body.Binds != nil {
@@ -211,7 +218,7 @@ func BuildUpdateFixPayload(investigationsUpdateFixBody string, investigationsUpd
 	{
 		err = json.Unmarshal([]byte(investigationsUpdateFixBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"vys\",\n      \"fix_status\": \"verified\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"gdj\",\n      \"fix_status\": \"proposed\"\n   }'")
 		}
 		if body.FixStatus != nil {
 			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "confirmed" || *body.FixStatus == "regressed" || *body.FixStatus == "abandoned") {

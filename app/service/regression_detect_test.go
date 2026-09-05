@@ -45,43 +45,51 @@ func TestEvaluateRegression(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		cur      queryStats
-		base     baselineStats
+		cur      intervalStats
+		base     intervalBaseline
 		wantType string // "" = no alert
 	}{
 		{
-			name: "normal variance under threshold — no alert",
-			cur:  queryStats{MeanMs: 110, TotalMs: 1100, Calls: 100, Rows: 100},
-			base: baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 8},
+			name: "interval mean within threshold — no alert",
+			cur:  intervalStats{MeanMs: 110, DeltaTotalMs: 11000, DeltaCalls: 100, DeltaRows: 100},
+			base: intervalBaseline{MeanMs: 100, DeltaTotalMs: 10000, DeltaCalls: 100, DeltaRows: 100, Intervals: 6},
 		},
 		{
-			name:     "mean latency doubled — latency alert",
-			cur:      queryStats{MeanMs: 220, TotalMs: 2200, Calls: 100, Rows: 100},
-			base:     baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 8},
+			// The whole point of #9: cumulative counters can be huge and still
+			// represent a flat per-interval latency. Interval mean is unchanged
+			// here, so no alert — the old cumulative math would have fired.
+			name: "cumulative traffic large but this interval is flat — no alert",
+			cur:  intervalStats{MeanMs: 100, DeltaTotalMs: 500000, DeltaCalls: 5000, DeltaRows: 5000},
+			base: intervalBaseline{MeanMs: 100, DeltaTotalMs: 500000, DeltaCalls: 5000, DeltaRows: 5000, Intervals: 6},
+		},
+		{
+			name:     "interval mean latency doubled — latency alert",
+			cur:      intervalStats{MeanMs: 220, DeltaTotalMs: 22000, DeltaCalls: 100, DeltaRows: 100},
+			base:     intervalBaseline{MeanMs: 100, DeltaTotalMs: 10000, DeltaCalls: 100, DeltaRows: 100, Intervals: 6},
 			wantType: "latency",
 		},
 		{
 			name: "thin baseline — never alerts even on a big jump",
-			cur:  queryStats{MeanMs: 500, TotalMs: 5000, Calls: 100, Rows: 100},
-			base: baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 2},
+			cur:  intervalStats{MeanMs: 500, DeltaTotalMs: 50000, DeltaCalls: 100, DeltaRows: 100},
+			base: intervalBaseline{MeanMs: 100, DeltaTotalMs: 10000, DeltaCalls: 100, DeltaRows: 100, Intervals: 2},
 		},
 		{
-			name: "stats reset — everything collapsed, no alert",
-			cur:  queryStats{MeanMs: 5, TotalMs: 20, Calls: 4},
-			base: baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 8},
+			name: "no traffic in the current interval — no alert",
+			cur:  intervalStats{MeanMs: 0, DeltaTotalMs: 0, DeltaCalls: 0},
+			base: intervalBaseline{MeanMs: 100, DeltaTotalMs: 10000, DeltaCalls: 100, DeltaRows: 100, Intervals: 6},
 		},
 		{
-			// Calls 4x but each call got cheaper, so total DB time is flat —
+			// 4x calls this interval, each cheaper, interval DB time flat →
 			// "calls" is the only rule that fires.
 			name:     "call volume spiked without more total time — calls alert",
-			cur:      queryStats{MeanMs: 2.4, TotalMs: 960, Calls: 400, Rows: 400},
-			base:     baselineStats{MeanMs: 10, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 8},
+			cur:      intervalStats{MeanMs: 2.5, DeltaTotalMs: 1000, DeltaCalls: 400, DeltaRows: 400},
+			base:     intervalBaseline{MeanMs: 10, DeltaTotalMs: 1000, DeltaCalls: 100, DeltaRows: 100, Intervals: 6},
 			wantType: "calls",
 		},
 		{
 			name:     "rows per call blew up — rows alert",
-			cur:      queryStats{MeanMs: 120, TotalMs: 1200, Calls: 100, Rows: 100000},
-			base:     baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 8},
+			cur:      intervalStats{MeanMs: 120, DeltaTotalMs: 12000, DeltaCalls: 100, DeltaRows: 100000},
+			base:     intervalBaseline{MeanMs: 100, DeltaTotalMs: 10000, DeltaCalls: 100, DeltaRows: 100, Intervals: 6},
 			wantType: "rows",
 		},
 	}
@@ -106,25 +114,18 @@ func TestEvaluateRegression(t *testing.T) {
 
 func TestHasRecovered(t *testing.T) {
 	cfg := baseCfg()
-	base := baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100, Rows: 100, Polls: 8}
+	base := intervalBaseline{MeanMs: 100, DeltaTotalMs: 10000, DeltaCalls: 100, DeltaRows: 100, Intervals: 6}
 
-	if !hasRecovered(queryStats{MeanMs: 118}, base, cfg) {
-		t.Error("mean within threshold/2 of baseline should count as recovered")
+	if !hasRecovered(intervalStats{MeanMs: 118, DeltaCalls: 100}, base, cfg) {
+		t.Error("interval mean within threshold/2 of baseline should count as recovered")
 	}
-	if hasRecovered(queryStats{MeanMs: 180}, base, cfg) {
-		t.Error("mean still well above baseline is not recovered")
+	if hasRecovered(intervalStats{MeanMs: 180, DeltaCalls: 100}, base, cfg) {
+		t.Error("interval mean still well above baseline is not recovered")
 	}
-	if hasRecovered(queryStats{MeanMs: 100}, baselineStats{MeanMs: 100, Polls: 2}, cfg) {
+	if hasRecovered(intervalStats{MeanMs: 100, DeltaCalls: 100}, intervalBaseline{MeanMs: 100, Intervals: 2}, cfg) {
 		t.Error("thin baseline should not auto-resolve")
 	}
-}
-
-func TestLooksLikeStatsReset(t *testing.T) {
-	base := baselineStats{MeanMs: 100, TotalMs: 1000, Calls: 100}
-	if !looksLikeStatsReset(queryStats{MeanMs: 10, TotalMs: 30, Calls: 3}, base) {
-		t.Error("all three metrics collapsed → reset")
-	}
-	if looksLikeStatsReset(queryStats{MeanMs: 10, TotalMs: 300, Calls: 90}, base) {
-		t.Error("only mean dropped — not a reset (could be a genuine fix)")
+	if hasRecovered(intervalStats{MeanMs: 100, DeltaCalls: 0}, base, cfg) {
+		t.Error("no traffic this interval — cannot conclude recovery")
 	}
 }

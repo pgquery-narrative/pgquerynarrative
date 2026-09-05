@@ -74,6 +74,59 @@ func TestEquivalenceSemantics_CountMismatchIsDifferent(t *testing.T) {
 	}
 }
 
+func TestWrapDeterministicSampleSQL(t *testing.T) {
+	got, err := wrapDeterministicSampleSQL(`SELECT region, total FROM demo.sales WHERE region = 'North' ORDER BY total`, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	low := strings.ToLower(got)
+	// The wrapper imposes its own hash order + limit so two plans with the same
+	// full result set return the same subset.
+	if !strings.Contains(low, "order by md5(pgqn_eq::text)") {
+		t.Fatalf("missing deterministic order: %s", got)
+	}
+	if !strings.Contains(low, "limit 1000") {
+		t.Fatalf("missing bounded limit: %s", got)
+	}
+	if !strings.Contains(low, "from (select region, total from demo.sales") {
+		t.Fatalf("inner query not wrapped: %s", got)
+	}
+}
+
+func TestNotRequestedEquivalence(t *testing.T) {
+	out := notRequestedEquivalence()
+	if out.Status != EquivalenceNotRequested {
+		t.Fatalf("status = %q, want NotRequested", out.Status)
+	}
+	if out.Equal != nil {
+		t.Fatalf("Equal must be nil when not requested, got %v", *out.Equal)
+	}
+	if out.CountsComputed {
+		t.Fatal("CountsComputed must be false when no COUNT(*) ran")
+	}
+	if out.Notes == "" {
+		t.Fatal("NotRequested result should carry an explanatory note")
+	}
+}
+
+func TestNormalizeEquivalenceStatus(t *testing.T) {
+	cases := map[string]string{
+		"VerifiedEqual": "VerifiedEqual",
+		"SampleMatch":   "SampleMatch",
+		"Different":     "Different",
+		"Unverified":    "Unverified",
+		"NotRequested":  "NotRequested",
+		"":              "",
+		"Equal":         "VerifiedEqual", // legacy
+		"bogus":         "Unverified",
+	}
+	for in, want := range cases {
+		if got := normalizeEquivalenceStatus(in); got != want {
+			t.Errorf("normalizeEquivalenceStatus(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAsInt64(t *testing.T) {
 	n, err := asInt64(int64(42))
 	if err != nil || n != 42 {

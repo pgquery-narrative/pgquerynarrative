@@ -41,6 +41,28 @@ func TestResolveConnectionID_RejectsUnknown(t *testing.T) {
 	}
 }
 
+func TestConnectionIDs(t *testing.T) {
+	r := newConnectionResolver("default", map[string]*queryrunner.Runner{
+		"analytics": {}, "default": {}, "reporting": {},
+	}, nil, nil)
+	got := r.connectionIDs()
+	want := []string{"analytics", "default", "reporting"} // sorted
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v (sorted)", got, want)
+		}
+	}
+
+	// No registry wired: fall back to the default id.
+	empty := newConnectionResolver("default", nil, nil, nil)
+	if ids := empty.connectionIDs(); len(ids) != 1 || ids[0] != "default" {
+		t.Fatalf("empty registry should yield [default], got %v", ids)
+	}
+}
+
 func TestRunnerFor_RejectsUnknown(t *testing.T) {
 	r := newConnectionResolver("default", map[string]*queryrunner.Runner{
 		"default": {},

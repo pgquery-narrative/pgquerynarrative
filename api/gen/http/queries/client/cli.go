@@ -153,7 +153,7 @@ func BuildComparePlansPayload(queriesComparePlansBody string) (*queries.CompareP
 	{
 		err = json.Unmarshal([]byte(queriesComparePlansBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"after_sql\": \"n\",\n      \"analyze\": false,\n      \"before_sql\": \"hd\",\n      \"binds\": [\n         \"Officia dolores laboriosam quia mollitia.\",\n         \"Et omnis dolores vero repellendus reprehenderit eum.\",\n         \"Velit quo fugit laborum libero natus.\",\n         \"Ea repellendus eaque a nihil voluptas eius.\"\n      ],\n      \"connection_id\": \"Illum libero eaque molestiae est.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"after_sql\": \"4\",\n      \"analyze\": true,\n      \"before_sql\": \"g0\",\n      \"binds\": [\n         \"Et omnis dolores vero repellendus reprehenderit eum.\",\n         \"Velit quo fugit laborum libero natus.\",\n         \"Ea repellendus eaque a nihil voluptas eius.\",\n         \"Nulla magnam unde vel.\"\n      ],\n      \"connection_id\": \"Quo officia dolores laboriosam quia.\",\n      \"verify_results\": true\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", body.BeforeSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.BeforeSQL) < 1 {
@@ -174,15 +174,22 @@ func BuildComparePlansPayload(queriesComparePlansBody string) (*queries.CompareP
 		}
 	}
 	v := &queries.ComparePlansPayload{
-		BeforeSQL:    body.BeforeSQL,
-		AfterSQL:     body.AfterSQL,
-		Analyze:      body.Analyze,
-		ConnectionID: body.ConnectionID,
+		BeforeSQL:     body.BeforeSQL,
+		AfterSQL:      body.AfterSQL,
+		Analyze:       body.Analyze,
+		VerifyResults: body.VerifyResults,
+		ConnectionID:  body.ConnectionID,
 	}
 	{
 		var zero bool
 		if v.Analyze == zero {
 			v.Analyze = false
+		}
+	}
+	{
+		var zero bool
+		if v.VerifyResults == zero {
+			v.VerifyResults = false
 		}
 	}
 	if body.Binds != nil {
@@ -204,7 +211,7 @@ func BuildListSavedPayload(queriesListSavedTags string, queriesListSavedConnecti
 		if queriesListSavedTags != "" {
 			err = json.Unmarshal([]byte(queriesListSavedTags), &tags)
 			if err != nil {
-				return nil, fmt.Errorf("invalid JSON for tags, \nerror: %s, \nexample of valid JSON:\n%s", err, "'[\n      \"Ea necessitatibus cum facilis iure.\",\n      \"Optio ab quidem.\",\n      \"Perspiciatis corrupti aperiam harum iure.\",\n      \"Sit porro ipsum.\"\n   ]'")
+				return nil, fmt.Errorf("invalid JSON for tags, \nerror: %s, \nexample of valid JSON:\n%s", err, "'[\n      \"Et accusantium.\",\n      \"Qui libero ex et.\",\n      \"Aspernatur ea necessitatibus cum facilis iure facere.\",\n      \"Ab quidem id perspiciatis corrupti aperiam harum.\"\n   ]'")
 			}
 		}
 	}
@@ -268,7 +275,7 @@ func BuildSavePayload(queriesSaveBody string) (*queries.SaveQueryPayload, error)
 	{
 		err = json.Unmarshal([]byte(queriesSaveBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Aut assumenda eaque unde aut.\",\n      \"description\": \"nuw\",\n      \"name\": \"85c\",\n      \"sql\": \"q6r\",\n      \"tags\": [\n         \"Officiis distinctio sequi velit quidem similique officiis.\",\n         \"Molestias est nihil hic.\",\n         \"Soluta enim blanditiis non.\",\n         \"Quasi deserunt.\"\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Hic eum soluta enim blanditiis non.\",\n      \"description\": \"85c\",\n      \"name\": \"n\",\n      \"sql\": \"m4\",\n      \"tags\": [\n         \"In nemo.\",\n         \"Quidem delectus.\",\n         \"Delectus dolor officiis distinctio.\",\n         \"Velit quidem similique officiis itaque molestias est.\"\n      ]\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))

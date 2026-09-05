@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
@@ -52,6 +53,23 @@ func (r connectionResolver) resolveConnectionID(connectionID *string) (string, e
 		}
 	}
 	return "", fmt.Errorf("%w: %q", apperrors.ErrConnectionNotFound, id)
+}
+
+// connectionIDs returns every configured analytical connection ID, sorted. When
+// no multi-connection registry was wired it falls back to the default ID.
+func (r connectionResolver) connectionIDs() []string {
+	if len(r.runners) == 0 {
+		if r.defaultConnectionID == "" {
+			return nil
+		}
+		return []string{r.defaultConnectionID}
+	}
+	ids := make([]string, 0, len(r.runners))
+	for id := range r.runners {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (r connectionResolver) runnerFor(connectionID *string) (*queryrunner.Runner, error) {
