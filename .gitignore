@@ -82,6 +82,10 @@ docs/ops/PRODUCTION.md
 docs/ops/INCIDENT_RUNBOOKS.md
 docs/linkedin/
 cmd/linkedin-social/
+# The compiled binary, not just its source: a `git add -A` swept an 8.7 MB
+# Mach-O build of it into the repository, which is exactly what the two lines
+# above were meant to prevent.
+/linkedin-social
 automation/
 tools/demo/capture_readme_gif.sh
 docs/assets/demo-workflow.gif
