@@ -304,15 +304,8 @@ func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investi
 
 // BuildGenerateReportPayload builds the payload for the investigations
 // generate_report endpoint from CLI flags.
-func BuildGenerateReportPayload(investigationsGenerateReportBody string, investigationsGenerateReportID string) (*investigations.GenerateReportPayload, error) {
+func BuildGenerateReportPayload(investigationsGenerateReportID string, investigationsGenerateReportAcceptSampleMatch string) (*investigations.GenerateReportPayload, error) {
 	var err error
-	var body GenerateReportRequestBody
-	{
-		err = json.Unmarshal([]byte(investigationsGenerateReportBody), &body)
-		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"accept_sample_match\": true\n   }'")
-		}
-	}
 	var id string
 	{
 		id = investigationsGenerateReportID
@@ -321,10 +314,20 @@ func BuildGenerateReportPayload(investigationsGenerateReportBody string, investi
 			return nil, err
 		}
 	}
-	v := &investigations.GenerateReportPayload{
-		AcceptSampleMatch: body.AcceptSampleMatch,
+	var acceptSampleMatch *bool
+	{
+		if investigationsGenerateReportAcceptSampleMatch != "" {
+			var val bool
+			val, err = strconv.ParseBool(investigationsGenerateReportAcceptSampleMatch)
+			acceptSampleMatch = &val
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for acceptSampleMatch, must be BOOL")
+			}
+		}
 	}
+	v := &investigations.GenerateReportPayload{}
 	v.ID = id
+	v.AcceptSampleMatch = acceptSampleMatch
 
 	return v, nil
 }

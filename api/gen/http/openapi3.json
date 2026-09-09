@@ -961,15 +961,6 @@
         ],
         "type": "object"
       },
-      "GenerateReportRequestBody": {
-        "properties": {
-          "accept_sample_match": {
-            "description": "Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.",
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
       "IndexAdvice": {
         "properties": {
           "candidate_ddl": {
@@ -3798,6 +3789,16 @@
         "operationId": "investigations#generate_report",
         "parameters": [
           {
+            "allowEmptyValue": true,
+            "description": "Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.",
+            "in": "query",
+            "name": "accept_sample_match",
+            "schema": {
+              "description": "Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -3807,16 +3808,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GenerateReportRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {

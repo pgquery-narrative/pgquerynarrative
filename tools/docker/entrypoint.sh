@@ -35,6 +35,20 @@ export DB_URL="postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_N
 # DATABASE_MIGRATION_URL) for a role that may create extensions and alter roles.
 # Falling back to DATABASE_USER keeps existing deployments working, where the
 # schema is already at the required version and `up` is a no-op.
+# Mirror of config.StrictMode() in app/config/validate.go. Keep the two in step:
+# APP_ENV of "production"/"prod" (any case), or SECURITY_STRICT parsing as true
+# the way Go's strconv.ParseBool accepts it.
+is_strict_mode() {
+  _env="$(printf '%s' "${APP_ENV:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [ "$_env" = "production" ] || [ "$_env" = "prod" ]; then
+    return 0
+  fi
+  case "${SECURITY_STRICT:-}" in
+    1|t|T|true|TRUE|True) return 0 ;;
+  esac
+  return 1
+}
+
 MIGRATE_USER="${DATABASE_MIGRATION_USER:-$DB_USER}"
 MIGRATE_PASSWORD="${DATABASE_MIGRATION_PASSWORD:-$DB_PASSWORD}"
 MIGRATE_URL="${DATABASE_MIGRATION_URL:-postgres://${MIGRATE_USER}:${MIGRATE_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DATABASE_SSL_MODE:-disable}}"
@@ -45,7 +59,12 @@ if [ "${PGQUERYNARRATIVE_SKIP_MIGRATIONS:-false}" != "true" ] \
   # cannot finish. Attempting it leaves the schema half-applied and the failure
   # surfaces as an opaque mid-migration permission error; refusing to start says
   # exactly what is missing.
-  if [ "${APP_ENV:-}" = "production" ]; then
+  #
+  # This must agree with config.StrictMode() (app/config/validate.go), which is
+  # case-insensitive, accepts "prod" as well as "production", and also honours
+  # SECURITY_STRICT. Matching only APP_ENV=production exactly would leave every
+  # other strict deployment on the old warn-and-continue path.
+  if is_strict_mode; then
     echo "Configuration error: migrations are enabled but no migration credential is set." >&2
     echo "Set DATABASE_MIGRATION_USER/DATABASE_MIGRATION_PASSWORD (or DATABASE_MIGRATION_URL) to a" >&2
     echo "role that may CREATE EXTENSION and ALTER ROLE, or run migrations as a separate Job and" >&2

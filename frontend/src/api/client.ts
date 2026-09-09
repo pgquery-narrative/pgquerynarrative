@@ -239,10 +239,10 @@ export const api = {
     }),
 
   generateInvestigationReport: (id: string, acceptSampleMatch = false) =>
-    request<Investigation>(`/investigations/${id}/report`, {
-      method: "POST",
-      body: JSON.stringify({ accept_sample_match: acceptSampleMatch }),
-    }),
+    request<Investigation>(
+      `/investigations/${id}/report${acceptSampleMatch ? "?accept_sample_match=true" : ""}`,
+      { method: "POST" }
+    ),
 
   updateInvestigationFix: (id: string, body: { fix_status?: string; fix_reference?: string }) =>
     request<Investigation>(`/investigations/${id}/fix`, {

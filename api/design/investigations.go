@@ -155,7 +155,7 @@ var _ = Service("investigations", func() {
 			// shipping a report on it takes a deliberate human acknowledgement
 			// rather than passing silently as if it were VerifiedEqual.
 			Attribute("accept_sample_match", Boolean,
-				"Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.")
+				"Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.")
 			Required("id")
 		})
 		Result(Investigation)
@@ -163,6 +163,12 @@ var _ = Service("investigations", func() {
 		Error("validation_error", ValidationError)
 		HTTP(func() {
 			POST("/api/v1/investigations/{id}/report")
+			// Carried as a query parameter, not a body attribute: this endpoint
+			// took no request body before, and giving it one would make goa
+			// reject every existing body-less POST with MissingPayloadError.
+			Params(func() {
+				Param("accept_sample_match")
+			})
 			Response(StatusOK)
 			Response(StatusNotFound, "not_found")
 			Response(StatusBadRequest, "validation_error")

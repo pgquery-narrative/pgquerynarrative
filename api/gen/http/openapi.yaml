@@ -451,16 +451,16 @@ paths:
       description: Generate an engineering investigation report
       operationId: investigations#generate_report
       parameters:
+        - name: accept_sample_match
+          in: query
+          description: Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.
+          required: false
+          type: boolean
         - name: id
           in: path
           required: true
           type: string
           format: uuid
-        - name: generate_report_request_body
-          in: body
-          required: true
-          schema:
-            $ref: '#/definitions/InvestigationsGenerateReportRequestBody'
       responses:
         "200":
           description: OK response.
@@ -2629,13 +2629,6 @@ definitions:
         format: uuid
     required:
       - regression_alert_id
-  InvestigationsGenerateReportRequestBody:
-    title: InvestigationsGenerateReportRequestBody
-    type: object
-    properties:
-      accept_sample_match:
-        type: boolean
-        description: Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.
   InvestigationsRankCandidatesRequestBody:
     title: InvestigationsRankCandidatesRequestBody
     type: object

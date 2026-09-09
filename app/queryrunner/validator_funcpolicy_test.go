@@ -42,6 +42,13 @@ func TestValidator_FunctionPolicy(t *testing.T) {
 		{"WITH c AS (SELECT pg_sleep(1)) SELECT * FROM c", apperrors.ErrFunctionNotAllowed},
 		// Function in a schema outside the allowlist.
 		{"SELECT other_schema.some_func(1)", apperrors.ErrFunctionSchemaNotAllowed},
+		// Operators and types are backed by functions in the same schema, so a
+		// qualified reference to either reaches code the allowlist excludes
+		// without ever producing a FuncCall node.
+		{"SELECT 1 OPERATOR(other_schema.+) 2", apperrors.ErrSchemaNotAllowed},
+		{"SELECT id::other_schema.mytype FROM demo.sales", apperrors.ErrSchemaNotAllowed},
+		{"SELECT CAST(id AS other_schema.mytype) FROM demo.sales", apperrors.ErrSchemaNotAllowed},
+		{"SELECT * FROM demo.sales WHERE id OPERATOR(other_schema.=) 1", apperrors.ErrSchemaNotAllowed},
 		// Statement shapes that are not read-only.
 		{"SELECT * INTO demo.t2 FROM demo.sales", apperrors.ErrSelectIntoNotAllowed},
 		{"SELECT * FROM demo.sales FOR UPDATE", apperrors.ErrLockingClauseNotAllowed},
@@ -65,6 +72,12 @@ func TestValidator_FunctionPolicy(t *testing.T) {
 		"SELECT demo.my_helper(1) FROM demo.sales",
 		"SELECT to_char(date, 'YYYY-MM') FROM demo.sales",
 		"SELECT row_number() OVER (ORDER BY id) FROM demo.sales",
+		// Built-in casts parse as pg_catalog-qualified type names, and ordinary
+		// operators are unqualified — neither may be caught by the rule above.
+		"SELECT id::int, amount::numeric, name::text FROM demo.sales",
+		"SELECT CAST(id AS bigint) FROM demo.sales",
+		"SELECT * FROM demo.sales WHERE amount > 10 AND region = 'North'",
+		"SELECT id::demo.mytype FROM demo.sales",
 	}
 	for _, sql := range allowed {
 		if err := v.Validate(sql); err != nil {

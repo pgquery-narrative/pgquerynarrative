@@ -38,7 +38,7 @@ top of it:
 | Backend / WAL / replication control, `pg_stat_*_reset` | **Denied** | Server-wide effects |
 | Second-query execution (`query_to_xml`, `dblink`, …) | **Denied** | Runs SQL that never passes the validator |
 | Notification (`pg_notify`) | **Denied** | Observable outside the transaction |
-| Anything schema-qualified outside `DATABASE_ALLOWED_SCHEMAS` | **Denied** | Otherwise the schema allowlist governs tables but not functions |
+| Anything schema-qualified outside `DATABASE_ALLOWED_SCHEMAS` — functions, explicit operators (`OPERATOR(s.+)`) and type names (`col::s.t`) | **Denied** | Operators and types are backed by functions in the same schema, so either reaches code the allowlist excludes without producing a function-call node |
 | `pg_catalog` / `information_schema` functions not named above | Allowed | Read-only catalog access |
 | Unqualified names (`count`, `now`, `coalesce`, …) | Allowed | Resolve through the analytical role's pinned `search_path`, itself limited to the allowed schemas |
 

@@ -188,6 +188,14 @@ func (s *InvestigationsService) CreateFromRegression(ctx context.Context, payloa
 			SELECT investigation_id FROM app.regression_alerts
 			WHERE id = $1 AND organization_id = $2
 		`, alertID, org).Scan(&winner); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// The alert was deleted while we worked. The investigation is
+				// already committed and is legitimate work, so return it rather
+				// than erroring — the caller would otherwise be handed a failure
+				// for an investigation that exists, and a retry would create a
+				// second one.
+				return inv, nil
+			}
 			return nil, fmt.Errorf("resolve regression alert investigation link: %w", err)
 		}
 		if winner == nil || *winner == "" || *winner == inv.ID {
@@ -1059,9 +1067,13 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		return nil, err
 	}
 
+	resultsSampled := false
 	if inv.Comparison != nil {
 		status := equivalenceStatusFromComparison(inv.Comparison)
 		acceptSample := payload.AcceptSampleMatch != nil && *payload.AcceptSampleMatch
+		// Recorded in the report's provenance so a reader can tell a report
+		// shipped on full verification from one shipped on a bounded sample.
+		resultsSampled = status == EquivalenceSampleMatch
 
 		// SampleMatch is the fallback taken when full-result fingerprinting could
 		// not run. It is supporting evidence, not verification, so it takes an
@@ -1070,7 +1082,7 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		if status == EquivalenceSampleMatch && !acceptSample {
 			return nil, &investigations.ValidationError{
 				Name:    "validation_error",
-				Message: "result equivalence is SampleMatch — a bounded sample matched but the full result was not verified. Re-run Compare plans until status is VerifiedEqual, or set accept_sample_match to record that you are shipping on sampled evidence.",
+				Message: "result equivalence is SampleMatch — a bounded sample matched but the full result was not verified. Re-run Compare plans until status is VerifiedEqual, or pass accept_sample_match=true; the report is then marked as resting on sampled evidence.",
 				Code:    strPtr("EQUIVALENCE_SAMPLE_ONLY"),
 			}
 		}
@@ -1150,6 +1162,7 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		story.InvestigationProvenance{
 			QueryFingerprint: fingerprint,
 			GeneratedBy:      auth.PrincipalFromContext(ctx).UserID,
+			ResultsSampled:   resultsSampled,
 		},
 	)
 

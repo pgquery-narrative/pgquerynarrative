@@ -252,10 +252,6 @@ export interface GenerateReportPayload {
   sql: string;
 }
 
-export interface GenerateReportRequestBody {
-  accept_sample_match?: boolean;
-}
-
 export interface IndexAdvice {
   candidate_ddl?: string;
   issues?: string[];

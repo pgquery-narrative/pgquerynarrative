@@ -142,7 +142,8 @@ type GenerateReportPayload struct {
 	ID string
 	// Acknowledge that result equivalence rests on a bounded sample, not
 	// full-result verification. Required to generate a report when equivalence
-	// status is SampleMatch.
+	// status is SampleMatch; the resulting report is marked results_sampled in its
+	// provenance.
 	AcceptSampleMatch *bool
 }
 

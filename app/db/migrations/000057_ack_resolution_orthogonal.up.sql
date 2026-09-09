@@ -35,3 +35,22 @@ DROP INDEX IF EXISTS app.idx_regression_alerts_one_open;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_regression_alerts_one_open
     ON app.regression_alerts (organization_id, connection_id, queryid)
     WHERE resolved_at IS NULL AND queryid IS NOT NULL;
+
+-- Rank an alert's impact so the poller can tell escalation from a steady
+-- regression. Acknowledgement keeps a handled alert out of the inbox, but since
+-- one alert now absorbs every later detection for the query, an alert that gets
+-- substantially worse after being acknowledged must be surfaced again.
+CREATE OR REPLACE FUNCTION app.regression_impact_rank(impact TEXT)
+RETURNS INTEGER
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT CASE lower(coalesce(impact, ''))
+        WHEN 'critical' THEN 3
+        WHEN 'high'     THEN 2
+        ELSE 1
+    END
+$$;
+
+GRANT EXECUTE ON FUNCTION app.regression_impact_rank(TEXT) TO pgquerynarrative_app;

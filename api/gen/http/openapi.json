@@ -1195,16 +1195,6 @@
       "title": "InvestigationsCreateFromRegressionRequestBody",
       "type": "object"
     },
-    "InvestigationsGenerateReportRequestBody": {
-      "properties": {
-        "accept_sample_match": {
-          "description": "Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.",
-          "type": "boolean"
-        }
-      },
-      "title": "InvestigationsGenerateReportRequestBody",
-      "type": "object"
-    },
     "InvestigationsRankCandidatesRequestBody": {
       "properties": {
         "analyze": {
@@ -3947,19 +3937,18 @@
         "operationId": "investigations#generate_report",
         "parameters": [
           {
+            "description": "Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.",
+            "in": "query",
+            "name": "accept_sample_match",
+            "required": false,
+            "type": "boolean"
+          },
+          {
             "format": "uuid",
             "in": "path",
             "name": "id",
             "required": true,
             "type": "string"
-          },
-          {
-            "in": "body",
-            "name": "generate_report_request_body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/InvestigationsGenerateReportRequestBody"
-            }
           }
         ],
         "responses": {

@@ -27,10 +27,13 @@ four, plus the lifecycle and deployment gaps found alongside them.
   *source* states — a fix can still be re-applied or abandoned after the poller
   has ruled on it.
 - **Generating a report on `SampleMatch` equivalence now requires
-  `accept_sample_match: true`.** `SampleMatch` is the fallback taken when
+  `accept_sample_match=true`.** `SampleMatch` is the fallback taken when
   full-result fingerprinting could not run; treating it as automatically
   shippable put sampled evidence on the same footing as verification. The UI
-  asks for confirmation before sending it.
+  asks for confirmation before sending it, and the resulting report carries
+  `results_sampled` in its provenance so a reader can tell the two apart. It is
+  a query parameter rather than a request body, because giving this endpoint a
+  body would reject every existing body-less `POST`.
 - **The SQL validator rejects statements it previously allowed.** Side-effecting
   and administrative functions, schema-qualified functions outside
   `DATABASE_ALLOWED_SCHEMAS`, `SELECT ... INTO`, and `FOR UPDATE` / `FOR SHARE`
@@ -46,10 +49,13 @@ four, plus the lifecycle and deployment gaps found alongside them.
 
 ### Security
 
-- **The schema allowlist now covers function calls.** It walked `RangeVar`
-  (table) nodes only, so `SELECT other_schema.some_function(...)` was ungoverned
-  while `SELECT other_schema.table` was blocked. Schema-qualified calls are now
-  held to the same allowlist as tables.
+- **The schema allowlist now covers function calls, explicit operators and type
+  names.** It walked `RangeVar` (table) nodes only, so
+  `SELECT other_schema.some_function(...)` was ungoverned while
+  `SELECT other_schema.table` was blocked. Operators and types are backed by
+  functions in the same schema, so `SELECT 1 OPERATOR(other.+) 2` and
+  `col::other.t` reach code in a disallowed schema without ever producing a
+  function-call node; all three are now held to the same allowlist as tables.
 - **Side-effecting functions are denied by name.** A read-only transaction stops
   writes; it does not make every `SELECT` expression side-effect free. Denied:
   session-scoped advisory locks (which outlive the transaction and poison the
@@ -69,9 +75,13 @@ four, plus the lifecycle and deployment gaps found alongside them.
   `ALTER ROLE` rights the runtime/migration role split exists to withhold. They
   are now unset before handover. Running migrations as a separate Job remains
   the stronger shape; `PGQUERYNARRATIVE_SKIP_MIGRATIONS=true` supports it.
-- **Migrations fail closed in production.** With `APP_ENV=production` and no
-  migration credential, startup is now a configuration error instead of an
-  attempt that fails partway with an opaque permission error.
+- **Migrations fail closed in production.** In strict mode with no migration
+  credential, startup is now a configuration error instead of an attempt that
+  fails partway with an opaque permission error. The entrypoint mirrors
+  `config.StrictMode()` — `APP_ENV` of `production`/`prod` in any case, or
+  `SECURITY_STRICT` — rather than matching one exact string, so every strict
+  deployment is covered. `PGQUERYNARRATIVE_SKIP_MIGRATIONS=true` opts out for
+  deployments that migrate from a separate Job.
 - **Every external GitHub Action is pinned to a commit SHA.** Four were on
   mutable tags. The pin checker verified only refs that were already SHAs, so an
   action written as `@v7` was structurally invisible to it; it now rejects any
@@ -84,6 +94,15 @@ four, plus the lifecycle and deployment gaps found alongside them.
   `go.mod`'"'"'s `go` directive (`MIGRATE_GO_IMAGE`).
 
 ### Fixed
+
+- **Validator rejections explain themselves again.** The four new validator
+  errors were not in `ClassifyRunError`, so a query calling a denied function
+  surfaced as a bare "Query validation failed." with no reason, unlike every
+  other validator rejection.
+- **An acknowledged regression alert is re-opened when it escalates.** Now that
+  one alert absorbs every later detection for a query, a regression that grew
+  worse after being acknowledged would otherwise never return to the inbox.
+  Acknowledgement still suppresses a steady regression while it is handled.
 
 - **The fix lifecycle mixed measurements across connections.** A `queryid` is
   only unique *within* a connection, but the apply-time baseline

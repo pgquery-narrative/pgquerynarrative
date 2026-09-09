@@ -66,15 +66,6 @@ type RankCandidatesRequestBody struct {
 	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
 }
 
-// GenerateReportRequestBody is the type of the "investigations" service
-// "generate_report" endpoint HTTP request body.
-type GenerateReportRequestBody struct {
-	// Acknowledge that result equivalence rests on a bounded sample, not
-	// full-result verification. Required to generate a report when equivalence
-	// status is SampleMatch.
-	AcceptSampleMatch *bool `form:"accept_sample_match,omitempty" json:"accept_sample_match,omitempty" xml:"accept_sample_match,omitempty"`
-}
-
 // CreateResponseBody is the type of the "investigations" service "create"
 // endpoint HTTP response body.
 type CreateResponseBody struct {
@@ -1317,11 +1308,10 @@ func NewRankCandidatesPayload(body *RankCandidatesRequestBody, id string) *inves
 
 // NewGenerateReportPayload builds a investigations service generate_report
 // endpoint payload.
-func NewGenerateReportPayload(body *GenerateReportRequestBody, id string) *investigations.GenerateReportPayload {
-	v := &investigations.GenerateReportPayload{
-		AcceptSampleMatch: body.AcceptSampleMatch,
-	}
+func NewGenerateReportPayload(id string, acceptSampleMatch *bool) *investigations.GenerateReportPayload {
+	v := &investigations.GenerateReportPayload{}
 	v.ID = id
+	v.AcceptSampleMatch = acceptSampleMatch
 
 	return v
 }

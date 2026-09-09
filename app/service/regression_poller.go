@@ -357,6 +357,19 @@ func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, 
 		DO UPDATE SET
 			last_seen_at   = now(),
 			occurrences    = app.regression_alerts.occurrences + 1,
+			-- Re-open an acknowledged alert when the regression escalates to a
+			-- worse impact tier. Acknowledgement means "an analyst is on this",
+			-- so a steady regression should stay out of the inbox while it is
+			-- handled — but because one alert now absorbs every later detection
+			-- for the query, without this a regression that got substantially
+			-- worse after being acknowledged would never be surfaced again.
+			acknowledged_at = CASE
+				WHEN app.regression_alerts.acknowledged_at IS NOT NULL
+				 AND app.regression_impact_rank(EXCLUDED.impact)
+				   > app.regression_impact_rank(app.regression_alerts.impact)
+				THEN NULL
+				ELSE app.regression_alerts.acknowledged_at
+			END,
 			change_type    = EXCLUDED.change_type,
 			change_summary = EXCLUDED.change_summary,
 			change_percent = GREATEST(COALESCE(app.regression_alerts.change_percent, 0), EXCLUDED.change_percent),

@@ -818,10 +818,11 @@ func EncodeGenerateReportRequest(encoder func(*http.Request) goahttp.Encoder) fu
 		if !ok {
 			return goahttp.ErrInvalidType("investigations", "generate_report", "*investigations.GenerateReportPayload", v)
 		}
-		body := NewGenerateReportRequestBody(p)
-		if err := encoder(req).Encode(&body); err != nil {
-			return goahttp.ErrEncodingError("investigations", "generate_report", err)
+		values := req.URL.Query()
+		if p.AcceptSampleMatch != nil {
+			values.Add("accept_sample_match", fmt.Sprintf("%v", *p.AcceptSampleMatch))
 		}
+		req.URL.RawQuery = values.Encode()
 		return nil
 	}
 }

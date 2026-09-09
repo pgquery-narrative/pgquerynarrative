@@ -502,48 +502,97 @@ var functionSchemaAlwaysAllowed = map[string]bool{
 // itself restricted to the allowed schemas.
 func (v *Validator) checkFunctionPolicy(node interface{}) error {
 	var firstErr error
-	walkFuncCalls(node, func(schema, name string) bool {
-		if _, denied := deniedFunctions[name]; denied {
-			firstErr = errors.ErrFunctionNotAllowed
-			return false
-		}
-		if schema == "" || functionSchemaAlwaysAllowed[schema] {
-			return true
-		}
-		if v.enforceSchemas || len(v.allowedSchemas) > 0 {
-			if !v.allowedSchemas[schema] {
-				firstErr = errors.ErrFunctionSchemaNotAllowed
+	walkQualifiedRefs(node, func(ref qualifiedRef) bool {
+		if ref.Kind == refFunction {
+			if _, denied := deniedFunctions[ref.Name]; denied {
+				firstErr = errors.ErrFunctionNotAllowed
 				return false
 			}
 		}
-		return true
+		if ref.Schema == "" || functionSchemaAlwaysAllowed[ref.Schema] {
+			return true
+		}
+		if !v.enforceSchemas && len(v.allowedSchemas) == 0 {
+			return true
+		}
+		if v.allowedSchemas[ref.Schema] {
+			return true
+		}
+		// An operator or a type is backed by a function in the same schema, so a
+		// qualified reference to either reaches code the schema allowlist is
+		// meant to keep out just as a direct call would.
+		if ref.Kind == refFunction {
+			firstErr = errors.ErrFunctionSchemaNotAllowed
+		} else {
+			firstErr = errors.ErrSchemaNotAllowed
+		}
+		return false
 	})
 	return firstErr
 }
 
-// walkFuncCalls invokes fn(schema, name) for every FuncCall node, with both
-// parts lowercased; schema is "" for an unqualified call. fn returns false to
-// stop the walk, so a rejected query does not pay to traverse the rest of its
-// tree — this runs on the read path in front of every user SELECT.
-func walkFuncCalls(node interface{}, fn func(schema, name string) bool) bool {
+// refKind distinguishes what a schema-qualified name in the tree refers to.
+type refKind int
+
+const (
+	refFunction refKind = iota // FuncCall.funcname
+	refOperator                // A_Expr.name  — OPERATOR(schema.+)
+	refType                    // TypeName.names — col::schema.type
+)
+
+// qualifiedRef is one namespaced reference found in the parse tree, lowercased.
+// Schema is "" for an unqualified name.
+type qualifiedRef struct {
+	Kind   refKind
+	Schema string
+	Name   string
+}
+
+// walkQualifiedRefs invokes fn for every function call, explicit operator and
+// type name in the tree. fn returns false to stop the walk, so a rejected query
+// does not pay to traverse the rest of its tree — this runs on the read path in
+// front of every user SELECT.
+//
+// Operators and type names are included because both are backed by functions:
+// SELECT 1 OPERATOR(other.+) 2 and col::other.t each execute code in "other"
+// without ever producing a FuncCall node, so checking FuncCall alone would leave
+// the schema allowlist with two more holes of the same shape as the one it was
+// extended to close.
+func walkQualifiedRefs(node interface{}, fn func(qualifiedRef) bool) bool {
 	switch n := node.(type) {
 	case map[string]interface{}:
 		for key, value := range n {
-			if key == "FuncCall" {
-				if call, ok := value.(map[string]interface{}); ok {
-					schema, name := funcCallName(call)
-					if name != "" && !fn(schema, name) {
+			m, _ := value.(map[string]interface{})
+			switch {
+			case key == "FuncCall" && m != nil:
+				if schema, name, ok := qualifiedName(m["funcname"]); ok {
+					if !fn(qualifiedRef{Kind: refFunction, Schema: schema, Name: name}) {
+						return false
+					}
+				}
+			case key == "A_Expr" && m != nil:
+				if schema, name, ok := qualifiedName(m["name"]); ok {
+					if !fn(qualifiedRef{Kind: refOperator, Schema: schema, Name: name}) {
+						return false
+					}
+				}
+			// "typeName" is a field key (TypeCast.typeName holds the struct
+			// inline); "TypeName" is the node-type key used where a type name
+			// appears as a list element. Both carry the same "names" list.
+			case (key == "TypeName" || key == "typeName") && m != nil:
+				if schema, name, ok := qualifiedName(m["names"]); ok {
+					if !fn(qualifiedRef{Kind: refType, Schema: schema, Name: name}) {
 						return false
 					}
 				}
 			}
-			if !walkFuncCalls(value, fn) {
+			if !walkQualifiedRefs(value, fn) {
 				return false
 			}
 		}
 	case []interface{}:
 		for _, item := range n {
-			if !walkFuncCalls(item, fn) {
+			if !walkQualifiedRefs(item, fn) {
 				return false
 			}
 		}
@@ -551,35 +600,35 @@ func walkFuncCalls(node interface{}, fn func(schema, name string) bool) bool {
 	return true
 }
 
-// funcCallName extracts (schema, name) from a FuncCall's funcname list. The list
-// holds String nodes: ["count"] unqualified, ["pg_catalog","count"] qualified.
-// A longer list (database.schema.function) uses the last two parts.
-func funcCallName(call map[string]interface{}) (schema, name string) {
-	parts, ok := call["funcname"].([]interface{})
-	if !ok || len(parts) == 0 {
-		return "", ""
+// qualifiedName extracts (schema, name) from a parse-tree list of String nodes:
+// ["count"] unqualified, ["pg_catalog","count"] qualified. A longer list
+// (database.schema.object) uses the last two parts. Both are lowercased.
+func qualifiedName(v interface{}) (schema, name string, ok bool) {
+	parts, isList := v.([]interface{})
+	if !isList || len(parts) == 0 {
+		return "", "", false
 	}
 	names := make([]string, 0, len(parts))
 	for _, p := range parts {
-		wrapper, ok := p.(map[string]interface{})
-		if !ok {
+		wrapper, isMap := p.(map[string]interface{})
+		if !isMap {
 			continue
 		}
-		str, ok := wrapper["String"].(map[string]interface{})
-		if !ok {
+		str, isStr := wrapper["String"].(map[string]interface{})
+		if !isStr {
 			continue
 		}
 		sval, _ := str["sval"].(string)
 		names = append(names, strings.ToLower(strings.TrimSpace(sval)))
 	}
 	if len(names) == 0 {
-		return "", ""
+		return "", "", false
 	}
 	name = names[len(names)-1]
 	if len(names) >= 2 {
 		schema = names[len(names)-2]
 	}
-	return schema, name
+	return schema, name, true
 }
 
 // hasIntoClause reports whether the SELECT carries an INTO target. SELECT INTO

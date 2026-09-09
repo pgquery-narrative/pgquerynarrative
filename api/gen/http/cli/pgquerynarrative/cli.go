@@ -235,9 +235,9 @@ func ParseEndpoint(
 		investigationsRankCandidatesBodyFlag = investigationsRankCandidatesFlags.String("body", "REQUIRED", "")
 		investigationsRankCandidatesIDFlag   = investigationsRankCandidatesFlags.String("id", "REQUIRED", "")
 
-		investigationsGenerateReportFlags    = flag.NewFlagSet("generate-report", flag.ExitOnError)
-		investigationsGenerateReportBodyFlag = investigationsGenerateReportFlags.String("body", "REQUIRED", "")
-		investigationsGenerateReportIDFlag   = investigationsGenerateReportFlags.String("id", "REQUIRED", "")
+		investigationsGenerateReportFlags                 = flag.NewFlagSet("generate-report", flag.ExitOnError)
+		investigationsGenerateReportIDFlag                = investigationsGenerateReportFlags.String("id", "REQUIRED", "")
+		investigationsGenerateReportAcceptSampleMatchFlag = investigationsGenerateReportFlags.String("accept-sample-match", "", "")
 
 		workspaceFlags = flag.NewFlagSet("workspace", flag.ContinueOnError)
 
@@ -759,7 +759,7 @@ func ParseEndpoint(
 				data, err = investigationsc.BuildRankCandidatesPayload(*investigationsRankCandidatesBodyFlag, *investigationsRankCandidatesIDFlag)
 			case "generate-report":
 				endpoint = c.GenerateReport()
-				data, err = investigationsc.BuildGenerateReportPayload(*investigationsGenerateReportBodyFlag, *investigationsGenerateReportIDFlag)
+				data, err = investigationsc.BuildGenerateReportPayload(*investigationsGenerateReportIDFlag, *investigationsGenerateReportAcceptSampleMatchFlag)
 			}
 		case "workspace":
 			c := workspacec.NewClient(scheme, host, doer, enc, dec, restore)
@@ -1791,8 +1791,8 @@ func investigationsRankCandidatesUsage() {
 func investigationsGenerateReportUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] investigations generate-report", os.Args[0])
-	fmt.Fprint(os.Stderr, " -body JSON")
 	fmt.Fprint(os.Stderr, " -id STRING")
+	fmt.Fprint(os.Stderr, " -accept-sample-match BOOL")
 	fmt.Fprintln(os.Stderr)
 
 	// Description
@@ -1800,12 +1800,12 @@ func investigationsGenerateReportUsage() {
 	fmt.Fprintln(os.Stderr, `Generate an engineering investigation report`)
 
 	// Flags list
-	fmt.Fprintln(os.Stderr, `    -body JSON: `)
 	fmt.Fprintln(os.Stderr, `    -id STRING: `)
+	fmt.Fprintln(os.Stderr, `    -accept-sample-match BOOL: `)
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations generate-report --body '{\n      \"accept_sample_match\": true\n   }' --id \"04d10430-16aa-49d4-ad19-8b2b8a3ea5b9\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations generate-report --id \"04d10430-16aa-49d4-ad19-8b2b8a3ea5b9\" --accept-sample-match true")
 }
 
 // workspaceUsage displays the usage of the workspace command and its
