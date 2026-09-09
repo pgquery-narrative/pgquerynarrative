@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
@@ -170,4 +172,130 @@ func TestFixLifecycle_OtherConnectionImprovementDoesNotConfirm(t *testing.T) {
 		t.Fatal("connection B did not improve, so its fix must NOT be confirmed — " +
 			"connection A's improvement leaked across the queryid")
 	}
+}
+
+// Acknowledgement and resolution are independent facts about an alert:
+// acknowledged_at means "an analyst has seen this", resolved_at means "the query
+// recovered". Conflating them (the pre-000057 behaviour) meant acknowledging an
+// alert both let the next poll open a duplicate and stopped the alert ever
+// auto-resolving.
+//
+// Since one alert now absorbs every later detection for a query, an acknowledged
+// alert that gets materially worse must return to the inbox — otherwise a
+// worsening regression is silently invisible, which is worse than the duplicate
+// it replaced.
+func TestRegressionAlert_AcknowledgementLifecycle(t *testing.T) {
+	ctx := context.Background()
+	pool := regressionTestPool(t, ctx)
+	org := auth.DefaultOrganizationID
+	poller := newTestPoller(pool)
+
+	const qid = "31337"
+	const qtext = "SELECT * FROM demo.invoices WHERE account_id = 7"
+
+	// Baseline ~100ms/call.
+	cum := cumCounters{}
+	seedPoll(t, ctx, pool, org, "default", 120, qid, qtext, cum)
+	for i, dTotal := range []float64{5000, 5200, 4950, 5050, 5150} {
+		addInterval(t, ctx, pool, org, "default", &cum, 105-(i*15), qid, qtext, 50, dTotal, 500)
+	}
+
+	// Regress to ~220ms/call: +120% over baseline -> "high".
+	addInterval(t, ctx, pool, org, "default", &cum, 20, qid, qtext, 50, 11000, 500)
+	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
+		t.Fatalf("EvaluateLatestPoll (open): %v", err)
+	}
+
+	alertID, impact, ack := oneAlert(t, ctx, pool, org, qid)
+	if ack != nil {
+		t.Fatal("a freshly opened alert must not be acknowledged")
+	}
+	if impact != "high" {
+		t.Fatalf("expected impact=high, got %q", impact)
+	}
+
+	// The analyst acknowledges it.
+	if _, err := pool.Exec(ctx, `
+		UPDATE app.regression_alerts SET acknowledged_at = now() WHERE id = $1
+	`, alertID); err != nil {
+		t.Fatalf("acknowledge: %v", err)
+	}
+
+	// Still regressing at the same severity: stays acknowledged (an analyst is
+	// on it) and must NOT open a second alert.
+	addInterval(t, ctx, pool, org, "default", &cum, 15, qid, qtext, 50, 11000, 500)
+	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
+		t.Fatalf("EvaluateLatestPoll (steady): %v", err)
+	}
+	sameID, _, ack := oneAlert(t, ctx, pool, org, qid)
+	if sameID != alertID {
+		t.Fatalf("a steady regression must refresh the existing alert, not open another (%s != %s)", sameID, alertID)
+	}
+	if ack == nil {
+		t.Fatal("a steady regression must stay acknowledged while it is handled")
+	}
+
+	// Now it gets materially worse: ~600ms/call, +500% over baseline ->
+	// "critical". The escalation must re-open the acknowledged alert.
+	addInterval(t, ctx, pool, org, "default", &cum, 10, qid, qtext, 50, 30000, 500)
+	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
+		t.Fatalf("EvaluateLatestPoll (escalate): %v", err)
+	}
+	escID, escImpact, ack := oneAlert(t, ctx, pool, org, qid)
+	if escID != alertID {
+		t.Fatalf("escalation must reuse the same alert row, got %s want %s", escID, alertID)
+	}
+	if escImpact != "critical" {
+		t.Fatalf("expected impact=critical after escalation, got %q", escImpact)
+	}
+	if ack != nil {
+		t.Fatal("an acknowledged alert must be re-opened when the regression escalates, " +
+			"or a worsening regression stays invisible in the inbox")
+	}
+
+	// Acknowledge again, then let the query recover: an acknowledged alert must
+	// still auto-resolve. Filtering recovery on acknowledged_at IS NULL left
+	// acknowledged alerts open forever.
+	if _, err := pool.Exec(ctx, `
+		UPDATE app.regression_alerts SET acknowledged_at = now() WHERE id = $1
+	`, alertID); err != nil {
+		t.Fatalf("re-acknowledge: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		addInterval(t, ctx, pool, org, "default", &cum, 5-i, qid, qtext, 50, 5000, 500) // back to ~100ms
+	}
+	if err := poller.EvaluateLatestPoll(ctx, org); err != nil {
+		t.Fatalf("EvaluateLatestPoll (recover): %v", err)
+	}
+	var resolvedAt *string
+	if err := pool.QueryRow(ctx, `
+		SELECT resolved_at::text FROM app.regression_alerts WHERE id = $1
+	`, alertID).Scan(&resolvedAt); err != nil {
+		t.Fatalf("read resolved_at: %v", err)
+	}
+	if resolvedAt == nil {
+		t.Fatal("an acknowledged alert must still auto-resolve once the query recovers")
+	}
+}
+
+// oneAlert asserts exactly one alert row exists for the query and returns it.
+func oneAlert(t *testing.T, ctx context.Context, pool *pgxpool.Pool, org, queryID string) (id, impact string, acknowledgedAt *string) {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM app.regression_alerts
+		WHERE organization_id = $1 AND queryid = $2 AND resolved_at IS NULL
+	`, org, queryID).Scan(&n); err != nil {
+		t.Fatalf("count alerts: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected exactly 1 unresolved alert for %s, got %d", queryID, n)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT id::text, impact, acknowledged_at::text FROM app.regression_alerts
+		WHERE organization_id = $1 AND queryid = $2 AND resolved_at IS NULL
+	`, org, queryID).Scan(&id, &impact, &acknowledgedAt); err != nil {
+		t.Fatalf("read alert: %v", err)
+	}
+	return id, impact, acknowledgedAt
 }
