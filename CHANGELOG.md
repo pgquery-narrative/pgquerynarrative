@@ -85,6 +85,12 @@ four, plus the lifecycle and deployment gaps found alongside them.
   mutable tags. The pin checker verified only refs that were already SHAs, so an
   action written as `@v7` was structurally invisible to it; it now rejects any
   unpinned external `uses:`.
+- **The `golang-migrate` CLI is pinned to the version `go.mod` depends on.** It
+  was invoked as `@latest` from a `golang:1.24-alpine` container, so the day
+  `v4.20.1` shipped requiring Go >= 1.25.11 every migration job in CI began
+  failing — unrelated to any code change. The CLI now tracks the library the
+  tests link against (`MIGRATE_VERSION`), and the container image satisfies
+  `go.mod`'"'"'s `go` directive (`MIGRATE_GO_IMAGE`).
 
 ### Fixed
 
