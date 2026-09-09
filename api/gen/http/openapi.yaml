@@ -456,6 +456,11 @@ paths:
           required: true
           type: string
           format: uuid
+        - name: generate_report_request_body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/InvestigationsGenerateReportRequestBody'
       responses:
         "200":
           description: OK response.
@@ -2624,6 +2629,13 @@ definitions:
         format: uuid
     required:
       - regression_alert_id
+  InvestigationsGenerateReportRequestBody:
+    title: InvestigationsGenerateReportRequestBody
+    type: object
+    properties:
+      accept_sample_match:
+        type: boolean
+        description: Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.
   InvestigationsRankCandidatesRequestBody:
     title: InvestigationsRankCandidatesRequestBody
     type: object
@@ -3692,6 +3704,7 @@ definitions:
         description: The connection this posture reflects
       connection_mode:
         type: string
+        description: Human-readable connection mode, derived from the live read-only probe — never asserted independently of `readonly`
       explain_analyze:
         type: string
       external_llm_data:
@@ -3712,6 +3725,7 @@ definitions:
         format: int32
       tenant_isolation:
         type: string
+        description: Isolation actually verifiable for the metadata store (row-level security). Physical isolation of the analytical database is a deployment property this endpoint cannot observe and does not claim
       tls:
         type: string
         description: Raw sslmode this connection is configured with (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
@@ -4017,13 +4031,11 @@ definitions:
         maxLength: 2000
       fix_status:
         type: string
-        description: 'Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)'
+        description: 'Target status: proposed | verified | applied | abandoned (or unchanged). confirmed/regressed are set by post-deploy measurement, not by this endpoint.'
         enum:
           - proposed
           - verified
           - applied
-          - confirmed
-          - regressed
           - abandoned
   ValidationError:
     title: ValidationError

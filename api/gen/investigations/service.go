@@ -140,6 +140,10 @@ type ExplainQueryResult struct {
 // generate_report method.
 type GenerateReportPayload struct {
 	ID string
+	// Acknowledge that result equivalence rests on a bounded sample, not
+	// full-result verification. Required to generate a report when equivalence
+	// status is SampleMatch.
+	AcceptSampleMatch *bool
 }
 
 // GetPayload is the payload type of the investigations service get method.
@@ -438,8 +442,8 @@ type SuggestRewritePayload struct {
 // update_fix method.
 type UpdateFixPayload struct {
 	ID string
-	// Target status: verified | applied | confirmed | regressed | abandoned (or
-	// unchanged)
+	// Target status: proposed | verified | applied | abandoned (or unchanged).
+	// confirmed/regressed are set by post-deploy measurement, not by this endpoint.
 	FixStatus *string
 	// PR or ticket URL
 	FixReference *string

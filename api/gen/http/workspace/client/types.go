@@ -43,11 +43,16 @@ type SecurityTrustResponseBody struct {
 	// The connection this posture reflects
 	ConnectionID   *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
 	Authentication *string `form:"authentication,omitempty" json:"authentication,omitempty" xml:"authentication,omitempty"`
+	// Human-readable connection mode, derived from the live read-only probe —
+	// never asserted independently of `readonly`
 	ConnectionMode *string `form:"connection_mode,omitempty" json:"connection_mode,omitempty" xml:"connection_mode,omitempty"`
 	// Whether the connection's role is confirmed read-only by a live probe
-	Readonly        *bool    `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
-	AllowedSchemas  []string `form:"allowed_schemas,omitempty" json:"allowed_schemas,omitempty" xml:"allowed_schemas,omitempty"`
-	TenantIsolation *string  `form:"tenant_isolation,omitempty" json:"tenant_isolation,omitempty" xml:"tenant_isolation,omitempty"`
+	Readonly       *bool    `form:"readonly,omitempty" json:"readonly,omitempty" xml:"readonly,omitempty"`
+	AllowedSchemas []string `form:"allowed_schemas,omitempty" json:"allowed_schemas,omitempty" xml:"allowed_schemas,omitempty"`
+	// Isolation actually verifiable for the metadata store (row-level security).
+	// Physical isolation of the analytical database is a deployment property this
+	// endpoint cannot observe and does not claim
+	TenantIsolation *string `form:"tenant_isolation,omitempty" json:"tenant_isolation,omitempty" xml:"tenant_isolation,omitempty"`
 	// Raw sslmode this connection is configured with
 	// (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
 	TLS       *string `form:"tls,omitempty" json:"tls,omitempty" xml:"tls,omitempty"`

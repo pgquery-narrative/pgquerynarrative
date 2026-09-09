@@ -961,6 +961,15 @@
         ],
         "type": "object"
       },
+      "GenerateReportRequestBody": {
+        "properties": {
+          "accept_sample_match": {
+            "description": "Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "IndexAdvice": {
         "properties": {
           "candidate_ddl": {
@@ -2597,6 +2606,7 @@
             "type": "string"
           },
           "connection_mode": {
+            "description": "Human-readable connection mode, derived from the live read-only probe — never asserted independently of `readonly`",
             "type": "string"
           },
           "explain_analyze": {
@@ -2624,6 +2634,7 @@
             "type": "integer"
           },
           "tenant_isolation": {
+            "description": "Isolation actually verifiable for the metadata store (row-level security). Physical isolation of the analytical database is a deployment property this endpoint cannot observe and does not claim",
             "type": "string"
           },
           "tls": {
@@ -2968,13 +2979,11 @@
             "type": "string"
           },
           "fix_status": {
-            "description": "Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)",
+            "description": "Target status: proposed | verified | applied | abandoned (or unchanged). confirmed/regressed are set by post-deploy measurement, not by this endpoint.",
             "enum": [
               "proposed",
               "verified",
               "applied",
-              "confirmed",
-              "regressed",
               "abandoned"
             ],
             "type": "string"
@@ -2997,13 +3006,11 @@
             "type": "string"
           },
           "fix_status": {
-            "description": "Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)",
+            "description": "Target status: proposed | verified | applied | abandoned (or unchanged). confirmed/regressed are set by post-deploy measurement, not by this endpoint.",
             "enum": [
               "proposed",
               "verified",
               "applied",
-              "confirmed",
-              "regressed",
               "abandoned"
             ],
             "type": "string"
@@ -3800,6 +3807,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateReportRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

@@ -653,8 +653,23 @@ func EncodeGenerateReportResponse(encoder func(context.Context, http.ResponseWri
 func DecodeGenerateReportRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.GenerateReportPayload, error) {
 	return func(r *http.Request) (*investigations.GenerateReportPayload, error) {
 		var (
-			id  string
-			err error
+			body GenerateReportRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+
+		var (
+			id string
 
 			params = mux.Vars(r)
 		)
@@ -663,7 +678,7 @@ func DecodeGenerateReportRequest(mux goahttp.Muxer, decoder func(*http.Request) 
 		if err != nil {
 			return nil, err
 		}
-		payload := NewGenerateReportPayload(id)
+		payload := NewGenerateReportPayload(&body, id)
 
 		return payload, nil
 	}

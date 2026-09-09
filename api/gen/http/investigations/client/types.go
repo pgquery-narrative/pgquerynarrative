@@ -50,8 +50,8 @@ type AddCandidateRequestBody struct {
 // UpdateFixRequestBody is the type of the "investigations" service
 // "update_fix" endpoint HTTP request body.
 type UpdateFixRequestBody struct {
-	// Target status: verified | applied | confirmed | regressed | abandoned (or
-	// unchanged)
+	// Target status: proposed | verified | applied | abandoned (or unchanged).
+	// confirmed/regressed are set by post-deploy measurement, not by this endpoint.
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL
 	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
@@ -62,6 +62,15 @@ type UpdateFixRequestBody struct {
 type RankCandidatesRequestBody struct {
 	// When true, dry-EXPLAIN uses ANALYZE for timing (slower)
 	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
+}
+
+// GenerateReportRequestBody is the type of the "investigations" service
+// "generate_report" endpoint HTTP request body.
+type GenerateReportRequestBody struct {
+	// Acknowledge that result equivalence rests on a bounded sample, not
+	// full-result verification. Required to generate a report when equivalence
+	// status is SampleMatch.
+	AcceptSampleMatch *bool `form:"accept_sample_match,omitempty" json:"accept_sample_match,omitempty" xml:"accept_sample_match,omitempty"`
 }
 
 // CreateResponseBody is the type of the "investigations" service "create"
@@ -782,6 +791,15 @@ func NewRankCandidatesRequestBody(p *investigations.RankCandidatesPayload) *Rank
 		if body.Analyze == zero {
 			body.Analyze = false
 		}
+	}
+	return body
+}
+
+// NewGenerateReportRequestBody builds the HTTP request body from the payload
+// of the "generate_report" endpoint of the "investigations" service.
+func NewGenerateReportRequestBody(p *investigations.GenerateReportPayload) *GenerateReportRequestBody {
+	body := &GenerateReportRequestBody{
+		AcceptSampleMatch: p.AcceptSampleMatch,
 	}
 	return body
 }

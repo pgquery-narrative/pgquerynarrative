@@ -42,11 +42,16 @@ type SecurityTrustResponseBody struct {
 	// The connection this posture reflects
 	ConnectionID   string `form:"connection_id" json:"connection_id" xml:"connection_id"`
 	Authentication string `form:"authentication" json:"authentication" xml:"authentication"`
+	// Human-readable connection mode, derived from the live read-only probe —
+	// never asserted independently of `readonly`
 	ConnectionMode string `form:"connection_mode" json:"connection_mode" xml:"connection_mode"`
 	// Whether the connection's role is confirmed read-only by a live probe
-	Readonly        bool     `form:"readonly" json:"readonly" xml:"readonly"`
-	AllowedSchemas  []string `form:"allowed_schemas" json:"allowed_schemas" xml:"allowed_schemas"`
-	TenantIsolation string   `form:"tenant_isolation" json:"tenant_isolation" xml:"tenant_isolation"`
+	Readonly       bool     `form:"readonly" json:"readonly" xml:"readonly"`
+	AllowedSchemas []string `form:"allowed_schemas" json:"allowed_schemas" xml:"allowed_schemas"`
+	// Isolation actually verifiable for the metadata store (row-level security).
+	// Physical isolation of the analytical database is a deployment property this
+	// endpoint cannot observe and does not claim
+	TenantIsolation string `form:"tenant_isolation" json:"tenant_isolation" xml:"tenant_isolation"`
 	// Raw sslmode this connection is configured with
 	// (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
 	TLS       string `form:"tls" json:"tls" xml:"tls"`

@@ -150,6 +150,12 @@ var _ = Service("investigations", func() {
 			Attribute("id", String, func() {
 				Format(FormatUUID)
 			})
+			// SampleMatch is the *fallback* taken when full-result fingerprinting
+			// could not run. It is supporting evidence, not verification, so
+			// shipping a report on it takes a deliberate human acknowledgement
+			// rather than passing silently as if it were VerifiedEqual.
+			Attribute("accept_sample_match", Boolean,
+				"Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch.")
 			Required("id")
 		})
 		Result(Investigation)

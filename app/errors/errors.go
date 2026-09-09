@@ -33,6 +33,24 @@ var (
 	// ErrMultipleStatements indicates the query contains multiple SQL statements.
 	// Only single-statement queries are allowed for security.
 	ErrMultipleStatements = errors.New("multiple SQL statements are not allowed")
+
+	// ErrFunctionNotAllowed indicates the query calls a function that is denied by
+	// policy. A read-only transaction stops writes, but it does not make every
+	// SELECT expression side-effect free: session advisory locks, session GUC
+	// mutation and server-side file access all run happily inside one.
+	ErrFunctionNotAllowed = errors.New("query calls a function that is not allowed")
+
+	// ErrFunctionSchemaNotAllowed indicates the query calls a schema-qualified
+	// function outside the allowed schemas. Without this, the schema allowlist
+	// governs tables but leaves a function-shaped hole in the same boundary.
+	ErrFunctionSchemaNotAllowed = errors.New("query calls a function in a disallowed schema")
+
+	// ErrSelectIntoNotAllowed indicates a SELECT ... INTO, which creates a table.
+	ErrSelectIntoNotAllowed = errors.New("SELECT ... INTO is not allowed")
+
+	// ErrLockingClauseNotAllowed indicates a row-locking clause (FOR UPDATE/SHARE),
+	// which takes write locks and is not read-only.
+	ErrLockingClauseNotAllowed = errors.New("row locking clauses (FOR UPDATE/SHARE) are not allowed")
 )
 
 // Query execution errors

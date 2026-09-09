@@ -810,6 +810,22 @@ func (c *Client) BuildGenerateReportRequest(ctx context.Context, v any) (*http.R
 	return req, nil
 }
 
+// EncodeGenerateReportRequest returns an encoder for requests sent to the
+// investigations generate_report server.
+func EncodeGenerateReportRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*investigations.GenerateReportPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("investigations", "generate_report", "*investigations.GenerateReportPayload", v)
+		}
+		body := NewGenerateReportRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("investigations", "generate_report", err)
+		}
+		return nil
+	}
+}
+
 // DecodeGenerateReportResponse returns a decoder for responses returned by the
 // investigations generate_report endpoint. restoreBody controls whether the
 // response body should be restored after having been read.

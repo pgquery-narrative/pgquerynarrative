@@ -61,6 +61,25 @@ jobs:
             exit 1
           fi
 
+          # Resolving the SHAs that ARE present says nothing about an action that
+          # was never pinned in the first place: a workflow written as
+          # actions/setup-node@v7 simply does not appear in "$pins", so a mutable
+          # major tag used to pass this check unnoticed. Reject any external
+          # `uses:` whose ref is not a 40-hex SHA. Local actions (./...) and
+          # reusable workflows in this repo are exempt — they are already pinned
+          # by the commit being built.
+          # The ref must start with an alphanumeric so a local "./.github/..."
+          # path (which cannot be tampered with upstream) is not flagged.
+          unpinned="$(grep -nhE '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[A-Za-z0-9_-][A-Za-z0-9_.-]*/' \
+                      .github/workflows/*.yml .github/actions/*/*.yml 2>/dev/null \
+                      | grep -vE '@[a-f0-9]{40}([[:space:]]|$)' || true)"
+          if [ -n "$unpinned" ]; then
+            echo "External actions must be pinned to an immutable 40-character commit SHA."
+            echo "A mutable tag (@v1, @main) lets the action's owner change what runs here."
+            echo "$unpinned"
+            rc=1
+          fi
+
           for pin in $pins; do
             path="${pin%@*}"; sha="${pin##*@}"
             owner="${path%%/*}"; rest="${path#*/}"; repo="${rest%%/*}"
@@ -203,7 +222,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
         with:
           version: v3.16.3
       - name: Verify chart rejects unsafe defaults
@@ -260,7 +279,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: npm
@@ -284,7 +303,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: npm
@@ -312,7 +331,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: npm
@@ -367,7 +386,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: npm

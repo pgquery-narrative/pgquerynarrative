@@ -327,6 +327,11 @@ func (p *RegressionPoller) detectRegressions(ctx context.Context, appDB db.DB, o
 // already-open one (bumping occurrences and the frozen interval snapshot) via
 // ON CONFLICT against the partial unique index, and links a fresh alert to the
 // prior resolved one when the query regressed again after recovering.
+//
+// The conflict predicate keys on resolution only. Acknowledgement means "an
+// analyst has seen this", not "this is closed": including it let an acknowledged
+// alert fall outside the constraint so a persistent regression opened a second
+// alert on the next poll instead of bumping the first.
 func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, connID, queryID, title, queryText string, v regressionVerdict, impact string, cur intervalStats, baselineMean float64) error {
 	var resolvedID string
 	_ = appDB.QueryRow(ctx, `
@@ -348,7 +353,7 @@ func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, 
 			last_seen_at, baseline_mean_time_ms, previous_alert_id
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'poller', $9, $10, $11, $12, $13, now(), $14, $15)
 		ON CONFLICT (organization_id, connection_id, queryid)
-		  WHERE resolved_at IS NULL AND acknowledged_at IS NULL AND queryid IS NOT NULL
+		  WHERE resolved_at IS NULL AND queryid IS NOT NULL
 		DO UPDATE SET
 			last_seen_at   = now(),
 			occurrences    = app.regression_alerts.occurrences + 1,
@@ -369,11 +374,15 @@ func (p *RegressionPoller) upsertAlert(ctx context.Context, appDB db.DB, orgID, 
 // resolveRecoveredAlerts closes open poller alerts whose query is back to
 // baseline. recoveredFn returns (recovered, known) for a queryid — known=false
 // means the query wasn't in the latest poll, so its alert is left untouched.
+//
+// Acknowledgement is deliberately not part of the predicate. Whether an analyst
+// has seen an alert says nothing about whether the query recovered; filtering on
+// it left acknowledged alerts open forever after the regression had cleared.
 func (p *RegressionPoller) resolveRecoveredAlerts(ctx context.Context, appDB db.DB, orgID, connID string, recoveredFn func(queryID string) (recovered, known bool)) error {
 	rows, err := appDB.Query(ctx, `
 		SELECT id::text, queryid FROM app.regression_alerts
 		WHERE organization_id = $1 AND connection_id = $2 AND source = 'poller'
-		  AND acknowledged_at IS NULL AND resolved_at IS NULL
+		  AND resolved_at IS NULL
 		  AND queryid IS NOT NULL
 	`, orgID, connID)
 	if err != nil {
@@ -422,17 +431,22 @@ const fixRegressGraceHours = 72
 func (p *RegressionPoller) reconcileAppliedFixes(ctx context.Context, appDB db.DB, orgID string) error {
 	_, err := appDB.Exec(ctx, `
 		WITH ranked AS (
-			SELECT s.queryid,
+			-- (connection, queryid) is the query identity: the same statement on two
+			-- connections hashes to the same queryid but is two independent cumulative
+			-- counter series. Interleaving them by captured_at yields garbage deltas
+			-- and could confirm a fix on DB-A from DB-B's traffic.
+			SELECT p.connection_id, s.queryid,
 			       s.total_time_ms - lag(s.total_time_ms) OVER w AS d_total,
 			       s.calls         - lag(s.calls)         OVER w AS d_calls,
-			       row_number() OVER (PARTITION BY s.queryid ORDER BY p.captured_at DESC) AS rn
+			       row_number() OVER (PARTITION BY p.connection_id, s.queryid
+			                          ORDER BY p.captured_at DESC) AS rn
 			FROM app.stat_statement_snapshots s
 			JOIN app.stat_statement_polls p ON p.id = s.poll_id
 			WHERE p.organization_id = $1
-			WINDOW w AS (PARTITION BY s.queryid ORDER BY p.captured_at)
+			WINDOW w AS (PARTITION BY p.connection_id, s.queryid ORDER BY p.captured_at)
 		),
 		current_mean AS (
-			SELECT queryid, d_total / d_calls AS mean_time_ms
+			SELECT connection_id, queryid, d_total / d_calls AS mean_time_ms
 			FROM ranked
 			WHERE rn = 1 AND d_calls > 0 AND d_total >= 0
 		),
@@ -444,7 +458,8 @@ func (p *RegressionPoller) reconcileAppliedFixes(ctx context.Context, appDB db.D
 			FROM app.investigations i
 			JOIN app.regression_alerts ra
 			  ON ra.investigation_id = i.id AND ra.organization_id = i.organization_id
-			JOIN current_mean cm ON cm.queryid = ra.queryid
+			JOIN current_mean cm
+			  ON cm.queryid = ra.queryid AND cm.connection_id = ra.connection_id
 			WHERE i.organization_id = $1
 			  AND i.fix_status = 'applied'
 			  AND i.fix_baseline_mean_ms IS NOT NULL

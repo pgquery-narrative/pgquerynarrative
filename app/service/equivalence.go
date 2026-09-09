@@ -12,8 +12,22 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
-// Equivalence status values returned to API / reports. Only VerifiedEqual is a
-// full-result proof; SampleMatch is supporting evidence over a bounded sample.
+// Equivalence status values returned to API / reports.
+//
+// VerifiedEqual means every row of both results contributed to a full-result,
+// order-independent fingerprint (count + sum + xor of a 64-bit row hash) and the
+// fingerprints matched. That is strong whole-result verification, but it is a
+// fingerprint comparison, not a literal proof, and its limits are worth naming:
+//
+//   - it compares row *text*, so two results with identical text but different
+//     column types or column names fingerprint the same;
+//   - it is deliberately order-independent, so ORDER BY differences are
+//     invisible — where ordering is part of the query's contract, that must be
+//     checked separately;
+//   - a hash collision is astronomically unlikely but not impossible.
+//
+// SampleMatch is the fallback when full-result fingerprinting could not run:
+// supporting evidence over a bounded sample, never full verification.
 const (
 	EquivalenceVerifiedEqual = "VerifiedEqual"
 	EquivalenceSampleMatch   = "SampleMatch"
@@ -78,7 +92,8 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 	// Primary path: one aggregate pass per side compares the *entire* result
 	// with no sort and three scalars on the wire. Two executions instead of the
 	// four the count-plus-sample path needed, and no 1000-row ceiling on what
-	// can be called VerifiedEqual.
+	// can be called VerifiedEqual (full-result fingerprint match, not literal proof
+	// — see the status constants for what the fingerprint does and does not cover).
 	if res, ok := compareByFingerprint(ctx, runner, beforeSQL, afterSQL); ok {
 		return res
 	}
@@ -162,10 +177,10 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 
 	// COUNT(*) matched but the result is larger than the sample cap: the two
 	// deterministic md5-ordered samples matched, which is supporting evidence,
-	// not a full-result proof.
+	// not full-result verification.
 	out.Status = EquivalenceSampleMatch
 	out.Notes = fmt.Sprintf(
-		"COUNT(*) matched (%d). A deterministic %d-row sample (ordered by row hash) matched as an order-independent multiset — supporting evidence, not full-result proof. Re-check on a representative parameter set before deploying.",
+		"COUNT(*) matched (%d). A deterministic %d-row sample (ordered by row hash) matched as an order-independent multiset — supporting evidence, not full-result verification. Re-check on a representative parameter set before deploying.",
 		beforeCount, out.SampleRows,
 	)
 	return out

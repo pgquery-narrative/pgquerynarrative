@@ -252,6 +252,10 @@ export interface GenerateReportPayload {
   sql: string;
 }
 
+export interface GenerateReportRequestBody {
+  accept_sample_match?: boolean;
+}
+
 export interface IndexAdvice {
   candidate_ddl?: string;
   issues?: string[];
@@ -756,13 +760,13 @@ export interface TrendSummaryData {
 
 export interface UpdateFixPayload {
   fix_reference?: string;
-  fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned";
+  fix_status?: "proposed" | "verified" | "applied" | "abandoned";
   id: string;
 }
 
 export interface UpdateFixPayload2 {
   fix_reference?: string;
-  fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned";
+  fix_status?: "proposed" | "verified" | "applied" | "abandoned";
 }
 
 export interface UpdateRequestBody {

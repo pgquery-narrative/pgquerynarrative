@@ -39,15 +39,46 @@ MIGRATE_USER="${DATABASE_MIGRATION_USER:-$DB_USER}"
 MIGRATE_PASSWORD="${DATABASE_MIGRATION_PASSWORD:-$DB_PASSWORD}"
 MIGRATE_URL="${DATABASE_MIGRATION_URL:-postgres://${MIGRATE_USER}:${MIGRATE_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=${DATABASE_SSL_MODE:-disable}}"
 
-if [ "${MIGRATE_USER}" = "${DB_USER}" ] && [ -z "${DATABASE_MIGRATION_URL:-}" ]; then
+if [ "${PGQUERYNARRATIVE_SKIP_MIGRATIONS:-false}" != "true" ] \
+   && [ "${MIGRATE_USER}" = "${DB_USER}" ] && [ -z "${DATABASE_MIGRATION_URL:-}" ]; then
+  # In production, fail closed rather than starting a migration the runtime role
+  # cannot finish. Attempting it leaves the schema half-applied and the failure
+  # surfaces as an opaque mid-migration permission error; refusing to start says
+  # exactly what is missing.
+  if [ "${APP_ENV:-}" = "production" ]; then
+    echo "Configuration error: migrations are enabled but no migration credential is set." >&2
+    echo "Set DATABASE_MIGRATION_USER/DATABASE_MIGRATION_PASSWORD (or DATABASE_MIGRATION_URL) to a" >&2
+    echo "role that may CREATE EXTENSION and ALTER ROLE, or run migrations as a separate Job and" >&2
+    echo "start this container with PGQUERYNARRATIVE_SKIP_MIGRATIONS=true." >&2
+    exit 1
+  fi
   echo "Running migrations as ${DB_USER}. If this is a fresh database, set" >&2
   echo "DATABASE_MIGRATION_USER to a role that may create extensions and alter roles." >&2
 fi
 
-/app/bin/migrate -path /app/app/db/migrations -database "${MIGRATE_URL}" up
+if [ "${PGQUERYNARRATIVE_SKIP_MIGRATIONS:-false}" = "true" ]; then
+  echo "PGQUERYNARRATIVE_SKIP_MIGRATIONS=true — not running migrations." >&2
+else
+  /app/bin/migrate -path /app/app/db/migrations -database "${MIGRATE_URL}" up
+fi
 
 if [ "${PGQUERYNARRATIVE_SEED:-false}" = "true" ]; then
   psql "${DB_URL}" -f /app/tools/db/seed.sql
 fi
+
+# Drop every credential the server does not need before handing over to it.
+#
+# The migration role may CREATE EXTENSION and ALTER ROLE; the runtime role
+# deliberately may not, because the runtime role also executes user-supplied SQL.
+# Leaving the migration credentials in the environment would hand a compromised
+# server process exactly the DDL privileges this split exists to withhold.
+#
+# The stronger deployment shape is still to run migrations in a separate Job or
+# init container so the runtime container never receives these at all — see
+# deploy/ — but a single-container deployment should not pay for that with a
+# privileged secret sitting in the server's environment for the life of the pod.
+unset DATABASE_MIGRATION_USER DATABASE_MIGRATION_PASSWORD DATABASE_MIGRATION_URL
+unset MIGRATE_USER MIGRATE_PASSWORD MIGRATE_URL
+unset PGPASSWORD DB_URL
 
 exec /app/bin/server

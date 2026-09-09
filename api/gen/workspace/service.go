@@ -124,10 +124,15 @@ type SecurityTrust2 struct {
 	// The connection this posture reflects
 	ConnectionID   string
 	Authentication string
+	// Human-readable connection mode, derived from the live read-only probe —
+	// never asserted independently of `readonly`
 	ConnectionMode string
 	// Whether the connection's role is confirmed read-only by a live probe
-	Readonly        bool
-	AllowedSchemas  []string
+	Readonly       bool
+	AllowedSchemas []string
+	// Isolation actually verifiable for the metadata store (row-level security).
+	// Physical isolation of the analytical database is a deployment property this
+	// endpoint cannot observe and does not claim
 	TenantIsolation string
 	// Raw sslmode this connection is configured with
 	// (disable/allow/prefer/require/verify-ca/verify-full), reported as-is

@@ -52,8 +52,8 @@ type AddCandidateRequestBody struct {
 // UpdateFixRequestBody is the type of the "investigations" service
 // "update_fix" endpoint HTTP request body.
 type UpdateFixRequestBody struct {
-	// Target status: verified | applied | confirmed | regressed | abandoned (or
-	// unchanged)
+	// Target status: proposed | verified | applied | abandoned (or unchanged).
+	// confirmed/regressed are set by post-deploy measurement, not by this endpoint.
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL
 	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
@@ -64,6 +64,15 @@ type UpdateFixRequestBody struct {
 type RankCandidatesRequestBody struct {
 	// When true, dry-EXPLAIN uses ANALYZE for timing (slower)
 	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
+}
+
+// GenerateReportRequestBody is the type of the "investigations" service
+// "generate_report" endpoint HTTP request body.
+type GenerateReportRequestBody struct {
+	// Acknowledge that result equivalence rests on a bounded sample, not
+	// full-result verification. Required to generate a report when equivalence
+	// status is SampleMatch.
+	AcceptSampleMatch *bool `form:"accept_sample_match,omitempty" json:"accept_sample_match,omitempty" xml:"accept_sample_match,omitempty"`
 }
 
 // CreateResponseBody is the type of the "investigations" service "create"
@@ -1308,8 +1317,10 @@ func NewRankCandidatesPayload(body *RankCandidatesRequestBody, id string) *inves
 
 // NewGenerateReportPayload builds a investigations service generate_report
 // endpoint payload.
-func NewGenerateReportPayload(id string) *investigations.GenerateReportPayload {
-	v := &investigations.GenerateReportPayload{}
+func NewGenerateReportPayload(body *GenerateReportRequestBody, id string) *investigations.GenerateReportPayload {
+	v := &investigations.GenerateReportPayload{
+		AcceptSampleMatch: body.AcceptSampleMatch,
+	}
 	v.ID = id
 
 	return v
@@ -1387,8 +1398,8 @@ func ValidateAddCandidateRequestBody(body *AddCandidateRequestBody) (err error) 
 // update_fix_request_body
 func ValidateUpdateFixRequestBody(body *UpdateFixRequestBody) (err error) {
 	if body.FixStatus != nil {
-		if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "confirmed" || *body.FixStatus == "regressed" || *body.FixStatus == "abandoned") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "confirmed", "regressed", "abandoned"}))
+		if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "abandoned") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "abandoned"}))
 		}
 	}
 	if body.FixReference != nil {

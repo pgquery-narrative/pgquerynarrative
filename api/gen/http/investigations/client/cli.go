@@ -218,11 +218,11 @@ func BuildUpdateFixPayload(investigationsUpdateFixBody string, investigationsUpd
 	{
 		err = json.Unmarshal([]byte(investigationsUpdateFixBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"v9c\",\n      \"fix_status\": \"confirmed\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"v9c\",\n      \"fix_status\": \"verified\"\n   }'")
 		}
 		if body.FixStatus != nil {
-			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "confirmed" || *body.FixStatus == "regressed" || *body.FixStatus == "abandoned") {
-				err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "confirmed", "regressed", "abandoned"}))
+			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "abandoned") {
+				err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "abandoned"}))
 			}
 		}
 		if body.FixReference != nil {
@@ -304,8 +304,15 @@ func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investi
 
 // BuildGenerateReportPayload builds the payload for the investigations
 // generate_report endpoint from CLI flags.
-func BuildGenerateReportPayload(investigationsGenerateReportID string) (*investigations.GenerateReportPayload, error) {
+func BuildGenerateReportPayload(investigationsGenerateReportBody string, investigationsGenerateReportID string) (*investigations.GenerateReportPayload, error) {
 	var err error
+	var body GenerateReportRequestBody
+	{
+		err = json.Unmarshal([]byte(investigationsGenerateReportBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"accept_sample_match\": true\n   }'")
+		}
+	}
 	var id string
 	{
 		id = investigationsGenerateReportID
@@ -314,7 +321,9 @@ func BuildGenerateReportPayload(investigationsGenerateReportID string) (*investi
 			return nil, err
 		}
 	}
-	v := &investigations.GenerateReportPayload{}
+	v := &investigations.GenerateReportPayload{
+		AcceptSampleMatch: body.AcceptSampleMatch,
+	}
 	v.ID = id
 
 	return v, nil

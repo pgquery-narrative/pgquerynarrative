@@ -303,6 +303,10 @@ func TestP1HeroPath_GoldenQueries(t *testing.T) {
 		name     string
 		sql      string
 		category string
+		// wantNone pins a shape we deliberately refuse to rewrite. Asserting the
+		// absence here, against real PostgreSQL, is what stops the pattern being
+		// quietly reintroduced.
+		wantNone bool
 	}{
 		{
 			name:     "EXTRACT year month",
@@ -320,15 +324,34 @@ func TestP1HeroPath_GoldenQueries(t *testing.T) {
 			category: "in_to_exists",
 		},
 		{
-			name:     "numeric cast",
+			// Dropping a cast off a column is only sound when the column's actual
+			// type makes the cast a no-op, which the AST cannot tell us: on a
+			// numeric column, amount::integer = 1 is TRUE for 1.4 while amount = 1
+			// is FALSE. No catalog types in the rewriter, so no rewrite.
+			name:     "numeric cast is not rewritten",
 			sql:      `SELECT id FROM demo.sales WHERE quantity::int = 3`,
-			category: "implicit_cast",
+			wantNone: true,
+		},
+		{
+			// price::text = '12' is FALSE for numeric 12.0 while price = 12 is
+			// TRUE; on a text column the rewrite would not even parse.
+			name:     "text cast is not rewritten",
+			sql:      `SELECT id FROM demo.sales WHERE product_name::text = 'Item'`,
+			wantNone: true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cands := queryrunner.SuggestRewrites(tc.sql, nil)
+			if tc.wantNone {
+				for _, c := range cands {
+					if !strings.Contains(c.SQL, "::") && !strings.Contains(strings.ToLower(c.SQL), "cast(") {
+						t.Fatalf("cast must not be dropped without catalog types, got: %s", c.SQL)
+					}
+				}
+				return
+			}
 			if len(cands) == 0 {
 				t.Fatalf("expected rewrite for %s", tc.name)
 			}
