@@ -248,46 +248,6 @@ func tryRewriteDateTruncInequality(ae *pg_query.A_Expr) (*pg_query.Node, dateTru
 	}
 }
 
-func tryRewriteNumericCastEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
-	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_OP || !aExprOpIs(ae, "=") {
-		return nil, dateTruncRewrite{}, false
-	}
-	colNode, rhs, ok := splitNumericCastEquality(ae.Lexpr, ae.Rexpr)
-	if !ok {
-		colNode, rhs, ok = splitNumericCastEquality(ae.Rexpr, ae.Lexpr)
-	}
-	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	col := cloneColumnRef(colNode)
-	if col == nil || rhs == nil {
-		return nil, dateTruncRewrite{}, false
-	}
-	return cmpExpr("=", col, rhs), dateTruncRewrite{Column: columnRefName(colNode), Kind: "numeric_cast"}, true
-}
-
-func tryRewriteTextCastEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncRewrite, bool) {
-	if ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_OP || !aExprOpIs(ae, "=") {
-		return nil, dateTruncRewrite{}, false
-	}
-	colNode, lit, ok := splitTextCastEquality(ae.Lexpr, ae.Rexpr)
-	if !ok {
-		colNode, lit, ok = splitTextCastEquality(ae.Rexpr, ae.Lexpr)
-	}
-	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(lit), 10, 32)
-	if err != nil {
-		return nil, dateTruncRewrite{}, false
-	}
-	col := cloneColumnRef(colNode)
-	if col == nil {
-		return nil, dateTruncRewrite{}, false
-	}
-	return cmpExpr("=", col, aConstInt(int32(n))), dateTruncRewrite{Column: columnRefName(colNode), Kind: "text_cast"}, true
-}
-
 func rangeOnColumn(colNode *pg_query.Node, start, end time.Time, unit, kind string) (*pg_query.Node, dateTruncRewrite, bool) {
 	startLit := temporalLiteralNode(start, temporalDate, unit)
 	endLit := temporalLiteralNode(end, temporalDate, unit)
@@ -402,65 +362,6 @@ func splitCoalesceEquality(a, b *pg_query.Node) (col, def, constNode *pg_query.N
 		return nil, nil, nil, false
 	}
 	return col, ce.Args[1], b, true
-}
-
-func splitTextCastEquality(a, b *pg_query.Node) (col *pg_query.Node, lit string, ok bool) {
-	if a == nil || b == nil {
-		return nil, "", false
-	}
-	tc := a.GetTypeCast()
-	if tc == nil || !isTextTypeName(typeNameLast(tc.TypeName)) {
-		return nil, "", false
-	}
-	col = unwrapColumnRefNode(tc.Arg)
-	if col == nil {
-		return nil, "", false
-	}
-	lit, ok = stringConstValue(b)
-	if !ok {
-		if n, iok := intConstValue(b); iok {
-			return col, strconv.FormatInt(n, 10), true
-		}
-		return nil, "", false
-	}
-	return col, lit, true
-}
-
-func isTextTypeName(name string) bool {
-	switch strings.ToLower(name) {
-	case "text", "varchar", "bpchar", "character", "citext":
-		return true
-	default:
-		return false
-	}
-}
-
-func isNumericTypeName(name string) bool {
-	switch strings.ToLower(name) {
-	case "int2", "int4", "int8", "integer", "bigint", "smallint",
-		"numeric", "decimal", "float4", "float8", "real", "double precision":
-		return true
-	default:
-		return false
-	}
-}
-
-func splitNumericCastEquality(a, b *pg_query.Node) (col *pg_query.Node, rhs *pg_query.Node, ok bool) {
-	if a == nil || b == nil {
-		return nil, nil, false
-	}
-	tc := a.GetTypeCast()
-	if tc == nil || !isNumericTypeName(typeNameLast(tc.TypeName)) {
-		return nil, nil, false
-	}
-	col = unwrapColumnRefNode(tc.Arg)
-	if col == nil {
-		return nil, nil, false
-	}
-	if isConstNode(b) {
-		return col, b, true
-	}
-	return nil, nil, false
 }
 
 func splitDateTruncFunc(n *pg_query.Node) (unit string, col *pg_query.Node, ok bool) {

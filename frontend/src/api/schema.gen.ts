@@ -756,13 +756,13 @@ export interface TrendSummaryData {
 
 export interface UpdateFixPayload {
   fix_reference?: string;
-  fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned";
+  fix_status?: "proposed" | "verified" | "applied" | "abandoned";
   id: string;
 }
 
 export interface UpdateFixPayload2 {
   fix_reference?: string;
-  fix_status?: "proposed" | "verified" | "applied" | "confirmed" | "regressed" | "abandoned";
+  fix_status?: "proposed" | "verified" | "applied" | "abandoned";
 }
 
 export interface UpdateRequestBody {

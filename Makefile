@@ -4,6 +4,12 @@ GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 GOA ?= goa
 GOA_VERSION ?= v3.24.1
+# golang-migrate CLI, pinned to the same version go.mod depends on so the CLI and
+# the library the tests link against cannot drift. Previously `@latest`, which
+# broke every migration job the day v4.20.1 shipped requiring a newer Go than the
+# container image provided. The image must satisfy go.mod's `go` directive.
+MIGRATE_VERSION ?= v4.19.1
+MIGRATE_GO_IMAGE ?= golang:1.26-alpine
 # Use a user-writable module cache to avoid permission issues with system GOMODCACHE (e.g. root-owned ~/go/pkg/mod).
 GOMODCACHE ?= $(HOME)/.gomodcache
 export GOMODCACHE
@@ -403,8 +409,8 @@ migrate-docker: postgres-up
 		(echo "❌ Postgres not ready. Run: make postgres-up" && exit 1)
 	@chmod +x ./tools/db/migrate_preflight.sh ./tools/db/migrate_fail_hint.sh
 	@sh ./tools/db/migrate_preflight.sh
-	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
-		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default $(MIGRATE_GO_IMAGE) \
+		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) \
 		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up' \
 		|| sh ./tools/db/migrate_fail_hint.sh
 	@echo "✅ Migrations applied"
@@ -414,8 +420,8 @@ migrate-docker: postgres-up
 #   make migrate-force-docker VERSION=54
 migrate-force-docker: postgres-up
 	@if [ -z "$(VERSION)" ]; then echo "❌ Set VERSION, e.g. make migrate-force-docker VERSION=54"; exit 1; fi
-	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
-		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default $(MIGRATE_GO_IMAGE) \
+		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) \
 		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" force $(VERSION)'
 	@echo "✅ schema_migrations forced to $(VERSION) (dirty flag cleared)"
 
@@ -435,11 +441,11 @@ migrate-cycle-docker: postgres-up
 		exit 1; \
 	fi
 	@$(MAKE) db-init-docker || true
-	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default golang:1.24-alpine \
+	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default $(MIGRATE_GO_IMAGE) \
 		sh -c 'apk add --no-cache git && \
-		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up && \
-		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" down -all && \
-		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@latest -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" down -all && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
 	@echo "✅ Migration up/down/up cycle passed"
 
 db-security-verify-docker: postgres-up

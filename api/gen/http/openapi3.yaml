@@ -372,6 +372,13 @@ paths:
       description: Generate an engineering investigation report
       operationId: investigations#generate_report
       parameters:
+        - name: accept_sample_match
+          in: query
+          description: Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.
+          allowEmptyValue: true
+          schema:
+            type: boolean
+            description: Acknowledge that result equivalence rests on a bounded sample, not full-result verification. Required to generate a report when equivalence status is SampleMatch; the resulting report is marked results_sampled in its provenance.
         - name: id
           in: path
           required: true
@@ -3352,6 +3359,7 @@ components:
           description: The connection this posture reflects
         connection_mode:
           type: string
+          description: Human-readable connection mode, derived from the live read-only probe — never asserted independently of `readonly`
         explain_analyze:
           type: string
         external_llm_data:
@@ -3372,6 +3380,7 @@ components:
           format: int32
         tenant_isolation:
           type: string
+          description: Isolation actually verifiable for the metadata store (row-level security). Physical isolation of the analytical database is a deployment property this endpoint cannot observe and does not claim
         tls:
           type: string
           description: Raw sslmode this connection is configured with (disable/allow/prefer/require/verify-ca/verify-full), reported as-is
@@ -3626,13 +3635,11 @@ components:
           maxLength: 2000
         fix_status:
           type: string
-          description: 'Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)'
+          description: 'Target status: proposed | verified | applied | abandoned (or unchanged). confirmed/regressed are set by post-deploy measurement, not by this endpoint.'
           enum:
             - proposed
             - verified
             - applied
-            - confirmed
-            - regressed
             - abandoned
         id:
           type: string
@@ -3648,13 +3655,11 @@ components:
           maxLength: 2000
         fix_status:
           type: string
-          description: 'Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)'
+          description: 'Target status: proposed | verified | applied | abandoned (or unchanged). confirmed/regressed are set by post-deploy measurement, not by this endpoint.'
           enum:
             - proposed
             - verified
             - applied
-            - confirmed
-            - regressed
             - abandoned
     UpdateRequestBody:
       type: object

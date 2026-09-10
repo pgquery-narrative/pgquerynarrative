@@ -1,6 +1,14 @@
 /**
  * How far result equivalence between an original query and a candidate rewrite
- * was checked. Only `VerifiedEqual` is a full-result proof.
+ * was checked.
+ *
+ * `VerifiedEqual` means every row of both results contributed to a full-result,
+ * order-independent fingerprint and the fingerprints matched. That is strong
+ * whole-result verification, but it compares row *text* and ignores order, so
+ * column types, column names and ORDER BY are not part of what it covers.
+ *
+ * `SampleMatch` is the fallback when full-result fingerprinting could not run:
+ * supporting evidence over a bounded sample, never full verification.
  */
 export type EquivalenceStatus =
   | "VerifiedEqual"
@@ -47,6 +55,16 @@ export function isShippableEquivalence(status: EquivalenceStatus): boolean {
   return status === "VerifiedEqual" || status === "SampleMatch";
 }
 
+/**
+ * Whether shipping on this status needs an explicit human acknowledgement.
+ * `SampleMatch` is the fallback taken when full-result verification could not
+ * run, so shipping on it is a decision someone makes on the record — not a
+ * default the UI takes silently.
+ */
+export function requiresSampleMatchAck(status: EquivalenceStatus): boolean {
+  return status === "SampleMatch";
+}
+
 export function equivalenceLabel(status: EquivalenceStatus): string {
   switch (status) {
     case "VerifiedEqual":
@@ -84,9 +102,9 @@ export function equivalenceTone(status: EquivalenceStatus): EquivalenceTone {
 export function equivalenceBlurb(status: EquivalenceStatus): string {
   switch (status) {
     case "VerifiedEqual":
-      return "Full result compared — every row matched between original and candidate.";
+      return "Full result compared — every row matched an order-independent fingerprint. Column types, column names and row order are not covered; check those separately when they are part of the query's contract.";
     case "SampleMatch":
-      return "COUNT(*) matched and a deterministic sample matched — supporting evidence, not a full-result proof. Re-check on a representative parameter set before deploying.";
+      return "Full-result verification did not run; COUNT(*) matched and a deterministic sample matched — supporting evidence, not verification. Re-check on a representative parameter set before deploying.";
     case "Different":
       return "Results differ — do not deploy this candidate.";
     case "NotRequested":

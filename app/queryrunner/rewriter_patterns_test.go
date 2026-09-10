@@ -82,15 +82,24 @@ func TestSuggestRewrites_CoalesceMatchingDefault(t *testing.T) {
 	}
 }
 
-func TestSuggestRewrites_TextCastNumeric(t *testing.T) {
-	sql := `SELECT 1 FROM demo.sales WHERE quantity::text = '5'`
-	c := mustFindCategory(t, SuggestRewrites(sql, nil), "implicit_cast")
-	got := normalizeSQL(c.SQL)
-	if strings.Contains(got, "::text") || strings.Contains(got, "cast(") {
-		t.Fatalf("text cast should be removed, got: %s", c.SQL)
-	}
-	if !strings.Contains(got, "quantity = 5") && !strings.Contains(got, "quantity=5") {
-		t.Fatalf("expected quantity = 5, got: %s", c.SQL)
+// Dropping a cast off a column is only safe when the column's actual
+// PostgreSQL type makes the cast a no-op, which the AST alone cannot tell us.
+// These two tests pin the deliberate non-rewrite so it is not reintroduced
+// without catalog-resolved column types.
+func TestSuggestRewrites_TextCastNotRewritten(t *testing.T) {
+	// price numeric = 12.0 makes price::text = '12' FALSE but price = 12 TRUE;
+	// on a text column the rewrite would not even parse (no text = integer op).
+	for _, sql := range []string{
+		`SELECT 1 FROM demo.sales WHERE quantity::text = '5'`,
+		`SELECT 1 FROM demo.sales WHERE price::text = '12'`,
+		`SELECT 1 FROM demo.sales WHERE sku::text = '5'`,
+	} {
+		for _, c := range SuggestRewrites(sql, nil) {
+			got := normalizeSQL(c.SQL)
+			if !strings.Contains(got, "::text") && !strings.Contains(got, "cast(") {
+				t.Fatalf("text cast must not be dropped without catalog types.\n in: %s\nout: %s", sql, c.SQL)
+			}
+		}
 	}
 }
 
@@ -209,15 +218,19 @@ func TestSuggestRewrites_DateTruncInequality(t *testing.T) {
 	}
 }
 
-func TestSuggestRewrites_NumericCast(t *testing.T) {
-	sql := `SELECT 1 FROM demo.sales WHERE quantity::numeric = 5`
-	c := mustFindCategory(t, SuggestRewrites(sql, nil), "implicit_cast")
-	got := normalizeSQL(c.SQL)
-	if strings.Contains(got, "::numeric") {
-		t.Fatalf("cast should move off column, got: %s", c.SQL)
-	}
-	if !strings.Contains(got, "quantity = 5") {
-		t.Fatalf("expected bare column compare, got: %s", c.SQL)
+func TestSuggestRewrites_NumericCastNotRewritten(t *testing.T) {
+	// amount numeric = 1.4 makes amount::integer = 1 TRUE but amount = 1 FALSE.
+	for _, sql := range []string{
+		`SELECT 1 FROM demo.sales WHERE quantity::numeric = 5`,
+		`SELECT 1 FROM demo.sales WHERE amount::integer = 1`,
+		`SELECT 1 FROM demo.sales WHERE total::float8 = 100`,
+	} {
+		for _, c := range SuggestRewrites(sql, nil) {
+			got := normalizeSQL(c.SQL)
+			if !strings.Contains(got, "::") && !strings.Contains(got, "cast(") {
+				t.Fatalf("numeric cast must not be dropped without catalog types.\n in: %s\nout: %s", sql, c.SQL)
+			}
+		}
 	}
 }
 

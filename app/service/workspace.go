@@ -448,13 +448,29 @@ func (s *WorkspaceService) SecurityTrust(ctx context.Context, payload *workspace
 		explainAnalyze = "Enabled"
 	}
 
+	// Derive the label from the probe instead of asserting it. Hardcoding
+	// "Read-only" next to a probed Readonly bool could render the self-
+	// contradicting pair (ConnectionMode: Read-only, Readonly: false) on exactly
+	// the connection where the guarantee did not hold.
+	// Kept short: the Security page renders this in a truncating row, and the
+	// "Read-only (live probe)" row beside it carries the detail.
+	connectionMode := "Read-only (verified)"
+	if !readonly {
+		connectionMode = "Read-only not verified"
+	}
+
 	return &workspace.SecurityTrust2{
-		ConnectionID:        connID,
-		Authentication:      authStatus,
-		ConnectionMode:      "Read-only",
-		Readonly:            readonly,
-		AllowedSchemas:      schemas,
-		TenantIsolation:     "Dedicated database (RLS)",
+		ConnectionID:   connID,
+		Authentication: authStatus,
+		ConnectionMode: connectionMode,
+		Readonly:       readonly,
+		AllowedSchemas: schemas,
+		// What this endpoint can actually observe is that the metadata store
+		// enforces row-level security. Whether the *analytical* database is
+		// physically dedicated to this tenant is a deployment property with no
+		// signal here, and "RLS enabled" is not evidence for it — so it is not
+		// claimed. Unknown stays unknown.
+		TenantIsolation:     "Row-level security on the metadata store",
 		TLS:                 tls,
 		AuditMode:           s.auditMode,
 		QueryTimeoutSeconds: timeout,

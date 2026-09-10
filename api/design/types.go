@@ -424,8 +424,12 @@ var UpdateFixPayload = Type("UpdateFixPayload", func() {
 	Attribute("id", String, func() {
 		Format(FormatUUID)
 	})
-	Attribute("fix_status", String, "Target status: verified | applied | confirmed | regressed | abandoned (or unchanged)", func() {
-		Enum("proposed", "verified", "applied", "confirmed", "regressed", "abandoned")
+	// "confirmed" and "regressed" are deliberately NOT accepted here: they are
+	// post-deployment *measurements* that the regression poller derives from
+	// pg_stat_statements, and a hand-set value would be indistinguishable from a
+	// measured one. Read them from the investigation's fix_status.
+	Attribute("fix_status", String, "Target status: proposed | verified | applied | abandoned (or unchanged). confirmed/regressed are set by post-deploy measurement, not by this endpoint.", func() {
+		Enum("proposed", "verified", "applied", "abandoned")
 	})
 	Attribute("fix_reference", String, "PR or ticket URL", func() {
 		MaxLength(2000)
@@ -561,10 +565,10 @@ var DemoScenarioList = Type("DemoScenarioList", func() {
 var SecurityTrust = Type("SecurityTrust", func() {
 	Attribute("connection_id", String, "The connection this posture reflects")
 	Attribute("authentication", String)
-	Attribute("connection_mode", String)
+	Attribute("connection_mode", String, "Human-readable connection mode, derived from the live read-only probe — never asserted independently of `readonly`")
 	Attribute("readonly", Boolean, "Whether the connection's role is confirmed read-only by a live probe")
 	Attribute("allowed_schemas", ArrayOf(String))
-	Attribute("tenant_isolation", String)
+	Attribute("tenant_isolation", String, "Isolation actually verifiable for the metadata store (row-level security). Physical isolation of the analytical database is a deployment property this endpoint cannot observe and does not claim")
 	Attribute("tls", String, "Raw sslmode this connection is configured with (disable/allow/prefer/require/verify-ca/verify-full), reported as-is")
 	Attribute("audit_mode", String)
 	Attribute("query_timeout_seconds", Int32, "Statement timeout in seconds; 0 means no timeout is enforced")

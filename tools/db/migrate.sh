@@ -4,7 +4,11 @@ set -e
 CMD="${1:-up}"
 DB_URL="${2:-}"
 
-MIGRATE_PKG="github.com/golang-migrate/migrate/v4/cmd/migrate@latest"
+# Pinned to the version go.mod depends on, so this CLI and the library the tests
+# link against cannot drift. `@latest` broke every migration job the day v4.20.1
+# shipped requiring a newer Go than the pinned container image provided.
+MIGRATE_VERSION="${MIGRATE_VERSION:-v4.19.1}"
+MIGRATE_PKG="github.com/golang-migrate/migrate/v4/cmd/migrate@${MIGRATE_VERSION}"
 
 case "$CMD" in
   up)

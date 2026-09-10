@@ -238,8 +238,11 @@ export const api = {
       signal: AbortSignal.timeout(analyze ? 120_000 : 90_000),
     }),
 
-  generateInvestigationReport: (id: string) =>
-    request<Investigation>(`/investigations/${id}/report`, { method: "POST" }),
+  generateInvestigationReport: (id: string, acceptSampleMatch = false) =>
+    request<Investigation>(
+      `/investigations/${id}/report${acceptSampleMatch ? "?accept_sample_match=true" : ""}`,
+      { method: "POST" }
+    ),
 
   updateInvestigationFix: (id: string, body: { fix_status?: string; fix_reference?: string }) =>
     request<Investigation>(`/investigations/${id}/fix`, {

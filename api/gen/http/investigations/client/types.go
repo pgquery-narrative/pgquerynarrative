@@ -50,8 +50,8 @@ type AddCandidateRequestBody struct {
 // UpdateFixRequestBody is the type of the "investigations" service
 // "update_fix" endpoint HTTP request body.
 type UpdateFixRequestBody struct {
-	// Target status: verified | applied | confirmed | regressed | abandoned (or
-	// unchanged)
+	// Target status: proposed | verified | applied | abandoned (or unchanged).
+	// confirmed/regressed are set by post-deploy measurement, not by this endpoint.
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL
 	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`

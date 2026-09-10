@@ -35,6 +35,10 @@ func ClassifyRunError(err error) (RunErrorKind, string) {
 		apperrors.ErrSchemaNotAllowed,
 		apperrors.ErrUnqualifiedTable,
 		apperrors.ErrMultipleStatements,
+		apperrors.ErrFunctionNotAllowed,
+		apperrors.ErrFunctionSchemaNotAllowed,
+		apperrors.ErrSelectIntoNotAllowed,
+		apperrors.ErrLockingClauseNotAllowed,
 		apperrors.ErrStatStatementsUnavailable,
 		apperrors.ErrExplainAnalyzeDisabled,
 		apperrors.ErrQueryExecutionFailed,
@@ -75,6 +79,14 @@ func sanitizeValidationMessage(msg string) string {
 			return apperrors.ErrUnqualifiedTable.Error()
 		case strings.Contains(inner, apperrors.ErrMultipleStatements.Error()):
 			return apperrors.ErrMultipleStatements.Error()
+		case strings.Contains(inner, apperrors.ErrFunctionNotAllowed.Error()):
+			return apperrors.ErrFunctionNotAllowed.Error()
+		case strings.Contains(inner, apperrors.ErrFunctionSchemaNotAllowed.Error()):
+			return apperrors.ErrFunctionSchemaNotAllowed.Error()
+		case strings.Contains(inner, apperrors.ErrSelectIntoNotAllowed.Error()):
+			return apperrors.ErrSelectIntoNotAllowed.Error()
+		case strings.Contains(inner, apperrors.ErrLockingClauseNotAllowed.Error()):
+			return apperrors.ErrLockingClauseNotAllowed.Error()
 		}
 	}
 	return "Query validation failed."

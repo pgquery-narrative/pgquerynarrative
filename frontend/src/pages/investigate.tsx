@@ -16,7 +16,7 @@ import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
 import { cn, formatFloat, timeAgo, truncate } from "@/lib/utils";
-import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence, normalizeEquivalenceStatus } from "@/lib/equivalence";
+import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence, normalizeEquivalenceStatus, requiresSampleMatchAck } from "@/lib/equivalence";
 
 const STEPS = [
   { id: "select", label: "Find query" },
@@ -188,6 +188,7 @@ export default function InvestigatePage() {
 
   const generateReport = async () => {
     if (!investigation) return;
+    let acceptSampleMatch = false;
     if (investigation.comparison) {
       const eq = equivalenceStatusOf(investigation.comparison);
       if (!isShippableEquivalence(eq)) {
@@ -196,15 +197,25 @@ export default function InvestigatePage() {
             ? "Cannot generate a shippable report while result equivalence is Different. Fix the candidate rewrite first."
             : eq === "NotRequested"
               ? "Result equivalence was not checked. Re-run Compare plans with result verification enabled."
-              : "Cannot generate a shippable report until result equivalence is VerifiedEqual (or SampleMatch for a large result). Re-run Compare plans with result verification."
+              : "Cannot generate a shippable report until result equivalence is VerifiedEqual. Re-run Compare plans with result verification."
         );
         return;
+      }
+      // SampleMatch means full-result verification could not run. Shipping on
+      // sampled evidence is a decision the analyst makes explicitly rather than
+      // one the UI makes for them.
+      if (requiresSampleMatchAck(eq)) {
+        acceptSampleMatch = window.confirm(
+          "Result equivalence is SampleMatch: full-result verification did not run, and only a bounded sample matched.\n\n" +
+            "This is supporting evidence, not verification. Generate the report on sampled evidence anyway?"
+        );
+        if (!acceptSampleMatch) return;
       }
     }
     setActionLoading("report");
     setError("");
     try {
-      const inv = await api.generateInvestigationReport(investigation.id);
+      const inv = await api.generateInvestigationReport(investigation.id, acceptSampleMatch);
       setInvestigation(inv);
       if (inv.report_id) {
         navigate(`/reports/${inv.report_id}`);

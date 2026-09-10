@@ -137,6 +137,24 @@ func (v *Validator) Validate(sql string) error {
 		return errors.ErrDisallowedKeyword
 	}
 
+	// SELECT ... INTO creates a table. Its parse-tree representation is a field
+	// key, not a node type, so it needs its own check.
+	if hasIntoClause(readOnlyQuery) {
+		return errors.ErrSelectIntoNotAllowed
+	}
+
+	// FOR UPDATE / FOR SHARE take row locks and are not read-only.
+	if _, locked := findFirstByKey(readOnlyQuery, "LockingClause"); locked {
+		return errors.ErrLockingClauseNotAllowed
+	}
+
+	// The schema allowlist below governs table references. Apply the function
+	// policy too, so a disallowed schema cannot be reached through a FuncCall
+	// and side-effecting functions are rejected inside the read-only wrapper.
+	if err := v.checkFunctionPolicy(readOnlyQuery); err != nil {
+		return err
+	}
+
 	// Check schema access when schema restrictions are configured or explicitly enforced.
 	if v.enforceSchemas || len(v.allowedSchemas) > 0 {
 		cteNames := collectCTENames(readOnlyQuery)
@@ -253,6 +271,31 @@ func containsDisallowedNodes(node interface{}) bool {
 	return false
 }
 
+// findFirstByKey returns the first value stored under key anywhere in the parse
+// tree. It serves both kinds of lookup this validator needs: node-type keys
+// (a "LockingClause" wrapper) and plain field keys ("intoClause"), which node
+// type names alone cannot express.
+func findFirstByKey(node interface{}, want string) (interface{}, bool) {
+	switch n := node.(type) {
+	case map[string]interface{}:
+		if v, ok := n[want]; ok {
+			return v, true
+		}
+		for _, value := range n {
+			if v, ok := findFirstByKey(value, want); ok {
+				return v, true
+			}
+		}
+	case []interface{}:
+		for _, item := range n {
+			if v, ok := findFirstByKey(item, want); ok {
+				return v, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func collectSchemaNamesInto(node interface{}, out map[string]struct{}) {
 	switch n := node.(type) {
 	case map[string]interface{}:
@@ -348,4 +391,256 @@ func collectUnqualifiedTables(node interface{}, cteNames map[string]struct{}, fo
 			collectUnqualifiedTables(item, cteNames, found)
 		}
 	}
+}
+
+// deniedFunctions are rejected by bare name regardless of the schema they
+// resolve in. A read-only transaction blocks writes, but it does not make a
+// SELECT side-effect free — these run fine inside one:
+//
+//   - advisory locks are *session* scoped, so they outlive the transaction and
+//     poison the pooled connection they were taken on;
+//   - set_config mutates session GUCs on that same pooled connection;
+//   - pg_sleep holds a connection for its whole duration;
+//   - server-side file and large-object access reads outside the database;
+//   - backend/replication control affects the whole server;
+//   - dblink and the query_to_xml family execute a *second*, unvalidated query.
+//
+// Sequence and large-object writers are listed for an explicit, named error
+// even though the read-only transaction would also reject them.
+var deniedFunctions = map[string]struct{}{
+	// Session-scoped advisory locks (survive COMMIT on a pooled connection).
+	"pg_advisory_lock": {}, "pg_advisory_lock_shared": {},
+	"pg_advisory_unlock": {}, "pg_advisory_unlock_all": {},
+	"pg_advisory_unlock_shared": {},
+	"pg_advisory_xact_lock":     {}, "pg_advisory_xact_lock_shared": {},
+	"pg_try_advisory_lock": {}, "pg_try_advisory_lock_shared": {},
+	"pg_try_advisory_xact_lock": {}, "pg_try_advisory_xact_lock_shared": {},
+
+	// Session/transaction state mutation.
+	"set_config": {},
+
+	// Connection-holding.
+	"pg_sleep": {}, "pg_sleep_for": {}, "pg_sleep_until": {},
+
+	// Server-side file access.
+	"pg_read_file": {}, "pg_read_binary_file": {},
+	"pg_ls_dir": {}, "pg_stat_file": {},
+	"pg_ls_logdir": {}, "pg_ls_waldir": {}, "pg_ls_tmpdir": {},
+	"pg_ls_archive_statusdir": {},
+
+	// Large objects (server-side file I/O and writes).
+	"lo_import": {}, "lo_export": {}, "lo_create": {}, "lo_unlink": {},
+	"lo_put": {}, "lo_from_bytea": {}, "lo_open": {}, "lo_write": {},
+	"lowrite": {}, "loread": {},
+
+	// Sequence mutation.
+	"nextval": {}, "setval": {},
+
+	// Backend, WAL and replication control.
+	"pg_terminate_backend": {}, "pg_cancel_backend": {},
+	"pg_reload_conf": {}, "pg_rotate_logfile": {},
+	"pg_switch_wal": {}, "pg_create_restore_point": {}, "pg_promote": {},
+	"pg_start_backup": {}, "pg_stop_backup": {},
+	"pg_backup_start": {}, "pg_backup_stop": {},
+	"pg_create_physical_replication_slot": {},
+	"pg_create_logical_replication_slot":  {},
+	"pg_copy_physical_replication_slot":   {},
+	"pg_copy_logical_replication_slot":    {},
+	"pg_drop_replication_slot":            {},
+	"pg_logical_slot_get_changes":         {},
+	"pg_logical_slot_peek_changes":        {},
+	"pg_logical_emit_message":             {},
+	"pg_replication_origin_create":        {},
+	"pg_replication_origin_drop":          {},
+	"pg_replication_origin_session_setup": {},
+	"pg_replication_origin_session_reset": {},
+	"pg_replication_origin_xact_setup":    {},
+	"pg_replication_origin_advance":       {},
+	"pg_wal_replay_pause":                 {},
+	"pg_wal_replay_resume":                {},
+
+	// Asynchronous notification (observable outside the transaction).
+	"pg_notify": {},
+
+	// Execute a second, unvalidated query string.
+	"query_to_xml": {}, "query_to_xmlschema": {},
+	"query_to_xml_and_xmlschema": {},
+	"table_to_xml":               {}, "table_to_xmlschema": {},
+	"table_to_xml_and_xmlschema": {},
+	"cursor_to_xml":              {}, "cursor_to_xmlschema": {},
+
+	// Reach external systems.
+	"dblink": {}, "dblink_exec": {}, "dblink_connect": {},
+	"dblink_connect_u": {}, "dblink_send_query": {},
+	"dblink_open": {}, "dblink_fetch": {},
+
+	// Statistics reset.
+	"pg_stat_reset": {}, "pg_stat_reset_shared": {},
+	"pg_stat_reset_single_table_counters":    {},
+	"pg_stat_reset_single_function_counters": {},
+	"pg_stat_statements_reset":               {},
+}
+
+// functionSchemaAlwaysAllowed are the read-only system catalogs whose functions
+// stay callable regardless of the tenant schema allowlist. Anything they expose
+// that is *not* read-only is caught by deniedFunctions above.
+var functionSchemaAlwaysAllowed = map[string]bool{
+	"pg_catalog":         true,
+	"information_schema": true,
+}
+
+// checkFunctionPolicy walks every FuncCall in the tree and applies two rules:
+//
+//  1. the bare function name must not be in deniedFunctions, whatever schema it
+//     is written with — pg_catalog.pg_advisory_lock(1) is still an advisory lock;
+//  2. a schema-qualified call must target an allowed schema (or a read-only
+//     system catalog), mirroring the RangeVar rule for tables.
+//
+// Unqualified names are deliberately NOT required to be schema-qualified the way
+// tables are: count(), now() and coalesce() are unqualified in almost every real
+// query. They resolve through the analytical role's pinned search_path, which is
+// itself restricted to the allowed schemas.
+func (v *Validator) checkFunctionPolicy(node interface{}) error {
+	var firstErr error
+	walkQualifiedRefs(node, func(ref qualifiedRef) bool {
+		if ref.Kind == refFunction {
+			if _, denied := deniedFunctions[ref.Name]; denied {
+				firstErr = errors.ErrFunctionNotAllowed
+				return false
+			}
+		}
+		if ref.Schema == "" || functionSchemaAlwaysAllowed[ref.Schema] {
+			return true
+		}
+		if !v.enforceSchemas && len(v.allowedSchemas) == 0 {
+			return true
+		}
+		if v.allowedSchemas[ref.Schema] {
+			return true
+		}
+		// An operator or a type is backed by a function in the same schema, so a
+		// qualified reference to either reaches code the schema allowlist is
+		// meant to keep out just as a direct call would.
+		if ref.Kind == refFunction {
+			firstErr = errors.ErrFunctionSchemaNotAllowed
+		} else {
+			firstErr = errors.ErrSchemaNotAllowed
+		}
+		return false
+	})
+	return firstErr
+}
+
+// refKind distinguishes what a schema-qualified name in the tree refers to.
+type refKind int
+
+const (
+	refFunction refKind = iota // FuncCall.funcname
+	refOperator                // A_Expr.name  — OPERATOR(schema.+)
+	refType                    // TypeName.names — col::schema.type
+)
+
+// qualifiedRef is one namespaced reference found in the parse tree, lowercased.
+// Schema is "" for an unqualified name.
+type qualifiedRef struct {
+	Kind   refKind
+	Schema string
+	Name   string
+}
+
+// walkQualifiedRefs invokes fn for every function call, explicit operator and
+// type name in the tree. fn returns false to stop the walk, so a rejected query
+// does not pay to traverse the rest of its tree — this runs on the read path in
+// front of every user SELECT.
+//
+// Operators and type names are included because both are backed by functions:
+// SELECT 1 OPERATOR(other.+) 2 and col::other.t each execute code in "other"
+// without ever producing a FuncCall node, so checking FuncCall alone would leave
+// the schema allowlist with two more holes of the same shape as the one it was
+// extended to close.
+func walkQualifiedRefs(node interface{}, fn func(qualifiedRef) bool) bool {
+	switch n := node.(type) {
+	case map[string]interface{}:
+		for key, value := range n {
+			m, _ := value.(map[string]interface{})
+			switch {
+			case key == "FuncCall" && m != nil:
+				if schema, name, ok := qualifiedName(m["funcname"]); ok {
+					if !fn(qualifiedRef{Kind: refFunction, Schema: schema, Name: name}) {
+						return false
+					}
+				}
+			case key == "A_Expr" && m != nil:
+				if schema, name, ok := qualifiedName(m["name"]); ok {
+					if !fn(qualifiedRef{Kind: refOperator, Schema: schema, Name: name}) {
+						return false
+					}
+				}
+			// "typeName" is a field key (TypeCast.typeName holds the struct
+			// inline); "TypeName" is the node-type key used where a type name
+			// appears as a list element. Both carry the same "names" list.
+			case (key == "TypeName" || key == "typeName") && m != nil:
+				if schema, name, ok := qualifiedName(m["names"]); ok {
+					if !fn(qualifiedRef{Kind: refType, Schema: schema, Name: name}) {
+						return false
+					}
+				}
+			}
+			if !walkQualifiedRefs(value, fn) {
+				return false
+			}
+		}
+	case []interface{}:
+		for _, item := range n {
+			if !walkQualifiedRefs(item, fn) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// qualifiedName extracts (schema, name) from a parse-tree list of String nodes:
+// ["count"] unqualified, ["pg_catalog","count"] qualified. A longer list
+// (database.schema.object) uses the last two parts. Both are lowercased.
+func qualifiedName(v interface{}) (schema, name string, ok bool) {
+	parts, isList := v.([]interface{})
+	if !isList || len(parts) == 0 {
+		return "", "", false
+	}
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		wrapper, isMap := p.(map[string]interface{})
+		if !isMap {
+			continue
+		}
+		str, isStr := wrapper["String"].(map[string]interface{})
+		if !isStr {
+			continue
+		}
+		sval, _ := str["sval"].(string)
+		names = append(names, strings.ToLower(strings.TrimSpace(sval)))
+	}
+	if len(names) == 0 {
+		return "", "", false
+	}
+	name = names[len(names)-1]
+	if len(names) >= 2 {
+		schema = names[len(names)-2]
+	}
+	return schema, name, true
+}
+
+// hasIntoClause reports whether the SELECT carries an INTO target. SELECT INTO
+// creates a table; the read-only transaction would also reject it, but the
+// validator claims to enforce read-only semantics and should say so first.
+// "intoClause" is a field key in the parse tree, not a node-type key, so it
+// cannot be expressed in disallowedASTNodes.
+func hasIntoClause(node interface{}) bool {
+	v, ok := findFirstByKey(node, "intoClause")
+	if !ok {
+		return false
+	}
+	m, isMap := v.(map[string]interface{})
+	return isMap && len(m) > 0
 }

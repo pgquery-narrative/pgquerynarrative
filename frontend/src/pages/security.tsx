@@ -60,7 +60,10 @@ export default function SecurityPage() {
       ) : trust ? (
         <div className="grid gap-4 md:grid-cols-2">
           <TrustRow icon={Lock} label="Authentication" value={trust.authentication} status={trust.authentication === "Enabled"} />
-          <TrustRow icon={Database} label="Connection mode" value={trust.connection_mode} status />
+          {/* The badge must track the same probe the value text is derived from:
+              a green "Active" beside "Read-only not verified" would reassure the
+              operator on exactly the connection where the guarantee did not hold. */}
+          <TrustRow icon={Database} label="Connection mode" value={trust.connection_mode} status={trust.readonly} />
           <TrustRow icon={Lock} label="Read-only (live probe)" value={trust.readonly ? "Confirmed" : "Not confirmed"} status={trust.readonly} />
           <TrustRow icon={Database} label="Allowed schemas" value={trust.allowed_schemas.length ? trust.allowed_schemas.join(", ") : "none"} status={trust.allowed_schemas.length > 0} />
           <TrustRow icon={Shield} label="Tenant isolation" value={trust.tenant_isolation} status />

@@ -372,3 +372,74 @@ func TestP1Audit_RankCandidatesHeuristicNotRankable(t *testing.T) {
 		t.Log("no index_ddl candidates in this planner shape; honesty covered by unit tests")
 	}
 }
+
+// SampleMatch is the fallback taken when full-result fingerprinting could not
+// run. It is supporting evidence, not verification, so shipping a report on it
+// takes a deliberate acknowledgement rather than passing silently as if it were
+// VerifiedEqual — and the resulting report records that it rests on a sample.
+func TestP0Audit_SampleMatchNeedsExplicitAcknowledgement(t *testing.T) {
+	st := newAuditStack(t)
+
+	if _, err := st.pool.Exec(st.ctx, `
+		INSERT INTO demo.sales (id, date, product_category, product_name, quantity, unit_price, total_amount, region, sales_rep)
+		VALUES (gen_random_uuid(), DATE '2025-01-01', 'Electronics', 'Widget', 1, 10, 10, 'North', 'A')
+	`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	inv, err := st.invSvc.Create(st.ctx, &investigations.CreateInvestigationPayload{
+		Title: "Sample match gate",
+		SQL:   `SELECT region FROM demo.sales WHERE region = 'North'`,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Put the investigation in the SampleMatch state directly. Provoking the
+	// fingerprint fallback for real would test the fallback, not this gate.
+	if _, err := st.pool.Exec(st.ctx, `
+		UPDATE app.investigations
+		SET candidate_sql = $2,
+		    comparison = $3::jsonb
+		WHERE id = $1
+	`, inv.ID, `SELECT region FROM demo.sales WHERE region = 'North'`,
+		`{"ResultEquivalenceStatus":"SampleMatch","ResultEquivalenceNotes":"bounded sample matched"}`,
+	); err != nil {
+		t.Fatalf("set SampleMatch comparison: %v", err)
+	}
+
+	// Without the acknowledgement the report is refused, with its own code so
+	// the caller can tell it apart from a hard equivalence failure.
+	_, err = st.invSvc.GenerateReport(st.ctx, &investigations.GenerateReportPayload{ID: inv.ID})
+	if err == nil {
+		t.Fatal("GenerateReport must not ship a SampleMatch report without acknowledgement")
+	}
+	var ve *investigations.ValidationError
+	if !errors.As(err, &ve) || ve.Code == nil || *ve.Code != "EQUIVALENCE_SAMPLE_ONLY" {
+		t.Fatalf("expected EQUIVALENCE_SAMPLE_ONLY, got %v", err)
+	}
+
+	// With it, the report is produced and marked as resting on a sample.
+	accept := true
+	got, err := st.invSvc.GenerateReport(st.ctx, &investigations.GenerateReportPayload{
+		ID: inv.ID, AcceptSampleMatch: &accept,
+	})
+	if err != nil {
+		t.Fatalf("GenerateReport with acknowledgement: %v", err)
+	}
+	if got.ReportID == nil || *got.ReportID == "" {
+		t.Fatal("expected a report_id after an acknowledged SampleMatch report")
+	}
+
+	var sampled bool
+	if err := st.pool.QueryRow(st.ctx, `
+		SELECT COALESCE(
+			(metrics #>> '{investigation,provenance,results_sampled}')::boolean, false)
+		FROM app.reports WHERE id = $1
+	`, *got.ReportID).Scan(&sampled); err != nil {
+		t.Fatalf("read report provenance: %v", err)
+	}
+	if !sampled {
+		t.Fatal("a report shipped on SampleMatch must record results_sampled in its provenance")
+	}
+}

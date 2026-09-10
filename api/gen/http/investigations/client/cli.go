@@ -218,11 +218,11 @@ func BuildUpdateFixPayload(investigationsUpdateFixBody string, investigationsUpd
 	{
 		err = json.Unmarshal([]byte(investigationsUpdateFixBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"v9c\",\n      \"fix_status\": \"confirmed\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"v9c\",\n      \"fix_status\": \"verified\"\n   }'")
 		}
 		if body.FixStatus != nil {
-			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "confirmed" || *body.FixStatus == "regressed" || *body.FixStatus == "abandoned") {
-				err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "confirmed", "regressed", "abandoned"}))
+			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "abandoned") {
+				err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "abandoned"}))
 			}
 		}
 		if body.FixReference != nil {
@@ -304,7 +304,7 @@ func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investi
 
 // BuildGenerateReportPayload builds the payload for the investigations
 // generate_report endpoint from CLI flags.
-func BuildGenerateReportPayload(investigationsGenerateReportID string) (*investigations.GenerateReportPayload, error) {
+func BuildGenerateReportPayload(investigationsGenerateReportID string, investigationsGenerateReportAcceptSampleMatch string) (*investigations.GenerateReportPayload, error) {
 	var err error
 	var id string
 	{
@@ -314,8 +314,20 @@ func BuildGenerateReportPayload(investigationsGenerateReportID string) (*investi
 			return nil, err
 		}
 	}
+	var acceptSampleMatch *bool
+	{
+		if investigationsGenerateReportAcceptSampleMatch != "" {
+			var val bool
+			val, err = strconv.ParseBool(investigationsGenerateReportAcceptSampleMatch)
+			acceptSampleMatch = &val
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for acceptSampleMatch, must be BOOL")
+			}
+		}
+	}
 	v := &investigations.GenerateReportPayload{}
 	v.ID = id
+	v.AcceptSampleMatch = acceptSampleMatch
 
 	return v, nil
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/apilog"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
@@ -80,8 +81,16 @@ func (s *InvestigationsService) Create(ctx context.Context, payload *investigati
 		}
 	}
 
-	explainJSON, _ := json.Marshal(explainResult)
-	statJSON, _ := json.Marshal(statSnap)
+	// Plan and stat evidence is the product. A marshal failure must surface, not
+	// persist an investigation whose evidence column silently reads "null".
+	explainJSON, err := json.Marshal(explainResult)
+	if err != nil {
+		return nil, fmt.Errorf("marshal explain evidence: %w", err)
+	}
+	statJSON, err := json.Marshal(statSnap)
+	if err != nil {
+		return nil, fmt.Errorf("marshal stat evidence: %w", err)
+	}
 	fingerprint := sqlFingerprint(payload.SQL)
 
 	var id string
@@ -131,7 +140,7 @@ func (s *InvestigationsService) CreateFromRegression(ctx context.Context, payloa
 
 	sqlText := strings.TrimSpace(queryText)
 	if queryid != nil && *queryid != "" {
-		if better := s.latestSnapshotSQL(ctx, org, *queryid); better != "" && len(better) >= len(sqlText) {
+		if better := s.latestSnapshotSQL(ctx, org, connID, *queryid); better != "" && len(better) >= len(sqlText) {
 			sqlText = better
 		}
 	}
@@ -159,24 +168,67 @@ func (s *InvestigationsService) CreateFromRegression(ctx context.Context, payloa
 	if err != nil {
 		return nil, err
 	}
-	_, _ = s.appPool.Exec(ctx, `
+	// Claim the alert with a compare-and-swap. Two concurrent callers can both
+	// read investigation_id IS NULL above and both create an investigation; only
+	// one UPDATE can win. The loser discards the investigation it just created
+	// (nothing references it yet) and returns the winner's, so one alert never
+	// ends up with two competing investigations.
+	tag, linkErr := s.appPool.Exec(ctx, `
 		UPDATE app.regression_alerts
 		SET investigation_id = $1
 		WHERE id = $2 AND organization_id = $3 AND investigation_id IS NULL
 	`, inv.ID, alertID, org)
+	if linkErr != nil {
+		return nil, fmt.Errorf("link regression alert to investigation: %w", linkErr)
+	}
+	if tag.RowsAffected() == 0 {
+		// Lost the race (or the alert vanished). Find the winner.
+		var winner *string
+		if err := s.appPool.QueryRow(ctx, `
+			SELECT investigation_id FROM app.regression_alerts
+			WHERE id = $1 AND organization_id = $2
+		`, alertID, org).Scan(&winner); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// The alert was deleted while we worked. The investigation is
+				// already committed and is legitimate work, so return it rather
+				// than erroring — the caller would otherwise be handed a failure
+				// for an investigation that exists, and a retry would create a
+				// second one.
+				return inv, nil
+			}
+			return nil, fmt.Errorf("resolve regression alert investigation link: %w", err)
+		}
+		if winner == nil || *winner == "" || *winner == inv.ID {
+			// The alert still has no link and it is not ours — nothing sane to
+			// return but our own investigation.
+			return inv, nil
+		}
+		if _, delErr := s.appPool.Exec(ctx, `
+			DELETE FROM app.investigations
+			WHERE id = $1 AND organization_id = $2 AND report_id IS NULL
+		`, inv.ID, org); delErr != nil {
+			apilog.ValidationError("investigations", "discard_duplicate_from_regression", delErr.Error())
+		}
+		return s.Get(ctx, &investigations.GetPayload{ID: *winner})
+	}
 	return inv, nil
 }
 
-func (s *InvestigationsService) latestSnapshotSQL(ctx context.Context, orgID, queryID string) string {
+// latestSnapshotSQL returns the newest full SQL text for a query. A queryid is
+// only unique *within* a connection — two databases routinely hash the same
+// statement to the same queryid — so the lookup must be keyed on
+// (organization, connection, queryid) or connection A's investigation can be
+// opened with connection B's SQL.
+func (s *InvestigationsService) latestSnapshotSQL(ctx context.Context, orgID, connectionID, queryID string) string {
 	var sqlText string
 	err := s.appPool.QueryRow(ctx, `
 		SELECT s.query_text
 		FROM app.stat_statement_snapshots s
 		JOIN app.stat_statement_polls p ON p.id = s.poll_id
-		WHERE p.organization_id = $1 AND s.queryid = $2
+		WHERE p.organization_id = $1 AND p.connection_id = $2 AND s.queryid = $3
 		ORDER BY p.captured_at DESC
 		LIMIT 1
-	`, orgID, queryID).Scan(&sqlText)
+	`, orgID, connectionID, queryID).Scan(&sqlText)
 	if err != nil {
 		return ""
 	}
@@ -207,18 +259,40 @@ func (s *InvestigationsService) List(ctx context.Context, payload *investigation
 		Limit:  int32(limit),
 		Offset: int32(offset),
 	}
+	// Drain the ids before loading each investigation. Calling Get() inside
+	// rows.Next() would hold this pool connection open while acquiring a second
+	// (and a third, for candidate history) from the same pool for every row —
+	// under concurrency with a bounded pool that deadlocks rather than merely
+	// running slowly.
+	ids := make([]string, 0, limit)
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	for _, id := range ids {
 		item, err := s.Get(ctx, &investigations.GetPayload{ID: id})
 		if err != nil {
+			// The row can disappear between the id scan above and this read —
+			// CreateFromRegression deletes the investigation it created when it
+			// loses the alert-claim race. A concurrently deleted row must not
+			// turn a valid page into a 404; skip it and return the rest.
+			var notFound *investigations.NotFoundError
+			if errors.As(err, &notFound) {
+				continue
+			}
 			return nil, err
 		}
 		out.Items = append(out.Items, item)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // Get returns one investigation by ID.
@@ -309,15 +383,29 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 	return &inv, nil
 }
 
-// fixTransitions is the allowed fix_status graph. "abandoned" is reachable from
-// any non-terminal state; "confirmed"/"regressed" are set by the poller, not here.
+// fixTransitions is the allowed fix_status graph for *user-driven* transitions.
+// "abandoned" is reachable from any non-terminal state.
+//
+// "confirmed" and "regressed" are absent from every target list on purpose: they
+// are post-deployment measurements written by the regression poller
+// (reconcileAppliedFixes) from pg_stat_statements, and the whole point of the
+// evidence model is that a measured state cannot be asserted by hand. They still
+// appear as *source* states, because an operator may re-apply or abandon a fix
+// after the poller has ruled on it.
 var fixTransitions = map[string][]string{
 	"proposed":  {"verified", "applied", "abandoned"},
 	"verified":  {"applied", "proposed", "abandoned"},
-	"applied":   {"confirmed", "regressed", "verified", "abandoned"},
+	"applied":   {"verified", "abandoned"},
 	"regressed": {"applied", "abandoned"},
 	"confirmed": {"applied"},
 	"abandoned": {"proposed"},
+}
+
+// systemOnlyFixStatuses are set by post-deploy measurement, never by an API
+// caller. Rejected with a distinct message so the reason is obvious.
+var systemOnlyFixStatuses = map[string]bool{
+	"confirmed": true,
+	"regressed": true,
 }
 
 // fixTransitionAllowed reports whether the fix_status graph permits moving from
@@ -348,6 +436,13 @@ func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investig
 		to = *payload.FixStatus
 	}
 	if to != from {
+		if systemOnlyFixStatuses[to] {
+			return nil, &investigations.ValidationError{
+				Name:    "validation_error",
+				Message: fmt.Sprintf("%q is set by post-deployment measurement, not by this endpoint; mark the fix \"applied\" and the regression poller will confirm or regress it from pg_stat_statements", to),
+				Code:    strPtr("VALIDATION_ERROR"),
+			}
+		}
 		if !fixTransitionAllowed(from, to) {
 			return nil, &investigations.ValidationError{
 				Name:    "validation_error",
@@ -367,18 +462,24 @@ func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investig
 				WHEN $5 THEN COALESCE(
 					-- latest *interval* mean latency for the linked query, to match
 					-- what reconcileAppliedFixes re-measures against.
+					-- Partitioned by (connection, queryid): the same queryid on two
+					-- connections is two independent cumulative counter series, and
+					-- interleaving them by captured_at produces meaningless deltas.
 					(SELECT r.d_total / r.d_calls
 					 FROM (
 					   SELECT s.queryid,
 					          s.total_time_ms - lag(s.total_time_ms) OVER w AS d_total,
 					          s.calls         - lag(s.calls)         OVER w AS d_calls,
-					          row_number() OVER (PARTITION BY s.queryid ORDER BY p.captured_at DESC) AS rn
+					          row_number() OVER (PARTITION BY p.connection_id, s.queryid
+					                             ORDER BY p.captured_at DESC) AS rn
 					   FROM app.stat_statement_snapshots s
 					   JOIN app.stat_statement_polls p ON p.id = s.poll_id
 					   JOIN app.regression_alerts ra ON ra.queryid = s.queryid
+					     AND ra.connection_id = p.connection_id
 					     AND ra.investigation_id = app.investigations.id
 					   WHERE p.organization_id = $2
-					   WINDOW w AS (PARTITION BY s.queryid ORDER BY p.captured_at)
+					   WINDOW w AS (PARTITION BY p.connection_id, s.queryid
+					                ORDER BY p.captured_at)
 					 ) r
 					 WHERE r.rn = 1 AND r.d_calls > 0 AND r.d_total >= 0),
 					(stat_snapshot->>'mean_time_ms')::float,
@@ -966,10 +1067,28 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		return nil, err
 	}
 
+	resultsSampled := false
 	if inv.Comparison != nil {
 		status := equivalenceStatusFromComparison(inv.Comparison)
+		acceptSample := payload.AcceptSampleMatch != nil && *payload.AcceptSampleMatch
+		// Recorded in the report's provenance so a reader can tell a report
+		// shipped on full verification from one shipped on a bounded sample.
+		resultsSampled = status == EquivalenceSampleMatch
+
+		// SampleMatch is the fallback taken when full-result fingerprinting could
+		// not run. It is supporting evidence, not verification, so it takes an
+		// explicit human acknowledgement rather than being silently treated as
+		// equivalent to VerifiedEqual.
+		if status == EquivalenceSampleMatch && !acceptSample {
+			return nil, &investigations.ValidationError{
+				Name:    "validation_error",
+				Message: "result equivalence is SampleMatch — a bounded sample matched but the full result was not verified. Re-run Compare plans until status is VerifiedEqual, or pass accept_sample_match=true; the report is then marked as resting on sampled evidence.",
+				Code:    strPtr("EQUIVALENCE_SAMPLE_ONLY"),
+			}
+		}
+
 		if !equivalenceIsShippable(status) {
-			msg := "result equivalence was not verified — re-run Compare plans with result verification until status is VerifiedEqual (or SampleMatch for a large result) before generating a shippable report"
+			msg := "result equivalence was not verified — re-run Compare plans with result verification until status is VerifiedEqual before generating a shippable report"
 			switch status {
 			case EquivalenceDifferent:
 				msg = "result equivalence is Different — reconcile the candidate rewrite before generating a shippable report"
@@ -1043,20 +1162,31 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		story.InvestigationProvenance{
 			QueryFingerprint: fingerprint,
 			GeneratedBy:      auth.PrincipalFromContext(ctx).UserID,
+			ResultsSampled:   resultsSampled,
 		},
 	)
 
-	report, err := s.reportsSvc.StoreInvestigationReport(ctx, inv, invReport, narrative)
+	// Persist the report and mark the investigation complete in one transaction.
+	// Done separately, a failure between them leaves a stored report attached to
+	// an investigation that still reports itself as incomplete.
+	tx, err := s.appPool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	reportID, err := s.reportsSvc.InsertInvestigationReport(ctx, tx, inv, invReport, narrative)
 	if err != nil {
 		return nil, normalizeInvestigationError(err)
 	}
-
-	_, err = s.appPool.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `
 		UPDATE app.investigations
 		SET report_id = $1, status = 'complete', updated_at = now()
 		WHERE id = $2 AND organization_id = $3
-	`, report.ID, payload.ID, orgID(ctx))
-	if err != nil {
+	`, reportID, payload.ID, orgID(ctx)); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
@@ -1115,8 +1245,12 @@ func equivalenceStatusFromComparison(cmp *investigations.ComparePlansResult) str
 }
 
 // equivalenceIsShippable reports whether a report may be generated for this
-// equivalence status. VerifiedEqual is a full-result proof; SampleMatch is
-// accepted with the caveat carried in the report's equivalence notes.
+// equivalence status.
+//
+// VerifiedEqual is full-result verification. SampleMatch is the fallback taken
+// when full-result fingerprinting could not run, so it is listed here but the
+// caller must additionally have supplied accept_sample_match: shipping on
+// sampled evidence is a human decision, not a default.
 func equivalenceIsShippable(status string) bool {
 	return status == EquivalenceVerifiedEqual || status == EquivalenceSampleMatch
 }

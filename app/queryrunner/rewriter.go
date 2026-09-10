@@ -26,7 +26,6 @@ type RewriteCandidate struct {
 //   - DATE_TRUNC / EXTRACT / date_part / to_char / col::date equality → sargable range
 //   - DATE_TRUNC / col::date inequalities and BETWEEN → sargable range
 //   - COALESCE(col, default) = const → sargable column predicate
-//   - col::text / col::numeric = typed literal → compare the column to a typed literal
 //   - OR of predicates on different columns → UNION ALL of indexable branches
 //   - col IN/NOT IN (SELECT ...) → EXISTS / NULL-safe NOT EXISTS
 //   - LEFT JOIN b ON b.k = a.id WHERE b.k IS NULL → NOT EXISTS anti-join
@@ -191,12 +190,6 @@ func rewriteRationale(kinds, units []string) string {
 	if has("coalesce") {
 		parts = append(parts, "unwrap COALESCE(col, default) equality so the underlying column is sargable")
 	}
-	if has("text_cast") {
-		parts = append(parts, "move the text cast off the column onto a typed literal so an index on the column can be used")
-	}
-	if has("numeric_cast") {
-		parts = append(parts, "move the numeric cast off the column onto a typed literal so an index on the column can be used")
-	}
 	if len(parts) == 0 {
 		return "unwrap non-sargable predicates to index- and partition-friendly forms"
 	}
@@ -208,8 +201,6 @@ func rewriteCategory(kinds []string) string {
 		switch kinds[0] {
 		case "coalesce":
 			return "coalesce_unwrap"
-		case "text_cast", "numeric_cast":
-			return "implicit_cast"
 		}
 	}
 	return "function_wrap"
@@ -293,14 +284,22 @@ func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*p
 			*out = append(*out, info)
 			return replacement, 1
 		}
-		if replacement, info, ok := tryRewriteNumericCastEquality(ae); ok {
-			*out = append(*out, info)
-			return replacement, 1
-		}
-		if replacement, info, ok := tryRewriteTextCastEquality(ae); ok {
-			*out = append(*out, info)
-			return replacement, 1
-		}
+		// col::numeric_type = const and col::text = 'const' are intentionally
+		// NOT rewritten. Dropping the cast is only semantics-preserving when the
+		// column's actual PostgreSQL type makes the cast a no-op, and that type
+		// is not knowable from the AST alone:
+		//
+		//   amount numeric := 1.4 ;  amount::integer = 1  is TRUE
+		//                            amount          = 1  is FALSE
+		//   price  numeric := 12.0;  price::text = '12'   is FALSE ('12.0')
+		//                            price       = 12     is TRUE
+		//   sku    text            ;  sku::text = '5'  ->  sku = 5 does not even
+		//                            parse (no text = integer operator).
+		//
+		// Re-enabling these needs catalog-resolved column types (see
+		// explain_catalog.go) and a rewrite only when the cast target equals the
+		// source type, i.e. a provable no-op.
+		//
 		// Parameterized shapes ($1, $2, ...) — equality only.
 		// DATE_TRUNC(unit, col) BETWEEN $a AND $b is intentionally not rewritten
 		// (see tryRewriteDateTruncBetweenParam): a misaligned bind bound shifts

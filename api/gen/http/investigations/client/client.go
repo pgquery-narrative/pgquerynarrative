@@ -274,10 +274,15 @@ func (c *Client) RankCandidates() goa.Endpoint {
 // investigations service generate_report server.
 func (c *Client) GenerateReport() goa.Endpoint {
 	var (
+		encodeRequest  = EncodeGenerateReportRequest(c.encoder)
 		decodeResponse = DecodeGenerateReportResponse(c.decoder, c.RestoreResponseBody)
 	)
 	return func(ctx context.Context, v any) (any, error) {
 		req, err := c.BuildGenerateReportRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
 		if err != nil {
 			return nil, err
 		}

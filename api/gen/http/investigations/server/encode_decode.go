@@ -653,17 +653,28 @@ func EncodeGenerateReportResponse(encoder func(context.Context, http.ResponseWri
 func DecodeGenerateReportRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.GenerateReportPayload, error) {
 	return func(r *http.Request) (*investigations.GenerateReportPayload, error) {
 		var (
-			id  string
-			err error
+			id                string
+			acceptSampleMatch *bool
+			err               error
 
 			params = mux.Vars(r)
 		)
 		id = params["id"]
 		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		{
+			acceptSampleMatchRaw := r.URL.Query().Get("accept_sample_match")
+			if acceptSampleMatchRaw != "" {
+				v, err2 := strconv.ParseBool(acceptSampleMatchRaw)
+				if err2 != nil {
+					err = goa.MergeErrors(err, goa.InvalidFieldTypeError("accept_sample_match", acceptSampleMatchRaw, "boolean"))
+				}
+				acceptSampleMatch = &v
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
-		payload := NewGenerateReportPayload(id)
+		payload := NewGenerateReportPayload(id, acceptSampleMatch)
 
 		return payload, nil
 	}

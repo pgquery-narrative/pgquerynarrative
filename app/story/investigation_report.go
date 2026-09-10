@@ -191,13 +191,13 @@ func BuildInvestigationReport(
 		}
 		switch status {
 		case "VerifiedEqual":
-			nextAction = "Candidate shows measurable plan improvement and full result equivalence — open an optimization ticket with this report attached."
+			nextAction = "Candidate shows measurable plan improvement and every row matched a full-result fingerprint — open an optimization ticket with this report attached. The fingerprint is order-independent and compares row text, so verify ordering and column types separately when they are part of the query's contract."
 		case "SampleMatch":
-			nextAction = "Candidate shows measurable plan improvement and a large-result sample matched — re-check equivalence on a representative parameter set, then open an optimization ticket."
+			nextAction = "Candidate shows measurable plan improvement but full-result verification did not run — only a bounded sample matched. Treat as supporting evidence: re-check equivalence on a representative parameter set before deploying."
 		case "Different":
 			nextAction = "Plan improved but results differ — do not deploy; reconcile the rewrite before opening a change ticket."
 		default: // Unverified, NotRequested, or empty
-			nextAction = "Plan improved but result equivalence was not verified — do not treat as shippable until VerifiedEqual (or SampleMatch for a large result) is confirmed."
+			nextAction = "Plan improved but result equivalence was not verified — do not treat as shippable until VerifiedEqual is confirmed."
 		}
 	}
 

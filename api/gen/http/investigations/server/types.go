@@ -52,8 +52,8 @@ type AddCandidateRequestBody struct {
 // UpdateFixRequestBody is the type of the "investigations" service
 // "update_fix" endpoint HTTP request body.
 type UpdateFixRequestBody struct {
-	// Target status: verified | applied | confirmed | regressed | abandoned (or
-	// unchanged)
+	// Target status: proposed | verified | applied | abandoned (or unchanged).
+	// confirmed/regressed are set by post-deploy measurement, not by this endpoint.
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL
 	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
@@ -1308,9 +1308,10 @@ func NewRankCandidatesPayload(body *RankCandidatesRequestBody, id string) *inves
 
 // NewGenerateReportPayload builds a investigations service generate_report
 // endpoint payload.
-func NewGenerateReportPayload(id string) *investigations.GenerateReportPayload {
+func NewGenerateReportPayload(id string, acceptSampleMatch *bool) *investigations.GenerateReportPayload {
 	v := &investigations.GenerateReportPayload{}
 	v.ID = id
+	v.AcceptSampleMatch = acceptSampleMatch
 
 	return v
 }
@@ -1387,8 +1388,8 @@ func ValidateAddCandidateRequestBody(body *AddCandidateRequestBody) (err error) 
 // update_fix_request_body
 func ValidateUpdateFixRequestBody(body *UpdateFixRequestBody) (err error) {
 	if body.FixStatus != nil {
-		if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "confirmed" || *body.FixStatus == "regressed" || *body.FixStatus == "abandoned") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "confirmed", "regressed", "abandoned"}))
+		if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "abandoned") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.fix_status", *body.FixStatus, []any{"proposed", "verified", "applied", "abandoned"}))
 		}
 	}
 	if body.FixReference != nil {

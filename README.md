@@ -79,10 +79,15 @@ and no rewrite. That is the expected outcome, not a failure.
   `timing_runs` (up to 5) to get a median plus the observed spread — and if the
   spread is as large as the difference, it says so instead of claiming a speedup
 - Index DDL is **suggested only** (hypopg when installed; labeled heuristic otherwise) — never auto-applied
-- **Equivalence** is reported in five states — `VerifiedEqual` (every row matched),
-  `SampleMatch` (a bounded sample matched, for results past the 1000-row cap), `Different`,
-  `Unverified` (the check could not complete — never reported as a mismatch), and
-  `NotRequested`. Only `VerifiedEqual` or `SampleMatch` gates a shippable investigation report
+- **Equivalence** is reported in five states — `VerifiedEqual` (every row of both results
+  contributed to a full-result, order-independent fingerprint and the fingerprints matched),
+  `SampleMatch` (full-result fingerprinting could not run and a bounded deterministic sample
+  matched — supporting evidence, not verification), `Different`, `Unverified` (the check could
+  not complete — never reported as a mismatch), and `NotRequested`. `VerifiedEqual` gates a
+  shippable investigation report; `SampleMatch` additionally requires an explicit
+  `accept_sample_match` acknowledgement. The fingerprint compares row text and is
+  order-independent, so column types, column names and `ORDER BY` are **not** part of what it
+  verifies — check those separately when they are part of the query's contract
 - **Regression inbox** is empty on default `make demo` unless real `pg_stat_statements` data exists; set `APP_ENV=demo` for seeded demo alerts and KPIs
 
 ## Choose your path

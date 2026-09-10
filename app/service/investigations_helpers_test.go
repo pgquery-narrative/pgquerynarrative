@@ -114,7 +114,7 @@ func TestFixTransitionAllowed(t *testing.T) {
 	allowed := [][2]string{
 		{"proposed", "verified"}, {"proposed", "applied"}, {"proposed", "abandoned"},
 		{"verified", "applied"}, {"verified", "proposed"},
-		{"applied", "confirmed"}, {"applied", "regressed"}, {"applied", "verified"},
+		{"applied", "verified"},
 		{"regressed", "applied"}, {"confirmed", "applied"}, {"abandoned", "proposed"},
 	}
 	for _, tr := range allowed {
@@ -122,10 +122,17 @@ func TestFixTransitionAllowed(t *testing.T) {
 			t.Errorf("expected %s → %s to be allowed", tr[0], tr[1])
 		}
 	}
+	// "confirmed" and "regressed" are post-deployment measurements written by the
+	// regression poller. No user-driven transition may reach them, or a hand-set
+	// status becomes indistinguishable from a measured one.
 	denied := [][2]string{
 		{"proposed", "confirmed"}, {"proposed", "regressed"},
+		{"applied", "confirmed"}, {"applied", "regressed"},
+		{"verified", "confirmed"}, {"verified", "regressed"},
+		{"abandoned", "confirmed"}, {"regressed", "confirmed"},
+		{"confirmed", "regressed"},
 		{"confirmed", "verified"}, {"abandoned", "applied"},
-		{"regressed", "confirmed"}, {"applied", "proposed"},
+		{"applied", "proposed"},
 		{"bogus", "applied"},
 	}
 	for _, tr := range denied {
