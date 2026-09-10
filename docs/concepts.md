@@ -6,7 +6,7 @@ How PgQueryNarrative thinks about query problems — the vocabulary behind the U
 
 Teams often know a query is slow (dashboards, `pg_stat_statements`, user complaints) but lack a **repeatable path from symptom → plan evidence → verified fix → shareable write-up**. Pasting SQL into a chatbot skips the database’s own proof.
 
-PgQueryNarrative is a **PostgreSQL investigation workbench**: safe read-only SQL, EXPLAIN analysis, **system-proposed** rewrites, before/after compare, equivalence proof, and engineering reports. An optional LLM can narrate workbench analytics; it is not required for investigation reports.
+PgQueryNarrative is a **PostgreSQL investigation workbench**: safe read-only SQL, EXPLAIN analysis, **system-proposed** rewrites, before/after compare, result-equivalence checking, and engineering reports. An optional LLM can narrate workbench analytics; it is not required for investigation reports.
 
 ## Query Investigation
 
@@ -65,7 +65,7 @@ The product highlights those signals so a human can decide — it does not silen
 | Mode | What it does | When to use |
 |------|----------------|-------------|
 | `EXPLAIN` | Planner estimates only; does not execute the query body for timing | Fast triage, cheap to run |
-| `EXPLAIN ANALYZE` | Executes the query and records actual times/rows | Proof of a rewrite; needs timeouts and usually a replica |
+| `EXPLAIN ANALYZE` | Executes the query and records actual times/rows | Measured evidence for a rewrite; needs timeouts and usually a replica |
 
 Server config gates ANALYZE (`SECURITY_EXPLAIN_ANALYZE_ENABLED`). Local demo Compose enables it so compare can show credible timings on the large seed.
 
