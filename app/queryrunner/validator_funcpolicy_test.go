@@ -98,3 +98,34 @@ FROM (SELECT * FROM demo.sales) AS pgqn_eq`
 		t.Fatalf("fingerprint wrapper must validate, got: %v", err)
 	}
 }
+
+// The function/operator/type policy is a denylist plus a schema rule applied to
+// every user SELECT, so its most likely failure mode is not a missed attack but
+// a false positive that breaks legitimate analytical SQL. This sweep pins the
+// shapes that must never be rejected — extension types and operators in
+// particular, which users write unqualified and which no allowlist knows about.
+func TestValidator_NoFalsePositivesOnAnalyticalSQL(t *testing.T) {
+	v := NewValidator([]string{"demo"}, 100000)
+	for _, sql := range []string{
+		`SELECT embedding::vector FROM demo.docs`,      // pgvector
+		`SELECT geom::geography FROM demo.places`,      // postgis
+		`SELECT name::citext FROM demo.users`,          // citext
+		`SELECT data->>'k' FROM demo.events`,           // jsonb operators
+		`SELECT a <-> b FROM demo.docs`,                // pgvector distance
+		`SELECT tsv @@ to_tsquery('x') FROM demo.docs`, // full-text search
+		`SELECT array_agg(x ORDER BY y) FROM demo.t`,   // ordered aggregate
+		`SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY x) FROM demo.t`,
+		`SELECT generate_series(1,10)`, // set-returning
+		`SELECT jsonb_array_elements(data) FROM demo.events`,
+		`SELECT now() - interval '1 day'`,
+		`SELECT string_agg(name, ',') FROM demo.users`,
+		`SELECT demo.sales.total_amount::numeric(10,2) FROM demo.sales`,
+		`SELECT * FROM demo.sales WHERE date BETWEEN '2025-01-01' AND '2025-02-01'`,
+		`SELECT count(*) FILTER (WHERE region = 'North') FROM demo.sales`,
+		`SELECT lag(x) OVER (PARTITION BY y ORDER BY z) FROM demo.t`,
+	} {
+		if err := v.Validate(sql); err != nil {
+			t.Errorf("legitimate analytical SQL must not be rejected:\n  %s\n  -> %v", sql, err)
+		}
+	}
+}
