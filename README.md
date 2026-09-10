@@ -6,7 +6,7 @@
 
 <p align="center">
 <strong>PostgreSQL query intelligence that shows its evidence</strong><br>
-Investigate expensive queries, compare system-proposed rewrites with plan proof,<br>
+Investigate expensive queries, compare system-proposed rewrites against plan evidence,<br>
 and ship engineering-ready reports.
 </p>
 
@@ -33,7 +33,7 @@ and ship engineering-ready reports.
   <img src="docs/assets/demo-workflow.svg" alt="Query Investigation workflow: EXPLAIN, suggest rewrite, compare, report" width="720">
 </p>
 
-<p align="center"><sub>Investigate → system-proposed rewrite → compare with plan proof → engineering report.</sub></p>
+<p align="center"><sub>Investigate → system-proposed rewrite → compare with plan evidence → engineering report.</sub></p>
 
 ---
 
@@ -41,7 +41,7 @@ and ship engineering-ready reports.
 
 PgQueryNarrative is a **PostgreSQL investigation workbench**. The flagship loop is:
 
-**expensive query → plan findings → system-proposed rewrite or index candidate → measured compare + equivalence proof → engineering report**
+**expensive query → plan findings → system-proposed rewrite or index candidate → measured compare + result-equivalence check → engineering report**
 
 Safe read-only SQL and plan analysis are the core. An optional LLM can narrate workbench analytics; it is **not** required for investigation reports (those are evidence templates, not LLM narratives). Start with [Concepts](docs/concepts.md) for vocabulary (evidence, EXPLAIN vs ANALYZE, what compare proves).
 
@@ -225,10 +225,10 @@ Full write-up: [Trust model](docs/trust-model.md)
 
 | Area | What you get |
 |------|----------------|
-| **Query Investigation** | EXPLAIN findings, system-proposed candidates, compare, equivalence proof, template engineering report |
+| **Query Investigation** | EXPLAIN findings, system-proposed candidates, compare, result-equivalence check, template engineering report |
 | **Rewrite engine** | AST-based `Suggest rewrite` (DATE_TRUNC, EXTRACT, COALESCE, OR→UNION ALL, IN→EXISTS, …) |
 | **Candidate ranking** | `Rank candidates`: dry-EXPLAIN rewrites + optional hypopg index projection (heuristic when hypopg unavailable) |
-| **Equivalence proof** | One aggregate pass per side (`count` + `sum` + `bit_xor` over a per-row hash) compares **every row**, order-independently, with no sort → `VerifiedEqual` / `SampleMatch` / `Different` / `Unverified` / `NotRequested`; reports require one of the first two |
+| **Result equivalence** | One aggregate pass per side (`count` + `sum` + `bit_xor` over a per-row hash) compares **every row**, order-independently, with no sort → `VerifiedEqual` / `SampleMatch` / `Different` / `Unverified` / `NotRequested`; reports require one of the first two |
 | **Secure read-only access** | Readonly pool, statement limits, timeouts, schema allowlist |
 | **Plan analysis** | Seq-scan / cost / partition-pruning findings; optional `EXPLAIN ANALYZE` when enabled; IndexAdvice DDL (suggest-only) |
 | **Workbench** | Plan tree, compare table, regression inbox (real stats or `APP_ENV=demo`), Security & Trust page |
