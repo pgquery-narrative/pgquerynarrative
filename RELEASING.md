@@ -2,7 +2,7 @@
 
 This is the **gate**: what must be true before a version tag is pushed. For the mechanics
 of versioning, changelog, and what CI does on a tag, see
-[docs/reference/versioning-and-releases.md](docs/reference/versioning-and-releases.md).
+[docs/project/releases.md](docs/project/releases.md).
 
 ## The rule
 
@@ -59,7 +59,7 @@ Run from a clean tree on an up-to-date `main`.
 
    ```bash
    go build ./... && go vet ./... && gofmt -s -l .
-   go test ./app/... ./pkg/...
+   make test-unit   # not a bare `go test ./app/... ./pkg/...` — see docs/development/testing.md
    ```
 
 4. **Integration tests** (Docker required)
@@ -91,7 +91,7 @@ Run from a clean tree on an up-to-date `main`.
    ```
 
 8. **CI is green on the exact commit being tagged** — every check in
-   [branch protection](docs/ops/branch-protection.md), not merely the required subset.
+   [branch protection](docs/project/branch-protection.md), not merely the required subset.
 
 9. **Image builds and serves the UI**
 
@@ -114,7 +114,7 @@ Run from a clean tree on an up-to-date `main`.
 
 ## Choosing the number
 
-SemVer here is scoped by [the stability table](docs/reference/versioning-and-releases.md#pkgnarrative-api-stability):
+SemVer here is scoped by [the stability table](docs/project/releases.md#pkgnarrative-api-stability):
 `pkg/narrative` is the stable surface, and Goa types under `api/gen/` are explicitly unstable.
 Decide the bump against that table, not against the raw diff.
 
@@ -138,10 +138,12 @@ exactly these terms.
 
 ## Upgrade notes belong in the release
 
-`RequiredMigrationVersion` in `app/db/migrations_check.go` is a startup gate: a server whose
-database is behind that number refuses to boot. Whenever it moves, the release notes must say
-so and name the range, or operators discover it as a failed rollout. `v2.1.0` requires schema
-version 56, up from 19 at `v2.0.0`.
+`RequiredMigrationVersion` in `app/db/migrations_check.go` is a **readiness** gate, not a
+startup gate: a server whose database is behind that number still starts and accepts
+connections, but `GET /ready` returns 503 until migrations catch up (see
+`docs/operate/upgrades.md`). Whenever the required version moves, the release notes must say
+so and name the range, or operators discover it as a failed rollout only once something checks
+readiness. `v2.2.0` requires schema version 57, up from 19 at `v2.0.0`.
 
 ## Tag and publish
 
@@ -155,7 +157,10 @@ cosigns `ghcr.io/pgquery-narrative/pgquerynarrative:<version>` from the root `Do
 
 ## After the tag
 
-- Verify the published image runs: `docker run --rm ghcr.io/pgquery-narrative/pgquerynarrative:<version> --help`
+- Verify the published image serves the UI: run it against a migrated database (or the
+  release-smoke Postgres compose the CI job uses) and check `curl -f http://localhost:8080/health`
+  and that `/` returns the SPA — the entrypoint waits for Postgres and execs the server, so
+  `docker run ... --help` does not work (the entrypoint ignores arguments).
 - Verify the signature: `cosign verify ghcr.io/pgquery-narrative/pgquerynarrative:<version> ...`
 - Confirm the GitHub Release lists binaries and `checksums.txt`.
 

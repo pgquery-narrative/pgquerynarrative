@@ -1,55 +1,58 @@
-# PgQueryNarrative
+# What is PgQueryNarrative?
 
-**PostgreSQL query intelligence that shows its evidence.** Investigate expensive queries with plan findings, compare system-proposed rewrites, and produce engineering-ready reports — with an optional LLM narrative layer on the workbench.
+**PgQueryNarrative is a PostgreSQL investigation workbench: it takes an expensive
+query, shows what the planner is doing, proposes a rewrite or index from the query's
+own parse tree, measures the change, checks that the rewrite returns the same rows,
+and writes the evidence up as an engineering report.**
 
-| Path | Link |
-|------|------|
-| Try the demo | [Quick start](getting-started/quickstart.md) |
-| Connect your database | [Connect your PostgreSQL](getting-started/connect-postgres.md) |
-| Deploy | [Deployment](reference/deployment.md) |
-| Trust & scope | [Trust model](trust-model.md) |
-| How the product thinks | [Concepts](concepts.md) |
-
-Web UI: [UI overview](ui-overview.md) · API: [Reference](api/README.md) · [Examples](api/examples.md) · CLI: [CLI usage](usage/cli-usage.md)
-
-## Recommended path
-
-1. [Concepts](concepts.md) — investigation, evidence, rewrite engine, what compare proves  
-2. [Quick start](getting-started/quickstart.md) — `make demo`  
-3. [Trust model](trust-model.md) — then [Connect your PostgreSQL](getting-started/connect-postgres.md) when leaving the demo schema  
-4. [LLM setup](getting-started/llm-setup.md) — only if you want workbench narratives / Ask  
-
-## One-command demo
-
-```bash
-make demo
+```mermaid
+flowchart LR
+  A[Expensive query] --> B[Plan findings]
+  B --> C[Proposed rewrite<br/>or index]
+  C --> D[Measured compare]
+  D --> E[Result verification]
+  E --> F[Engineering report]
 ```
 
-Open **http://localhost:8080** → **Investigate** → **Slow dashboard query** → **Suggest rewrite** → **Compare plans** → **Generate report**.
+It is not an autonomous optimizer. It proposes; a person reviews and applies. It
+never applies a proposed rewrite, index or DDL to the database you point it at, and
+it runs your SQL through a dedicated read-only role. The investigation loop needs no
+LLM; an optional LLM adds natural-language Ask and narrative reports on top.
 
-For 50→1 partition proof on ~10M rows: run `make demo-bootstrap` first.
+## Where to start
 
-## Documentation map
+| You are… | Start with | Then |
+|---|---|---|
+| **Evaluating it** | [Quick start](getting-started/quickstart.md) — `make demo`, guided investigation | [Concepts](concepts.md) |
+| **Investigating a real query** | [Connect your PostgreSQL](getting-started/connect-postgres.md) | [Investigate a slow query](workflows/investigate.md) |
+| **A DBA reviewing access** | [Trust model](trust-model.md) | [Database roles](security/database-roles.md) · [Query execution safety](security/query-safety.md) |
+| **Deploying it** | [Deployment](operate/deployment.md) | [Production configuration](operate/production.md) · [Health and monitoring](operate/monitoring.md) |
+| **Integrating with it** | [REST API](integrations/rest-api.md) | [API reference](reference/api.md) · [MCP server](integrations/mcp.md) · [PostgreSQL extension](integrations/postgres-extension.md) |
+| **Contributing** | [Development setup](development/setup.md) | [Repository architecture](development/repository.md) · [Testing](development/testing.md) |
 
-| Topic | Document |
-|-------|----------|
-| Concepts & trust | [Concepts](concepts.md) · [Trust model](trust-model.md) |
-| Getting started | [Quick start](getting-started/quickstart.md) · [Installation](getting-started/installation.md) · [Connect Postgres](getting-started/connect-postgres.md) |
-| Product guides | [UI overview](ui-overview.md) · [Configuration](configuration.md) |
-| API | [API reference](api/README.md) · [Examples](api/examples.md) |
-| Deployment & ops | [Deployment](reference/deployment.md) · [Operations](reference/operations.md) |
-| Troubleshooting | [Troubleshooting](reference/troubleshooting.md) |
-| Dataset & case study | [Dataset](DATASET.md) · [Query optimization](case-studies/01-query-optimization.md) |
-| Development | [Setup](development/setup.md) · [Testing](development/testing.md) · [Dev runbook](development/runbook.md) |
+## How the documentation is organised
+
+| Section | Answers |
+|---|---|
+| **Overview** | What the product is, its vocabulary, how it is built, what it will and will not do. [Architecture](architecture.md) is the system map. |
+| **Getting started** | Running it: the demo, installation, pointing it at your own database. |
+| **Core workflows** | Task guides for the investigation loop — findings, candidates, compare, [result verification](workflows/verify-results.md), regressions and applied fixes, multiple connections. |
+| **Workbench** | The UI surfaces around the loop: reports and sharing, dashboards, schedules and webhooks. |
+| **Integrations** | Calling it from elsewhere: REST, MCP, SQL (extension), Go (embedded), LLM providers, pgvector. |
+| **Security & access** | Roles, the SQL validator, authentication, organization isolation, data handling. |
+| **Deploy & operate** | Docker/Kubernetes/Helm, production settings, probes and metrics, migrations and upgrades, runbooks. |
+| **Reference** | Lookup tables checked against the code: [configuration](reference/configuration.md), [API](reference/api.md), [errors](reference/api-errors.md), [status vocabulary](reference/evidence.md), CLI, versions and limits. |
+| **Development** | Repository layout, code generation, tests, and how to change the API, configuration or rewrite rules safely. |
+| **Examples** | The measured case study, the demo dataset, and the demo-data RLS walkthrough. |
+| **Project** | Releases, versioning, branch protection, contributing and the security policy. |
+
+Reference pages are mechanically checked: `make docs-contract-check` fails when a
+configuration variable, API operation, error code, release platform or the Go version
+in the docs disagrees with the code.
 
 ## Local preview
 
 ```bash
-make docs
+make docs        # http://127.0.0.1:8000
+make docs-check  # the strict build CI runs
 ```
-
-Then open **http://localhost:8000**.
-
----
-
-**Contributing & security:** [CONTRIBUTING.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md) · [SECURITY.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/SECURITY.md) · **Changelog:** [CHANGELOG.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/CHANGELOG.md)

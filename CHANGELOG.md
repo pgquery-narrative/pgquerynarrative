@@ -143,6 +143,40 @@ four, plus the lifecycle and deployment gaps found alongside them.
   It held one pool connection open while acquiring two more per row, which under
   concurrency with a bounded pool deadlocks rather than merely running slowly.
 
+### Documentation
+
+- **The documentation was reorganised by audience** — Learn → Investigate →
+  Integrate → Secure → Deploy & Operate → Reference → Develop. New pages:
+  `architecture.md` (system map, request paths, the metadata vs analytical
+  database split, background workers), a Core Workflows section (investigate,
+  plan findings, candidates, compare, verify results, regressions & applied
+  fixes, multiple connections), a Security & Access section, a real Deploy &
+  Operate section (production StrictMode checklist, health/monitoring, migrations
+  & upgrades, incident runbooks), and lookup-only Reference pages
+  (`reference/configuration.md` now covers every environment variable,
+  `reference/api.md` every Goa operation plus the manual routes,
+  `reference/api-errors.md`, `reference/evidence.md`,
+  `reference/versions-limits.md`). Old URLs redirect via `mkdocs-redirects`.
+- **`make docs-contract-check` (new)** ties the documentation to the code: the Go
+  version, the Compose Postgres default, every configuration variable and a set
+  of critical defaults, the release platform matrix, every OpenAPI operation,
+  every structured error code, forbidden stale vocabulary, and the
+  links/anchors in the repo-root Markdown that MkDocs does not build. It runs in
+  the CI `Docs` job and in `make test-unit` (`tools/docscheck`).
+- **External links are checked in CI** by a new `docs-links` workflow (lychee,
+  pinned), and locally by `make docs-links`. Config in `.lychee.toml`.
+- **`make docs` binds the preview to `127.0.0.1` and drops the TTY assumption**;
+  `docs/Dockerfile` now installs pinned packages from `docs/requirements.txt`.
+- Corrected factual drift across the docs and repo Markdown: Go 1.26, the Compose
+  Postgres default (`postgres:16-alpine` + HypoPG, built not pulled), the
+  `make seed` row count (300,000), `regression_alert_id` (not `regression_id`),
+  the equivalence report gate (`VerifiedEqual`, or `SampleMatch` with
+  `accept_sample_match=true`), the three database identities, the release
+  platform list (four, including `linux/arm64`), `SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG`
+  defaulting to `false`, the schema-migration gate being a readiness check rather
+  than a startup one, and the `pgquery-narrative` GitHub organization for
+  browser/clone URLs (the Go module path is unchanged).
+
 ### Changed
 
 - **`VerifiedEqual` is described as full-result fingerprint verification, not

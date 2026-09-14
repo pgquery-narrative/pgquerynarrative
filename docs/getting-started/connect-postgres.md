@@ -1,17 +1,20 @@
 # Connect your PostgreSQL
 
-Point PgQueryNarrative at **your** database (usually a replica) with a dedicated read-only role. For the bundled demo dataset, use [Quick start](quickstart.md) instead.
+Point PgQueryNarrative at **your** database — usually a replica or a reporting
+database — through a dedicated read-only role. For the bundled demo dataset, use
+[Quick start](quickstart.md) instead.
 
-Read [Trust model](../trust-model.md) before opening production-adjacent data.
+Read [Trust model](../trust-model.md) and [Database roles](../security/database-roles.md)
+before opening production-adjacent data.
 
 ## 1. Create a read-only role
 
-On the target PostgreSQL (example — adjust names and schemas):
+On the target PostgreSQL (adjust names and schemas):
 
 ```sql
 CREATE ROLE pqn_readonly LOGIN PASSWORD 'choose-a-strong-secret';
 
--- Example: analytics reporting schema only
+-- Example: one reporting schema only
 GRANT CONNECT ON DATABASE your_db TO pqn_readonly;
 GRANT USAGE ON SCHEMA reporting TO pqn_readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA reporting TO pqn_readonly;
@@ -19,14 +22,16 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA reporting
   GRANT SELECT ON TABLES TO pqn_readonly;
 ```
 
-Prefer a **replica**. Do not use a superuser or a role that can write application data.
+Prefer a **replica**. Never grant this role write access, and never grant it
+anything on the schema that holds PgQueryNarrative's own metadata.
 
 ## 2. Configure the app
 
-Minimum environment (see [Configuration](../configuration.md)):
+Minimum environment for the **default** connection (full list:
+[Configuration reference](../reference/configuration.md)):
 
 ```bash
-# App DB (saved queries, reports, orgs) — can be the Compose Postgres
+# App metadata DB (investigations, saved queries, reports, orgs) — can be the Compose Postgres
 DATABASE_HOST=...
 DATABASE_USER=pgquerynarrative_app
 DATABASE_PASSWORD=...
@@ -38,19 +43,26 @@ DATABASE_ALLOWED_SCHEMAS=reporting
 QUERY_TIMEOUT=30s
 ```
 
-For a **second** analytical source (in addition to `default`), use `DATABASE_CONNECTIONS_JSON` and pick connections in the UI / API `connection_id`.
+For **additional** analytical sources beside `default`, set `DATABASE_CONNECTIONS_JSON`
+(a JSON array of connection objects, camelCase keys, durations as integer
+nanoseconds — see [Configuration – multiple connections](../reference/configuration.md#multiple-database-connections))
+and pass `connection_id` in the API/UI/MCP. See
+[Multiple connections](../workflows/connections.md).
 
 ## 3. Allowlist only what investigators need
 
-`DATABASE_ALLOWED_SCHEMAS` is a hard allowlist enforced in the query validator. Start narrow (one reporting schema or a set of views). Never put `app` (or your product’s private schema) on that list.
+`DATABASE_ALLOWED_SCHEMAS` is a hard allowlist enforced in the query validator.
+Start narrow — one reporting schema or a curated set of views. `app`, `public` (in
+production), `pg_catalog`, `information_schema` and `pg_toast*` can never be
+allowlisted; the config loader rejects them outright.
 
 ## 4. Timeouts and EXPLAIN ANALYZE
 
 | Setting | Guidance |
-|---------|----------|
-| `QUERY_TIMEOUT` | Keep tight on shared replicas (e.g. 15–30s); raise only for approved ANALYZE demos |
-| `SECURITY_EXPLAIN_ANALYZE_ENABLED` | Off unless you accept that compare may **execute** candidate SQL |
-| Result size limits | Keep defaults until you know report workloads |
+|---|---|
+| `QUERY_TIMEOUT` | Keep tight on shared replicas (15–30s); raise only for approved ANALYZE work |
+| `SECURITY_EXPLAIN_ANALYZE_ENABLED` | Off unless you accept that compare may **execute** candidate SQL. Forbidden in production StrictMode |
+| Result size limits | Keep the defaults until you know the report workload |
 
 ## 5. Verify
 
@@ -62,15 +74,17 @@ curl -s -X POST http://localhost:8080/api/v1/queries/run \
   -d '{"sql":"SELECT 1","limit":1}'
 ```
 
-Then open **Investigate**, paste a real expensive query from that schema, and run compare only after you understand ANALYZE policy.
+Then open **Investigate**, paste a real expensive query from that schema, and run
+compare only once you understand the ANALYZE policy above.
 
 ## 6. Production checklist
 
-When leaving laptop demo mode: see [Deployment](../reference/deployment.md) and [Trust model](../trust-model.md).
+Leaving laptop demo mode: [Production configuration](../operate/production.md) and
+[Deployment](../operate/deployment.md).
 
 ## See also
 
-- [Trust model](../trust-model.md)
-- [Configuration](../configuration.md)
+- [Trust model](../trust-model.md) · [Database roles](../security/database-roles.md)
+- [Configuration](../reference/configuration.md)
 - [Installation](installation.md)
-- [API examples](../api/examples.md)
+- [REST API](../integrations/rest-api.md)

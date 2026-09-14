@@ -47,7 +47,7 @@ non-root `appuser` (uid 1000) and listens on `8080`.
 
 ## Related
 
-- [Deployment reference](../docs/reference/deployment.md) — Compose, Kubernetes, and Helm walkthroughs
-- [Operations](../docs/reference/operations.md) — upgrade, rollback, backup
-- [Branch protection](../docs/ops/branch-protection.md) — required checks on `main`
+- [Deployment reference](../docs/operate/deployment.md) — Compose, Kubernetes, and Helm walkthroughs
+- [Migrations, upgrades, backup](../docs/operate/upgrades.md) — upgrade, rollback, backup
+- [Branch protection](../docs/project/branch-protection.md) — required checks on `main`
 - [RELEASING.md](../RELEASING.md) — the gate that must be green before tagging

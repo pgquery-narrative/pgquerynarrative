@@ -10,7 +10,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Reporting Bugs
 
-1. Check if the bug has already been reported in [Issues](https://github.com/pgquerynarrative/pgquerynarrative/issues)
+1. Check if the bug has already been reported in [Issues](https://github.com/pgquery-narrative/pgquerynarrative/issues)
 2. If not, create a new issue with:
    - Clear title and description
    - Steps to reproduce
@@ -30,9 +30,13 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 #### 1. Fork and Clone
 ```bash
-git clone https://github.com/pgquerynarrative/pgquerynarrative.git
+git clone https://github.com/pgquery-narrative/pgquerynarrative.git
 cd pgquerynarrative
 ```
+
+Note: the Go module path stays `github.com/pgquerynarrative/pgquerynarrative` — only
+the GitHub organization (used for clone/browser URLs) is `pgquery-narrative`. Do not
+rewrite Go import paths to match.
 
 #### 2. Create a Branch
 ```bash
@@ -105,7 +109,10 @@ Then create a PR on GitHub with:
 ### Documentation
 - Update README if needed
 - Add/update godoc comments
-- Update API documentation
+- Update the matching [reference page](https://pgquery-narrative.github.io/pgquerynarrative/reference/api/)
+  in the same change for a config default, API route, or error code you touched —
+  see [Change workflows](https://pgquery-narrative.github.io/pgquerynarrative/development/change-workflows/);
+  `make docs-contract-check` fails a PR that misses this
 - Include examples for new features
 
 
