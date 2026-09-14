@@ -335,16 +335,24 @@ var forbiddenVocab = []vocabRule{
 	{"\"requires equivalence Equal\"", regexp.MustCompile(`requires equivalence \*{0,2}Equal`)},
 	{"\"equivalence proof\"", regexp.MustCompile(`(?i)equivalence proof`)},
 	{"bare `regression_id`", regexp.MustCompile(`\bregression_id\b`)},
-	{"stale owner browser URL", regexp.MustCompile(`https?://github\.com/pgquerynarrative/`)},
 	{"Go 1.20–1.25 claim", regexp.MustCompile(`Go[ \-]1\.2[0-5]\b`)},
 	{"\"8,000 rows\" dataset claim", regexp.MustCompile(`\b8,?000[ \-]rows?\b`)},
 }
 
+// The stale-owner-URL check is a plain substring match, not a regex: a regex
+// shaped like a URL (`https?://host/...`) reads to a static scanner as a host
+// check missing an anchor, since the same shape elsewhere might be used to
+// validate a URL's origin. Here it only ever scans doc prose for one exact,
+// fully-qualified string, so there is no partial-match or embedded-host risk
+// to anchor against — `strings.Contains` says that directly instead of
+// leaving a scanner to infer it from an unanchored regex.
+var staleOwnerURLs = []string{
+	"https://github.com/pgquerynarrative/",
+	"http://github.com/pgquerynarrative/",
+}
+
 func checkForbiddenVocabulary(root string, r *report) {
-	var files []string
-	for _, f := range []string{"README.md", "RELEASING.md", "deploy/README.md", "examples/README.md"} {
-		files = append(files, f)
-	}
+	files := []string{"README.md", "RELEASING.md", "deploy/README.md", "examples/README.md"}
 	for _, d := range []string{".github", "docs"} {
 		_ = filepath.WalkDir(filepath.Join(root, d), func(path string, de os.DirEntry, err error) error {
 			if err != nil || de.IsDir() || !strings.HasSuffix(path, ".md") {
@@ -367,6 +375,11 @@ func checkForbiddenVocabulary(root string, r *report) {
 		for _, rule := range forbiddenVocab {
 			if loc := rule.re.FindStringIndex(body); loc != nil {
 				r.failf("%s: forbidden vocabulary %s near %q", rel, rule.name, snippet(body, loc[0]))
+			}
+		}
+		for _, needle := range staleOwnerURLs {
+			if i := strings.Index(body, needle); i >= 0 {
+				r.failf("%s: forbidden vocabulary stale owner browser URL near %q", rel, snippet(body, i))
 			}
 		}
 	}
