@@ -132,7 +132,11 @@ function ReportDetail() {
           <h1 data-testid={isSharedView ? "shared-report-headline" : "report-detail-headline"} className="text-2xl font-bold tracking-tight">{narrative?.headline || "Report"}</h1>
           <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(report.created_at).toLocaleString()}</span>
-            <span className="flex items-center gap-1"><Cpu className="h-3 w-3" />{report.llm_provider} / {report.llm_model}</span>
+            {investigationReport ? (
+              <span className="flex items-center gap-1"><FileText className="h-3 w-3" />Deterministic evidence template</span>
+            ) : (
+              <span className="flex items-center gap-1"><Cpu className="h-3 w-3" />{report.llm_provider} / {report.llm_model}</span>
+            )}
             <Badge variant="secondary" className="text-[10px]">{report.connection_id}</Badge>
           </div>
         </div>

@@ -119,12 +119,12 @@ func tryRewriteInSubLink(sl *pg_query.SubLink, outerAlias string, notIn bool) (*
 	if target == nil || target.GetAStar() != nil {
 		return nil, false
 	}
+	// subqueryEligibleForExists already required a bare-column target, so
+	// unwrapColumnRefNode(target) is never nil here; qualifyColumnRef can still
+	// fail to produce a ColumnRef, in which case the original target node is
+	// used unqualified.
 	innerCol := qualifyColumnRef(unwrapColumnRefNode(target), innerAlias)
 	if innerCol == nil || innerCol.GetColumnRef() == nil {
-		// Expression target: still compare, but skip if we cannot identify a column.
-		if unwrapColumnRefNode(target) == nil {
-			return nil, false
-		}
 		innerCol = target
 	}
 	outerCol := qualifyColumnRef(sl.Testexpr, outerAlias)

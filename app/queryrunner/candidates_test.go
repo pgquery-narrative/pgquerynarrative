@@ -54,7 +54,7 @@ func TestRankingRecommendation(t *testing.T) {
 	improving := RankScoredCandidates([]ScoredCandidate{
 		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "x", CostDelta: -5},
 	})
-	if got := RankingRecommendation(improving); got != "" {
+	if got := RankingRecommendation(improving, 0); got != "" {
 		t.Fatalf("a Rank 1 candidate means no recommendation string, got %q", got)
 	}
 
@@ -62,15 +62,45 @@ func TestRankingRecommendation(t *testing.T) {
 		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "x", CostDelta: 10},
 		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "y", CostDelta: 0},
 	})
-	if got := RankingRecommendation(allWorse); !strings.Contains(got, "No improving candidate") {
+	if got := RankingRecommendation(allWorse, 0); !strings.Contains(got, "No improving candidate") {
 		t.Fatalf("all-worse should recommend against, got %q", got)
 	}
 
 	reviewOnly := RankScoredCandidates([]ScoredCandidate{
 		{Kind: CandidateKindIndexDDL, Rankable: false, DDL: "CREATE INDEX ..."},
 	})
-	if got := RankingRecommendation(reviewOnly); !strings.Contains(got, "review-only") {
+	if got := RankingRecommendation(reviewOnly, 0); !strings.Contains(got, "review-only") {
 		t.Fatalf("review-only list, got %q", got)
+	}
+}
+
+// A dry-EXPLAIN failure on a generated candidate is dropped from scoring
+// (safety: nothing unsafe reaches the user), but must not be indistinguishable
+// from "the rewriter found nothing to try" — that hides rewriter regressions.
+func TestRankingRecommendation_SurfacesSkippedCandidates(t *testing.T) {
+	improving := RankScoredCandidates([]ScoredCandidate{
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "x", CostDelta: -5},
+	})
+	if got := RankingRecommendation(improving, 2); !strings.Contains(got, "2 candidates could not be dry-EXPLAINed") {
+		t.Fatalf("expected the skipped count even when a winner was found, got %q", got)
+	}
+
+	allWorse := RankScoredCandidates([]ScoredCandidate{
+		{Kind: CandidateKindSQLRewrite, Rankable: true, SQL: "x", CostDelta: 10},
+	})
+	got := RankingRecommendation(allWorse, 1)
+	if !strings.Contains(got, "No improving candidate") {
+		t.Fatalf("expected the existing recommendation text preserved, got %q", got)
+	}
+	if !strings.Contains(got, "1 candidate could not be dry-EXPLAINed") {
+		t.Fatalf("expected singular skipped-candidate note, got %q", got)
+	}
+
+	reviewOnly := RankScoredCandidates([]ScoredCandidate{
+		{Kind: CandidateKindIndexDDL, Rankable: false, DDL: "CREATE INDEX ..."},
+	})
+	if got := RankingRecommendation(reviewOnly, 0); strings.Contains(got, "dry-EXPLAINed") {
+		t.Fatalf("no skipped-candidate note should appear when nothing was skipped, got %q", got)
 	}
 }
 

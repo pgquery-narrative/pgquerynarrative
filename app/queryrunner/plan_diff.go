@@ -73,7 +73,29 @@ func ComparePlansWithTimings(beforePlan, afterPlan json.RawMessage, bs, as Timin
 	if len(cmp.Metrics) > 0 {
 		cmp.Metrics[0] = formatRepeatedTimingMetric(cmp.BeforeMetrics, cmp.AfterMetrics, bs, as)
 	}
+	// detectImprovements (inside ComparePlans) judged "Execution time" from a
+	// single before/after sample. With repeated runs available, apply the same
+	// noise-vs-delta check the metrics row above already uses: a difference no
+	// larger than the run-to-run spread is not a demonstrated speedup and must
+	// not drive the Improved badge or the report's next-action language.
+	if bs.Samples() >= 2 && as.Samples() >= 2 {
+		gap := math.Abs(bs.MedianMs - as.MedianMs)
+		noise := math.Max(bs.SpreadMs(), as.SpreadMs())
+		if gap <= noise {
+			cmp.Diff.Improved = removeString(cmp.Diff.Improved, "Execution time")
+		}
+	}
 	return cmp, nil
+}
+
+func removeString(items []string, target string) []string {
+	out := items[:0:0]
+	for _, item := range items {
+		if item != target {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // ComparePlans compares two EXPLAIN JSON plan outputs.

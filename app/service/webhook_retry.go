@@ -42,9 +42,12 @@ func StartWebhookRetryWorker(ctx context.Context, rawPool *pgxpool.Pool, svc *Sc
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := svc.RetryFailedWebhooks(ctx, rawPool); err != nil {
-					log.Printf("webhook outbox worker: %v", err)
-				}
+				func() {
+					defer recoverWorkerPanic("webhook_retry")
+					if err := svc.RetryFailedWebhooks(ctx, rawPool); err != nil {
+						log.Printf("webhook outbox worker: %v", err)
+					}
+				}()
 			}
 		}
 	}()

@@ -1,6 +1,7 @@
 package queryrunner
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -191,10 +192,23 @@ func RankScoredCandidates(cands []ScoredCandidate) []ScoredCandidate {
 
 // RankingRecommendation is a one-line verdict for a ranked candidate list: empty
 // when there is a recommended (Rank 1) candidate, otherwise an explanation.
-func RankingRecommendation(ranked []ScoredCandidate) string {
+// RankingRecommendation summarizes the ranking outcome. skipped is the number
+// of generated candidates dropped before scoring because their dry-EXPLAIN (or
+// metrics extraction) failed — surfaced here rather than discarded silently,
+// so a systematic rewriter regression (SQL the connection's own EXPLAIN
+// rejects) is distinguishable from "the rewriter found nothing to try."
+func RankingRecommendation(ranked []ScoredCandidate, skipped int) string {
+	skippedNote := ""
+	if skipped > 0 {
+		plural := ""
+		if skipped != 1 {
+			plural = "s"
+		}
+		skippedNote = fmt.Sprintf(" %d candidate%s could not be dry-EXPLAINed against the connection and were skipped from ranking.", skipped, plural)
+	}
 	for _, c := range ranked {
 		if c.Rank == 1 {
-			return ""
+			return strings.TrimSpace(skippedNote)
 		}
 	}
 	testedRewrite := false
@@ -205,9 +219,9 @@ func RankingRecommendation(ranked []ScoredCandidate) string {
 		}
 	}
 	if testedRewrite {
-		return "No improving candidate found — every tested rewrite scored equal to or worse than the baseline plan. Not recommended."
+		return strings.TrimSpace("No improving candidate found — every tested rewrite scored equal to or worse than the baseline plan. Not recommended." + skippedNote)
 	}
-	return "No planner-backed candidate to rank — the suggestions are review-only."
+	return strings.TrimSpace("No planner-backed candidate to rank — the suggestions are review-only." + skippedNote)
 }
 
 func partitionCountForRanking(m PlanMetrics) float64 {

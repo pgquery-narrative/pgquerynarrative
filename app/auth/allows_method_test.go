@@ -23,6 +23,25 @@ func TestAllowsMethod_AnalystSavedQueries(t *testing.T) {
 	}
 }
 
+// Registered routes that sit directly next to already-allowed analyst
+// capabilities (comparing explain plans next to running one; retrying a
+// schedule run next to running a schedule) must not fall through the
+// allowlist and 403 by accident.
+func TestAllowsMethod_AnalystNeighboringRoutes(t *testing.T) {
+	if !AllowsMethod(RoleAnalyst, http.MethodPost, "/api/v1/queries/explain/compare") {
+		t.Fatal("analyst should be able to compare explain plans")
+	}
+	if !AllowsMethod(RoleAnalyst, http.MethodPost, "/api/v1/schedule-runs/abc/retry") {
+		t.Fatal("analyst should be able to retry a schedule run")
+	}
+	if AllowsMethod(RoleViewer, http.MethodPost, "/api/v1/queries/explain/compare") {
+		t.Fatal("viewer must not compare explain plans")
+	}
+	if AllowsMethod(RoleViewer, http.MethodPost, "/api/v1/schedule-runs/abc/retry") {
+		t.Fatal("viewer must not retry a schedule run")
+	}
+}
+
 func TestAllowsMethod_AnalystInvestigations(t *testing.T) {
 	paths := []string{
 		"/api/v1/investigations",

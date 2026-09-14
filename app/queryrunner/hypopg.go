@@ -202,7 +202,14 @@ func (r *Runner) projectWithHypopg(ctx context.Context, sql, createIndexSQL stri
 	var indexName string
 	var oid uint32
 	// hypopg_create_index returns (indexrelid, indexname) — not index_name.
+	// hypopg's hypothetical-index registration is backend-session state, not
+	// transaction-scoped: a client-side failure here (e.g. a context deadline
+	// racing a server-side success, or a Scan type mismatch) can leave the
+	// index registered on this pooled connection even though the surrounding
+	// transaction rolls back. Reset explicitly rather than relying on the
+	// rollback to undo it, matching the EXPLAIN-failure branch below.
 	if err := tx.QueryRow(ctx, createSQL, createIndexSQL).Scan(&oid, &indexName); err != nil {
+		_, _ = tx.Exec(ctx, resetSQL)
 		return IndexProjection{}, err
 	}
 

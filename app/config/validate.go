@@ -156,6 +156,9 @@ func (c Config) Validate() error {
 	if c.Security.ShareLinksEnabled {
 		return fmt.Errorf("SECURITY_SHARE_LINKS_ENABLED must be false in production until public sharing is hardened")
 	}
+	if !c.Security.ConnectionAllowlistRequired {
+		return fmt.Errorf("SECURITY_CONNECTION_ALLOWLIST_REQUIRED must be true in production; an org with no connection assignments must not be able to use every configured connection")
+	}
 	if !c.Security.RateLimitDistributed && c.Security.RateLimitRPM > 0 {
 		return fmt.Errorf("SECURITY_RATE_LIMIT_DISTRIBUTED must be true in production when rate limiting is enabled")
 	}

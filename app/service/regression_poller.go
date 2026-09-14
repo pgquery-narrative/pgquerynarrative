@@ -80,7 +80,11 @@ func StartRegressionPollerLoop(ctx context.Context, poller *RegressionPoller) {
 	}()
 }
 
+// pollAllOrgs runs one full poll cycle. A panic partway through (a malformed
+// stored plan, a driver bug) must not take down the whole server — recover
+// and let the next tick pick the work back up.
 func (p *RegressionPoller) pollAllOrgs(ctx context.Context) {
+	defer recoverWorkerPanic("regression_poller")
 	rows, err := p.rawPool.Query(ctx, `SELECT id::text FROM app.organizations ORDER BY created_at`)
 	if err != nil {
 		apilog.ValidationError("regression_poller", "list_orgs", err.Error())

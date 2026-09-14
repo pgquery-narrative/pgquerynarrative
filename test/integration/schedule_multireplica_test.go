@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -104,6 +105,138 @@ func TestScheduleClaim_MultiReplicaIdempotent(t *testing.T) {
 	}
 	if runCount != 1 {
 		t.Fatalf("expected exactly 1 schedule_run after two workers, got %d", runCount)
+	}
+}
+
+// TestScheduleClaim_SkipsRowLockedByConcurrentClaim proves the actual
+// contention mechanism — claimDueSchedules' `FOR UPDATE SKIP LOCKED` — rather
+// than the two sequential RunDue calls above, which never have two
+// transactions open at once and so never exercise row-lock contention at all:
+// worker A commits and releases the row before worker B's SELECT ever runs.
+// Here a held lock (simulating an in-flight claim from another replica)
+// forces worker B's claim query to run while the row is genuinely locked.
+func TestScheduleClaim_SkipsRowLockedByConcurrentClaim(t *testing.T) {
+	pool, ctx := setupSchedulePool(t)
+
+	appDB := db.NewOrgScoped(pool)
+	svc := service.NewSchedulesService(appDB, nil, nil)
+	svc.SetRawPool(pool)
+
+	org := auth.DefaultOrganizationID
+	var scheduleID string
+	err := pool.QueryRow(ctx, `
+		INSERT INTO app.schedules (
+			name, sql, connection_id, interval_expr, destination_type, destination_target,
+			enabled, next_run_at, organization_id
+		) VALUES (
+			'lock-contention', 'SELECT 1', 'default', '@every 5m', 'log', '',
+			true, NOW() - INTERVAL '1 minute', $1::uuid
+		) RETURNING id
+	`, org).Scan(&scheduleID)
+	if err != nil {
+		t.Fatalf("insert schedule: %v", err)
+	}
+
+	// Hold the row locked on a separate connection, exactly as a concurrent
+	// replica's open claimDueSchedules transaction would.
+	holder, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire holder connection: %v", err)
+	}
+	defer holder.Release()
+	holdTx, err := holder.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin holder tx: %v", err)
+	}
+	if _, err := holdTx.Exec(ctx, `SELECT 1 FROM app.schedules WHERE id = $1 FOR UPDATE`, scheduleID); err != nil {
+		t.Fatalf("lock schedule row: %v", err)
+	}
+
+	// While the row is locked, a worker running RunDue must skip it — not
+	// block waiting for the lock, and not error.
+	if err := svc.RunDue(ctx, "worker-b"); err != nil {
+		t.Fatalf("RunDue while row locked: %v", err)
+	}
+	var runCountWhileLocked int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM app.schedule_runs WHERE schedule_id = $1`, scheduleID).Scan(&runCountWhileLocked); err != nil {
+		t.Fatal(err)
+	}
+	if runCountWhileLocked != 0 {
+		t.Fatalf("SKIP LOCKED should have skipped the held row, got %d runs", runCountWhileLocked)
+	}
+
+	// Release the lock (as if the other replica's claim transaction
+	// committed or rolled back) and confirm the schedule becomes claimable.
+	if err := holdTx.Rollback(ctx); err != nil {
+		t.Fatalf("rollback holder tx: %v", err)
+	}
+	if err := svc.RunDue(ctx, "worker-b"); err != nil {
+		t.Fatalf("RunDue after lock released: %v", err)
+	}
+	var runCountAfterRelease int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM app.schedule_runs WHERE schedule_id = $1`, scheduleID).Scan(&runCountAfterRelease); err != nil {
+		t.Fatal(err)
+	}
+	if runCountAfterRelease != 1 {
+		t.Fatalf("expected exactly 1 schedule_run once the lock was released, got %d", runCountAfterRelease)
+	}
+}
+
+// TestScheduleClaim_ConcurrentRunDueClaimsExactlyOnce launches both workers'
+// RunDue calls as real, interleaving goroutines (rather than sequential calls)
+// so the transactions genuinely race on the same row, in addition to the
+// deterministic lock-holding test above.
+func TestScheduleClaim_ConcurrentRunDueClaimsExactlyOnce(t *testing.T) {
+	pool, ctx := setupSchedulePool(t)
+
+	appDB := db.NewOrgScoped(pool)
+	svcA := service.NewSchedulesService(appDB, nil, nil)
+	svcA.SetRawPool(pool)
+	svcB := service.NewSchedulesService(appDB, nil, nil)
+	svcB.SetRawPool(pool)
+
+	org := auth.DefaultOrganizationID
+	var scheduleID string
+	err := pool.QueryRow(ctx, `
+		INSERT INTO app.schedules (
+			name, sql, connection_id, interval_expr, destination_type, destination_target,
+			enabled, next_run_at, organization_id
+		) VALUES (
+			'concurrent-claim', 'SELECT 1', 'default', '@every 5m', 'log', '',
+			true, NOW() - INTERVAL '1 minute', $1::uuid
+		) RETURNING id
+	`, org).Scan(&scheduleID)
+	if err != nil {
+		t.Fatalf("insert schedule: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs <- svcA.RunDue(ctx, "worker-a")
+	}()
+	go func() {
+		defer wg.Done()
+		errs <- svcB.RunDue(ctx, "worker-b")
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("RunDue: %v", err)
+		}
+	}
+
+	var runCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM app.schedule_runs WHERE schedule_id = $1
+	`, scheduleID).Scan(&runCount); err != nil {
+		t.Fatal(err)
+	}
+	if runCount != 1 {
+		t.Fatalf("expected exactly 1 schedule_run from two truly concurrent workers, got %d", runCount)
 	}
 }
 

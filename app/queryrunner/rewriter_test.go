@@ -147,10 +147,20 @@ func TestSuggestRewrites_CastDateBetweenRoundsUpMisalignedLowBound(t *testing.T)
 
 func TestSuggestRewrites_ExplicitZoneOffsetLiteralIsNotRewritten(t *testing.T) {
 	// A literal with an explicit numeric offset is an instant; the zoneless
-	// range bounds we emit would not line up with a session-TZ DATE_TRUNC.
+	// range bounds we emit would not line up with a session-TZ DATE_TRUNC. This
+	// must hold for every shape that emits a zoneless boundary literal, not
+	// just equality — inequality and BETWEEN use the same strategy.
 	for _, sql := range []string{
 		`SELECT 1 FROM demo.sales WHERE DATE_TRUNC('month', date) = TIMESTAMPTZ '2025-01-01T00:00:00+02:00'`,
 		`SELECT 1 FROM demo.sales WHERE date::date = TIMESTAMPTZ '2025-01-15 00:00:00-05:00'`,
+		`SELECT 1 FROM demo.sales WHERE DATE_TRUNC('day', date) >= TIMESTAMPTZ '2025-06-15T23:00:00-10:00'`,
+		`SELECT 1 FROM demo.sales WHERE DATE_TRUNC('day', date) < TIMESTAMPTZ '2025-06-15T23:00:00-10:00'`,
+		`SELECT 1 FROM demo.sales WHERE date::date >= TIMESTAMPTZ '2025-06-15 23:00:00-10:00'`,
+		`SELECT 1 FROM demo.sales WHERE date::date <= TIMESTAMPTZ '2025-06-15 23:00:00-10:00'`,
+		`SELECT 1 FROM demo.sales WHERE DATE_TRUNC('day', date) BETWEEN TIMESTAMPTZ '2025-01-01T00:00:00-10:00' AND DATE '2025-03-20'`,
+		`SELECT 1 FROM demo.sales WHERE DATE_TRUNC('day', date) BETWEEN DATE '2025-01-01' AND TIMESTAMPTZ '2025-03-20T00:00:00-10:00'`,
+		`SELECT 1 FROM demo.sales WHERE date::date BETWEEN TIMESTAMPTZ '2025-01-01T00:00:00-10:00' AND DATE '2025-03-20'`,
+		`SELECT 1 FROM demo.sales WHERE date::date BETWEEN DATE '2025-01-01' AND TIMESTAMPTZ '2025-03-20T00:00:00-10:00'`,
 	} {
 		if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
 			t.Fatalf("expected no candidate for a zoned literal:\n %s\n got: %#v", sql, cands)
