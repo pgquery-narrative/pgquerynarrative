@@ -1,5 +1,5 @@
 site_name: PgQueryNarrative
-site_description: PostgreSQL query intelligence — safe read-only SQL, plan analysis, and evidence-backed reports.
+site_description: PostgreSQL query investigation — plan findings, proposed rewrites, measured compare, result verification and evidence-backed reports.
 
 # The canonical address of the published documentation, used for canonical tags
 # and sitemap.xml. Deployed by .github/workflows/docs.yml on every push to main
@@ -13,12 +13,13 @@ repo_url: https://github.com/pgquery-narrative/pgquerynarrative
 repo_name: pgquery-narrative/pgquerynarrative
 edit_uri: edit/main/docs/
 
-# docs/README.md duplicates index.md for people browsing the repo on GitHub.
-# It is not part of the built site, and saying so here keeps the build clean.
-# The leading slash anchors this to the docs root: docs/api/README.md is a real
-# nav page and must keep building.
+# docs/README.md is a pointer for people browsing the repo on GitHub, and the
+# Dockerfile/requirements.txt build the docs image. None of them belong in the
+# built site. The leading slash anchors each pattern to the docs root.
 exclude_docs: |
   /README.md
+  /Dockerfile
+  /requirements.txt
 
 # Broken links and anchors are errors, not notes. Without this they are logged
 # at INFO and --strict lets them through, which is how a docs gate ends up
@@ -36,8 +37,7 @@ markdown_extensions:
   - admonition
   # Pages set explicit heading ids ("## LLM {#llm}") so cross-page anchors stay
   # stable when a heading is reworded. Without attr_list those braces render as
-  # literal text in the heading and the id is never created, which is why the
-  # #llm / #health-checks / #reports-and-llm links were all dead.
+  # literal text in the heading and the id is never created.
   - attr_list
   - pymdownx.details
   - pymdownx.superfences:
@@ -53,6 +53,28 @@ markdown_extensions:
 
 plugins:
   - search
+  # Pages moved when the docs were reorganised by audience (Learn → Investigate →
+  # Integrate → Secure → Operate → Reference → Develop). Every old URL keeps
+  # working so links in issues, PRs and search engines do not rot.
+  - redirects:
+      redirect_maps:
+        configuration.md: reference/configuration.md
+        ui-overview.md: workbench/ui-overview.md
+        DATASET.md: examples/dataset.md
+        api/README.md: reference/api.md
+        api/examples.md: integrations/rest-api.md
+        usage/cli-usage.md: reference/cli.md
+        getting-started/llm-setup.md: integrations/llm.md
+        getting-started/embedded.md: integrations/embedded-go.md
+        reference/deployment.md: operate/deployment.md
+        reference/operations.md: operate/monitoring.md
+        reference/troubleshooting.md: operate/troubleshooting.md
+        reference/postgres-extension.md: integrations/postgres-extension.md
+        reference/semantic-search-pgvector.md: integrations/semantic-search.md
+        reference/versioning-and-releases.md: project/releases.md
+        ops/branch-protection.md: project/branch-protection.md
+        ops/rls-demo.md: examples/rls-demo.md
+        case-studies/01-query-optimization.md: examples/query-optimization.md
 
 theme:
   name: material
@@ -60,6 +82,7 @@ theme:
     - navigation.instant
     - navigation.tracking
     - navigation.top
+    - navigation.sections
     - toc.follow
     - content.code.copy
   palette:
@@ -81,37 +104,73 @@ theme:
 extra:
   generator: false
 
+# Ordered by what a reader needs next: learn the model, run it, investigate,
+# integrate, secure, operate, look things up, then change the code.
+# tools/docscheck fails the build if a page under docs/ is missing from here.
 nav:
-  - Overview: index.md
-  - Concepts: concepts.md
-  - Trust model: trust-model.md
+  - Overview:
+      - What is PgQueryNarrative?: index.md
+      - Concepts: concepts.md
+      - Architecture: architecture.md
+      - Trust model: trust-model.md
   - Getting started:
-      - Quick start: getting-started/quickstart.md
+      - Quick start (demo): getting-started/quickstart.md
       - Installation: getting-started/installation.md
       - Connect your PostgreSQL: getting-started/connect-postgres.md
-      - LLM setup: getting-started/llm-setup.md
-      - Embedded integration: getting-started/embedded.md
-  - User guides:
-      - UI overview: ui-overview.md
-      - CLI usage: usage/cli-usage.md
-  - Configuration: configuration.md
-  - API:
-      - API reference: api/README.md
-      - Examples: api/examples.md
+  - Core workflows:
+      - Investigate a slow query: workflows/investigate.md
+      - Understand plan findings: workflows/plan-findings.md
+      - Suggest and rank candidates: workflows/candidates.md
+      - Compare plans: workflows/compare.md
+      - Verify result equivalence: workflows/verify-results.md
+      - Regressions and applied fixes: workflows/regressions.md
+      - Multiple connections: workflows/connections.md
+  - Workbench:
+      - UI overview: workbench/ui-overview.md
+      - Reports and sharing: workbench/reports.md
+      - Dashboards: workbench/dashboards.md
+      - Schedules and webhooks: workbench/schedules.md
+  - Integrations:
+      - REST API: integrations/rest-api.md
+      - MCP server: integrations/mcp.md
+      - PostgreSQL extension: integrations/postgres-extension.md
+      - Embedded Go: integrations/embedded-go.md
+      - LLM providers: integrations/llm.md
+      - Semantic search (pgvector): integrations/semantic-search.md
+  - Security & access:
+      - Database roles: security/database-roles.md
+      - Query execution safety: security/query-safety.md
+      - Authentication and roles: security/authentication.md
+      - Organizations and tenancy: security/tenancy.md
+      - Data handling: security/data-handling.md
+  - Deploy & operate:
+      - Deployment: operate/deployment.md
+      - Production configuration: operate/production.md
+      - Health and monitoring: operate/monitoring.md
+      - Migrations, upgrades, backup: operate/upgrades.md
+      - Troubleshooting and runbooks: operate/troubleshooting.md
   - Reference:
-      - Deployment: reference/deployment.md
-      - Operations: reference/operations.md
-      - Troubleshooting: reference/troubleshooting.md
-      - PostgreSQL extension: reference/postgres-extension.md
-      - Semantic search (pgvector): reference/semantic-search-pgvector.md
-      - Versioning and releases: reference/versioning-and-releases.md
-      - Dataset and schema: DATASET.md
-  - Operations:
-      - Branch protection: ops/branch-protection.md
-      - RLS demo: ops/rls-demo.md
+      - Configuration: reference/configuration.md
+      - API: reference/api.md
+      - API errors: reference/api-errors.md
+      - Evidence and status vocabulary: reference/evidence.md
+      - CLI: reference/cli.md
+      - Supported versions and limits: reference/versions-limits.md
   - Development:
       - Setup: development/setup.md
+      - Repository architecture: development/repository.md
       - Testing: development/testing.md
-      - Dev runbook: development/runbook.md
-  - Case studies:
-      - Query optimization: case-studies/01-query-optimization.md
+      - Change workflows: development/change-workflows.md
+      - Adding a rewrite rule: development/rewrite-rules.md
+      - Developer runbook: development/runbook.md
+  - Examples:
+      - "Case study: 1.1s → 145ms": examples/query-optimization.md
+      - Demo dataset: examples/dataset.md
+      - Demo-data row-level security: examples/rls-demo.md
+  - Project:
+      - Releases and versioning: project/releases.md
+      - Branch protection: project/branch-protection.md
+      - Release gate (RELEASING.md): https://github.com/pgquery-narrative/pgquerynarrative/blob/main/RELEASING.md
+      - Contributing: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md
+      - Security policy: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/SECURITY.md
+      - Changelog: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/CHANGELOG.md

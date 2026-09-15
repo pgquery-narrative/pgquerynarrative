@@ -255,7 +255,7 @@ test-unit:
 	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./app/service/... \
 		./app/security/... ./app/llm/... ./app/audit/... ./app/story/... \
 		./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... \
-		./app/metrics/... ./web/... -v
+		./app/metrics/... ./web/... ./tools/docscheck/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:
@@ -620,9 +620,12 @@ install-extension-docker:
 # Documentation (MkDocs Material — local preview at http://localhost:8000)
 # ============================================================================
 
+# Live preview. Bound to 127.0.0.1 so the preview is not exposed on the LAN, and
+# no -it so it also runs from scripts and IDE tasks without a TTY (Ctrl+C still
+# stops it: docker run proxies the signal).
 docs:
 	docker build -t pgquerynarrative-docs ./docs
-	docker run --rm -it -p 8000:8000 -v ${PWD}:/docs pgquerynarrative-docs
+	docker run --rm -p 127.0.0.1:8000:8000 -v "$(CURDIR):/docs" pgquerynarrative-docs
 
 # Build the docs the way CI does: --strict turns every broken link, dead anchor
 # and missing nav entry into a failure. The image's entrypoint is already
@@ -633,3 +636,22 @@ docs-check:
 	@docker build -q -t pgquerynarrative-docs ./docs >/dev/null
 	@docker run --rm -v "$(CURDIR):/docs" pgquerynarrative-docs build --strict -d /tmp/site
 	@echo "✅ Documentation builds clean"
+
+# Facts the docs state that the code decides: Go version, Compose Postgres
+# default, every configuration variable and literal default, release platforms,
+# every OpenAPI operation, every API error code, forbidden stale vocabulary,
+# links/anchors in the Markdown MkDocs does not build, and nav coverage.
+# Pure Go, no Docker. See tools/docscheck.
+docs-contract-check:
+	@echo "📐 Checking documentation against the code..."
+	@$(GO) run ./tools/docscheck
+
+# External links in README, docs/ and .github/*.md, with the same config CI uses
+# (.lychee.toml). Internal links are covered by docs-check and
+# docs-contract-check; this is the part neither can see. Needs network.
+LYCHEE_IMAGE ?= lycheeverse/lychee:0.24.2@sha256:e2d19e57cf6ab037026f20b8e449a1f30d9d7f81eef4194763aab2eab20bd28d
+docs-links:
+	@echo "🔗 Checking external documentation links..."
+	@docker run --rm -v "$(CURDIR):/input:ro" -w /input $(LYCHEE_IMAGE) \
+		--config .lychee.toml --no-progress \
+		README.md RELEASING.md deploy/README.md '.github/*.md' 'docs/**/*.md'

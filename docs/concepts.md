@@ -1,108 +1,123 @@
 # Concepts
 
-How PgQueryNarrative thinks about query problems — the vocabulary behind the UI and API.
+The vocabulary behind the UI and the API. Exact field values are listed in
+[Evidence and status vocabulary](reference/evidence.md); the system map is in
+[Architecture](architecture.md).
 
 ## What problem this solves
 
-Teams often know a query is slow (dashboards, `pg_stat_statements`, user complaints) but lack a **repeatable path from symptom → plan evidence → verified fix → shareable write-up**. Pasting SQL into a chatbot skips the database’s own proof.
+Teams usually know a query is slow — a dashboard, `pg_stat_statements`, a complaint —
+but lack a repeatable path from **symptom → plan evidence → candidate fix → checked
+result → shareable write-up**. Pasting SQL into a chatbot skips the database's own
+evidence. PgQueryNarrative keeps every step grounded in what PostgreSQL reports.
 
-PgQueryNarrative is a **PostgreSQL investigation workbench**: safe read-only SQL, EXPLAIN analysis, **system-proposed** rewrites, before/after compare, result-equivalence checking, and engineering reports. An optional LLM can narrate workbench analytics; it is not required for investigation reports.
+## Investigation
 
-## Query Investigation
-
-An **investigation** is a first-class workflow object. It holds:
+An **investigation** is the unit of work. It is stored in the application's metadata
+database and holds:
 
 | Piece | Meaning |
-|-------|---------|
+|---|---|
 | Source SQL | The expensive or suspicious query |
-| Plan evidence | Parsed `EXPLAIN` / `EXPLAIN ANALYZE` tree + findings |
-| Candidate SQL | A **system-proposed** rewrite (or index-oriented alternative from Rank candidates) |
-| Comparison | Side-by-side metrics (cost, time, partitions, buffers when available) |
-| Equivalence | Result check: `VerifiedEqual` (every row matched) / `SampleMatch` (a bounded sample matched) / `Different` / `Unverified` (could not be checked — not a mismatch) / `NotRequested` |
-| Report | A durable engineering artifact (evidence template, not LLM) |
+| Plan evidence | The parsed `EXPLAIN` (or `EXPLAIN ANALYZE`) tree and its findings |
+| Candidate SQL | A rewrite proposed by the rewrite engine, or one you typed |
+| Comparison | Before/after plan metrics and structural diff |
+| Result equivalence | Whether both queries returned the same rows, and how thoroughly that was checked |
+| Fix status | Where a fix is in its life: proposed → verified → applied → confirmed/regressed |
+| Report | A deterministic engineering report built from the evidence (no LLM) |
 
-Typical UI path: **Investigate** → guided scenario or paste SQL → review findings → **Suggest rewrite** or **Rank candidates** → **Compare plans** → confirm equivalence → **Generate report**.
+Investigations are **organization-wide**: every member of the organization can see and
+act on any investigation in it, deliberately, so a teammate can pick up the work.
+`created_by` records who opened it; row-level security confines each investigation, its
+candidates and linked regression alerts to its own organization. There is no per-user
+private mode. Lifecycle: [Investigate a slow query](workflows/investigate.md).
 
-Guided demo scenarios ship **problem SQL only** — no answer-key rewrite is prefilled.
+## Evidence: estimated versus observed
 
-### Visibility
+Evidence is **what PostgreSQL reported**, never model opinion. The distinction that
+matters most is whether anything ran:
 
-Investigations are **organization-wide**. Every member of the organization can
-view and act on any investigation in it — this is deliberate: an investigation
-is a shared debugging record that a teammate should be able to pick up.
-`created_by` records who opened it, and row-level security still confines each
-investigation (and its candidate history and linked regression alerts) to its
-own organization. There is no per-user "private until shared" mode.
+| | Plain `EXPLAIN` | `EXPLAIN ANALYZE` |
+|---|---|---|
+| Executes the query | No | **Yes** |
+| `evidence_mode` | `estimated` | `observed` (when PostgreSQL reported an execution time) |
+| Costs | Planner estimates, arbitrary units | Planner estimates, arbitrary units |
+| Times and actual rows | None | Measured, for this one run |
+| Allowed by default | Yes | No — `SECURITY_EXPLAIN_ANALYZE_ENABLED=true` and the connection's `analyze` permission |
 
-## Rewrite engine
+**Planner cost is not time.** It is an estimate in arbitrary units and is not
+proportional to runtime, so it is never reported as a speed multiple. Only ANALYZE
+produces a duration, and a single run is reported as a single sample; `timing_runs`
+(1–5) reports a median and the observed spread. Details:
+[Understand plan findings](workflows/plan-findings.md) and [Compare plans](workflows/compare.md).
 
-**Suggest rewrite** analyzes the query AST (and optional plan findings) and proposes candidates such as:
+## Rewrite engine and candidates
 
-- `DATE_TRUNC` / `EXTRACT` / `to_char` / `::date` → sargable date ranges
-- `COALESCE` unwraps, implicit text/numeric casts
-- `OR` across columns → `UNION ALL` (when safe)
-- `IN` / `NOT IN (SELECT …)` → `EXISTS` / `NOT EXISTS`
+**Suggest rewrite** walks the query's PostgreSQL parse tree (via `pg_query`) and
+proposes rewrites for a small, deliberately conservative set of shapes: function-wrapped
+date filters (`DATE_TRUNC`, `EXTRACT(YEAR …)`, `to_char`, `::date`, `COALESCE`) turned
+into sargable ranges, `OR` across columns → `UNION ALL`, `IN`/`NOT IN (SELECT …)` →
+`EXISTS`/`NOT EXISTS`, and `LEFT JOIN … IS NULL` → `NOT EXISTS`. It declines whenever it
+cannot show a transform is safe; getting findings and no rewrite is a normal outcome.
 
-Parameterized SQL (`$1`, …) is not rewritten (fail-closed). Nothing executes automatically — a human reviews and compares.
+**Rank candidates** dry-EXPLAINs the rewrites and projects index DDL with HypoPG when it
+is installed (a labelled heuristic otherwise, which is never ranked). Ranking compares
+plans; it does not check results. Details: [Suggest and rank candidates](workflows/candidates.md).
 
-**Rank candidates** dry-runs EXPLAIN on rewrites and projects index DDL cost via hypopg when installed; otherwise a labeled heuristic (review-only, not ranked as hypopg).
+## Compare and result verification
 
-Index DDL from plan findings is **suggested only** — never auto-applied.
+**Compare** plans the source and candidate SQL side by side (and executes them under
+ANALYZE when allowed) and reports metric deltas and structural plan changes.
+"Better plan" means PostgreSQL's plan changed in the expected way — not that anything
+preferred the new SQL.
 
-## What “evidence” means
+**Result verification** is separate and opt-in (`verify_results`). It executes both
+queries and reports one of five states:
 
-Evidence is **what Postgres reported**, not model opinion:
+| State | Meaning |
+|---|---|
+| `VerifiedEqual` | Every row of both results contributed to an order-independent fingerprint, and the fingerprints matched (or, on the fallback path, the whole result was ≤ 1,000 rows and matched) |
+| `SampleMatch` | Full fingerprinting could not run; row counts matched and a bounded deterministic sample matched. Supporting evidence, not verification |
+| `Different` | Row counts, fingerprints or samples differ |
+| `Unverified` | The check could not complete. Never reported as a mismatch |
+| `NotRequested` | Verification was not asked for |
 
-- Plan node types (Seq Scan, Index Scan, Aggregate, …)
-- Estimated cost and (when ANALYZE is on) actual time / rows
-- Partition counts when the planner prunes range partitions
-- App findings that name anti-patterns (e.g. function-wrapped partition key)
-
-The product highlights those signals so a human can decide — it does not silently rewrite production SQL.
-
-## EXPLAIN vs EXPLAIN ANALYZE
-
-| Mode | What it does | When to use |
-|------|----------------|-------------|
-| `EXPLAIN` | Planner estimates only; does not execute the query body for timing | Fast triage, cheap to run |
-| `EXPLAIN ANALYZE` | Executes the query and records actual times/rows | Measured evidence for a rewrite; needs timeouts and usually a replica |
-
-Server config gates ANALYZE (`SECURITY_EXPLAIN_ANALYZE_ENABLED`). Local demo Compose enables it so compare can show credible timings on the large seed.
-
-## What compare proves
-
-**Compare** runs plans for source SQL and candidate SQL and shows deltas. On the guided demo (partitioned `demo.sales`):
-
-- Bad predicate: `DATE_TRUNC('month', date) = …` → pruning blocked → many partitions scanned
-- Good predicate: `date >= … AND date < …` → pruning works → often **50 → 1** partitions on the **10M-row seed** (`make demo-bootstrap`)
-
-So “verified rewrite” means: **the database plan changed in the expected way**, measured by Postgres — not that an LLM preferred the new SQL.
-
-## Equivalence
-
-After compare, the app checks whether both queries return the same results (`COUNT(*)` plus an order-independent sample). Status is **Equal**, **Different**, or **Unverified** (run errors stay Unverified, never Different). **Generate report** requires Equal.
+This is verification, not mathematical proof: the fingerprint is a 64-bit hash
+aggregate over each row's text form, and it ignores column names, column types and
+`ORDER BY`. Read [Verify result equivalence](workflows/verify-results.md) before relying on it.
 
 ## Two report types
 
-| Type | Path | Content |
-|------|------|---------|
-| **Investigation report** | Investigate workflow | Evidence template from plans, SQL, and comparison |
-| **Workbench LLM report** | Query runner / Ask | LLM narrative from metrics and query results |
+| Type | Produced by | LLM |
+|---|---|---|
+| **Investigation report** | `POST /api/v1/investigations/{id}/report` | None. A deterministic template over the stored evidence. Once a candidate has been compared, it requires `VerifiedEqual`, or `SampleMatch` with an explicit `accept_sample_match=true` |
+| **Workbench report** | `POST /api/v1/reports/generate` (Query runner, Ask) | Uses the configured LLM for the narrative; falls back to a deterministic metrics narrative if the LLM call fails |
 
-## Regression inbox
+See [Reports and sharing](workbench/reports.md).
 
-The workspace can surface queries that look worse over time (from stats / polling). That is an **entry point** into investigation, not a separate product. On default `make demo`, the inbox is empty unless real `pg_stat_statements` data exists. Set **`APP_ENV=demo`** for seeded demo alerts and inflated KPIs. You still land in the same evidence → suggest → compare → report loop.
+## Regressions and applied fixes
 
-## Schema allowlist and demo data
+With `pg_stat_statements` available, a background poller snapshots statement
+statistics per connection, computes per-interval deltas, compares them to a baseline,
+and raises regression alerts. An alert is an **entry point** into the same investigation
+loop. When a fix is marked `applied`, the poller later marks it `confirmed` or
+`regressed` from measured statistics — those two states cannot be set by hand.
+See [Regressions and applied fixes](workflows/regressions.md). On the default demo the
+inbox is empty unless real statistics exist; `APP_ENV=demo` seeds sample alerts and
+fabricated workspace KPIs — never enable it where the numbers matter.
 
-By default, user SQL may only touch schemas listed in `DATABASE_ALLOWED_SCHEMAS` (default `demo`). The bundled `demo.sales` table is range-partitioned by month so partition-pruning stories are reproducible. See [Dataset](DATASET.md) and [Trust model](trust-model.md).
+## Connections, schemas and organizations
+
+- A **connection** is a read-only analytical data source. There is always a `default`
+  connection; more come from `DATABASE_CONNECTIONS_JSON` or per-organization secrets.
+  Requests choose one with `connection_id`. See [Multiple connections](workflows/connections.md).
+- Queries may only reference schemas in the connection's **allowlist**
+  (`DATABASE_ALLOWED_SCHEMAS`, default `demo`). See [Query execution safety](security/query-safety.md).
+- **Organizations** isolate application metadata (investigations, reports, saved
+  queries…) from each other. See [Organizations and tenancy](security/tenancy.md).
 
 ## Optional LLM layer
 
-Narratives and “Ask in natural language” use a configured provider (often local Ollama in demo). Investigation reports remain useful **without** an LLM when they are built from plan metrics and SQL. See [LLM setup](getting-started/llm-setup.md).
-
-## See also
-
-- [Trust model](trust-model.md) — what the app will and will not do
-- [API examples](api/examples.md) — investigation create → suggest-rewrite → compare → report
-- [UI overview](ui-overview.md) — page map
+Natural-language Ask, chat and plain-English SQL explanation need an LLM provider; the
+workbench report narrative uses one when available. Plan findings, candidates, compare,
+verification and investigation reports do not. See [LLM providers](integrations/llm.md).

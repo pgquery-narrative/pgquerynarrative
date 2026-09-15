@@ -1,135 +1,95 @@
 # Testing
 
-Unit, integration, and E2E tests. Unit tests live in `test/unit/`; run by package or by test name. See [Development setup](setup.md) for prerequisites and commands.
+Canonical commands, then a QA matrix for the guarantees this product makes. Makefile
+and CI are the source of truth here — where a `make` target runs more than a single
+`go test` command, this page says so rather than presenting them as equivalent.
 
-## Running tests
+## Canonical commands
 
-**All unit tests:**
+| What | Command | Notes |
+|---|---|---|
+| Unit | `make test-unit` | Runs `go test` across a specific package list (`test/unit/...`, `app/auth`, `app/queryrunner`, `app/service`, `app/security`, `app/llm`, `app/audit`, `app/story`, `cmd/server`, `pkg/narrative`, `app/embedding`, `app/config`, `app/metrics`, `web`) — **not** a bare `go test ./...`, which would miss in-package tests these packages hold alongside their code |
+| Integration | `make test-integration` | `test/integration/...`, real Postgres via testcontainers. Needs Docker |
+| E2E | `make test-e2e` | `test/e2e/...`, full HTTP API against real Postgres |
+| Everything above | `make test` | = `test-unit` + `test-integration` |
+| Migration cycle | `make migrate-cycle-docker` | up → down -all → up, proves migrations reversible |
+| DB security | `make db-security-verify-docker` | `tools/db/verify_security.sh` — the read-only boundary |
+| Helm StrictMode | `make helm-strict-check` | Renders the chart and checks production gates without a cluster |
+| Frontend unit | `make test-frontend` | `cd frontend && npm test` (Vitest) |
+| Frontend typecheck / lint | `cd frontend && npm run typecheck` / `npm run lint` | |
+| Browser E2E | `make test-playwright` | Playwright, no OIDC. `make test-playwright-oidc` runs the OIDC-flow variant |
+| Release/image smoke | CI only: `Release build smoke`, `Docker image smoke` | Not a local `make` target — see `.github/workflows/ci.yml` and `release.yml` |
+| Docs | `make docs-check` | `mkdocs build --strict` |
+| Docs contract | `make docs-contract-check` | Config/API/error/vocabulary/link checks against the code — see `tools/docscheck` |
+| External links | `make docs-links` | lychee, needs network |
+
+`go test ./test/unit/... ./cmd/server/... ./pkg/narrative/... -v` covers most of
+`test-unit` but omits the in-package suites in `app/auth`, `app/queryrunner`, etc. —
+use `make test-unit` for the real coverage set, or run a single package directly:
 
 ```bash
-make test-unit
-```
-
-Or: `go test ./test/unit/... ./cmd/server/... ./pkg/narrative/... -v`
-
-**By package:**
-
-```bash
-go test ./test/unit/app/catalog/... -v
-go test ./test/unit/app/charts/... -v
-go test ./test/unit/app/metrics/... -v
-go test ./test/unit/app/llm/... -v
 go test ./test/unit/app/queryrunner/... -v
-go test ./test/unit/app/service/... -v
-go test ./test/unit/app/story/... -v
-go test ./test/unit/app/suggestions/... -v
-go test ./test/unit/web/... -v
-go test ./cmd/server/... -v
-go test ./pkg/narrative/... -v
+go test ./test/unit/app/service/... -run TestBuildPerfSuggestions_LimitApplied -v
 ```
-
-**Single test:** `go test ./test/unit/app/service/... -run TestBuildPerfSuggestions_LimitApplied -v`
-
-**Integration tests** (require Docker): `go test ./test/integration/... -v`
-
-**E2E tests:** `go test ./test/e2e/... -v`
 
 ## Test layout
 
 | Package | What is tested |
-|---------|-----------------|
+|---|---|
+| `test/unit/app/queryrunner` | SQL validation (schema, SELECT-only, disallowed keywords) |
 | `test/unit/app/catalog` | Schema/catalog loader |
 | `test/unit/app/charts` | Chart suggestions |
 | `test/unit/app/metrics` | Period comparison, trend, anomalies, data quality |
 | `test/unit/app/llm` | Narrative prompt builder |
-| `test/unit/app/queryrunner` | SQL validation (schema, SELECT-only, disallowed keywords) |
 | `test/unit/app/story` | Narrative sanitizer |
 | `test/unit/app/service` | Perf suggestions, metrics-to-API conversion |
 | `test/unit/app/suggestions` | Query suggestions (curated, limit) |
-| `test/unit/web` | Report HTML/export |
-| `cmd/server` | Request logging middleware |
-| `pkg/narrative` | Client, run-query options, validation |
+| `test/unit/app/ratelimit`, `app/errors`, `app/db`, `app/auth`, `app/security`, `pkg/narrative` | As named |
+| `test/unit/web` | Report export |
+| `app/queryrunner` (in-package) | Rewrite rules (`rewriter_test.go`, `rewriter_patterns_test.go`, `rewriter_param_test.go`, `rewriter_antijoin_test.go`) |
+| `test/integration` | Query runner and rewrite equivalence against real Postgres, investigation candidates, regression detection/poller/multiconnection, schedule multi-replica, migration roundtrip, audit modes, multi-org security, OIDC staging, managed-key authorization, embeddings, pilot acceptance |
+| `test/e2e` | Full HTTP API: queries, schema, suggestions, reports |
 
-**Integration** (`test/integration/...`): query runner; schema and suggestions against real Postgres; reports List/Get.
+## QA matrix — product guarantees
 
-**E2E** (`test/e2e/...`): full HTTP API against real Postgres (queries, schema, suggestions, reports).
+| Guarantee | Where it's tested |
+|---|---|
+| Plain `EXPLAIN` never executes the query | `test/integration/p0_hero_path_test.go`, `rewrite_equivalence_test.go` (`TestInvestigationCreate_IsEstimateOnly`) |
+| `EXPLAIN ANALYZE` executes and requires the flag + permission | `test/unit/app/security`, `test/integration/security_hardening_test.go` |
+| Result verification requires the `query` permission | `TestComparePlans_VerifyResultsRequiresQueryPermission` |
+| All five equivalence states behave as documented | `test/integration/rewrite_equivalence_test.go` |
+| Rewrite semantics (fail-closed cases) | `app/queryrunner/rewriter_*_test.go`, `rewrite_equivalence_test.go` |
+| Cross-organization isolation | `test/integration/multi_org_security_test.go` |
+| Multi-connection regression detection | `test/integration/regression_multiconnection_test.go` |
+| Fix lifecycle transitions | `test/unit/app/service`, `test/integration/investigation_candidates_test.go` |
+| Schedule runner is safe across replicas | `test/integration/schedule_multireplica_test.go`, CI job `Schedule multi-replica` |
+| Security & Trust endpoint reflects real per-connection state | `test/integration/security_hardening_test.go` |
+| Read-only DB boundary holds at the privilege level | `tools/db/verify_security.sh`, CI job `DB security verify` |
 
-## QA checklist
+## Manual checks
 
-**Queries:** Run query; period comparison and chart suggestions in response; save, list, get, delete saved queries; invalid SQL → 400.
-
-**Schema:** `GET /api/v1/schema` returns allowed schemas, tables, columns.
-
-**Suggestions:** `GET /api/v1/suggestions/queries` (curated + intent match); `GET /api/v1/suggestions/similar` (embeddings); `POST /api/v1/suggestions/ask` (NL→SQL→report); `POST /api/v1/suggestions/explain` (plain-English SQL explanation).
-
-**Reports:** Generate, get, list; metrics (period comparison, time-series, anomalies, trend, data quality, perf); narrative content; errors (not found → 404, LLM failure → 500).
-
-**Export:** HTML and PDF at `/web/reports/export?id=...` and `/web/reports/export/pdf?id=...`.
-
-**Probes:** `GET /health`, `GET /ready`, `GET /metrics`, `GET /version` return 200.
-
-**UI:** Query Runner schema browser, query suggestions card, shortcuts (Ctrl+E, Ctrl+Enter); Reports export buttons.
-
-Example API checks: [API examples](../api/examples.md).
-
-## Runbook: Testing analytics features
-
-Quick manual checks for configurable windows, confidence intervals, correlations, smoothing, seasonality, and anomalies.
-
-**Prerequisites:** App running (`make run`), DB with demo schema and data (`make migrate`; seed `tools/db/seed.sql` if needed).
-
-1. **Settings (config visible in UI)**  
-   `GET /settings` → JSON includes `analytics.confidence_level`, `analytics.smoothing_alpha`, `analytics.smoothing_beta`, `analytics.min_rows_for_correlation`, `analytics.anomaly_method`, etc. In the web UI, open Settings and confirm the Analytics card shows these values.
-
-2. **Time-series + forecast + CI**  
-   Run a time-series query (e.g. query 2 or 8 from `tools/db/testing-queries.sql`). `POST /api/v1/queries/run` with body `{"sql": "SELECT date_trunc('month', date)::date AS month, SUM(total_amount) AS monthly_total FROM demo.sales GROUP BY 1 ORDER BY 1", "limit": 100}`. In the response, `metrics.time_series[<measure_column>]` should include `next_period_forecast`, `forecast_ci_lower`, `forecast_ci_upper`, and when enough points: `exponential_smooth_forecast`, `holt_forecast`; optional `seasonal_period` and `seasonally_adjusted_forecast`.
-
-3. **Correlations**  
-   Run a query with at least two numeric measure columns and ≥10 rows (e.g. query 5 in testing-queries.sql). Response `metrics.correlations` should be a non-empty array of `{column_a, column_b, pearson, spearman}`; values in [-1, 1].
-
-4. **Anomalies**  
-   Run a time-series query that includes an obvious outlier (e.g. one period with value far from others). `metrics.time_series[<measure>].anomalies` should list at least one entry with `period_label` and `reason` (e.g. z-score).
-
-5. **Report export**  
-   Generate a report from a time-series query, then open `/web/reports/export?id=<report_id>`. Confirm the HTML shows “forecast interval” (or CI range), and if the query had correlations, a “Correlations” table with Pearson and Spearman columns.
-
-**Automated:** Unit tests for metrics live in `test/unit/app/metrics/`; run `go test ./test/unit/app/metrics/... -v`.
-
-## Testing auth, rate limit, and audit
-
-You must start the server with auth and rate limiting enabled; otherwise unauthenticated requests succeed and rate limits never trigger. Defaults: `SECURITY_AUTH_ENABLED=false`, `SECURITY_RATE_LIMIT_RPM=0` (disabled).
-
-Start the server with security enabled and a low rate limit so you can trigger 429 quickly:
+**Auth, rate limiting, audit** — start with security enabled to actually exercise
+them (defaults are off):
 
 ```bash
 SECURITY_AUTH_ENABLED=true SECURITY_API_KEY=test-key SECURITY_RATE_LIMIT_RPM=5 make run
 ```
 
-**Auth** — Without a token, protected endpoints return **401**. With the correct Bearer token they return **200**.
-
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/queries/saved
-curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer test-key" http://localhost:8080/api/v1/queries/saved
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/queries/saved                # 401
+curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer test-key" http://localhost:8080/api/v1/queries/saved  # 200
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/health                                # 200, always unprotected
+for i in $(seq 8); do curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer test-key" http://localhost:8080/api/v1/queries/saved; done  # 6th+ = 429
 ```
 
-**Health/ready** — Always unprotected; returns **200**.
+Audit log: `psql -d pgquerynarrative -c "SELECT event_type, details, user_id FROM app.audit_logs ORDER BY created_at DESC LIMIT 10;"`
 
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/health
-```
-
-**Rate limit** — With `SECURITY_RATE_LIMIT_RPM=5`, send more than 5 requests per minute from the same machine; the 6th and later return **429** (first five return **200**).
-
-```bash
-for i in $(seq 8); do curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer test-key" http://localhost:8080/api/v1/queries/saved; done
-```
-
-**Audit log** — Check `app.audit_logs` for `API_REQUEST`, `AUTH_FAILURE`, `RATE_LIMIT_EXCEEDED`.
-
-```bash
-psql -d pgquerynarrative -c "SELECT event_type, details, user_id, ip_address, created_at FROM app.audit_logs ORDER BY created_at DESC LIMIT 10;"
-```
+**Analytics** — run a time-series query (`tools/db/testing-queries.sql`), confirm
+`metrics.time_series.<measure>` includes a forecast and confidence interval, and
+that a query with ≥ 2 numeric measures and ≥ 10 rows produces `metrics.correlations`.
+Automated coverage: `test/unit/app/metrics`.
 
 ## See also
 
-- [Development setup](setup.md) · [API example](../api/examples.md) · [Documentation index](../index.md)
+[Development setup](setup.md) · [Repository architecture](repository.md) ·
+[REST API examples](../integrations/rest-api.md)

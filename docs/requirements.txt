@@ -1,0 +1,6 @@
+# Python packages installed on top of the digest-pinned mkdocs-material image
+# (docs/Dockerfile). Versions match what that image already ships, so pinning
+# here changes nothing today and stops a future rebuild from silently upgrading.
+# Bump together with the base image digest.
+pymdown-extensions==11.0.1
+mkdocs-redirects==1.2.3

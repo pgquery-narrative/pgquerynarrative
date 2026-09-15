@@ -1,0 +1,47 @@
+# lychee external-link checker configuration.
+# Used by `make docs-links` and .github/workflows/docs-links.yml.
+#
+# Scope: only http(s) links. Relative links and anchors are already checked by
+# `mkdocs build --strict` (docs/) and tools/docscheck (README, RELEASING,
+# .github/*.md, deploy/README.md), so lychee is not asked to understand MkDocs'
+# `{#id}` anchors or GitHub's slug rules.
+scheme = ["https", "http"]
+
+# Transient failures are retried; a link has to fail persistently to fail CI.
+max_retries = 3
+retry_wait_time = 5
+timeout = 30
+max_concurrency = 8
+
+# 429 = rate limited, not broken. The link exists; we were just too fast.
+accept = ["200..=299", "429"]
+
+# Never reach into the local machine or private networks: docs are full of
+# http://localhost:8080 and http://host.docker.internal:11434 examples.
+exclude_loopback = true
+exclude_private = true
+exclude_link_local = true
+
+exclude = [
+  # Local / in-cluster / placeholder hosts used in examples.
+  '^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal|app|ollama|postgres)(:\d+)?(/|$)',
+  '^https?://([a-z0-9-]+\.)*(example\.com|example\.internal|internal|local)(:\d+)?(/|$)',
+  '^https?://your-',
+  '^https?://hooks\.example',
+  # Pages that need a signed-in GitHub session or return 404/403 to anonymous clients.
+  '^https://github\.com/pgquery-narrative/pgquerynarrative/security/advisories/new',
+  '^https://github\.com/pgquery-narrative/pgquerynarrative/pkgs/container/',
+  '^https://github\.com/pgquery-narrative/pgquerynarrative/(settings|rules)',
+  # Edit links generated from edit_uri and the IdP/console pages that require login.
+  '^https://github\.com/pgquery-narrative/pgquerynarrative/edit/',
+  '^https://console\.(anthropic|groq)\.com',
+  '^https://platform\.openai\.com/api-keys',
+  '^https://aistudio\.google\.com',
+  # The published site itself: checked by mkdocs --strict before it is deployed.
+  '^https://pgquery-narrative\.github\.io/pgquerynarrative',
+  # OIDC token issuer in cosign examples is an identifier, not a page.
+  '^https://token\.actions\.githubusercontent\.com',
+]
+
+# Generated file; its links are the per-version files, checked separately.
+exclude_path = ["CHANGELOG.md"]

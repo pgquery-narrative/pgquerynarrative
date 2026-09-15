@@ -273,6 +273,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Build documentation with --strict
         run: make docs-check
+      - uses: ./.github/actions/setup-go-cgo
+      # Mechanically ties what the docs state to what the code does: Go version,
+      # Compose Postgres default, every config variable and literal default,
+      # release platforms, every OpenAPI operation, every API error code,
+      # forbidden stale vocabulary, repo-level Markdown links, nav coverage.
+      # A config/API/error change without its reference update fails here.
+      - name: Check documentation contracts against the code
+        run: make docs-contract-check
 
   frontend:
     name: Frontend lint and typecheck

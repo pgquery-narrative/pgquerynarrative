@@ -1,28 +1,30 @@
 # Development setup
 
-Build, test, and contribute to PgQueryNarrative. See also [Testing](testing.md) and [Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md).
+Build, test, and contribute to PgQueryNarrative. See also
+[Testing](testing.md) and
+[Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md).
 
 ## Prerequisites
 
 | Requirement | Purpose |
-|-------------|---------|
-| Go 1.25+ | Build server and run tests |
-| PostgreSQL 16+ or Docker | Database (query execution, migrations, seed) |
+|---|---|
+| Go 1.26+, CGO toolchain | Build the server and run tests (`pg_query_go` is a cgo library) |
+| PostgreSQL 16+, or Docker | Database — query execution, migrations, seed |
 | Git, Make | Clone and run targets |
-| Node.js and npm | Build React SPA in `frontend/` for full web UI |
+| Node.js 22+, npm | Build the React SPA in `frontend/` |
 
-See [Installation](../getting-started/installation.md) for database setup.
+Database setup: [Installation](../getting-started/installation.md).
 
 ## Setup
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/pgquery-narrative/pgquerynarrative.git
 cd pgquerynarrative
 make setup
 make generate
 ```
 
-- **Database:** Docker: `docker compose up -d postgres` then `make db-init && make migrate && make seed`. Local: same (Postgres running). See [Installation](../getting-started/installation.md).
+- **Database:** `docker compose up -d postgres` then `make db-init && make migrate && make seed`
 - **Test:** `make test`
 
 ## Run locally
@@ -33,30 +35,42 @@ make run
 go run ./cmd/server
 ```
 
-App: http://localhost:8080. Verbose logging: `LOG_DEBUG=1 make run`. The server serves the [API](../api/README.md), [health/ready](../reference/operations.md#health-checks), web export, and React SPA (from `frontend/dist/`; build with `make build-frontend` if needed).
+App: http://localhost:8080. Verbose logging: `LOG_DEBUG=1 make run`. The server
+serves the [API](../reference/api.md), [health/ready](../operate/monitoring.md#health-and-readiness),
+report export, and the React SPA (`frontend/dist/`; `make build-frontend` to
+rebuild).
 
 ## Workflow
 
 1. Branch: `git checkout -b feature/name`
 2. Code, test (`make test`), lint (`make lint`), format (`make fmt`)
-3. Commit: [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat: add X`)
-4. After changing `api/design/*.go`: `make generate` (Goa codegen)
+3. Commit: [Conventional Commits](https://www.conventionalcommits.org/) (`feat: ...`, `fix: ...`)
+4. After changing `api/design/*.go`: `make generate` (Goa codegen — see
+   [Repository architecture](repository.md#code-generation))
+5. Changed a public config default, API shape, or error code? Update the matching
+   [Reference](../reference/configuration.md) page in the same change — see
+   [Change workflows](change-workflows.md); `make docs-contract-check` enforces it
 
-**Migrations:** Add `00000N_name.up.sql` and `00000N_name.down.sql` in `app/db/migrations/`; test with `make migrate`.
+**Migrations:** add `00000N_name.up.sql` and `.down.sql` in `app/db/migrations/`;
+test with `make migrate` and `make migrate-cycle-docker`.
 
 ## Commands
 
 | Command | Purpose |
-|---------|---------|
+|---|---|
 | `make fmt` | Format code (gofmt, etc.) |
 | `make lint` | Lint (golangci-lint) |
-| `make test-unit` | Unit tests (`test/unit/`, `cmd/server`, `pkg/narrative`) |
+| `make test-unit` | Unit tests |
 | `make test-integration` | Integration tests (Docker required) |
-| `make test-e2e` | E2E tests |
-| `make build-frontend` | Build React SPA to `frontend/dist/` (Node/npm required) |
+| `make test-e2e` | End-to-end tests |
+| `make build-frontend` | Build the SPA to `frontend/dist/` |
 | `make build` | Build frontend and `bin/server` |
-| `make generate` | Goa codegen (after editing `api/design/*.go`) |
+| `make generate` | Goa codegen after editing `api/design/*.go` |
+| `make docs` / `make docs-check` | Preview / strictly build the documentation site |
+| `make docs-contract-check` | Check documented facts against the code |
 
 ## See also
 
-- [Testing](testing.md) · [API reference](../api/README.md) · [Documentation index](../index.md) · [Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md)
+[Repository architecture](repository.md) · [Testing](testing.md) ·
+[Documentation index](../index.md) ·
+[Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md)

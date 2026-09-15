@@ -57,11 +57,16 @@ of them is a vulnerability, and worth reporting.
   `pg_query` parse tree rather than matching strings.
 - **Bind values are never spliced into SQL as syntax.** A value that merely looks
   like a timestamp is quoted and escaped into an inert literal, or refused.
-- **Tenant isolation is enforced by row-level security**, scoped per connection.
+- **Organization isolation is enforced by row-level security** on the application's
+  own metadata (`app.*`), keyed on the organization; analytical database access is
+  isolated separately, by connection assignment. See
+  [Organizations and tenancy](https://pgquery-narrative.github.io/pgquerynarrative/security/tenancy/).
 - **Query results are not sent to an external LLM unless explicitly configured.**
   The investigation loop runs with no model at all.
-- **Nothing is created or altered without a human action.** Index DDL and rewrites
-  are proposed, never applied.
+- **PgQueryNarrative never automatically applies a proposed rewrite, index, or DDL
+  to the analytical target database.** Its own metadata — investigations, reports,
+  audit records, migrations — is written by the application as part of its normal
+  operation; that is a different thing from acting on your data.
 
 ## Known limits — not vulnerabilities
 
@@ -99,14 +104,14 @@ or host root.
 - Security headers (CSP, frame denial, etc.)
 - **StrictMode** (`APP_ENV=production` / `SECURITY_STRICT=true`): process refuses to start on unsafe config; Helm chart fails install on placeholder secrets
 - Open-admin disabled unless `SECURITY_ALLOW_INSECURE_NO_AUTH=true` (forbidden in production)
-- Default query schema allowlist is `demo` only; `app` / system catalogs rejected; readonly role cannot read `app.*`
+- Default query schema allowlist is `demo` only; `app`, `pg_catalog` and `information_schema` can never be allowlisted; readonly role cannot read `app.*`. Unqualified and `pg_catalog`/`information_schema` *functions* not on the deny-list are still callable — see [Query execution safety](https://pgquery-narrative.github.io/pgquerynarrative/security/query-safety/)
 - Root `docker-compose.yml` is localhost-bound local/dev only; production-shaped compose lives under `deploy/docker/` (both build the same root `Dockerfile`)
 - Webhook hostname allowlist is **required** (empty fails closed); NetworkPolicy + HSTS (when HTTPS) in deploy templates
 - Query/EXPLAIN errors do not embed Postgres driver detail; SQL at-rest seal fails closed when a key is configured
 - Rate-limit failure mode cannot be `open` when auth is enabled
 
 ### Production StrictMode (mandatory for company data)
-Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled. See `docs/trust-model.md` and `docs/reference/deployment.md`.
+Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled. Full list: `docs/operate/production.md`. See also `docs/trust-model.md` and `docs/operate/deployment.md`.
 
 ## Security Scanning
 
