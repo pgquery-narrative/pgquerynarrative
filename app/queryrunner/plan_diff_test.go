@@ -28,6 +28,59 @@ func TestComparePlans(t *testing.T) {
 	}
 }
 
+// A candidate whose last-run timing happens to look faster must not show as
+// "Improved: Execution time" when repeated runs prove the gap is inside the
+// measurement noise — the same standard the metrics-table row already applies.
+func TestComparePlansWithTimings_NoiseSuppressesExecutionTimeImprovement(t *testing.T) {
+	before := `[{"Plan":{"Node Type":"Seq Scan","Relation Name":"sales","Schema":"demo","Total Cost":482100,"Plan Rows":48000000,"Actual Total Time":10.2,"Plans":[]}}]`
+	after := `[{"Plan":{"Node Type":"Seq Scan","Relation Name":"sales","Schema":"demo","Total Cost":482100,"Plan Rows":48000000,"Actual Total Time":4.5,"Plans":[]}}]`
+
+	// Sanity check: without repeated samples, the last-run numbers alone
+	// (10.2ms -> 4.5ms) do read as a speedup.
+	single, err := ComparePlans(json.RawMessage(before), json.RawMessage(after))
+	if err != nil {
+		t.Fatalf("ComparePlans: %v", err)
+	}
+	if !containsStr(single.Diff.Improved, "Execution time") {
+		t.Fatalf("expected the single-sample comparison to claim Execution time improved, got %v", single.Diff.Improved)
+	}
+
+	// The repeated samples show the medians are close and the spread is wide
+	// (noise ~7ms >= median gap). The claim must not survive.
+	noisy, err := ComparePlansWithTimings(json.RawMessage(before), json.RawMessage(after),
+		summarizeTimings([]float64{10.2, 2, 9}),
+		summarizeTimings([]float64{4.5, 3, 8}),
+	)
+	if err != nil {
+		t.Fatalf("ComparePlansWithTimings: %v", err)
+	}
+	if containsStr(noisy.Diff.Improved, "Execution time") {
+		t.Fatalf("Execution time should not be claimed as improved when spread masks the delta, got %v", noisy.Diff.Improved)
+	}
+
+	// A genuine, well-separated improvement (small spread, large gap) must
+	// still be reported.
+	clear, err := ComparePlansWithTimings(json.RawMessage(before), json.RawMessage(after),
+		summarizeTimings([]float64{10.2, 10.0, 10.4}),
+		summarizeTimings([]float64{4.5, 4.4, 4.6}),
+	)
+	if err != nil {
+		t.Fatalf("ComparePlansWithTimings: %v", err)
+	}
+	if !containsStr(clear.Diff.Improved, "Execution time") {
+		t.Fatalf("expected Execution time improvement to survive when the gap is well outside the spread, got %v", clear.Diff.Improved)
+	}
+}
+
+func containsStr(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestScanRowsProcessed_LoopsAndScanNodeFilter(t *testing.T) {
 	// Nested loop: the inner Index Scan reports 3 Actual Rows per loop over 100
 	// loops => 300 rows of real work. The Bitmap Index Scan is not a base-relation

@@ -708,6 +708,7 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 	}
 
 	var scored []queryrunner.ScoredCandidate
+	skippedCandidates := 0
 	for _, rewrite := range queryrunner.SuggestRewrites(inv.SQL, findings) {
 		afterAPI, explErr := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
 			SQL:          rewrite.SQL,
@@ -715,10 +716,12 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 			ConnectionID: &inv.ConnectionID,
 		})
 		if explErr != nil {
+			skippedCandidates++
 			continue
 		}
 		afterMetrics, mErr := metricsFromExplainAPI(afterAPI)
 		if mErr != nil {
+			skippedCandidates++
 			continue
 		}
 		improved := []string{}
@@ -738,7 +741,7 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 	out := &investigations.RankedCandidateList{
 		Candidates: make([]*investigations.RankedCandidate, 0, len(scored)),
 	}
-	if rec := queryrunner.RankingRecommendation(scored); rec != "" {
+	if rec := queryrunner.RankingRecommendation(scored, skippedCandidates); rec != "" {
 		out.Recommendation = &rec
 	}
 	base := &investigations.RankedCandidateBaseline{

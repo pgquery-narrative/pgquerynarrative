@@ -8,12 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// orgID must be non-empty: silently substituting a default org for an
+// unscoped caller would redirect its write to the wrong organization instead
+// of failing loudly.
 func withOrgTx(ctx context.Context, pool *pgxpool.Pool, orgID string, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	if pool == nil {
 		return fmt.Errorf("database pool is not configured")
 	}
 	if orgID == "" {
-		orgID = DefaultOrgID()
+		return fmt.Errorf("withOrgTx: organization id is required")
 	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -36,12 +39,13 @@ func execWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, arg
 	})
 }
 
+// orgID must be non-empty; see withOrgTx.
 func queryWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) (pgx.Rows, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("database pool is not configured")
 	}
 	if orgID == "" {
-		orgID = DefaultOrgID()
+		return nil, fmt.Errorf("queryWithOrg: organization id is required")
 	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -79,13 +83,14 @@ func (r *orgTxRows) Close() {
 	_ = r.tx.Commit(context.Background())
 }
 
+// orgID must be non-empty; see withOrgTx.
 func queryRowWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) func(dest ...any) error {
+	if orgID == "" {
+		return func(dest ...any) error { return fmt.Errorf("queryRowWithOrg: organization id is required") }
+	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return func(dest ...any) error { return err }
-	}
-	if orgID == "" {
-		orgID = DefaultOrgID()
 	}
 	if _, err := tx.Exec(ctx, `SELECT set_config('app.current_org_id', $1, true)`, orgID); err != nil {
 		_ = tx.Rollback(ctx)

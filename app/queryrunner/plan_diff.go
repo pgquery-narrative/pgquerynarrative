@@ -73,7 +73,42 @@ func ComparePlansWithTimings(beforePlan, afterPlan json.RawMessage, bs, as Timin
 	if len(cmp.Metrics) > 0 {
 		cmp.Metrics[0] = formatRepeatedTimingMetric(cmp.BeforeMetrics, cmp.AfterMetrics, bs, as)
 	}
+	// detectImprovements (inside ComparePlans) judged "Execution time" from a
+	// single before/after sample. With repeated runs available, apply the same
+	// noise-vs-delta check the metrics row above already uses (timingGapIsNoise):
+	// a difference no larger than the run-to-run spread is not a demonstrated
+	// speedup and must not drive the Improved badge or the report's
+	// next-action language.
+	if _, _, isNoise := timingGapIsNoise(bs, as); isNoise {
+		cmp.Diff.Improved = removeString(cmp.Diff.Improved, "Execution time")
+	}
 	return cmp, nil
+}
+
+// timingGapIsNoise reports the gap between two repeated-run medians and
+// whether it is no larger than the run-to-run spread — the single source of
+// truth both formatRepeatedTimingMetric's caveat text and
+// ComparePlansWithTimings' Improved-badge suppression are built on, so the
+// two can never disagree about whether a given result is noise. Requires at
+// least 2 samples on each side; with fewer, isNoise is always false (the
+// caller falls back to a single-sample comparison instead).
+func timingGapIsNoise(bs, as TimingSamples) (gap, noise float64, isNoise bool) {
+	if bs.Samples() < 2 || as.Samples() < 2 {
+		return 0, 0, false
+	}
+	gap = math.Abs(bs.MedianMs - as.MedianMs)
+	noise = math.Max(bs.SpreadMs(), as.SpreadMs())
+	return gap, noise, gap <= noise
+}
+
+func removeString(items []string, target string) []string {
+	out := items[:0:0]
+	for _, item := range items {
+		if item != target {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // ComparePlans compares two EXPLAIN JSON plan outputs.
@@ -358,9 +393,8 @@ func formatRepeatedTimingMetric(before, after PlanMetrics, bs, as TimingSamples)
 
 	// If the spread on either side is comparable to the gap between the medians,
 	// the difference is inside the noise and must not be read as a speedup.
-	gap := math.Abs(bs.MedianMs - as.MedianMs)
-	noise := math.Max(bs.SpreadMs(), as.SpreadMs())
-	if gap <= noise {
+	gap, noise, isNoise := timingGapIsNoise(bs, as)
+	if isNoise {
 		m.Caveat = fmt.Sprintf(
 			"The run-to-run spread (up to %s) is at least as large as the difference between the medians (%s) — this is inside the measurement noise, not a demonstrated speedup.",
 			formatValue(noise, "ms"), formatValue(gap, "ms"))

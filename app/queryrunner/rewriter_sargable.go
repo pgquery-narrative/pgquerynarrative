@@ -388,6 +388,11 @@ func splitDateTruncCompare(a, b *pg_query.Node) (unit string, col, constNode *pg
 	return unit, col, b, true
 }
 
+// splitBetweenBounds parses the two BETWEEN bounds. Either bound carrying an
+// explicit zone offset (numeric or Zulu) is rejected by parseTemporalConst
+// itself: the rewrite re-emits a zoneless boundary literal re-cast under the
+// session TimeZone, which would silently change the compared instant
+// relative to what the user wrote.
 func splitBetweenBounds(n *pg_query.Node) (low, high time.Time, ok bool) {
 	if n == nil {
 		return time.Time{}, time.Time{}, false

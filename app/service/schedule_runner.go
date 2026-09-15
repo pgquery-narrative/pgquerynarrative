@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,6 +22,29 @@ import (
 )
 
 const defaultScheduleLease = 5 * time.Minute
+
+type scheduleTickFunc func(ctx context.Context, svc *SchedulesService, rawPool *pgxpool.Pool, workerID string)
+
+// scheduleTick is overridden in tests to prove the goroutine started by
+// StartScheduleRunner itself survives a panic on one tick and keeps ticking —
+// recoverWorkerPanic alone only proves the recover mechanism works in
+// isolation, not that the real ticker loop stays alive around it. An
+// atomic.Value (rather than a bare package var) because the production
+// goroutine reads it on every tick while a test's t.Cleanup can write it
+// concurrently — cancelling the goroutine's context only requests it stop, it
+// does not guarantee the goroutine has already read the value one last time
+// before Cleanup restores it.
+var scheduleTick atomic.Value // holds scheduleTickFunc
+
+func init() {
+	scheduleTick.Store(scheduleTickFunc(runScheduleTick))
+}
+
+func setScheduleTickFn(fn scheduleTickFunc) (restore func()) {
+	previous := scheduleTick.Load().(scheduleTickFunc)
+	scheduleTick.Store(fn)
+	return func() { scheduleTick.Store(previous) }
+}
 
 // StartScheduleRunner polls for due schedules and executes them with durable leases.
 func StartScheduleRunner(ctx context.Context, rawPool *pgxpool.Pool, svc *SchedulesService, interval time.Duration) {
@@ -37,23 +61,31 @@ func StartScheduleRunner(ctx context.Context, rawPool *pgxpool.Pool, svc *Schedu
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				recovered, err := svc.RecoverExpiredScheduleLeases(ctx, rawPool, workerID)
-				if err != nil {
-					log.Printf("schedule lease recovery: %v", err)
-				}
-				for _, claim := range recovered {
-					observability.IncSchedulerRun()
-					if err := svc.executeClaimedRun(ctx, workerID, claim); err != nil {
-						observability.IncSchedulerFailure()
-						log.Printf("recovered schedule run %s failed: %v", claim.RunID, err)
-					}
-				}
-				if err := svc.RunDue(ctx, workerID); err != nil {
-					log.Printf("schedule runner: %v", err)
-				}
+				scheduleTick.Load().(scheduleTickFunc)(ctx, svc, rawPool, workerID)
 			}
 		}
 	}()
+}
+
+// runScheduleTick runs one scheduler poll. A panic here (a driver bug, a
+// malformed stored payload) must not take down the whole server for every
+// org — recover and let the next tick pick the work back up.
+func runScheduleTick(ctx context.Context, svc *SchedulesService, rawPool *pgxpool.Pool, workerID string) {
+	defer recoverWorkerPanic("schedule_runner")
+	recovered, err := svc.RecoverExpiredScheduleLeases(ctx, rawPool, workerID)
+	if err != nil {
+		log.Printf("schedule lease recovery: %v", err)
+	}
+	for _, claim := range recovered {
+		observability.IncSchedulerRun()
+		if err := svc.executeClaimedRun(ctx, workerID, claim); err != nil {
+			observability.IncSchedulerFailure()
+			log.Printf("recovered schedule run %s failed: %v", claim.RunID, err)
+		}
+	}
+	if err := svc.RunDue(ctx, workerID); err != nil {
+		log.Printf("schedule runner: %v", err)
+	}
 }
 
 func scheduleWorkerID() string {
@@ -305,9 +337,12 @@ func (s *SchedulesService) startScheduleHeartbeat(ctx context.Context, runID, sc
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := s.renewScheduleLease(ctx, runID, scheduleID, workerID); err != nil {
-					log.Printf("schedule lease heartbeat %s: %v", runID, err)
-				}
+				func() {
+					defer recoverWorkerPanic("schedule_heartbeat")
+					if err := s.renewScheduleLease(ctx, runID, scheduleID, workerID); err != nil {
+						log.Printf("schedule lease heartbeat %s: %v", runID, err)
+					}
+				}()
 			}
 		}
 	}()

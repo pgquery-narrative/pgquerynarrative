@@ -488,6 +488,7 @@ func isAnalystWritePath(method, path string) bool {
 	allowed := []string{
 		"/api/v1/queries/run",
 		"/api/v1/queries/explain",
+		"/api/v1/queries/explain/compare",
 		"/api/v1/queries/saved",
 		"/api/v1/reports/generate",
 		"/api/v1/reports/rewrite",
@@ -506,6 +507,12 @@ func isAnalystWritePath(method, path string) bool {
 		return true
 	}
 	if strings.HasPrefix(path, "/api/v1/schedules/") && strings.HasSuffix(path, "/run") {
+		return true
+	}
+	// Retrying a schedule run is the same "run this now" capability as
+	// /schedules/{id}/run above, just scoped to an existing run instead of the
+	// schedule itself.
+	if strings.HasPrefix(path, "/api/v1/schedule-runs/") && strings.HasSuffix(path, "/retry") {
 		return true
 	}
 	return false

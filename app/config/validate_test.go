@@ -65,19 +65,20 @@ func validProductionConfig() Config {
 			AllowedSchemas:   []string{"analytics"},
 		},
 		Security: SecurityConfig{
-			AuthEnabled:           true,
-			AllowInsecureNoAuth:   false,
-			APIKeyHash:            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			RateLimitRPM:          120,
-			RateLimitDistributed:  true,
-			RateLimitFailureMode:  "closed",
-			AuditMode:             "required",
-			ExplainAnalyzeEnabled: false,
-			ShareLinksEnabled:     false,
-			ScheduleRunnerEnabled: false,
-			ScheduleDurableLeases: true,
-			SessionSecret:         "session-secret-at-least-thirty-two-chars!",
-			DataEncryptionKey:     "encryption-key-at-least-thirty-two-ch!",
+			AuthEnabled:                 true,
+			AllowInsecureNoAuth:         false,
+			APIKeyHash:                  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			RateLimitRPM:                120,
+			RateLimitDistributed:        true,
+			RateLimitFailureMode:        "closed",
+			AuditMode:                   "required",
+			ExplainAnalyzeEnabled:       false,
+			ShareLinksEnabled:           false,
+			ConnectionAllowlistRequired: true,
+			ScheduleRunnerEnabled:       false,
+			ScheduleDurableLeases:       true,
+			SessionSecret:               "session-secret-at-least-thirty-two-chars!",
+			DataEncryptionKey:           "encryption-key-at-least-thirty-two-ch!",
 		},
 		LLM: LLMConfig{
 			Provider:          "ollama",
@@ -142,6 +143,15 @@ func TestValidate_StrictModeRejectsFailOpenRateLimit(t *testing.T) {
 	cfg.Security.RateLimitFailureMode = "open"
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected error for fail-open rate limit")
+	}
+}
+
+func TestValidate_StrictModeRejectsOptionalConnectionAllowlist(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	cfg := validProductionConfig()
+	cfg.Security.ConnectionAllowlistRequired = false
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when the connection allowlist is not required in production")
 	}
 }
 

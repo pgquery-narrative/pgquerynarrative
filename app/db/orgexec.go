@@ -2,23 +2,23 @@ package db
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 )
 
 // ExecWithOrg runs a statement with app.current_org_id set (via SET LOCAL, transaction-local)
 // for RLS policies. Unlike a session-level set_config, the setting is discarded by Postgres
 // the instant the transaction ends, so it cannot leak onto the connection once released back
-// to the pool.
+// to the pool. orgID must be non-empty: silently substituting a default org for an unscoped
+// caller would redirect its write to the wrong organization instead of failing loudly.
 func ExecWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) error {
 	if pool == nil {
 		return nil
 	}
 	if orgID == "" {
-		orgID = auth.DefaultOrgID()
+		return fmt.Errorf("ExecWithOrg: organization id is required")
 	}
 	return withOrgTxID(ctx, pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, sql, args...)
@@ -28,13 +28,13 @@ func ExecWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, arg
 
 // QueryRowWithOrg runs QueryRow with app.current_org_id set (via SET LOCAL) until the returned
 // scan function is called, which commits (or rolls back on scan error) the underlying
-// transaction.
+// transaction. orgID must be non-empty; see ExecWithOrg.
 func QueryRowWithOrg(ctx context.Context, pool *pgxpool.Pool, orgID, sql string, args ...any) func(dest ...any) error {
 	if pool == nil {
 		return func(dest ...any) error { return nil }
 	}
 	if orgID == "" {
-		orgID = auth.DefaultOrgID()
+		return func(dest ...any) error { return fmt.Errorf("QueryRowWithOrg: organization id is required") }
 	}
 	tx, err := beginOrgTx(ctx, pool, orgID)
 	if err != nil {
