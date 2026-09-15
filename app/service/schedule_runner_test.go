@@ -17,24 +17,24 @@ import (
 // the scheduler for every org on the very first bad row, and only a test that
 // exercises the real ticker loop would catch it.
 func TestStartScheduleRunner_TickerLoopSurvivesPanic(t *testing.T) {
-	originalTickFn := scheduleTickFn
-	t.Cleanup(func() { scheduleTickFn = originalTickFn })
-
 	var ticks atomic.Int32
-	scheduleTickFn = func(ctx context.Context, svc *SchedulesService, rawPool *pgxpool.Pool, workerID string) {
+	restore := setScheduleTickFn(func(ctx context.Context, svc *SchedulesService, rawPool *pgxpool.Pool, workerID string) {
 		defer recoverWorkerPanic("schedule_runner_test")
 		n := ticks.Add(1)
 		if n == 1 {
 			panic("simulated panic on the first tick")
 		}
-	}
+	})
+	t.Cleanup(restore)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// StartScheduleRunner only requires non-nil svc/rawPool to pass its own
-	// guard; scheduleTickFn is fully overridden above, so neither is ever
-	// dereferenced — no real database connection is needed for this test.
+	// guard; the tick function is fully overridden above (via an atomic.Value,
+	// safe to swap while the goroutine below is reading it concurrently), so
+	// neither is ever dereferenced — no real database connection is needed for
+	// this test.
 	StartScheduleRunner(ctx, &pgxpool.Pool{}, &SchedulesService{}, 10*time.Millisecond)
 
 	deadline := time.Now().Add(2 * time.Second)

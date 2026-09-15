@@ -128,9 +128,6 @@ func tryRewriteCastDateInequality(ae *pg_query.A_Expr) (*pg_query.Node, dateTrun
 	if !ok {
 		return nil, dateTruncRewrite{}, false
 	}
-	if constHasExplicitZoneOffset(constNode) {
-		return nil, dateTruncRewrite{}, false
-	}
 	bound, typ, ok := parseTemporalConst(constNode)
 	if !ok {
 		return nil, dateTruncRewrite{}, false
@@ -206,9 +203,6 @@ func tryRewriteDateTruncInequality(ae *pg_query.A_Expr) (*pg_query.Node, dateTru
 	}
 	unit, colNode, constNode, ok := splitDateTruncCompare(ae.Lexpr, ae.Rexpr)
 	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	if constHasExplicitZoneOffset(constNode) {
 		return nil, dateTruncRewrite{}, false
 	}
 	bound, typ, ok := parseTemporalConst(constNode)
@@ -395,18 +389,15 @@ func splitDateTruncCompare(a, b *pg_query.Node) (unit string, col, constNode *pg
 }
 
 // splitBetweenBounds parses the two BETWEEN bounds. Either bound carrying an
-// explicit UTC offset literal (e.g. '...-10:00') is rejected: the rewrite
-// re-emits a zoneless boundary literal re-cast under the session TimeZone,
-// which silently changes the compared instant relative to what the user
-// wrote (see constHasExplicitZoneOffset).
+// explicit zone offset (numeric or Zulu) is rejected by parseTemporalConst
+// itself: the rewrite re-emits a zoneless boundary literal re-cast under the
+// session TimeZone, which would silently change the compared instant
+// relative to what the user wrote.
 func splitBetweenBounds(n *pg_query.Node) (low, high time.Time, ok bool) {
 	if n == nil {
 		return time.Time{}, time.Time{}, false
 	}
 	if lst := n.GetList(); lst != nil && len(lst.Items) == 2 {
-		if constHasExplicitZoneOffset(lst.Items[0]) || constHasExplicitZoneOffset(lst.Items[1]) {
-			return time.Time{}, time.Time{}, false
-		}
 		low, _, ok = parseTemporalConst(lst.Items[0])
 		if !ok {
 			return time.Time{}, time.Time{}, false
@@ -419,9 +410,6 @@ func splitBetweenBounds(n *pg_query.Node) (low, high time.Time, ok bool) {
 	}
 	be := n.GetBoolExpr()
 	if be == nil || be.Boolop != pg_query.BoolExprType_AND_EXPR || len(be.Args) != 2 {
-		return time.Time{}, time.Time{}, false
-	}
-	if constHasExplicitZoneOffset(be.Args[0]) || constHasExplicitZoneOffset(be.Args[1]) {
 		return time.Time{}, time.Time{}, false
 	}
 	low, _, ok = parseTemporalConst(be.Args[0])

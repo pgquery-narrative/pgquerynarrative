@@ -360,12 +360,9 @@ func tryRewriteDateTruncEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTrunc
 
 	rawConst, typ, ok := parseTemporalConst(constNode)
 	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	// A literal with an explicit non-UTC zone offset is compared as an instant,
-	// while DATE_TRUNC of a timestamptz column uses the session TimeZone — the
-	// range bounds we emit (zoneless `::timestamp`) would not line up. Leave it.
-	if constHasExplicitZoneOffset(constNode) {
+		// Includes a literal with an explicit zone offset: DATE_TRUNC of a
+		// timestamptz column uses the session TimeZone, while the range bounds
+		// we emit are zoneless — see parseTemporalConst's own guard.
 		return nil, dateTruncRewrite{}, false
 	}
 	start := truncateTime(rawConst, unit)
@@ -414,9 +411,6 @@ func tryRewriteCastDateEquality(ae *pg_query.A_Expr) (*pg_query.Node, dateTruncR
 	}
 	rawConst, typ, ok := parseTemporalConst(constNode)
 	if !ok {
-		return nil, dateTruncRewrite{}, false
-	}
-	if constHasExplicitZoneOffset(constNode) {
 		return nil, dateTruncRewrite{}, false
 	}
 	unit := "day"
@@ -581,8 +575,19 @@ const (
 	temporalUnknown
 )
 
+// parseTemporalConst is the single funnel every date-rewrite shape uses to
+// read a temporal constant. Every caller in this package immediately re-emits
+// the parsed value as a zoneless boundary literal (see temporalLiteralNode),
+// so an explicit-zone-offset const is rejected here once, for all current and
+// future callers, rather than relying on each call site to paste in its own
+// constHasExplicitZoneOffset guard (which is exactly how the inequality/
+// BETWEEN shapes ended up unguarded for a release before this check moved
+// here).
 func parseTemporalConst(n *pg_query.Node) (time.Time, temporalType, bool) {
 	if n == nil {
+		return time.Time{}, temporalUnknown, false
+	}
+	if constHasExplicitZoneOffset(n) {
 		return time.Time{}, temporalUnknown, false
 	}
 	if tc := n.GetTypeCast(); tc != nil {
@@ -622,11 +627,14 @@ func parseTemporalConst(n *pg_query.Node) (time.Time, temporalType, bool) {
 	return time.Time{}, temporalUnknown, false
 }
 
-// zoneOffsetRe matches a trailing explicit numeric UTC offset that follows a
-// time component (e.g. `12:30:00+02`, `08:00 -05:30`). A bare `Z` (UTC), a
-// zoneless timestamp, and a bare date (whose own `-DD` is not an offset) are
-// not flagged.
-var zoneOffsetRe = regexp.MustCompile(`\d{2}:\d{2}(:\d{2})?(\.\d+)?\s*[+-]\d{2}(:?\d{2})?\s*$`)
+// zoneOffsetRe matches a trailing explicit timezone designator that follows a
+// time component: a numeric UTC offset (e.g. `12:30:00+02`, `08:00 -05:30`) or
+// the RFC3339 `Z`/`z` Zulu designator (e.g. `23:00:00Z`), which Go's RFC3339
+// parser accepts as an explicit-zone instant just like a numeric offset — the
+// same "zoneless boundary literal reinterpreted under the session TimeZone"
+// risk applies to it. A zoneless timestamp and a bare date (whose own `-DD`
+// is not an offset) are not flagged.
+var zoneOffsetRe = regexp.MustCompile(`\d{2}:\d{2}(:\d{2})?(\.\d+)?\s*([Zz]|[+-]\d{2}(:?\d{2})?)\s*$`)
 
 // constHasExplicitZoneOffset reports whether n's string value carries an
 // explicit numeric timezone offset. Such a literal is an instant, so the
