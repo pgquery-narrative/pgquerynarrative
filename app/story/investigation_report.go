@@ -41,12 +41,27 @@ type InvestigationFinding struct {
 }
 
 // CandidateImprovement describes a proposed change requiring verification.
+//
+// ProposedChange is executable SQL only when Kind is CandidateKindSQLRewrite
+// or CandidateKindIndexDDL — CandidateKindInvestigateHint entries carry a
+// plain-English pointer ("Investigate index or predicate shape for Seq Scan"),
+// not a statement. Consumers that render or export ProposedChange as SQL
+// (report_export.go's Markdown/SQL builders) must check Kind first, or they
+// end up fencing prose as ```sql, or worse, writing it into a .sql file with
+// a trailing semicolon as if it were a real candidate.
 type CandidateImprovement struct {
+	Kind           string   `json:"kind"`
 	ProposedChange string   `json:"proposed_change"`
 	WhyItMightHelp string   `json:"why_it_might_help"`
 	Confidence     string   `json:"confidence"`
 	Verification   []string `json:"required_verification"`
 }
+
+const (
+	CandidateKindSQLRewrite      = "sql_rewrite"
+	CandidateKindIndexDDL        = "index_ddl"
+	CandidateKindInvestigateHint = "investigate_hint"
+)
 
 // ControlledTestResults captures before/after comparison evidence.
 type ControlledTestResults struct {
@@ -305,6 +320,7 @@ func buildCandidates(findings []PlanFindingInput, candidateSQL string, compariso
 			why = "Controlled EXPLAIN comparison shows improvements: " + strings.Join(comparison.Improved, ", ")
 		}
 		out = append(out, CandidateImprovement{
+			Kind:           CandidateKindSQLRewrite,
 			ProposedChange: candidateSQL,
 			WhyItMightHelp: why,
 			Confidence:     confidence,
@@ -318,6 +334,7 @@ func buildCandidates(findings []PlanFindingInput, candidateSQL string, compariso
 	for _, f := range findings {
 		if f.Category == "seq_scan" || f.Category == "index_candidate" {
 			out = append(out, CandidateImprovement{
+				Kind:           CandidateKindInvestigateHint,
 				ProposedChange: "Investigate index or predicate shape for " + f.NodeType,
 				WhyItMightHelp: f.Message,
 				Confidence:     defaultConfidence(f.Confidence),

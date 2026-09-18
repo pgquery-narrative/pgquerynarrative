@@ -14,6 +14,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/format"
+	"github.com/pgquerynarrative/pgquerynarrative/app/story"
 )
 
 type Handlers struct {
@@ -656,9 +657,17 @@ func formatInvestigationHTML(payload any) string {
 			shown++
 			sb.WriteString("<li>")
 			if proposed := mapString(item, "proposed_change"); proposed != "" {
-				sb.WriteString("<pre>")
-				sb.WriteString(template.HTMLEscapeString(proposed))
-				sb.WriteString("</pre>")
+				// An investigate_hint is plain-English prose, not SQL — rendering
+				// it in <pre> misrepresents a finding pointer as a statement.
+				if mapString(item, "kind") != story.CandidateKindInvestigateHint {
+					sb.WriteString("<pre>")
+					sb.WriteString(template.HTMLEscapeString(proposed))
+					sb.WriteString("</pre>")
+				} else {
+					sb.WriteString("<p>")
+					sb.WriteString(template.HTMLEscapeString(proposed))
+					sb.WriteString("</p>")
+				}
 			}
 			if why := mapString(item, "why_it_might_help"); why != "" {
 				sb.WriteString("<p>")

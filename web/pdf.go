@@ -13,6 +13,7 @@ import (
 	"github.com/jung-kurt/gofpdf/v2"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/app/story"
 )
 
 // BuildReportPDF writes a structured PDF report to w. Text is rendered with the
@@ -315,8 +316,11 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		pdf.Ln(4)
 	}
 
-	// Mirror the HTML report: show the first two candidate improvements as-is,
-	// regardless of the SQL shape of proposed_change.
+	// Mirror the HTML report: show the first two candidate improvements as-is.
+	// Only a real SQL rewrite (Kind == CandidateKindSQLRewrite/IndexDDL) gets
+	// the shaded monospace code box — an investigate_hint is plain-English
+	// prose ("Investigate index or predicate shape for Seq Scan"), and boxing
+	// it as code misrepresents it as a statement.
 	candidates := mapSlice(inv, "candidate_improvements")
 	for i, c := range candidates {
 		if i >= 2 {
@@ -325,14 +329,18 @@ func writeInvestigationPDF(pdf *gofpdf.Fpdf, report *reports.Report) {
 		if i == 0 {
 			sectionTitle(pdf, "Candidate improvements")
 		}
-		if sql := strings.TrimSpace(mapString(c, "proposed_change")); sql != "" {
-			if len(sql) > 800 {
-				sql = sql[:800] + "..."
+		if change := strings.TrimSpace(mapString(c, "proposed_change")); change != "" {
+			if len(change) > 800 {
+				change = change[:800] + "..."
 			}
-			pdf.SetFont(pdfFontMono, "", 8)
-			pdf.SetFillColor(245, 245, 245)
-			pdf.MultiCell(0, 11, pdfText(sql), "1", "L", true)
-			pdf.SetFont(pdfFontBody, "", 10)
+			if mapString(c, "kind") != story.CandidateKindInvestigateHint {
+				pdf.SetFont(pdfFontMono, "", 8)
+				pdf.SetFillColor(245, 245, 245)
+				pdf.MultiCell(0, 11, pdfText(change), "1", "L", true)
+				pdf.SetFont(pdfFontBody, "", 10)
+			} else {
+				pdf.MultiCell(0, 10, pdfText(change), "", "L", false)
+			}
 		}
 		if why := mapString(c, "why_it_might_help"); why != "" {
 			pdf.Ln(2)
