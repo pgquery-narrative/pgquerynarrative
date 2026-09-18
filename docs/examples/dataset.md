@@ -136,6 +136,11 @@ Declared on the parent (propagate to all partitions):
 > by `product_category` filtered by `region`). This leaves a real before/after to
 > demonstrate in the [query optimization case study](query-optimization.md).
 
+> **Case study:** [Verified rewrite](02-verified-rewrite.md) —
+> a `DATE_TRUNC`-wrapped filter on the partition key forces a 49-partition
+> scan; the AST rewrite engine unwraps it and proves row-for-row equivalence
+> over the full result set before calling it safe.
+
 ## Data distribution
 
 See `tools/db/seed-large.sql`:

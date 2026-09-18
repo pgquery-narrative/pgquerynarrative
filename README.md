@@ -305,7 +305,7 @@ Preview: **`make docs`** → http://127.0.0.1:8000. Full site:
 | **Deploy & operate** | [Deployment](docs/operate/deployment.md) · [Production configuration](docs/operate/production.md) · [Health and monitoring](docs/operate/monitoring.md) |
 | **Reference** | [Configuration](docs/reference/configuration.md) · [API](docs/reference/api.md) · [API errors](docs/reference/api-errors.md) |
 | **Develop** | [Setup](docs/development/setup.md) · [Repository architecture](docs/development/repository.md) · [Testing](docs/development/testing.md) |
-| **Examples** | [Dataset](docs/examples/dataset.md) · [Case study](docs/examples/query-optimization.md) |
+| **Examples** | [Dataset](docs/examples/dataset.md) · [Case study](docs/examples/query-optimization.md) · [Verified rewrite](docs/examples/02-verified-rewrite.md) |
 
 **Contributing & security:** [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) ·
 [.github/SECURITY.md](.github/SECURITY.md) · **Changelog:** [CHANGELOG.md](CHANGELOG.md)
