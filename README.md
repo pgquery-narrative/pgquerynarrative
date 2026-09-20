@@ -182,7 +182,7 @@ cd pgquerynarrative
 make build            # builds the UI, then the server into bin/
 ```
 
-> **Upgrading from 2.0.x?** The schema gate moved to version 59. Run migrations
+> **Upgrading from 2.0.x?** The schema gate moved to version 60. Run migrations
 > before starting the new binary — a database behind that version makes `/ready`
 > return 503 (see [Migrations, upgrades, backup](docs/operate/upgrades.md)) until it
 > catches up. `POST /api/v1/queries/explain` also no longer returns

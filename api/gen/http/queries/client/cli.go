@@ -25,7 +25,7 @@ func BuildRunPayload(queriesRunBody string) (*queries.RunQueryPayload, error) {
 	{
 		err = json.Unmarshal([]byte(queriesRunBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Quidem aut et.\",\n      \"limit\": 493,\n      \"sql\": \"nqe\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Vel dolor qui adipisci nihil rerum consequatur.\",\n      \"limit\": 330,\n      \"sql\": \"2n\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
@@ -117,7 +117,7 @@ func BuildExplainPlanPayload(queriesExplainPlanBody string) (*queries.ExplainQue
 	{
 		err = json.Unmarshal([]byte(queriesExplainPlanBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"connection_id\": \"Eos qui quod consequatur.\",\n      \"sql\": \"u\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"connection_id\": \"Ea non quam minus.\",\n      \"sql\": \"tz9\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
@@ -153,7 +153,7 @@ func BuildComparePlansPayload(queriesComparePlansBody string) (*queries.CompareP
 	{
 		err = json.Unmarshal([]byte(queriesComparePlansBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"after_sql\": \"ug\",\n      \"analyze\": true,\n      \"before_sql\": \"ix\",\n      \"binds\": [\n         \"Repellendus molestiae est magni sunt aut.\",\n         \"Nemo non non.\",\n         \"Nemo et quidem delectus autem delectus dolor.\"\n      ],\n      \"connection_id\": \"Quibusdam omnis.\",\n      \"timing_runs\": 4,\n      \"verify_results\": true\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"after_sql\": \"jec\",\n      \"analyze\": true,\n      \"before_sql\": \"a\",\n      \"binds\": [\n         \"Rerum laudantium iusto.\",\n         \"Excepturi cumque culpa omnis quam.\"\n      ],\n      \"connection_id\": \"Sed et at perspiciatis vitae.\",\n      \"timing_runs\": 2,\n      \"verify_results\": true\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", body.BeforeSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.BeforeSQL) < 1 {
@@ -224,7 +224,7 @@ func BuildListSavedPayload(queriesListSavedTags string, queriesListSavedConnecti
 		if queriesListSavedTags != "" {
 			err = json.Unmarshal([]byte(queriesListSavedTags), &tags)
 			if err != nil {
-				return nil, fmt.Errorf("invalid JSON for tags, \nerror: %s, \nexample of valid JSON:\n%s", err, "'[\n      \"Dicta reiciendis voluptatem necessitatibus.\",\n      \"Voluptas dolores blanditiis.\",\n      \"Blanditiis sunt.\",\n      \"Quae ut blanditiis alias qui dolorem.\"\n   ]'")
+				return nil, fmt.Errorf("invalid JSON for tags, \nerror: %s, \nexample of valid JSON:\n%s", err, "'[\n      \"Ea natus libero doloribus ullam veritatis est.\",\n      \"Vel vero nostrum porro vel et repellendus.\",\n      \"Officia dolores.\",\n      \"Nihil illum harum tenetur sed ad maiores.\"\n   ]'")
 			}
 		}
 	}
@@ -288,7 +288,7 @@ func BuildSavePayload(queriesSaveBody string) (*queries.SaveQueryPayload, error)
 	{
 		err = json.Unmarshal([]byte(queriesSaveBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Praesentium facilis sit eligendi.\",\n      \"description\": \"z22\",\n      \"name\": \"h6\",\n      \"sql\": \"p\",\n      \"tags\": [\n         \"Adipisci repellendus quia commodi.\",\n         \"Illo odit quas dignissimos aut explicabo et.\"\n      ]\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Adipisci quia doloremque et vel.\",\n      \"description\": \"e2r\",\n      \"name\": \"cm3\",\n      \"sql\": \"1\",\n      \"tags\": [\n         \"Nihil quia.\",\n         \"Magnam tenetur et commodi magnam placeat atque.\",\n         \"Nulla fuga dignissimos.\"\n      ]\n   }'")
 		}
 		if utf8.RuneCountInString(body.Name) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.name", body.Name, utf8.RuneCountInString(body.Name), 1, true))

@@ -155,6 +155,14 @@ type UpdateValidationErrorResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// DeleteNotFoundResponseBody is the type of the "schedules" service "delete"
+// endpoint HTTP response body for the "not_found" error.
+type DeleteNotFoundResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // RunNowNotFoundResponseBody is the type of the "schedules" service "run_now"
 // endpoint HTTP response body for the "not_found" error.
 type RunNowNotFoundResponseBody struct {
@@ -363,6 +371,17 @@ func NewUpdateNotFound(body *UpdateNotFoundResponseBody) *schedules.NotFoundErro
 // validation_error error.
 func NewUpdateValidationError(body *UpdateValidationErrorResponseBody) *schedules.ValidationError {
 	v := &schedules.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewDeleteNotFound builds a schedules service delete endpoint not_found error.
+func NewDeleteNotFound(body *DeleteNotFoundResponseBody) *schedules.NotFoundError {
+	v := &schedules.NotFoundError{
 		Name:    *body.Name,
 		Message: *body.Message,
 		Code:    body.Code,
@@ -709,6 +728,18 @@ func ValidateUpdateNotFoundResponseBody(body *UpdateNotFoundResponseBody) (err e
 // ValidateUpdateValidationErrorResponseBody runs the validations defined on
 // update_validation_error_response_body
 func ValidateUpdateValidationErrorResponseBody(body *UpdateValidationErrorResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateDeleteNotFoundResponseBody runs the validations defined on
+// delete_not_found_response_body
+func ValidateDeleteNotFoundResponseBody(body *DeleteNotFoundResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

@@ -8,6 +8,32 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// withLookupTx runs fn in a transaction where the identity tables reveal rows the caller is
+// entitled to see before an organization is chosen (login). settings are transaction-local
+// GUCs the row-level-security policies read: app.membership_user_id (the caller's own
+// memberships in every organization) and app.oidc_groups (the mappings for the token's groups).
+// The exceptions are read-only: writes stay scoped to one organization by the policies'
+// WITH CHECK.
+func withLookupTx(ctx context.Context, pool *pgxpool.Pool, settings map[string]string, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	if pool == nil {
+		return fmt.Errorf("database pool is not configured")
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for name, value := range settings {
+		if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, name, value); err != nil {
+			return err
+		}
+	}
+	if err := fn(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // orgID must be non-empty: silently substituting a default org for an
 // unscoped caller would redirect its write to the wrong organization instead
 // of failing loudly.

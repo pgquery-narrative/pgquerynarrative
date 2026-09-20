@@ -154,6 +154,13 @@ paths:
       responses:
         "204":
           description: No Content response.
+        "404":
+          description: Not Found response.
+          schema:
+            $ref: '#/definitions/NotFoundError'
+            required:
+              - name
+              - message
       schemes:
         - http
   /api/v1/dashboards/{id}/resolve:
@@ -739,6 +746,13 @@ paths:
               - connection_id
               - created_at
               - updated_at
+        "400":
+          description: Bad Request response.
+          schema:
+            $ref: '#/definitions/ValidationError'
+            required:
+              - name
+              - message
       schemes:
         - http
   /api/v1/queries/saved/{id}:
@@ -1068,6 +1082,13 @@ paths:
             required:
               - token
               - url
+        "400":
+          description: Bad Request response.
+          schema:
+            $ref: '#/definitions/ValidationError'
+            required:
+              - name
+              - message
         "404":
           description: Not Found response.
           schema:
@@ -1330,6 +1351,13 @@ paths:
       responses:
         "204":
           description: No Content response.
+        "404":
+          description: Not Found response.
+          schema:
+            $ref: '#/definitions/NotFoundError'
+            required:
+              - name
+              - message
       schemes:
         - http
   /api/v1/schedules/{id}/run:

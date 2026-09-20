@@ -49,9 +49,11 @@ var _ = Service("schedules", func() {
 			Required("id")
 		})
 		Result(Empty)
+		Error("not_found", NotFoundError)
 		HTTP(func() {
 			DELETE("/api/v1/schedules/{id}")
 			Response(StatusNoContent)
+			Response(StatusNotFound, "not_found")
 		})
 	})
 

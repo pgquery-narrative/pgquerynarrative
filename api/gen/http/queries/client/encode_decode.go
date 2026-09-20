@@ -485,6 +485,9 @@ func EncodeSaveRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.R
 // DecodeSaveResponse returns a decoder for responses returned by the queries
 // save endpoint. restoreBody controls whether the response body should be
 // restored after having been read.
+// DecodeSaveResponse may return the following errors:
+//   - "validation_error" (type *queries.ValidationError): http.StatusBadRequest
+//   - error: internal error
 func DecodeSaveResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
 		if restoreBody {
@@ -515,6 +518,20 @@ func DecodeSaveResponse(decoder func(*http.Response) goahttp.Decoder, restoreBod
 			}
 			res := NewSavedQueryOK(&body)
 			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body SaveValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("queries", "save", err)
+			}
+			err = ValidateSaveValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("queries", "save", err)
+			}
+			return nil, NewSaveValidationError(&body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("queries", "save", resp.StatusCode, string(body))

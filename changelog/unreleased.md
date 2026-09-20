@@ -27,7 +27,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
   by `audit_logs_event_type_check`, so they were never recorded and, in `required` mode,
   failed the request after the change had been applied. A test now compares the code's event
   types with the latest constraint. **Audit log is append-only** for the application role
-  (migration `000059`). **The schema gate is now version 59.**
+  (migration `000059`). **The schema gate is now version 60.**
 - **`schema_to_xml`, `database_to_xml` (and their `_xmlschema` forms) and `ts_stat` are
   denied**, closing a bypass of the schema allowlist.
 - **`/queries/stats` on a role shared by several organizations** is limited to platform
@@ -37,6 +37,19 @@ four, plus the lifecycle and deployment gaps found alongside them.
   for non-platform users there. Single-organization installs and organizations with their own
   credentials are unaffected.
 - **Only a schedule's owner or an admin can update, run or retry it**, as the docs said.
+- **Row-level security on the identity tables** (migration `000060`): `organization_members`,
+  `oidc_group_org_mappings` and `audit_log_buffer` now isolate organizations like the rest of the
+  schema. Login keeps working through two read-only lookups (a user's own memberships, and the
+  mappings for the token's groups); writes stay inside one organization. The schema gate is
+  now **60**.
+- **The application no longer depends on the read-only role's stored defaults.** It already set
+  the search path and timeouts on every connection and opened every statement `READ ONLY`; a
+  test now wipes the role's defaults and proves it, so a role that erases its own settings
+  changes nothing for the server.
+- **Errors the services already returned now have their real status**: deleting a schedule or
+  dashboard that is not yours or does not exist is `404`, and share links being disabled is
+  `400` (both were `500`, because the Goa design did not declare the error). The design also
+  declares the validation error `save` and `create_share` can return; generated code updated.
 - **Startup boundary probe** lifts the read-only session flag, so a superuser-migrated
   read-only role no longer makes a production start fail on SQLSTATE 25006.
 - Admin API: unknown roles and scopes are `400`, a key without `scopes` no longer fails

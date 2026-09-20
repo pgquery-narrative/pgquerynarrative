@@ -12,11 +12,14 @@
 PgQueryNarrative's tenancy unit is the **organization**. Every metadata table that
 holds organization-scoped data — investigations (and their candidate history and
 linked regression alerts), reports, saved queries, schedules, regression snapshots
-and alerts, and more — has row-level security enabled and forced, with these exceptions,
-which are read across organizations by design and filtered by the application instead:
-`organization_members` and `oidc_group_org_mappings` (resolved at login, before an
-organization is chosen), `organizations`, `audit_log_buffer`, `api_key_usage`,
-`oidc_pkce_states` and `rate_limit_buckets`:
+and alerts, and more — has row-level security enabled and forced. That includes the identity
+tables `organization_members` and `oidc_group_org_mappings` and the audit writer's
+`audit_log_buffer` (migration `000060`). Login resolves an identity before an organization
+is chosen, so those two tables have one narrow, read-only exception each: a user's own
+memberships in every organization, and the mappings for the groups in the token. Writes
+stay inside one organization. Only tables that hold no organization-scoped data have none:
+`organizations` (the list itself), `api_key_usage`, `oidc_pkce_states` and
+`rate_limit_buckets`:
 
 ```sql
 USING (organization_id::text = NULLIF(current_setting('app.current_org_id', true), ''))

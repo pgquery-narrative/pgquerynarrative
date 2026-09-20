@@ -97,30 +97,33 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 		return Principal{UserID: userID, OrgID: DefaultOrgID(), Role: normalizeRole(fallbackRole)}, nil
 	}
 	if len(groups) > 0 {
-		rows, err := s.pool.Query(ctx, `
-			SELECT organization_id::text, role, group_claim
-			FROM app.oidc_group_org_mappings
-			WHERE group_claim = ANY($1)
-			ORDER BY group_claim
-		`, groups)
-		if err != nil {
-			return Principal{}, err
-		}
-		defer rows.Close()
 		type mapping struct {
 			orgID string
 			role  string
 		}
 		seenOrgs := map[string]mapping{}
-		for rows.Next() {
-			var orgID, role, claim string
-			if scanErr := rows.Scan(&orgID, &role, &claim); scanErr != nil {
-				return Principal{}, scanErr
+		lookupErr := withLookupTx(ctx, s.pool, map[string]string{"app.oidc_groups": strings.Join(groups, "\x1f")}, func(ctx context.Context, tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `
+				SELECT organization_id::text, role, group_claim
+				FROM app.oidc_group_org_mappings
+				WHERE group_claim = ANY($1)
+				ORDER BY group_claim
+			`, groups)
+			if err != nil {
+				return err
 			}
-			seenOrgs[orgID] = mapping{orgID: orgID, role: role}
-		}
-		if err := rows.Err(); err != nil {
-			return Principal{}, err
+			defer rows.Close()
+			for rows.Next() {
+				var orgID, role, claim string
+				if scanErr := rows.Scan(&orgID, &role, &claim); scanErr != nil {
+					return scanErr
+				}
+				seenOrgs[orgID] = mapping{orgID: orgID, role: role}
+			}
+			return rows.Err()
+		})
+		if lookupErr != nil {
+			return Principal{}, lookupErr
 		}
 		if len(seenOrgs) > 1 {
 			// Ambiguous multi-group mapping must not silently pick the first organisation.
@@ -135,7 +138,7 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 			if role == "" {
 				role = normalizeRole(fallbackRole)
 			}
-			_, _ = s.pool.Exec(ctx, `
+			_ = execWithOrg(ctx, s.pool, m.orgID, `
 				INSERT INTO app.organization_members (organization_id, user_id, role)
 				VALUES ($1::uuid, $2, $3)
 				ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
@@ -150,26 +153,29 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 }
 
 func (s *MembershipStore) listMemberships(ctx context.Context, userID string) ([]Membership, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT organization_id::text, role
-		FROM app.organization_members
-		WHERE user_id = $1
-		ORDER BY organization_id
-	`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var out []Membership
-	for rows.Next() {
-		var m Membership
-		if err := rows.Scan(&m.OrgID, &m.Role); err != nil {
-			return nil, err
+	err := withLookupTx(ctx, s.pool, map[string]string{"app.membership_user_id": userID}, func(ctx context.Context, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT organization_id::text, role
+			FROM app.organization_members
+			WHERE user_id = $1
+			ORDER BY organization_id
+		`, userID)
+		if err != nil {
+			return err
 		}
-		m.Role = normalizeRole(m.Role)
-		out = append(out, m)
-	}
-	return out, rows.Err()
+		defer rows.Close()
+		for rows.Next() {
+			var m Membership
+			if err := rows.Scan(&m.OrgID, &m.Role); err != nil {
+				return err
+			}
+			m.Role = normalizeRole(m.Role)
+			out = append(out, m)
+		}
+		return rows.Err()
+	})
+	return out, err
 }
 
 // MembershipDetail includes organisation name/slug for UI switchers.
@@ -190,28 +196,31 @@ func (s *MembershipStore) ListMembershipDetails(ctx context.Context, userID stri
 	if userID == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT m.organization_id::text, m.role, o.name, o.slug
-		FROM app.organization_members m
-		JOIN app.organizations o ON o.id = m.organization_id
-		WHERE m.user_id = $1
-		ORDER BY o.slug
-	`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
 	var out []MembershipDetail
-	for rows.Next() {
-		var d MembershipDetail
-		if err := rows.Scan(&d.OrgID, &d.Role, &d.Name, &d.Slug); err != nil {
-			return nil, err
+	err := withLookupTx(ctx, s.pool, map[string]string{"app.membership_user_id": userID}, func(ctx context.Context, tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+			SELECT m.organization_id::text, m.role, o.name, o.slug
+			FROM app.organization_members m
+			JOIN app.organizations o ON o.id = m.organization_id
+			WHERE m.user_id = $1
+			ORDER BY o.slug
+		`, userID)
+		if err != nil {
+			return err
 		}
-		d.Role = normalizeRole(d.Role)
-		d.UserID = userID
-		out = append(out, d)
-	}
-	return out, rows.Err()
+		defer rows.Close()
+		for rows.Next() {
+			var d MembershipDetail
+			if err := rows.Scan(&d.OrgID, &d.Role, &d.Name, &d.Slug); err != nil {
+				return err
+			}
+			d.Role = normalizeRole(d.Role)
+			d.UserID = userID
+			out = append(out, d)
+		}
+		return rows.Err()
+	})
+	return out, err
 }
 
 // ListMemberships returns all organisation memberships for userID.
@@ -284,7 +293,7 @@ func (s *MembershipStore) ListOrgMembers(ctx context.Context, orgID string) ([]M
 	if orgID == "" {
 		return nil, fmt.Errorf("organization_id is required")
 	}
-	rows, err := s.pool.Query(ctx, `
+	rows, err := queryWithOrg(ctx, s.pool, orgID, `
 		SELECT organization_id::text, role, user_id
 		FROM app.organization_members
 		WHERE organization_id = $1::uuid
@@ -325,20 +334,21 @@ func (s *MembershipStore) RevokeMembership(ctx context.Context, userID, orgID st
 func (s *MembershipStore) ensureDefaultMembership(ctx context.Context, userID, fallbackRole string) (Membership, error) {
 	role := normalizeRole(fallbackRole)
 	orgID := DefaultOrgID()
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO app.organization_members (organization_id, user_id, role)
-		VALUES ($1::uuid, $2, $3)
-		ON CONFLICT (organization_id, user_id) DO NOTHING
-	`, orgID, userID, role)
-	if err != nil {
-		return Membership{}, err
-	}
 	var m Membership
-	err = s.pool.QueryRow(ctx, `
-		SELECT organization_id::text, role
-		FROM app.organization_members
-		WHERE organization_id = $1::uuid AND user_id = $2
-	`, orgID, userID).Scan(&m.OrgID, &m.Role)
+	err := withOrgTx(ctx, s.pool, orgID, func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO app.organization_members (organization_id, user_id, role)
+			VALUES ($1::uuid, $2, $3)
+			ON CONFLICT (organization_id, user_id) DO NOTHING
+		`, orgID, userID, role); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `
+			SELECT organization_id::text, role
+			FROM app.organization_members
+			WHERE organization_id = $1::uuid AND user_id = $2
+		`, orgID, userID).Scan(&m.OrgID, &m.Role)
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Membership{}, ErrNoOrganizationMembership
 	}

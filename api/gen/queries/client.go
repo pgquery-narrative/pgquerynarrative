@@ -102,6 +102,9 @@ func (c *Client) ListSaved(ctx context.Context, p *ListSavedPayload) (res *Saved
 }
 
 // Save calls the "save" endpoint of the "queries" service.
+// Save may return the following errors:
+//   - "validation_error" (type *ValidationError)
+//   - error: internal error
 func (c *Client) Save(ctx context.Context, p *SaveQueryPayload) (res *SavedQuery, err error) {
 	var ires any
 	ires, err = c.SaveEndpoint(ctx, p)

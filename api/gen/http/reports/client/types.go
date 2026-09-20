@@ -179,6 +179,14 @@ type CreateShareNotFoundResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// CreateShareValidationErrorResponseBody is the type of the "reports" service
+// "create_share" endpoint HTTP response body for the "validation_error" error.
+type CreateShareValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // GetSharedNotFoundResponseBody is the type of the "reports" service
 // "get_shared" endpoint HTTP response body for the "not_found" error.
 type GetSharedNotFoundResponseBody struct {
@@ -642,6 +650,18 @@ func NewCreateShareNotFound(body *CreateShareNotFoundResponseBody) *reports.NotF
 	return v
 }
 
+// NewCreateShareValidationError builds a reports service create_share endpoint
+// validation_error error.
+func NewCreateShareValidationError(body *CreateShareValidationErrorResponseBody) *reports.ValidationError {
+	v := &reports.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
 // NewGetSharedReportOK builds a "reports" service "get_shared" endpoint result
 // from a HTTP "OK" response.
 func NewGetSharedReportOK(body *GetSharedResponseBody) *reports.Report {
@@ -1044,6 +1064,18 @@ func ValidateRewriteValidationErrorResponseBody(body *RewriteValidationErrorResp
 // ValidateCreateShareNotFoundResponseBody runs the validations defined on
 // create_share_not_found_response_body
 func ValidateCreateShareNotFoundResponseBody(body *CreateShareNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateCreateShareValidationErrorResponseBody runs the validations defined
+// on create_share_validation_error_response_body
+func ValidateCreateShareValidationErrorResponseBody(body *CreateShareValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

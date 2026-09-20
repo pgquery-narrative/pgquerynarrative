@@ -3250,6 +3250,16 @@
         "responses": {
           "204": {
             "description": "No Content response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            },
+            "description": "not_found: Not Found response."
           }
         },
         "summary": "delete dashboards",
@@ -4103,6 +4113,16 @@
               }
             },
             "description": "OK response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "validation_error: Bad Request response."
           }
         },
         "summary": "save queries",
@@ -4462,6 +4482,16 @@
               }
             },
             "description": "OK response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "validation_error: Bad Request response."
           },
           "404": {
             "content": {
@@ -4831,6 +4861,16 @@
         "responses": {
           "204": {
             "description": "No Content response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            },
+            "description": "not_found: Not Found response."
           }
         },
         "summary": "delete schedules",

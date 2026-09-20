@@ -157,6 +157,14 @@ type UpdateValidationErrorResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// DeleteNotFoundResponseBody is the type of the "schedules" service "delete"
+// endpoint HTTP response body for the "not_found" error.
+type DeleteNotFoundResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // RunNowNotFoundResponseBody is the type of the "schedules" service "run_now"
 // endpoint HTTP response body for the "not_found" error.
 type RunNowNotFoundResponseBody struct {
@@ -400,6 +408,17 @@ func NewUpdateNotFoundResponseBody(res *schedules.NotFoundError) *UpdateNotFound
 // result of the "update" endpoint of the "schedules" service.
 func NewUpdateValidationErrorResponseBody(res *schedules.ValidationError) *UpdateValidationErrorResponseBody {
 	body := &UpdateValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewDeleteNotFoundResponseBody builds the HTTP response body from the result
+// of the "delete" endpoint of the "schedules" service.
+func NewDeleteNotFoundResponseBody(res *schedules.NotFoundError) *DeleteNotFoundResponseBody {
+	body := &DeleteNotFoundResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,

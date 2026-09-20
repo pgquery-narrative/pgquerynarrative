@@ -302,6 +302,9 @@ func (c *Client) BuildDeleteRequest(ctx context.Context, v any) (*http.Request, 
 // DecodeDeleteResponse returns a decoder for responses returned by the
 // schedules delete endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeDeleteResponse may return the following errors:
+//   - "not_found" (type *schedules.NotFoundError): http.StatusNotFound
+//   - error: internal error
 func DecodeDeleteResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
 		if restoreBody {
@@ -319,6 +322,20 @@ func DecodeDeleteResponse(decoder func(*http.Response) goahttp.Decoder, restoreB
 		switch resp.StatusCode {
 		case http.StatusNoContent:
 			return nil, nil
+		case http.StatusNotFound:
+			var (
+				body DeleteNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("schedules", "delete", err)
+			}
+			err = ValidateDeleteNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("schedules", "delete", err)
+			}
+			return nil, NewDeleteNotFound(&body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("schedules", "delete", resp.StatusCode, string(body))

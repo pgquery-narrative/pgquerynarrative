@@ -20,9 +20,7 @@ import (
 // CreateShare creates or refreshes a shareable read-only token for a report.
 func (s *ReportsService) CreateShare(ctx context.Context, payload *reports.CreateSharePayload) (*reports.ReportShareLink, error) {
 	if !s.shareLinksEnabled {
-		// create_share declares not_found but not validation_error, so a ValidationError here would
-		// reach the client as a 500 fault with no message.
-		return nil, &reports.NotFoundError{Name: "share_links_disabled", Message: "shared report links are disabled", Code: strPtr("SHARE_LINKS_DISABLED")}
+		return nil, &reports.ValidationError{Name: "share_links_disabled", Message: "shared report links are disabled", Code: strPtr("SHARE_LINKS_DISABLED")}
 	}
 	var exists bool
 	if err := s.appPool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM app.reports WHERE id = $1 AND organization_id = $2)`, payload.ReportID, orgID(ctx)).Scan(&exists); err != nil {

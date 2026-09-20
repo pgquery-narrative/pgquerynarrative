@@ -77,6 +77,9 @@ func (c *Client) Update(ctx context.Context, p *UpdatePayload) (res *Schedule, e
 }
 
 // Delete calls the "delete" endpoint of the "schedules" service.
+// Delete may return the following errors:
+//   - "not_found" (type *NotFoundError)
+//   - error: internal error
 func (c *Client) Delete(ctx context.Context, p *DeletePayload) (err error) {
 	_, err = c.DeleteEndpoint(ctx, p)
 	return

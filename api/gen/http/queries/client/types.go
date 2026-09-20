@@ -217,6 +217,14 @@ type ComparePlansValidationErrorResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// SaveValidationErrorResponseBody is the type of the "queries" service "save"
+// endpoint HTTP response body for the "validation_error" error.
+type SaveValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // GetSavedNotFoundResponseBody is the type of the "queries" service
 // "get_saved" endpoint HTTP response body for the "not_found" error.
 type GetSavedNotFoundResponseBody struct {
@@ -765,6 +773,18 @@ func NewSavedQueryOK(body *SaveResponseBody) *queries.SavedQuery {
 	return v
 }
 
+// NewSaveValidationError builds a queries service save endpoint
+// validation_error error.
+func NewSaveValidationError(body *SaveValidationErrorResponseBody) *queries.ValidationError {
+	v := &queries.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
 // NewGetSavedSavedQueryOK builds a "queries" service "get_saved" endpoint
 // result from a HTTP "OK" response.
 func NewGetSavedSavedQueryOK(body *GetSavedResponseBody) *queries.SavedQuery {
@@ -1081,6 +1101,18 @@ func ValidateExplainPlanValidationErrorResponseBody(body *ExplainPlanValidationE
 // ValidateComparePlansValidationErrorResponseBody runs the validations defined
 // on compare_plans_validation_error_response_body
 func ValidateComparePlansValidationErrorResponseBody(body *ComparePlansValidationErrorResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateSaveValidationErrorResponseBody runs the validations defined on
+// save_validation_error_response_body
+func ValidateSaveValidationErrorResponseBody(body *SaveValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

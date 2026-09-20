@@ -67,6 +67,12 @@ paths:
       responses:
         "204":
           description: No Content response.
+        "404":
+          description: 'not_found: Not Found response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
     get:
       tags:
         - dashboards
@@ -604,6 +610,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SavedQuery'
+        "400":
+          description: 'validation_error: Bad Request response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
   /api/v1/queries/saved/{id}:
     delete:
       tags:
@@ -889,6 +901,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportShareLink'
+        "400":
+          description: 'validation_error: Bad Request response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
         "404":
           description: 'not_found: Not Found response.'
           content:
@@ -1069,6 +1087,12 @@ paths:
       responses:
         "204":
           description: No Content response.
+        "404":
+          description: 'not_found: Not Found response.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
     put:
       tags:
         - schedules

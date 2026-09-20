@@ -3346,6 +3346,16 @@
         "responses": {
           "204": {
             "description": "No Content response."
+          },
+          "404": {
+            "description": "Not Found response.",
+            "schema": {
+              "$ref": "#/definitions/NotFoundError",
+              "required": [
+                "name",
+                "message"
+              ]
+            }
           }
         },
         "schemes": [
@@ -4285,6 +4295,16 @@
                 "updated_at"
               ]
             }
+          },
+          "400": {
+            "description": "Bad Request response.",
+            "schema": {
+              "$ref": "#/definitions/ValidationError",
+              "required": [
+                "name",
+                "message"
+              ]
+            }
           }
         },
         "schemes": [
@@ -4662,6 +4682,16 @@
               "required": [
                 "token",
                 "url"
+              ]
+            }
+          },
+          "400": {
+            "description": "Bad Request response.",
+            "schema": {
+              "$ref": "#/definitions/ValidationError",
+              "required": [
+                "name",
+                "message"
               ]
             }
           },
@@ -5062,6 +5092,16 @@
         "responses": {
           "204": {
             "description": "No Content response."
+          },
+          "404": {
+            "description": "Not Found response.",
+            "schema": {
+              "$ref": "#/definitions/NotFoundError",
+              "required": [
+                "name",
+                "message"
+              ]
+            }
           }
         },
         "schemes": [

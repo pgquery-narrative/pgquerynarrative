@@ -181,6 +181,14 @@ type CreateShareNotFoundResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// CreateShareValidationErrorResponseBody is the type of the "reports" service
+// "create_share" endpoint HTTP response body for the "validation_error" error.
+type CreateShareValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // GetSharedNotFoundResponseBody is the type of the "reports" service
 // "get_shared" endpoint HTTP response body for the "not_found" error.
 type GetSharedNotFoundResponseBody struct {
@@ -666,6 +674,17 @@ func NewRewriteValidationErrorResponseBody(res *reports.ValidationError) *Rewrit
 // result of the "create_share" endpoint of the "reports" service.
 func NewCreateShareNotFoundResponseBody(res *reports.NotFoundError) *CreateShareNotFoundResponseBody {
 	body := &CreateShareNotFoundResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewCreateShareValidationErrorResponseBody builds the HTTP response body from
+// the result of the "create_share" endpoint of the "reports" service.
+func NewCreateShareValidationErrorResponseBody(res *reports.ValidationError) *CreateShareValidationErrorResponseBody {
+	body := &CreateShareValidationErrorResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,

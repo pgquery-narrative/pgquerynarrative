@@ -219,6 +219,14 @@ type ComparePlansValidationErrorResponseBody struct {
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
 }
 
+// SaveValidationErrorResponseBody is the type of the "queries" service "save"
+// endpoint HTTP response body for the "validation_error" error.
+type SaveValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
 // GetSavedNotFoundResponseBody is the type of the "queries" service
 // "get_saved" endpoint HTTP response body for the "not_found" error.
 type GetSavedNotFoundResponseBody struct {
@@ -711,6 +719,17 @@ func NewExplainPlanValidationErrorResponseBody(res *queries.ValidationError) *Ex
 // from the result of the "compare_plans" endpoint of the "queries" service.
 func NewComparePlansValidationErrorResponseBody(res *queries.ValidationError) *ComparePlansValidationErrorResponseBody {
 	body := &ComparePlansValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewSaveValidationErrorResponseBody builds the HTTP response body from the
+// result of the "save" endpoint of the "queries" service.
+func NewSaveValidationErrorResponseBody(res *queries.ValidationError) *SaveValidationErrorResponseBody {
+	body := &SaveValidationErrorResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,

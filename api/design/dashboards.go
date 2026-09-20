@@ -63,9 +63,11 @@ var _ = Service("dashboards", func() {
 			Required("id")
 		})
 		Result(Empty)
+		Error("not_found", NotFoundError)
 		HTTP(func() {
 			DELETE("/api/v1/dashboards/{id}")
 			Response(StatusNoContent)
+			Response(StatusNotFound, "not_found")
 		})
 	})
 

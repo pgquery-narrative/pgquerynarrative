@@ -31,13 +31,13 @@ projection, which runs `SET LOCAL transaction_read_only = off` inside a single
 transaction to create a **hypothetical** index (`hypopg_create_index`), then resets
 it and rolls back — nothing is committed to your schema.
 
-That window is the one place the read-only role's own settings could be changed: PostgreSQL lets
-a role change its own defaults (`ALTER ROLE … RESET statement_timeout`, and so on) whenever it
-holds a read-write transaction, and the role's timeouts and `default_transaction_read_only`
-are such defaults. Nothing user-supplied runs in that window (the validator admits only a
-single `SELECT` or `EXPLAIN` of one, and the HypoPG step runs fixed statements), but anyone
-holding the role's own credentials can do it directly, so keep those credentials out of reach and
-compare `pg_roles.rolconfig` with the migrations if in doubt.
+PostgreSQL lets a role change its own stored defaults (`ALTER ROLE … RESET statement_timeout`, and
+so on) whenever it holds a read-write transaction, and nothing can prevent that. So the application
+does not depend on them: every pooled connection sets the search path and the three timeouts itself,
+and every user statement runs in an explicit `READ ONLY` transaction, whatever the role's defaults
+say (an integration test wipes them and checks). The stored defaults protect anyone who connects
+with the role directly; keep those credentials out of reach and compare `pg_roles.rolconfig`
+with the migrations if in doubt.
 
 ## On a fresh database
 

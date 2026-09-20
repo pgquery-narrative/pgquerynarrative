@@ -265,6 +265,12 @@ func (s *Store) ReplayBuffered(ctx context.Context, limit int) (replayed, remain
 	if err != nil {
 		return 0, 0, err
 	}
+	// The replay worker drains entries of every organization, so it claims them with the same
+	// transaction-local bypass the schedule runner uses.
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.scheduler_bypass', 'true', true)`); err != nil {
+		_ = tx.Rollback(ctx)
+		return 0, 0, err
+	}
 	committed := false
 	defer func() {
 		if !committed {
@@ -352,12 +358,24 @@ func (s *Store) persistToBuffer(ctx context.Context, e Entry, lastError string) 
 		ip = net.ParseIP(e.IP)
 	}
 	orgID := resolveOrgID(ctx, e.OrgID)
-	_, err := s.pool.Exec(ctx,
+	// The buffer has row-level security like every organization table: insert inside the entry's own
+	// organization.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.current_org_id', $1, true)`, orgID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
 		`INSERT INTO app.audit_log_buffer (event_type, entity_type, entity_id, details, user_id, ip_address, user_agent, organization_id, last_error)
 		 VALUES ($1, $2, $3, $4, NULLIF($5,''), $6, NULLIF($7,''), $8::uuid, $9)`,
 		e.EventType, e.EntityType, e.EntityID, detailsJSON, e.UserID, ip, e.UserAgent, orgID, lastError,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func resolveOrgID(ctx context.Context, explicit string) string {
