@@ -106,10 +106,9 @@ time**:
 - **`http` absent:** the three data functions are stub versions that return
   `{"status": "pending", "message": "Install extension http for API calls: CREATE EXTENSION http;", ...}`
   without making any network call. Installing `http` **after** `pgquerynarrative`
-  does not upgrade them automatically — re-run
-  `CREATE EXTENSION IF NOT EXISTS pgquerynarrative;`... no, re-run
+  does not upgrade them automatically. After installing `http`, run
   `DROP EXTENSION pgquerynarrative; CREATE EXTENSION pgquerynarrative;` (or apply
-  the SQL file again) after installing `http`, so the DO block re-evaluates.
+  the SQL file again) so the DO block re-evaluates.
 
 ## Security implications
 
@@ -141,6 +140,7 @@ and lets PostgreSQL do the authentication.
 |---|---|
 | Try it on a throwaway database in about ten minutes | [Quick start: pqn in your database](../getting-started/pqn-extension.md) |
 | Install and set it up on your own server | [Install the pqn extension](../getting-started/pqn-installation.md) |
+| Look up a command, flag, SQL function or role | [pqn reference](../reference/pqn.md) |
 
 ## See also
 

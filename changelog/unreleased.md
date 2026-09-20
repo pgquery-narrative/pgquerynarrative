@@ -7,56 +7,6 @@ the fix lifecycle mixed up two databases reporting the same `queryid`, and
 "verified" claimed more than the algorithm delivers. This release closes all
 four, plus the lifecycle and deployment gaps found alongside them.
 
-### Security fixes (roles review)
-
-- **Bad key configuration no longer turns authentication off.** With
-  `SECURITY_AUTH_ENABLED=true`, invalid JSON, `[]` or a misspelled field in
-  `SECURITY_API_KEYS_JSON` used to start the server normally and serve every caller as
-  `platform_admin`. `AuthRequired()` now depends only on the switch, and startup refuses
-  any key configuration that would weaken or drop a key (unknown field, missing or unknown
-  role, non-RFC 3339 `expires_at`, unknown scope, malformed hash, no usable credential).
-- **Unknown roles are never write roles.** `read-only`, `guest` or a missing role used to
-  become `analyst`. Configuration and the admin API now refuse them; identity-provider
-  values that are missing or unrecognised become `viewer`.
-- **`/web/reports/export/{md,json,sql}` require authentication** (they ran as the default
-  organization's admin with no credential). Everything under `/web/reports/export` is now
-  protected by prefix except the shared-link PDF, and a route-matrix test covers every
-  route `main.go` registers.
-- **Audit constraint** (migration `000058`): key create and revoke, membership and
-  connection-permission changes, share create and revoke, and raw-SQL views were rejected
-  by `audit_logs_event_type_check`, so they were never recorded and, in `required` mode,
-  failed the request after the change had been applied. A test now compares the code's event
-  types with the latest constraint. **Audit log is append-only** for the application role
-  (migration `000059`). **The schema gate is now version 60.**
-- **`schema_to_xml`, `database_to_xml` (and their `_xmlschema` forms) and `ts_stat` are
-  denied**, closing a bypass of the schema allowlist.
-- **`/queries/stats` on a role shared by several organizations** is limited to platform
-  administrators (`STAT_STATEMENTS_SHARED`); it exposed other organizations' SQL text. The
-  regression poller skips such a connection (it copied the shared role's SQL text into every
-  organization's snapshot tables) and the workspace overview's two workload totals read zero
-  for non-platform users there. Single-organization installs and organizations with their own
-  credentials are unaffected.
-- **Only a schedule's owner or an admin can update, run or retry it**, as the docs said.
-- **Row-level security on the identity tables** (migration `000060`): `organization_members`,
-  `oidc_group_org_mappings` and `audit_log_buffer` now isolate organizations like the rest of the
-  schema. Login keeps working through two read-only lookups (a user's own memberships, and the
-  mappings for the token's groups); writes stay inside one organization. The schema gate is
-  now **60**.
-- **The application no longer depends on the read-only role's stored defaults.** It already set
-  the search path and timeouts on every connection and opened every statement `READ ONLY`; a
-  test now wipes the role's defaults and proves it, so a role that erases its own settings
-  changes nothing for the server.
-- **Errors the services already returned now have their real status**: deleting a schedule or
-  dashboard that is not yours or does not exist is `404`, and share links being disabled is
-  `400` (both were `500`, because the Goa design did not declare the error). The design also
-  declares the validation error `save` and `create_share` can return; generated code updated.
-- **Startup boundary probe** lifts the read-only session flag, so a superuser-migrated
-  read-only role no longer makes a production start fail on SQLSTATE 25006.
-- Admin API: unknown roles and scopes are `400`, a key without `scopes` no longer fails
-  with `500`, and database errors are logged, not returned.
-- **`pqn`**: terminal control characters are stripped from all output, and a proof recorded
-  with `record_evidence` is stamped `"source": "client"` (`prove()` stamps `"database"`).
-
 ### Breaking
 
 - **`col::numeric = const` and `col::text = 'const'` are no longer rewritten.**
@@ -102,6 +52,26 @@ four, plus the lifecycle and deployment gaps found alongside them.
   UPDATE` until the owner runs `SELECT pgquerynarrative_grant_access('role')`. The API
   URL is now a stored setting that only the owner can change with
   `pgquerynarrative_set_api_url`; the old per-session URL override is gone.
+
+- **`SECURITY_API_KEYS_JSON` and roles are checked strictly.** The server refuses to start
+  on a key list that could weaken or drop a key: invalid JSON, an unknown field, an entry
+  with neither `key` nor `key_hash`, a `key_hash` that is not 64 hex characters, a missing
+  or unrecognised `role`, an `expires_at` that is not RFC 3339, an unknown scope, or no
+  usable credential. `read-only`, `guest` and a missing role used to become `analyst`; the
+  configuration and the admin API now refuse them, and a role that an identity provider
+  omits or that is unrecognised becomes `viewer`. Fix the entry the startup message names.
+- **`/web/reports/export/{md,json,sql}` require authentication**, as the HTML and PDF
+  exports already did.
+- **Statement statistics on a database role shared by several organizations** are limited
+  to platform administrators (`STAT_STATEMENTS_SHARED`). The regression poller skips such a
+  connection, and the workspace overview's two workload totals read zero for other users
+  there. Give each organization its own read-only credentials to see its own. Single-
+  organization installs and organizations with their own credentials are unaffected.
+- **Migrations `000058` to `000060`; the schema gate is now 60.** Run them before the new
+  binary, or `/ready` reports 503. What they change is under Security.
+- **The `pqn` alias in the CLI container's shell (`make cli-shell`) is removed.** `pqn` now
+  names the terminal tool for the `pqn` extension, so the alias would have run a different
+  program. Use `pgquerynarrative`.
 
 ### Security
 
@@ -158,6 +128,37 @@ four, plus the lifecycle and deployment gaps found alongside them.
   against a server with authentication enabled. Verified by
   `tools/db/verify-extension.sh`.
 
+- **Bad key configuration no longer turns authentication off.** With authentication
+  enabled, an invalid, empty or misspelled `SECURITY_API_KEYS_JSON` used to start the server
+  and serve every caller, with no token or a wrong one, as `platform_admin`, in production
+  too. `AuthRequired()` now depends only on the enable switch, so a server with no usable
+  key answers `401`, and startup refuses the configuration (see Breaking).
+- **Every route is decided.** The report exports `md`, `json` and `sql` ran as the default
+  organization's admin with no credential, and `app/httpmw` had no tests. Everything under
+  `/web/reports/export` except the shared-link PDF is now authenticated by prefix, and a
+  route-matrix test fails when a route `main.go` registers is reachable without a credential
+  and is not listed as public.
+- **The audit trail records what it should, and the application role cannot edit it.**
+  `audit_logs_event_type_check` rejected seven event types the code emits (key create and
+  revoke, membership and connection-permission changes, share create and revoke, raw-SQL
+  views), so they were dropped in `best_effort` and, in `required` mode, failed the request
+  after the change had been applied. Migration `000058` allows them, and a test compares the
+  code's event types with the latest constraint. Migration `000059` revokes `UPDATE`,
+  `DELETE` and `TRUNCATE` on `audit_logs` from the application role; a role that owns the
+  table can grant them back, so run migrations as a different owner if the trail must resist
+  a compromised application role.
+- **`schema_to_xml`, `database_to_xml`, their `_xmlschema` forms and `ts_stat` are denied.**
+  Each reads a schema outside the allowlist.
+- **Row-level security on the identity tables** (migration `000060`): `organization_members`,
+  `oidc_group_org_mappings` and `audit_log_buffer` now isolate organizations like the rest
+  of the schema. Login keeps working through two read-only lookups (a user's own memberships,
+  and the mappings for the token's groups); writes stay inside one organization.
+- **Only a schedule's owner or an admin can update, run or retry it**, as the docs said.
+- **The application does not depend on the read-only role's stored defaults.** A role can
+  reset its own defaults and PostgreSQL cannot prevent it, but the server already set the
+  search path and timeouts on every connection and opened every statement `READ ONLY`. A
+  test wipes the role's defaults and proves it.
+
 ### Added
 
 - **`pqn`: the product's pitch from a terminal, inside your database.** *We do not ask you for the
@@ -180,6 +181,12 @@ four, plus the lifecycle and deployment gaps found alongside them.
     `pqn_api.enforce_limits()`, run every few seconds from `pg_cron` or cron, cancels any enrolled
     person's statement that has outlived it, even after they lifted their own timeout or reset
     their role settings.
+  - A proof `prove()` computes is stamped `"source": "database"`; one stored with
+    `record_evidence`, as the replica flow does, is stamped `"source": "client"` whatever its
+    payload says.
+  - Everything the tool prints passes a filter that strips terminal control characters:
+    titles, notes and proof text are chosen by the people who write them, and an administrator
+    reads them in a terminal.
   - The extension writes only to its own ledger, reads your data only through views a DBA chose, runs
     analyst SQL as one read-only statement, and lets PostgreSQL do the authentication. An ordinary
     non-superuser installs it, it works on a hot standby for everything that reads, and
@@ -251,6 +258,16 @@ four, plus the lifecycle and deployment gaps found alongside them.
   It held one pool connection open while acquiring two more per row, which under
   concurrency with a bounded pool deadlocks rather than merely running slowly.
 
+- **The production startup boundary probe no longer fails on the project's own read-only
+  role.** Migration `000011` sets `default_transaction_read_only=on`, so a plain write probe
+  failed with SQLSTATE 25006 and production start was refused. The probe lifts the flag first.
+- **Errors the services already returned now have their real status.** Deleting a schedule
+  or dashboard that is not yours or does not exist is `404`, and share links being disabled
+  is `400` (both were `500`: the Goa design did not declare the error). The design also
+  declares the validation error `save` and `create_share` can return.
+- **Admin API errors.** Unknown roles and scopes are `400`, a key created without `scopes`
+  no longer fails with `500`, and database errors are logged instead of returned.
+
 ### Documentation
 
 - **Installing and setting up the `pqn` extension is documented and executed.** A
@@ -265,7 +282,10 @@ four, plus the lifecycle and deployment gaps found alongside them.
   proves" equivalence (it is a verification, never a proof), and `docs-contract-check` now rejects that
   wording. `make docs-contract-check`
   now fails when those pages name a file, role, function, `make` target, command, flag, warning or
-  error message that the code does not have.
+  error message that the code does not have. A [`pqn` reference](docs/reference/pqn.md) lists
+  every command, flag, environment variable, SQL function, role and table, and the same check
+  fails when it leaves any of them out. The CLI reference, the two workflow pages `pqn`
+  builds on, the index, the README and the roles page now link to it.
 
 - **The documentation was reorganised by audience** — Learn → Investigate →
   Integrate → Secure → Deploy & Operate → Reference → Develop. New pages:

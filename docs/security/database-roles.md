@@ -69,4 +69,4 @@ session flag lifted first, so the result depends on the role's privileges and no
 [Trust model](../trust-model.md) · [Query execution safety](query-safety.md) ·
 [Architecture — database identities](../architecture.md#database-identities) ·
 [Deployment](../operate/deployment.md) ·
-[Install the pqn extension](../getting-started/pqn-installation.md#install-without-a-superuser) (the roles of extension mode)
+[Install the pqn extension](../getting-started/pqn-installation.md#install-without-a-superuser) and the [pqn reference](../reference/pqn.md#roles-and-tables) (the roles of extension mode)

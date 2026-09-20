@@ -306,7 +306,7 @@ Preview: **`make docs`** → http://127.0.0.1:8000. Full site:
 | **Integrations** | [REST API](docs/integrations/rest-api.md) · [MCP server](docs/integrations/mcp.md) · [PostgreSQL extensions](docs/integrations/postgres-extension.md) |
 | **Security** | [Database roles](docs/security/database-roles.md) · [Query execution safety](docs/security/query-safety.md) |
 | **Deploy & operate** | [Deployment](docs/operate/deployment.md) · [Production configuration](docs/operate/production.md) · [Health and monitoring](docs/operate/monitoring.md) |
-| **Reference** | [Configuration](docs/reference/configuration.md) · [API](docs/reference/api.md) · [API errors](docs/reference/api-errors.md) |
+| **Reference** | [Configuration](docs/reference/configuration.md) · [API](docs/reference/api.md) · [API errors](docs/reference/api-errors.md) · [pqn](docs/reference/pqn.md) |
 | **Develop** | [Setup](docs/development/setup.md) · [Repository architecture](docs/development/repository.md) · [Testing](docs/development/testing.md) |
 | **Examples** | [Dataset](docs/examples/dataset.md) · [Case study](docs/examples/query-optimization.md) · [Verified rewrite](docs/examples/02-verified-rewrite.md) |
 

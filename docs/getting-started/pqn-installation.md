@@ -262,5 +262,6 @@ If you used a non-superuser installer, add it to both lists.
 
 ## See also
 
-[Quick start: pqn in your database](pqn-extension.md) · [PostgreSQL extensions](../integrations/postgres-extension.md) ·
-[Installation](installation.md) · [Database roles](../security/database-roles.md)
+[Quick start: pqn in your database](pqn-extension.md) · [pqn reference](../reference/pqn.md) ·
+[PostgreSQL extensions](../integrations/postgres-extension.md) · [Installation](installation.md) ·
+[Database roles](../security/database-roles.md)

@@ -18,7 +18,15 @@ import (
 var pqnDocPages = []string{
 	"docs/getting-started/pqn-extension.md",
 	"docs/getting-started/pqn-installation.md",
+	pqnReferencePage,
 }
+
+// pqnReferencePage documents every function, command, flag and environment variable. The other pages
+// are checked for what they name; this one is also checked for what it leaves out.
+const pqnReferencePage = "docs/reference/pqn.md"
+
+// pqnInternalFuncs are helpers only their owner can execute. They need no reference entry.
+var pqnInternalFuncs = map[string]bool{"explain_ms": true, "exposed_path": true}
 
 const pqnExtDir = "infra/pqn-extension"
 
@@ -80,6 +88,64 @@ func checkPqnDocs(root string, r *report) {
 		}
 	}
 	checkPqnVersion(install, sqlFiles, r)
+	checkPqnReference(pages[pqnReferencePage], facts, sqlText, cliSrc, r)
+}
+
+var (
+	pqnCreateTableRE = regexp.MustCompile(`(?im)^\s*CREATE TABLE (?:IF NOT EXISTS )?(pqn(?:_ledger)?\.[a-z_]+)`)
+	pqnGetenvRE      = regexp.MustCompile(`getenv\("([A-Z_]+)"\)`)
+)
+
+// checkPqnReference fails when the reference page leaves out something the code defines: a function,
+// a command, a flag, an environment variable, or a table the extension creates.
+func checkPqnReference(body string, f pqnFacts, sqlText, cliSrc string, r *report) {
+	const rel = pqnReferencePage
+	if body == "" {
+		return
+	}
+	for _, fn := range sortedKeys(f.funcs) {
+		if pqnInternalFuncs[fn] {
+			continue
+		}
+		if !strings.Contains(body, "pqn_api."+fn) {
+			r.failf("%s: does not document pqn_api.%s", rel, fn)
+		}
+	}
+	for _, c := range sortedKeys(f.commands) {
+		if c == "help" {
+			continue
+		}
+		if !strings.Contains(body, "`"+c) && !strings.Contains(body, "pqn "+c) {
+			r.failf("%s: does not document the command %q", rel, c)
+		}
+	}
+	for _, fl := range sortedKeys(f.flags) {
+		if fl == "help" {
+			continue
+		}
+		if !strings.Contains(body, "`--"+fl+"`") && !(len(fl) == 1 && strings.Contains(body, "`-"+fl+"`")) {
+			r.failf("%s: does not document the flag %q", rel, fl)
+		}
+	}
+	for _, m := range pqnGetenvRE.FindAllStringSubmatch(cliSrc, -1) {
+		if !strings.Contains(body, m[1]) {
+			r.failf("%s: does not mention the environment variable %s", rel, m[1])
+		}
+	}
+	for _, m := range pqnCreateTableRE.FindAllStringSubmatch(sqlText, -1) {
+		if !strings.Contains(body, m[1]) {
+			r.failf("%s: does not document the table %s", rel, m[1])
+		}
+	}
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // pqnFacts is what the code decides, gathered once.

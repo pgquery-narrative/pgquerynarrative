@@ -132,3 +132,51 @@ func TestTheRealPqnPagesPass(t *testing.T) {
 		t.Errorf("the pqn docs disagree with the code: %v", r.failures)
 	}
 }
+
+// The reference page must be complete: leaving out any function, command, flag, environment variable
+// or table the code defines is a failure, and helper functions are exempt.
+func TestPqnReferenceMustBeComplete(t *testing.T) {
+	f := pqnFacts{
+		funcs:    map[string]bool{"run": true, "prove": true, "explain_ms": true},
+		commands: map[string]bool{"top": true, "prove": true, "help": true},
+		flags:    map[string]bool{"json": true, "n": true, "help": true},
+	}
+	sql := "CREATE TABLE IF NOT EXISTS pqn.limits (x int);\nCREATE TABLE pqn_ledger.evidence (x int);"
+	cli := `fs.StringVar(&c.dsn, "dsn", getenv("PQN_DSN"), "x")`
+	complete := "`pqn_api.run` `pqn_api.prove` `top` `prove` `--json` `-n` PQN_DSN pqn.limits pqn_ledger.evidence"
+
+	r := &report{}
+	checkPqnReference(complete, f, sql, cli, r)
+	if len(r.failures) != 0 {
+		t.Fatalf("a complete page failed: %v", r.failures)
+	}
+
+	for name, page := range map[string]string{
+		"a function":   strings.Replace(complete, "`pqn_api.prove`", "", 1),
+		"a command":    strings.Replace(complete, " `top` ", " ", 1),
+		"a flag":       strings.Replace(complete, "`--json`", "", 1),
+		"a short flag": strings.Replace(complete, "`-n`", "", 1),
+		"an env var":   strings.Replace(complete, "PQN_DSN", "", 1),
+		"a table":      strings.Replace(complete, "pqn.limits", "", 1),
+	} {
+		r := &report{}
+		checkPqnReference(page, f, sql, cli, r)
+		if len(r.failures) != 1 {
+			t.Errorf("leaving out %s: got %d failures %v, want exactly 1", name, len(r.failures), r.failures)
+		}
+	}
+
+	// A helper needs no entry, and an empty page is left to the file check.
+	r = &report{}
+	checkPqnReference(complete, f, sql, cli, r)
+	for _, msg := range r.failures {
+		if strings.Contains(msg, "explain_ms") {
+			t.Errorf("a helper function was demanded: %s", msg)
+		}
+	}
+	r = &report{}
+	checkPqnReference("", f, sql, cli, r)
+	if len(r.failures) != 0 {
+		t.Errorf("an empty page must be skipped, got %v", r.failures)
+	}
+}

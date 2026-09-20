@@ -157,6 +157,7 @@ nav:
       - API errors: reference/api-errors.md
       - Evidence and status vocabulary: reference/evidence.md
       - CLI: reference/cli.md
+      - "pqn: tool and SQL API": reference/pqn.md
       - Supported versions and limits: reference/versions-limits.md
   - Development:
       - Setup: development/setup.md

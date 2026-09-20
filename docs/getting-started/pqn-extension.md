@@ -245,5 +245,5 @@ docker rm -f pqn-quickstart
 
 ## See also
 
-[Install the pqn extension](pqn-installation.md) · [PostgreSQL extensions](../integrations/postgres-extension.md) ·
-[Investigate a slow query](../workflows/investigate.md)
+[pqn reference](../reference/pqn.md) · [Install the pqn extension](pqn-installation.md) ·
+[PostgreSQL extensions](../integrations/postgres-extension.md) · [Investigate a slow query](../workflows/investigate.md)

@@ -42,7 +42,7 @@ LLM; an optional LLM adds natural-language Ask and narrative reports on top.
 | **Integrations** | Calling it from elsewhere: REST, MCP, SQL (the extensions), Go (embedded), LLM providers, pgvector. |
 | **Security & access** | Roles, the SQL validator, authentication, organization isolation, data handling. |
 | **Deploy & operate** | Docker/Kubernetes/Helm, production settings, probes and metrics, migrations and upgrades, runbooks. |
-| **Reference** | Lookup tables checked against the code: [configuration](reference/configuration.md), [API](reference/api.md), [errors](reference/api-errors.md), [status vocabulary](reference/evidence.md), CLI, versions and limits. |
+| **Reference** | Lookup tables checked against the code: [configuration](reference/configuration.md), [API](reference/api.md), [errors](reference/api-errors.md), [status vocabulary](reference/evidence.md), [CLI](reference/cli.md), [`pqn`](reference/pqn.md), versions and limits. |
 | **Development** | Repository layout, code generation, tests, and how to change the API, configuration or rewrite rules safely. |
 | **Examples** | The measured case study, the demo dataset, and the demo-data RLS walkthrough. |
 | **Project** | Releases, versioning, branch protection, contributing and the security policy. |

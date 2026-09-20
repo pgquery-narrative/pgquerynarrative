@@ -15,8 +15,12 @@ way it calls the same [REST API](../integrations/rest-api.md) the web UI uses.
 | `make cli CMD='save "Name" "SQL"'` | Save a query. Optional tags: `"tags,a,b"` | `POST /queries/saved` |
 | `make cli CMD='report "SQL"'` | Generate a workbench narrative report | `POST /reports/generate` |
 
-Interactive: `make cli-shell`, then `pgquerynarrative query "SELECT * FROM demo.sales LIMIT 5"`
-(alias `pqn`).
+Interactive: `make cli-shell`, then `pgquerynarrative query "SELECT * FROM demo.sales LIMIT 5"`.
+
+!!! note "This is not the `pqn` tool"
+    This CLI calls a running PgQueryNarrative server. [`pqn`](pqn.md) is a separate terminal tool
+    that talks to PostgreSQL directly and needs no server. The CLI container's shell used to alias
+    `pqn` to `pgquerynarrative`; that alias is gone so the two cannot be confused.
 
 ```bash
 make cli CMD='query "SELECT product_category, SUM(total_amount) FROM demo.sales GROUP BY product_category"'

@@ -582,7 +582,6 @@ cli:
 cli-shell:
 	@echo "💻 Starting interactive CLI shell..."
 	@echo "Type 'pgquerynarrative help' for commands"
-	@echo "Or use 'pqn' as alias"
 	@echo ""
 	@docker compose run --rm -it --entrypoint /bin/sh cli -l
 

@@ -8,9 +8,6 @@ WORKDIR /app
 COPY tools/cli/pgquerynarrative-cli.sh /usr/local/bin/pgquerynarrative
 RUN chmod +x /usr/local/bin/pgquerynarrative
 
-# Create alias for convenience (works with sh)
-RUN echo 'alias pqn="pgquerynarrative"' >> /etc/profile
-
 USER cliuser:cliuser
 
 CMD ["/bin/sh"]

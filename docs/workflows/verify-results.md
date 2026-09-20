@@ -96,6 +96,13 @@ non-deterministic can be run through verification, but it will never come back
 agree. Treat a `Different` result on an intentionally volatile query as expected,
 not as a bug in the rewrite.
 
+## In the database, without the server
+
+[`pqn`](../reference/pqn.md) checks a rewrite the same way from a terminal: `pqn_api.measure_pair` fingerprints every row
+of both statements (count, sum and xor of a 64-bit hash of each row's text, so order does not matter) in one snapshot, then
+times them. It never falls back to a sample, so it has no `SampleMatch`; its verdicts are
+[`Proven`, `NotFaster`, `Different` and `Unverified`](../reference/pqn.md#verdicts), and `Different` is never an improvement.
+
 ## See also
 
 [Compare plans](compare.md) · [Evidence and status vocabulary](../reference/evidence.md#result-equivalence) ·
