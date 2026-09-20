@@ -28,7 +28,8 @@ func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 
 const usageText = `pqn: find out why a PostgreSQL query is slow, get a proposal from its plan, and see it proven.
 
-Usage: pqn <command> [flags]
+Usage: pqn <command> [flags]   (flags may come before or after the statement; quote a statement
+                                  that has a word starting with -, or put it after --)
 
   doctor          Check that the setup is safe (pqn_api.verify_setup)
   top             The statements that cost the most (from pg_stat_statements)
@@ -63,6 +64,42 @@ func addCommon(fs *flag.FlagSet, c *common, getenv func(string) string) {
 	fs.DurationVar(&c.timeout, "timeout", 10*time.Minute, "give up after this long")
 }
 
+// parseInterspersed parses flags wherever they appear, so `pqn run "select 1" --json` works like
+// `pqn run --json "select 1"`, and returns the remaining words. A bare `--` before any word ends the
+// flags; after a word it is kept, because in a statement it starts a comment. Everything after it is
+// verbatim. A token like -1 is a word, so `pqn run SELECT -1` works.
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var flags, words []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--" && len(words) == 0:
+			words = append(words, args[i+1:]...)
+			i = len(args)
+		case a == "--":
+			words = append(words, args[i:]...)
+			i = len(args)
+		case !strings.HasPrefix(a, "-") || a == "-" || isNumber(a[1:]):
+			words = append(words, a)
+		default:
+			flags = append(flags, a)
+			name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+			if f := fs.Lookup(name); f != nil && !hasValue && i+1 < len(args) {
+				if b, ok := f.Value.(interface{ IsBoolFlag() bool }); !ok || !b.IsBoolFlag() {
+					i++
+					flags = append(flags, args[i])
+				}
+			}
+		}
+	}
+	return words, fs.Parse(flags)
+}
+
+func isNumber(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
 // Main runs the tool and returns the exit code.
 func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, connect Connector) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
@@ -95,19 +132,15 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 		invID     = fs.Int64("id", 0, "prove: add to this investigation")
 	)
 	fs.Var(&binds, "bind", "value for $1, $2, ... (repeat the flag once per placeholder)")
-	if err := fs.Parse(rest); err != nil {
+	positional, err := parseInterspersed(fs, rest)
+	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 1
-	}
-	// `pqn evidence 7 --json`: the flag parser stops at the first positional, so read the flags after it too.
-	var evidenceArg string
-	if cmd == "evidence" && fs.NArg() > 0 {
-		evidenceArg = fs.Arg(0)
-		if err := fs.Parse(fs.Args()[1:]); err != nil {
-			return 1
+		if strings.Contains(err.Error(), "not defined") {
+			fmt.Fprintln(stderr, "pqn: if that was part of the statement, put the statement in quotes or after --")
 		}
+		return 1
 	}
 	fail := func(err error) int {
 		fmt.Fprintln(stderr, "pqn:", err)
@@ -118,20 +151,34 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 	defer cancel()
 
 	statement := func() (string, error) {
+		given := 0
+		for _, set := range []bool{*sqlFlag != "", *file != "", len(positional) > 0} {
+			if set {
+				given++
+			}
+		}
 		switch {
+		case given > 1:
+			return "", errors.New("give the statement once: --sql, --file, or the words after the command")
 		case *sqlFlag != "":
 			return *sqlFlag, nil
 		case *file != "":
 			b, err := os.ReadFile(*file)
 			return string(b), err
-		case fs.NArg() > 0:
-			return strings.Join(fs.Args(), " "), nil
 		}
-		return "", nil
+		return strings.Join(positional, " "), nil
 	}
 
 	switch cmd {
-	case "doctor", "top", "plan", "run", "investigate", "prove", "investigations", "evidence":
+	case "plan", "run", "investigate": // the statement may be words
+	case "evidence":
+		if len(positional) > 1 {
+			return fail(fmt.Errorf("evidence takes one investigation id, got %d arguments", len(positional)))
+		}
+	case "doctor", "top", "prove", "investigations":
+		if len(positional) > 0 {
+			return fail(fmt.Errorf("%s takes no arguments, got %q", cmd, strings.Join(positional, " ")))
+		}
 	default:
 		fmt.Fprintf(stderr, "pqn: unknown command %q\n\n%s", cmd, usageText)
 		return 1
@@ -176,7 +223,10 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 
 	case "plan":
 		sql, err := statement()
-		if err != nil || strings.TrimSpace(sql) == "" {
+		if err != nil {
+			return fail(err)
+		}
+		if strings.TrimSpace(sql) == "" {
 			return fail(errors.New("give a statement: pqn plan \"SELECT ...\""))
 		}
 		sql = tidySQL(sql)
@@ -218,7 +268,10 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 
 	case "run":
 		sql, err := statement()
-		if err != nil || strings.TrimSpace(sql) == "" {
+		if err != nil {
+			return fail(err)
+		}
+		if strings.TrimSpace(sql) == "" {
 			return fail(errors.New("give a statement: pqn run \"SELECT ...\""))
 		}
 		sql = tidySQL(sql)
@@ -337,8 +390,8 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 
 	case "evidence":
 		id := *invID
-		if id == 0 && evidenceArg != "" {
-			id, _ = strconv.ParseInt(evidenceArg, 10, 64)
+		if id == 0 && len(positional) == 1 {
+			id, _ = strconv.ParseInt(positional[0], 10, 64)
 		}
 		if id == 0 {
 			return fail(errors.New("give an investigation id: pqn evidence 7"))

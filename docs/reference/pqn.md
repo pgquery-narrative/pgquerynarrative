@@ -8,7 +8,7 @@ no PgQueryNarrative server. It is not the [`pgquerynarrative` CLI](cli.md), and 
 
 ## The tool
 
-`pqn <command> [flags]`. It logs in as you and stores no secret.
+`pqn <command> [flags]`. It logs in as you and stores no secret. Flags may come before or after the statement. A statement that contains a word starting with `-` goes in quotes, or after `--`; `pqn run SELECT -1` and a `--` comment after a word are read as SQL.
 
 | Command | What it does | Flags it reads |
 |---|---|---|
@@ -29,7 +29,7 @@ no PgQueryNarrative server. It is not the [`pgquerynarrative` CLI](cli.md), and 
 | `--json` | Print JSON with `snake_case` field names |
 | `--timeout` | Give up after this long. Default 10 minutes |
 | `-n` | Rows to show (`top`, `run`, `investigations`). Default 20 |
-| statement | `--sql`, `--file`, or the words after the command |
+| statement | `--sql`, `--file`, or the words after the command. Give it once; giving it twice is an error |
 | `--bind` | A value for `$1`, `$2`, … Repeat the flag once per placeholder. Without binds a statement with placeholders is planned but not executed |
 | `--queryid` | Investigate the statement `pqn top` showed under this id |
 | `--title` | A title for the ledger |

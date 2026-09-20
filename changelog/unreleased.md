@@ -215,6 +215,12 @@ four, plus the lifecycle and deployment gaps found alongside them.
 - **`pqn investigate` no longer suggests dropping an index that its own proposed rewrite uses.**
   An index can show no scans only because the slow statement cannot use it. The finding and its
   `DROP INDEX` suggestion are withheld for an index a proposal uses, and the report says why.
+- **`pqn` reads flags written after the statement.** `pqn investigate "SELECT …" --no-record` used to
+  treat `--no-record` as part of the SQL (after `--`, a comment), so it still wrote to the ledger;
+  `--replica`, `--bind`, `--title`, `--json`, `--dsn` and `-n` were ignored the same way. Flags now
+  work anywhere. An unknown flag is an error with a hint, a statement given twice (`--sql` plus words,
+  or `--file`) and stray arguments (`pqn top 5`) are refused, and `pqn run SELECT -1` and a `--`
+  comment after a word still reach PostgreSQL as SQL.
 - **`pqn` prints each wrapped `note:` once**, and every `--json` field is `snake_case`.
 - **The setup check's standby message was wrong.** It said `record_*` "reflects this server only";
   on a standby `record_*`, `investigate` and `prove` fail, and only `top()` reflects that server.
