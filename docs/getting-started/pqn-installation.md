@@ -111,14 +111,38 @@ GRANT pqn_analyst TO alice;
 ALTER ROLE alice SET statement_timeout = '15s';
 ALTER ROLE alice SET lock_timeout = '2s';
 ALTER ROLE alice SET idle_in_transaction_session_timeout = '10s';
+SELECT pqn_api.record_limit('alice', 15000);
 ALTER ROLE alice SET temp_file_limit = '1GB';
 ```
 
 Groups: `viewer` reads their own investigations. `analyst` also plans, runs, ranks statements, investigates and checks rewrites.
 `admin` also exposes tables, enrolls people and runs the setup check, and is not a superuser. The third argument sets the timeout
 (`'120s'`, `'2min'`). Limits are set on the login, because a limit on a group role does nothing. Only a superuser can set
-`temp_file_limit`; for anyone else that line is a comment. These are session defaults, not a ceiling: PostgreSQL lets a person `SET statement_timeout = 0` for
-their session or `ALTER ROLE` their own login, so treat them as guard rails against mistakes. `pqn doctor` reports a login that has lost its timeout.
+`temp_file_limit`; for anyone else that line is a comment.
+
+### Enforce the limits
+
+The timeouts on the login are session defaults. PostgreSQL lets a person `SET statement_timeout = 0` for their session or `ALTER ROLE` their own
+login, and no function can force a timeout onto the statement it is running in, so a limit cannot be imposed from inside the session. `enroll`
+therefore also records the timeout where the person cannot reach it (`pqn.limits`), and `pqn_api.enforce_limits()` acts from outside: it
+cancels the running statement of every enrolled person that has outlived the timeout they were enrolled with, whatever they set for
+themselves or removed from their role. Run it as a superuser, or as a role that belongs to `pg_read_all_stats` and `pg_signal_backend`:
+
+```bash
+psql -U postgres -d app -At -c "SELECT 'limits enforced: ' || count(*) FROM pqn_api.enforce_limits()"
+```
+
+```text
+limits enforced: 0
+```
+
+It cancels only what has already run too long, so run it every few seconds from a scheduler (`pg_cron`, or `cron` and `psql`):
+
+```sh
+while true; do psql -U postgres -d app -qAtc "SELECT * FROM pqn_api.enforce_limits()"; sleep 5; done
+```
+
+`pqn doctor` reports a login that has lost its timeout, and anyone enrolled before limits were recorded (run `enroll` for them again).
 
 Authentication is PostgreSQL's: `pg_hba.conf`, `scram-sha-256`, certificates, Kerberos. `pqn` stores no secret; keep passwords
 in `~/.pgpass`. Ledger rows record the real login. PgBouncer with a pool per user, its default, keeps it (tested in transaction pooling mode); a pooler that connects as one shared login would hide it.

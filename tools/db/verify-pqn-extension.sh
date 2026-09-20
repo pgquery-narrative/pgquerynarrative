@@ -107,7 +107,7 @@ expect_eq "init() is idempotent" "ledger at version 2, exposure registry ready" 
 
 echo "== Ownership and PUBLIC"
 expect_eq "definer functions are owned by their narrow roles" \
-  "evidence:pqn_ledger explain_ms:pqn_owner exposed:pqn_owner exposed_path:pqn_owner investigate:pqn_ledger investigations:pqn_ledger measure_pair:pqn_owner plan:pqn_owner prove:pqn_ledger record_evidence:pqn_ledger record_investigation:pqn_ledger run:pqn_reader top:pqn_stats" \
+  "evidence:pqn_ledger explain_ms:pqn_owner exposed:pqn_owner exposed_path:pqn_owner investigate:pqn_ledger investigations:pqn_ledger measure_pair:pqn_owner plan:pqn_owner prove:pqn_ledger record_evidence:pqn_ledger record_investigation:pqn_ledger record_limit:pqn_owner run:pqn_reader top:pqn_stats" \
   "$(su -c "SELECT string_agg(proname || ':' || pg_get_userbyid(proowner), ' ' ORDER BY proname) FROM pg_proc WHERE pronamespace = 'pqn_api'::regnamespace AND prosecdef")"
 expect_eq "no definer function is owned by a superuser or by the installer" "0" \
   "$(su -c "SELECT count(*) FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner WHERE p.pronamespace = 'pqn_api'::regnamespace AND p.prosecdef AND (r.rolsuper OR r.rolname = 'pqn_installer')")"
@@ -342,6 +342,36 @@ expect_eq "the update left nothing granted to PUBLIC" "0" \
 expect_eq "no BLOCK after the update" "0" "$(sup -c "SELECT count(*) FROM pqn_api.verify_setup() WHERE level = 'BLOCK'")"
 expect_eq "a proof works after the update and finds the same rows" "true" \
   "$(run alice upg -c "SELECT pqn_api.prove($UID1, 'SELECT id FROM hr.people WHERE dept = ''ops''', 'SELECT id FROM hr.people WHERE dept = ''ops'' AND id > 0')->'measurement'->>'equal'")"
+
+echo "== limits are enforced from outside the session"
+su -c "CREATE ROLE ivan LOGIN" >/dev/null; su -c "CREATE ROLE nora LOGIN" >/dev/null
+su -c "SELECT pqn_api.enroll('ivan', 'analyst', '2s')" >/dev/null
+expect_eq "enroll recorded the limit where the person cannot reach it" "2000" "$(su -c "SELECT statement_timeout_ms FROM pqn.limits WHERE login = 'ivan'")"
+expect_err "a person cannot read the registry" "permission denied" ivan "SELECT * FROM pqn.limits"
+expect_err "a person cannot record a limit for themselves" "permission denied" ivan "SELECT pqn_api.record_limit('ivan', 999999999)"
+expect_err "enforce_limits is an administrator's tool" "permission denied" ivan "SELECT * FROM pqn_api.enforce_limits()"
+expect_err "an administrator who cannot cancel sessions is told what to grant" "pg_signal_backend" carol "SELECT * FROM pqn_api.enforce_limits()"
+expect_err "record_limit refuses a role that cannot log in" "not a role that can log in" postgres "SELECT pqn_api.record_limit('parked', 1000)"
+expect_eq "verify_setup says limits are enforced from outside" "1" "$(su -c "SELECT count(*) FROM pqn_api.verify_setup() WHERE level = 'INFO' AND check_name = 'limits enforcement'")"
+# ivan wipes their own role settings and lifts her session timeout, then runs a statement far past her limit.
+# nora is not enrolled and runs a slow statement too: it must be left alone.
+run ivan "$DB" -c "ALTER ROLE ivan RESET ALL" >/dev/null
+IVAN_OUT="$(mktemp)"; NORA_OUT="$(mktemp)"; T0=$(date +%s)
+( run ivan "$DB" -c "SET statement_timeout = 0" -c "SELECT pg_sleep(40)" > "$IVAN_OUT" 2>&1 ) &
+IVAN_PID=$!
+( run nora "$DB" -c "SELECT pg_sleep(7)" > "$NORA_OUT" 2>&1 ) &
+NORA_PID=$!
+sleep 4
+expect_eq "enforce_limits cancels a person who lifted their own timeout and reset their role" "1" "$(su -c "SELECT count(*) FROM pqn_api.enforce_limits() WHERE login = 'ivan' AND cancelled")"
+wait "$IVAN_PID" || true; IVAN_SECS=$(( $(date +%s) - T0 ))
+expect_eq "the statement was stopped by the cancel, not left to run 40s" "t" "$([ "$IVAN_SECS" -lt 20 ] && echo t || echo f)"
+expect_eq "ivan was told their statement was cancelled" "1" "$(grep -c 'canceling statement due to user request' "$IVAN_OUT")"
+wait "$NORA_PID" || true
+expect_eq "a login with no recorded limit is left alone" "0" "$(grep -c 'ERROR' "$NORA_OUT")"
+expect_eq "nothing is left to cancel" "0" "$(su -c "SELECT count(*) FROM pqn_api.enforce_limits()")"
+rm -f "$IVAN_OUT" "$NORA_OUT"
+expect_eq "verify_setup names the login that removed its own timeout" "ivan" "$(su -c "SELECT string_agg(substr(detail, 1, strpos(detail, ' ') - 1), ',') FROM pqn_api.verify_setup() WHERE level = 'BLOCK' AND check_name = 'login has no statement_timeout'")"
+su -c "DELETE FROM pqn.limits WHERE login = 'ivan'" >/dev/null; su -c "DROP ROLE ivan" >/dev/null; su -c "DROP ROLE nora" >/dev/null
 
 echo "== DROP EXTENSION keeps the evidence"
 run pqn_installer "$DB" -c "DROP EXTENSION pqn"

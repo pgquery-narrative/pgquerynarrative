@@ -81,6 +81,17 @@ BEGIN
     exposed_at  timestamptz NOT NULL DEFAULT now(),
     exposed_by  text NOT NULL DEFAULT session_user
   );
+  -- The statement timeout each person was enrolled with. It lives here, in the administrators'
+  -- hands, because the copy on the login role is a default the person can lift for their own
+  -- session or remove (ALTER ROLE ... RESET). enforce_limits() reads this one.
+  CREATE TABLE IF NOT EXISTS pqn.limits (
+    login                name PRIMARY KEY,
+    statement_timeout_ms bigint NOT NULL CHECK (statement_timeout_ms > 0),
+    set_at               timestamptz NOT NULL DEFAULT now(),
+    set_by               text NOT NULL DEFAULT session_user
+  );
+  GRANT USAGE ON SCHEMA pqn TO pqn_admin;
+  GRANT SELECT ON pqn.limits TO pqn_admin;
   EXECUTE format('SET LOCAL ROLE %I', saved);
 
   SELECT count(*) INTO reg FROM pqn.exposed;
@@ -209,6 +220,26 @@ BEGIN
 END
 $f$;
 
+-- Record the timeout a login was enrolled with. The enroll script calls this; only administrators
+-- can execute it. A person cannot reach the table, so lifting their own session timeout or
+-- resetting their role settings does not change what enforce_limits() applies.
+CREATE FUNCTION pqn_api.record_limit(l_login name, l_ms bigint) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
+BEGIN
+  IF to_regclass('pqn.limits') IS NULL THEN
+    RAISE EXCEPTION 'pqn: run pqn_api.init() first';
+  END IF;
+  IF l_ms IS NULL OR l_ms < 1 THEN
+    RAISE EXCEPTION 'pqn: the limit must be at least 1 millisecond';
+  END IF;
+  IF l_login::text LIKE 'pqn\_%' OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = l_login AND rolcanlogin) THEN
+    RAISE EXCEPTION 'pqn: % is not a role that can log in', l_login;
+  END IF;
+  INSERT INTO pqn.limits (login, statement_timeout_ms) VALUES (l_login, l_ms)
+  ON CONFLICT (login) DO UPDATE SET statement_timeout_ms = EXCLUDED.statement_timeout_ms, set_at = now(), set_by = session_user;
+END
+$f$;
+
 -- Server-side time of one statement, planning plus execution. EXPLAIN ANALYZE runs the plan to
 -- the end, so it uses parallel workers exactly as the application's own statement does. A
 -- cursor fetch cannot: PostgreSQL never launches workers for a row-limited fetch, so timing
@@ -293,6 +324,70 @@ BEGIN
 END
 $f$;
 RESET ROLE;
+
+-- ---------------------------------------------------------------------------------------
+-- Limits. A statement timeout is a session setting: PostgreSQL lets a person raise or remove
+-- their own (SET, or ALTER ROLE on their own login), and a function cannot re-arm the timer of the
+-- statement that is already running, so a limit cannot be forced from inside the session. What an
+-- administrator can do is act from outside it: enforce_limits() cancels any enrolled person's
+-- statement that has run longer than the timeout they were enrolled with, whatever that person set.
+-- Run it every few seconds from a scheduler (pg_cron, or cron with psql).
+-- ---------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION pqn_api.enroll_sql(login name, grp text DEFAULT 'analyst', stmt_timeout text DEFAULT '15s') RETURNS text
+LANGUAGE plpgsql AS $f$
+DECLARE
+  is_super boolean;
+  script text;
+BEGIN
+  IF grp NOT IN ('viewer', 'analyst', 'admin') THEN
+    RAISE EXCEPTION 'pqn: group must be viewer, analyst or admin';
+  END IF;
+  IF stmt_timeout !~ '^[1-9][0-9]*(ms|s|min)?$' THEN
+    RAISE EXCEPTION 'pqn: statement timeout must look like 15s, 500ms or 2min';
+  END IF;
+  IF login::text LIKE 'pqn\_%' THEN
+    RAISE EXCEPTION 'pqn: % is a pqn role and cannot be enrolled', login;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = login AND rolcanlogin) THEN
+    RAISE EXCEPTION 'pqn: % is not a role that can log in', login;
+  END IF;
+  script := array_to_string(ARRAY[
+    format('GRANT %I TO %I;', 'pqn_' || grp, login),
+    format('ALTER ROLE %I SET statement_timeout = %L;', login, stmt_timeout),
+    format('ALTER ROLE %I SET lock_timeout = %L;', login, '2s'),
+    format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L;', login, '10s'),
+    format('SELECT pqn_api.record_limit(%L, %s);', login::text, (extract(epoch FROM stmt_timeout::interval) * 1000)::bigint)], E'\n');
+  SELECT rolsuper INTO is_super FROM pg_roles WHERE rolname = current_user;
+  IF is_super THEN
+    script := script || E'\n' || format('ALTER ROLE %I SET temp_file_limit = %L;', login, '1GB');
+  ELSE
+    script := script || E'\n' || format('-- superuser only: ALTER ROLE %I SET temp_file_limit = %L;', login, '1GB');
+  END IF;
+  RETURN script;
+END
+$f$;
+
+-- Cancel the running statement of every enrolled person that has outlived their limit. Runs with
+-- the caller's rights, which must let it see every session (pg_read_all_stats) and cancel it
+-- (pg_signal_backend), or be a superuser. Returns one row per statement it cancelled.
+CREATE FUNCTION pqn_api.enforce_limits()
+RETURNS TABLE (pid integer, login name, running interval, limit_ms bigint, cancelled boolean)
+LANGUAGE plpgsql AS $f$
+BEGIN
+  IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+     AND NOT (pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AND pg_has_role(current_user, 'pg_signal_backend', 'USAGE')) THEN
+    RAISE EXCEPTION 'pqn: enforce_limits must run as a superuser, or a role that is a member of pg_read_all_stats and pg_signal_backend'
+      USING HINT = 'GRANT pg_read_all_stats, pg_signal_backend TO the role a scheduler uses.';
+  END IF;
+  RETURN QUERY
+  SELECT a.pid, l.login, clock_timestamp() - a.query_start, l.statement_timeout_ms, pg_cancel_backend(a.pid)
+    FROM pqn.limits l
+    JOIN pg_stat_activity a ON a.usename = l.login
+   WHERE a.state = 'active' AND a.backend_type = 'client backend' AND a.datname = current_database()
+     AND a.pid <> pg_backend_pid()
+     AND clock_timestamp() - a.query_start > make_interval(secs => l.statement_timeout_ms / 1000.0);
+END
+$f$;
 
 -- ---------------------------------------------------------------------------------------
 -- Findings: rules over an estimated plan. Reads only catalogs, so it runs as the caller.
@@ -694,7 +789,8 @@ GRANT EXECUTE ON FUNCTION pqn_api.measure_pair(text, text, integer), pqn_api.fin
                           pqn_api.prove(bigint, text, text, text) TO pqn_analyst;
 GRANT EXECUTE ON FUNCTION pqn_api.expose(regclass, text[], text, text),
                           pqn_api.expose_sql(regclass, text[], text, text),
-                          pqn_api.unexpose(name), pqn_api.exposed() TO pqn_admin;
+                          pqn_api.unexpose(name), pqn_api.exposed(),
+                          pqn_api.record_limit(name, bigint), pqn_api.enforce_limits() TO pqn_admin;
 
 -- ---------------------------------------------------------------------------------------
 -- verify_setup(), extended for the new functions and for exposure scopes
@@ -712,6 +808,8 @@ DECLARE
   pss oid := (SELECT e.oid FROM pg_extension e WHERE e.extname = 'pg_stat_statements');
   db_oid oid := (SELECT d.oid FROM pg_database d WHERE d.datname = current_database());
   sensitive text := '(ssn|password|passwd|secret|token|api_?key|credit|card|iban|salary|dob|birth|email|phone)';
+  n_limits bigint := 0;
+  unrecorded text;
 BEGIN
   -- 1. The owner roles exist and are plain NOLOGIN roles.
   bad := false;
@@ -739,7 +837,7 @@ BEGIN
       LEFT JOIN (VALUES ('plan', 'pqn_owner'), ('run', 'pqn_reader'), ('top', 'pqn_stats'),
                         ('record_investigation', 'pqn_ledger'), ('record_evidence', 'pqn_ledger'),
                         ('investigations', 'pqn_ledger'), ('evidence', 'pqn_ledger'),
-                        ('measure_pair', 'pqn_owner'), ('explain_ms', 'pqn_owner'), ('exposed_path', 'pqn_owner'), ('exposed', 'pqn_owner'),
+                        ('measure_pair', 'pqn_owner'), ('explain_ms', 'pqn_owner'), ('record_limit', 'pqn_owner'), ('exposed_path', 'pqn_owner'), ('exposed', 'pqn_owner'),
                         ('investigate', 'pqn_ledger'), ('prove', 'pqn_ledger')) e(fname, expected)
              ON e.fname = p.proname
      WHERE n.nspname = 'pqn_api' AND p.prosecdef
@@ -1043,6 +1141,24 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements') THEN
     level := 'WARN'; check_name := 'pg_stat_statements'; detail := 'not installed here, so pqn_api.top() cannot work';
     fix := 'CREATE EXTENSION pg_stat_statements (also needs shared_preload_libraries)'; RETURN NEXT;
+  END IF;
+  -- Limits: the per-login timeout is a session default a person can lift, so it is enforced from
+  -- outside by enforce_limits(). Say so, and name anyone enrolled before limits were recorded.
+  IF to_regclass('pqn.limits') IS NOT NULL THEN
+    SELECT count(*) INTO n_limits FROM pqn.limits;
+    SELECT string_agg(DISTINCT m.rolname::text, ', ' ORDER BY m.rolname::text) INTO unrecorded
+      FROM pg_auth_members am
+      JOIN pg_roles g ON g.oid = am.roleid AND g.rolname IN ('pqn_viewer', 'pqn_analyst', 'pqn_admin')
+      JOIN pg_roles m ON m.oid = am.member AND m.rolcanlogin AND m.rolname !~ '^pqn_'
+     WHERE NOT EXISTS (SELECT 1 FROM pqn.limits l WHERE l.login = m.rolname);
+    IF unrecorded IS NOT NULL THEN
+      level := 'WARN'; check_name := 'limit not recorded';
+      detail := format('%s enrolled without a recorded limit, so enforce_limits() cannot apply one', unrecorded);
+      fix := 'SELECT pqn_api.enroll(login, group) again for each of them'; RETURN NEXT;
+    END IF;
+    level := 'INFO'; check_name := 'limits enforcement';
+    detail := format('%s login(s) have a recorded statement timeout. A person can lift a session timeout for themselves, so it is enforced from outside: run pqn_api.enforce_limits() every few seconds from pg_cron or cron', n_limits);
+    fix := NULL; RETURN NEXT;
   END IF;
   IF current_setting('server_version_num')::integer < 160000 THEN
     level := 'WARN'; check_name := 'server version'; detail := 'older than PostgreSQL 16: pqn_api.plan() cannot plan statements with $n placeholders';

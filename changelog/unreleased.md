@@ -175,6 +175,11 @@ four, plus the lifecycle and deployment gaps found alongside them.
     workers; timing through a cursor does not, and had overstated the speedup of a parallel statement
     (88x measured, 36x real). `make verify-pqn-pitch` checks the pitch against independent oracles on a
     17-million-row database. `pqn evidence 7 --json` now honors the flag after the id.
+  - Per-person limits are enforced from outside the session. A statement timeout is a setting a
+    person can lift for themselves, so `enroll` also records it where they cannot reach it and
+    `pqn_api.enforce_limits()`, run every few seconds from `pg_cron` or cron, cancels any enrolled
+    person's statement that has outlived it, even after they lifted their own timeout or reset
+    their role settings.
   - The extension writes only to its own ledger, reads your data only through views a DBA chose, runs
     analyst SQL as one read-only statement, and lets PostgreSQL do the authentication. An ordinary
     non-superuser installs it, it works on a hot standby for everything that reads, and
