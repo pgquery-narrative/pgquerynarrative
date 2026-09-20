@@ -40,12 +40,14 @@ func TestForbiddenVocabRegexes(t *testing.T) {
 		"pass regression_id in the body":              true,
 		"needs Go 1.24 or newer":                      true,
 		"a fast dev seed of 8,000 rows":               true,
+		"the tool mathematically proves the rows":     true,
 	}
 	misses := []string{
 		"pass regression_alert_id in the body",
 		"requires Go 1.26+",
 		"the 300,000-row seed",
 		"result verification, not proof",
+		"a verification, not a mathematical proof",
 	}
 	for s := range hits {
 		if !anyVocabMatch(s) {

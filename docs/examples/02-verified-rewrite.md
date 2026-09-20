@@ -1,12 +1,14 @@
-# Proving a rewrite is safe, not just proposing one — and a bug that surfaced along the way
+# Verifying a rewrite, not just proposing one — and a bug that surfaced along the way
 
 A `DATE_TRUNC`-wrapped filter on a partition key forces a scan of every one
 of 49 monthly partitions. PgQueryNarrative's AST rewrite engine unwraps it
 into a sargable range — but the headline claim of this case study isn't the
-speedup. It's that the tool then **executes both queries and mathematically
-proves, over the full result set, that they return identical rows** — not a
-sample, not an eyeball check, not "trust me." That proof is checked twice in
-this write-up: once by the tool, once independently by hand, and both agree.
+speedup. It's that the tool then **executes both queries and verifies, over
+the full result set, that they return identical rows** — not a sample, not an
+eyeball check, not "trust me." It is a verification, not a mathematical proof
+([Verify result equivalence](../workflows/verify-results.md) says exactly what
+it checks and what it does not). It is checked twice in this write-up: once by
+the tool, once independently by hand, and both agree.
 
 Along the way, producing the "PR-ready" export artifact the tool advertises
 surfaced a real bug in that export code. It's reported and fixed here too —
@@ -111,7 +113,7 @@ The refusal case below shows what happens when it *can't* prove that.
 
 ---
 
-## The proof: full-result, order-independent, in-database
+## The verification: full-result, order-independent, in-database
 
 ```bash
 curl -s -X POST http://localhost:8080/api/v1/investigations/{id}/candidate \
@@ -345,7 +347,7 @@ field, same condition — but "identical logic" is a weaker claim than
 | **Headline** | Full-result, order-independent result verification — not just a speedup |
 | **Query** | `DATE_TRUNC('month', date) = X` → `date >= X AND date < X+1month` |
 | **Speed** | 990–1555 ms → 44–63 ms (**~18–28×**), 49 → 1 partitions scanned |
-| **Proof** | `VerifiedEqual`, cross-checked independently: identical checksum, identical rows |
+| **Verification** | `VerifiedEqual`, cross-checked independently: identical checksum, identical rows |
 | **Judgment** | Declines to rewrite a misaligned literal rather than risk 475,358 wrong rows |
 | **Bug found & fixed** | 5 render paths (SQL/Markdown/PDF/HTML export + the live React UI) conflated prose findings with real SQL candidates — fixed everywhere with one explicit `Kind` field |
 
@@ -394,10 +396,10 @@ curl -s -X POST http://localhost:8080/api/v1/investigations/<id>/suggest-rewrite
 
 ## Takeaways
 
-1. **The speedup isn't the hard part — proving equivalence is.** Anyone can
-   guess the rewrite for `DATE_TRUNC('month', date) = X`. Nobody proves it
+1. **The speedup isn't the hard part — verifying equivalence is.** Anyone can
+   guess the rewrite for `DATE_TRUNC('month', date) = X`. Nobody checks it
    row-for-row over 10.6M rows by hand in under a second; the tool does,
-   with a single aggregate pass per side, and the proof is checkable
+   with a single aggregate pass per side, and the result is checkable
    independently (I did, and it matched exactly).
 2. **Restraint is verifiable, not just claimed.** Feed it a predicate where
    the "obvious" rewrite would silently return 475,358 wrong rows instead of

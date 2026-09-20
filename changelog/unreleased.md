@@ -84,6 +84,12 @@ four, plus the lifecycle and deployment gaps found alongside them.
   dedicated is a deployment property this endpoint cannot observe, and RLS being
   enabled is not evidence for it.
 
+- **PostgreSQL extension 1.1 withholds `EXECUTE` from `PUBLIC`.** Roles that used
+  the `pgquerynarrative_*` functions lose access on `ALTER EXTENSION pgquerynarrative
+  UPDATE` until the owner runs `SELECT pgquerynarrative_grant_access('role')`. The API
+  URL is now a stored setting that only the owner can change with
+  `pgquerynarrative_set_api_url`; the old per-session URL override is gone.
+
 ### Security
 
 - **The schema allowlist now covers function calls, explicit operators and type
@@ -130,7 +136,63 @@ four, plus the lifecycle and deployment gaps found alongside them.
   tests link against (`MIGRATE_VERSION`), and the container image satisfies
   `go.mod`'"'"'s `go` directive (`MIGRATE_GO_IMAGE`).
 
+- **The PostgreSQL extension can no longer be redirected by any role.** In 1.0
+  `pgquerynarrative_set_api_url` was executable by `PUBLIC` and set a session
+  setting, so any role could make the database server send HTTP requests to an address
+  of its choosing. In 1.1 the URL is stored, the owner alone can change it, and it must
+  be `http://` or `https://`. Callers also supply their own API key with
+  `pgquerynarrative_set_api_key`, sent as a Bearer token, so the extension works
+  against a server with authentication enabled. Verified by
+  `tools/db/verify-extension.sh`.
+
+### Added
+
+- **`pqn`: the product's pitch from a terminal, inside your database.** *We do not ask you for the
+  rewrite. We propose it from the plan, then prove it.* `pqn` is a PostgreSQL extension plus a
+  terminal tool (`make build-pqn`, `bin/pqn`) that needs no PgQueryNarrative server, no REST API and
+  no API key: it logs in as you.
+  - `pqn top` ranks the statements that cost the most. `pqn investigate` reads the plan, names what
+    is wrong (sequential scan, a function on a column, a missing index), proposes a rewrite from the
+    plan with the existing rewrite engine, and **proves it**: both statements are run, the rows are
+    compared by a fingerprint of every row, and both are timed. `Proven` means the same rows and at
+    least 1.2x faster. A rewrite that returns different rows is `Different`, however fast, and exits
+    with code 2. Nothing is created or changed in your database, and index proposals stay review
+    only. Plan, findings and proofs are recorded in an audit ledger under the caller's own name.
+  - Proof timing runs the statements the way your application does. `EXPLAIN ANALYZE` uses parallel
+    workers; timing through a cursor does not, and had overstated the speedup of a parallel statement
+    (88x measured, 36x real). `make verify-pqn-pitch` checks the pitch against independent oracles on a
+    17-million-row database. `pqn evidence 7 --json` now honors the flag after the id.
+  - The extension writes only to its own ledger, reads your data only through views a DBA chose, runs
+    analyst SQL as one read-only statement, and lets PostgreSQL do the authentication. An ordinary
+    non-superuser installs it, it works on a hot standby for everything that reads, and
+    `DROP EXTENSION` keeps the ledger. `verify_setup()` (`pqn doctor`) is the safety report.
+  - **Installing is two commands.** As a superuser, `CREATE EXTENSION pqn` creates the roles it needs and
+    `SELECT pqn_api.init()` creates the ledger. `make build-pqn-image` builds a PostgreSQL image
+    (`tools/docker/postgres-pqn.Dockerfile`) that does both on first start with `pg_stat_statements`
+    preloaded, so a published image is just `docker run`. An installer who is not a superuser still uses
+    `pqn-roles.sql`.
+  - Tables are exposed with a scope: `view` (only the listed columns can be read or planned) or
+    `full` (statements over every column can be planned and measured, while `run` still returns only
+    the listed columns).
+  - **Delivery.** Release archives now include `bin/pqn` and `pqn-extension/` (the extension files and an
+    `install.sh`). The release workflow builds and signs a PostgreSQL image with `pqn` per major version
+    (`ghcr.io/<owner>/<repo>/pqn-postgres:16`, `:17`, `:18`). CI runs the extension on PostgreSQL 16, 17 and 18,
+    the tool, the pqn documentation, and the image on four bases (`make verify-pqn-image`), which includes
+    swapping the image under an existing data volume. `tools/db/pqn-heavy-scenario.sh` plays a user story on
+    17 million rows (not part of CI).
+  - Verified on PostgreSQL 16, 17 and 18 by `make verify-pqn-extension` (including a primary with a
+    hot standby and a real 1.0 to 1.1 upgrade that keeps the data) and `make verify-pqn-cli`
+    (the terminal tool, end to end, against a slow-query lab). See
+    `docs/integrations/postgres-extension.md`.
+
 ### Fixed
+
+- **`pqn investigate` no longer suggests dropping an index that its own proposed rewrite uses.**
+  An index can show no scans only because the slow statement cannot use it. The finding and its
+  `DROP INDEX` suggestion are withheld for an index a proposal uses, and the report says why.
+- **`pqn` prints each wrapped `note:` once**, and every `--json` field is `snake_case`.
+- **The setup check's standby message was wrong.** It said `record_*` "reflects this server only";
+  on a standby `record_*`, `investigate` and `prove` fail, and only `top()` reflects that server.
 
 - **Validator rejections explain themselves again.** The four new validator
   errors were not in `ClassifyRunError`, so a query calling a denied function
@@ -172,6 +234,20 @@ four, plus the lifecycle and deployment gaps found alongside them.
   concurrency with a bounded pool deadlocks rather than merely running slowly.
 
 ### Documentation
+
+- **Installing and setting up the `pqn` extension is documented and executed.** A
+  [quick start](docs/getting-started/pqn-extension.md) and an
+  [installation guide](docs/getting-started/pqn-installation.md) cover the extension files, the
+  role script, creating and initializing the extension, exposing tables, enrolling people, the
+  setup check, a read replica, upgrading, backup and restore, and uninstalling, with the real error
+  messages and their fixes, and stays short. `make verify-pqn-docs` runs every `bash` block of both pages
+  against real servers, and also runs the upgrade, restore and uninstall steps and a non-superuser DBA.
+  Restoring onto a server without the roles fails, so the guide restores the roles first with
+  `pg_dumpall --roles-only`. The verified-rewrite case study no longer says the tool "mathematically
+  proves" equivalence (it is a verification, never a proof), and `docs-contract-check` now rejects that
+  wording. `make docs-contract-check`
+  now fails when those pages name a file, role, function, `make` target, command, flag, warning or
+  error message that the code does not have.
 
 - **The documentation was reorganised by audience** — Learn → Investigate →
   Integrate → Secure → Deploy & Operate → Reference → Develop. New pages:

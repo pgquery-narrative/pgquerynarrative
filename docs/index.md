@@ -25,9 +25,10 @@ LLM; an optional LLM adds natural-language Ask and narrative reports on top.
 |---|---|---|
 | **Evaluating it** | [Quick start](getting-started/quickstart.md) — `make demo`, guided investigation | [Concepts](concepts.md) |
 | **Investigating a real query** | [Connect your PostgreSQL](getting-started/connect-postgres.md) | [Investigate a slow query](workflows/investigate.md) |
+| **Working from a terminal, with no server** | [Quick start: pqn](getting-started/pqn-extension.md) | [Install the pqn extension](getting-started/pqn-installation.md) |
 | **A DBA reviewing access** | [Trust model](trust-model.md) | [Database roles](security/database-roles.md) · [Query execution safety](security/query-safety.md) |
 | **Deploying it** | [Deployment](operate/deployment.md) | [Production configuration](operate/production.md) · [Health and monitoring](operate/monitoring.md) |
-| **Integrating with it** | [REST API](integrations/rest-api.md) | [API reference](reference/api.md) · [MCP server](integrations/mcp.md) · [PostgreSQL extension](integrations/postgres-extension.md) |
+| **Integrating with it** | [REST API](integrations/rest-api.md) | [API reference](reference/api.md) · [MCP server](integrations/mcp.md) · [PostgreSQL extensions](integrations/postgres-extension.md) |
 | **Contributing** | [Development setup](development/setup.md) | [Repository architecture](development/repository.md) · [Testing](development/testing.md) |
 
 ## How the documentation is organised
@@ -35,10 +36,10 @@ LLM; an optional LLM adds natural-language Ask and narrative reports on top.
 | Section | Answers |
 |---|---|
 | **Overview** | What the product is, its vocabulary, how it is built, what it will and will not do. [Architecture](architecture.md) is the system map. |
-| **Getting started** | Running it: the demo, installation, pointing it at your own database. |
+| **Getting started** | Running it: the demo, installation, pointing it at your own database, or installing the [`pqn` extension](getting-started/pqn-installation.md) to work from a terminal. |
 | **Core workflows** | Task guides for the investigation loop — findings, candidates, compare, [result verification](workflows/verify-results.md), regressions and applied fixes, multiple connections. |
 | **Workbench** | The UI surfaces around the loop: reports and sharing, dashboards, schedules and webhooks. |
-| **Integrations** | Calling it from elsewhere: REST, MCP, SQL (extension), Go (embedded), LLM providers, pgvector. |
+| **Integrations** | Calling it from elsewhere: REST, MCP, SQL (the extensions), Go (embedded), LLM providers, pgvector. |
 | **Security & access** | Roles, the SQL validator, authentication, organization isolation, data handling. |
 | **Deploy & operate** | Docker/Kubernetes/Helm, production settings, probes and metrics, migrations and upgrades, runbooks. |
 | **Reference** | Lookup tables checked against the code: [configuration](reference/configuration.md), [API](reference/api.md), [errors](reference/api-errors.md), [status vocabulary](reference/evidence.md), CLI, versions and limits. |

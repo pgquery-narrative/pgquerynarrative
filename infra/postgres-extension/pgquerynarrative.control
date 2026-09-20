@@ -1,2 +1,2 @@
 comment = 'Call PgQueryNarrative API from SQL'
-default_version = '1.0'
+default_version = '1.1'

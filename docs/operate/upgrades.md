@@ -79,6 +79,13 @@ restore the data.
 -check row counts on `app.investigations` and `demo.sales` before treating the
 backup as good.
 
+## PostgreSQL extensions
+
+The `pqn` extension has its own upgrade, backup and removal steps: [Upgrade](../getting-started/pqn-installation.md#upgrade),
+[Back up and restore](../getting-started/pqn-installation.md#back-up-and-restore) and
+[Uninstall](../getting-started/pqn-installation.md#uninstall). The REST-calling `pgquerynarrative` extension upgrades with
+`ALTER EXTENSION pgquerynarrative UPDATE`; see [PostgreSQL extensions](../integrations/postgres-extension.md).
+
 ## See also
 
 [Deployment](deployment.md) · [Health and monitoring](monitoring.md) ·

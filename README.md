@@ -108,6 +108,7 @@ rewrite. That is the expected outcome, not a failure.
 | **Install it** | [Install](#install) — container, binary, or source |
 | **Try it in ~5 minutes** | [Try it](#try-it-5-minutes) — `make demo` + guided Investigate |
 | **Connect your PostgreSQL** | [Connect your Postgres](docs/getting-started/connect-postgres.md) — readonly role + schema allowlist |
+| **Work from a terminal, no server** | [Quick start: pqn](docs/getting-started/pqn-extension.md) · [Install the pqn extension](docs/getting-started/pqn-installation.md) |
 | **Deploy** | [Deployment](docs/operate/deployment.md) — Docker / Compose / Kubernetes / Helm |
 | **Understand trust & scope** | [Trust model](docs/trust-model.md) — what the app will and will not do |
 
@@ -271,6 +272,7 @@ Full write-up: [Trust model](docs/trust-model.md)
 | Local app (Postgres already up) | `make start-local` |
 | Build / test | `make build` / `make test` |
 | CLI | `make cli CMD='query "SELECT * FROM demo.sales LIMIT 5"'` |
+| Build the `pqn` terminal tool | `make build-pqn` — see [Install the pqn extension](docs/getting-started/pqn-installation.md) |
 
 ---
 
@@ -280,6 +282,7 @@ Full write-up: [Trust model](docs/trust-model.md)
 |---|---|
 | [`cmd/server`](cmd/server) | API, health/ready, SPA |
 | [`cmd/mcp-server`](cmd/mcp-server) | Optional MCP server (query/report tools) |
+| [`cmd/pqn`](cmd/pqn) | Terminal tool for the `pqn` PostgreSQL extension ([`infra/pqn-extension/`](infra/pqn-extension)) |
 | [`app/`](app/) | Config, DB, query runner, investigations, LLM, reports |
 | [`api/design/`](api/design/) | Goa API design → `api/gen/` and repo-root `gen/` |
 | [`frontend/`](frontend/) | React workbench |
@@ -298,9 +301,9 @@ Preview: **`make docs`** → http://127.0.0.1:8000. Full site:
 | Section | Links |
 |---|---|
 | **Start here** | [Docs overview](docs/index.md) · [Concepts](docs/concepts.md) · [Architecture](docs/architecture.md) · [Trust model](docs/trust-model.md) |
-| **Getting started** | [Quick start](docs/getting-started/quickstart.md) · [Installation](docs/getting-started/installation.md) · [Connect Postgres](docs/getting-started/connect-postgres.md) |
+| **Getting started** | [Quick start](docs/getting-started/quickstart.md) · [Installation](docs/getting-started/installation.md) · [Connect Postgres](docs/getting-started/connect-postgres.md) · [pqn quick start](docs/getting-started/pqn-extension.md) · [Install pqn](docs/getting-started/pqn-installation.md) |
 | **Core workflows** | [Investigate a slow query](docs/workflows/investigate.md) · [Verify result equivalence](docs/workflows/verify-results.md) · [Regressions and applied fixes](docs/workflows/regressions.md) |
-| **Integrations** | [REST API](docs/integrations/rest-api.md) · [MCP server](docs/integrations/mcp.md) · [PostgreSQL extension](docs/integrations/postgres-extension.md) |
+| **Integrations** | [REST API](docs/integrations/rest-api.md) · [MCP server](docs/integrations/mcp.md) · [PostgreSQL extensions](docs/integrations/postgres-extension.md) |
 | **Security** | [Database roles](docs/security/database-roles.md) · [Query execution safety](docs/security/query-safety.md) |
 | **Deploy & operate** | [Deployment](docs/operate/deployment.md) · [Production configuration](docs/operate/production.md) · [Health and monitoring](docs/operate/monitoring.md) |
 | **Reference** | [Configuration](docs/reference/configuration.md) · [API](docs/reference/api.md) · [API errors](docs/reference/api-errors.md) |

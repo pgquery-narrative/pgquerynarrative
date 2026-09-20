@@ -19,6 +19,11 @@ and CI are the source of truth here — where a `make` target runs more than a s
 | Frontend typecheck / lint | `cd frontend && npm run typecheck` / `npm run lint` | |
 | Browser E2E | `make test-playwright` | Playwright, no OIDC. `make test-playwright-oidc` runs the OIDC-flow variant |
 | Release/image smoke | CI only: `Release build smoke`, `Docker image smoke` | Not a local `make` target — see `.github/workflows/ci.yml` and `release.yml` |
+| `pqn` extension | `make verify-pqn-extension` | Throwaway PostgreSQL primary and hot standby: ownership, `PUBLIC`, analyst limits, the ledger, a real 1.0 → 1.1 upgrade. `PG_IMAGE=postgres:16` (or 17, 18) picks the version. Needs Docker |
+| `pqn` tool | `make verify-pqn-cli` | The tool against a slow-query lab: `top`, `investigate`, a wrong rewrite is `Different`, the limits hold. Needs Docker |
+| REST-calling extension | `make verify-extension` | Upgrade path, `PUBLIC` grants, the URL lock, the API key. Needs Docker |
+| `pqn` docs | `make verify-pqn-docs` | Runs the `bash` blocks of the pqn quick start and installation guide as written. Needs Docker |
+| `pqn` pitch | `make verify-pqn-pitch` | The core pitch against independent oracles on a 17-million-row database: every proposal, wrong rewrites, time zones, concurrent writes, limits, access, the ledger. About five minutes and 2 GB of disk. Needs Docker and Python 3 |
 | Docs | `make docs-check` | `mkdocs build --strict` |
 | Docs contract | `make docs-contract-check` | Config/API/error/vocabulary/link checks against the code — see `tools/docscheck` |
 | External links | `make docs-links` | lychee, needs network |

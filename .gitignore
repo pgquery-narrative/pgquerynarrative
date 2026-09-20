@@ -94,3 +94,7 @@ docs/assets/demo-workflow.gif
 AGENTS.md
 .cursor/rules/product-direction.mdc
 /openapi-ts
+
+# Python bytecode
+__pycache__/
+*.pyc

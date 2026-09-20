@@ -36,11 +36,14 @@ Common issues, then incident runbooks for production. See also
 
 ## Extension (PostgreSQL)
 
+For the `pqn` extension, see [Troubleshooting installation and setup](../getting-started/pqn-installation.md#troubleshooting-installation-and-setup). The rows below are for the REST-calling `pgquerynarrative` extension.
+
 | Issue | Solution |
 |---|---|
 | `CREATE EXTENSION pgquerynarrative` fails | Copy the files first — `make install-extension` (local) or `make install-extension-docker` (Docker). See [PostgreSQL extension](../integrations/postgres-extension.md) |
 | Functions return `{"status":"pending",...}` | The `http` extension wasn't installed **before** `pgquerynarrative` — install it, then re-run the extension's SQL |
-| Functions raise `PgQueryNarrative API error: 401` | The server has auth enabled; the extension sends no API key at all |
+| Functions raise `permission denied for function pgquerynarrative_...` | Version 1.1 withholds `EXECUTE` from `PUBLIC`. As the extension owner run `SELECT pgquerynarrative_grant_access('role');` |
+| Functions raise `PgQueryNarrative API error: 401` | The server has auth enabled. Call `SELECT pgquerynarrative_set_api_key('...')` in that session first |
 
 ---
 

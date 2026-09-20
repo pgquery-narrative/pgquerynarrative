@@ -41,10 +41,11 @@ flowchart TB
   LLM --> PROV
 ```
 
-Every client except the embedded Go client goes through the HTTP server and the same
+Every client except the embedded Go client and `pqn` goes through the HTTP server and the same
 middleware. The MCP server and the PostgreSQL extension are thin HTTP clients of the REST
 API — neither contains query logic. The embedded client (`pkg/narrative`) constructs the
-same services in-process.
+same services in-process. The separate `pqn` extension and its terminal tool talk to PostgreSQL
+directly and involve no server (see [PostgreSQL extensions](integrations/postgres-extension.md)).
 
 ## Metadata database versus analytical database
 
@@ -180,7 +181,8 @@ flowchart LR
 |---|---|---|
 | [REST API](integrations/rest-api.md) | HTTP + JSON, OpenAPI 3 spec in `api/gen/http/` | Everything |
 | [MCP server](integrations/mcp.md) | stdio → REST | Run, schema, saved queries, reports, Ask, explain-in-English |
-| [PostgreSQL extension](integrations/postgres-extension.md) | SQL functions → `http` extension → REST | Run query, workbench report, list saved queries |
+| [PostgreSQL extension `pgquerynarrative`](integrations/postgres-extension.md) | SQL functions → `http` extension → REST | Run query, workbench report, list saved queries |
+| [`pqn` extension and terminal tool](getting-started/pqn-installation.md) | PostgreSQL protocol → SQL functions in the database | Rank statements, plan, run, investigate, check rewrites, audit ledger. No server |
 | [Embedded Go](integrations/embedded-go.md) | In-process | Client methods and four mountable routes |
 | [LLM providers](integrations/llm.md) | Outbound HTTPS (or local Ollama) | Ask, chat, SQL explanation, workbench narratives |
 | [Webhooks](workbench/schedules.md#webhook-delivery) | Outbound HTTPS, signed | Scheduled report delivery |

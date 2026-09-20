@@ -70,6 +70,9 @@ jobs:
           fi
           go build -ldflags "-X main.Version=$VERSION" \
             -o pgquerynarrative-server-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/server
+          # The pqn terminal tool links the same parse-tree library, so it is cgo too.
+          go build -ldflags "-X main.version=$VERSION" \
+            -o pgquerynarrative-pqn-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/pqn
       - name: Build MCP server
         env:
           GOOS: ${{ matrix.goos }}
@@ -95,6 +98,7 @@ jobs:
             pgquerynarrative-server-${{ matrix.goos }}-${{ matrix.goarch }}
             pgquerynarrative-mcp-${{ matrix.goos }}-${{ matrix.goarch }}
             pgquerynarrative-migrate-${{ matrix.goos }}-${{ matrix.goarch }}
+            pgquerynarrative-pqn-${{ matrix.goos }}-${{ matrix.goarch }}
           retention-days: 7
 
   release:
@@ -154,16 +158,21 @@ jobs:
             target="${server#bin/pgquerynarrative-server-}"
             mcp="bin/pgquerynarrative-mcp-${target}"
             migrate="bin/pgquerynarrative-migrate-${target}"
+            pqn="bin/pgquerynarrative-pqn-${target}"
             pkg="packages/pgquerynarrative-${VERSION}-${target}"
-            mkdir -p "$pkg/bin" "$pkg/frontend" "$pkg/app/db" "$pkg/config"
+            mkdir -p "$pkg/bin" "$pkg/frontend" "$pkg/app/db" "$pkg/config" "$pkg/pqn-extension"
             cp "$server" "$pkg/bin/pgquerynarrative-server"
             cp "$mcp" "$pkg/bin/pgquerynarrative-mcp"
             cp "$migrate" "$pkg/bin/migrate"
+            cp "$pqn" "$pkg/bin/pqn"
+            # The pqn PostgreSQL extension: copy these into a server (install.sh does it), no clone needed.
+            cp infra/pqn-extension/pqn.control infra/pqn-extension/pqn--*.sql infra/pqn-extension/pqn-roles.sql "$pkg/pqn-extension/"
+            cp tools/db/install-pqn-extension.sh "$pkg/pqn-extension/install.sh"
             cp -R frontend/dist "$pkg/frontend/dist"
             cp -R app/db/migrations "$pkg/app/db/migrations"
             cp .env.example "$pkg/config/pgquerynarrative.env.example"
             cp tools/docker/entrypoint.sh "$pkg/bin/entrypoint.sh"
-            chmod +x "$pkg/bin/pgquerynarrative-server" "$pkg/bin/pgquerynarrative-mcp" "$pkg/bin/migrate" "$pkg/bin/entrypoint.sh"
+            chmod +x "$pkg/bin/pgquerynarrative-server" "$pkg/bin/pgquerynarrative-mcp" "$pkg/bin/migrate" "$pkg/bin/entrypoint.sh" "$pkg/bin/pqn" "$pkg/pqn-extension/install.sh"
             tar -C packages -czf "bin/pgquerynarrative-${VERSION}-${target}.tar.gz" "pgquerynarrative-${VERSION}-${target}"
           done
           (cd bin && sha256sum *.tar.gz > checksums.txt)
@@ -180,12 +189,20 @@ jobs:
             test -x "$pkg/bin/pgquerynarrative-server"
             test -x "$pkg/bin/pgquerynarrative-mcp"
             test -x "$pkg/bin/migrate"
+            test -x "$pkg/bin/pqn"
+            test -f "$pkg/pqn-extension/pqn.control"
+            test -f "$pkg/pqn-extension/pqn--1.0.sql"
+            test -f "$pkg/pqn-extension/pqn--1.0--1.1.sql"
+            test -f "$pkg/pqn-extension/pqn-roles.sql"
+            test -x "$pkg/pqn-extension/install.sh"
             test -f "$pkg/frontend/dist/index.html"
             test -d "$pkg/app/db/migrations"
             test -f "$pkg/config/pgquerynarrative.env.example"
             # migrate is cross-compiled per target platform; only exec it on linux/amd64 (the runner's own platform).
             if [ "$target" = "pgquerynarrative-${VERSION}-linux-amd64" ]; then
               "$pkg/bin/migrate" --help
+              "$pkg/bin/pqn" version
+              "$pkg/bin/pqn" help | grep -q investigate
             fi
           done
       - name: Full smoke test (migrate + server + health) on linux/amd64
@@ -327,3 +344,66 @@ jobs:
             --certificate-identity-regexp "https://github.com/${{ github.repository }}/.*" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "ghcr.io/${{ github.repository }}@${DIGEST}"
+
+  # PostgreSQL images with the pqn extension already created on first start: pull, run, and it works.
+  # One image per supported PostgreSQL major. The image holds SQL files and a config line, so it is
+  # built for both platforms without compiling anything (QEMU is only needed to run the RUN step).
+  pqn-image:
+    name: Publish pqn PostgreSQL image (${{ matrix.pg }})
+    needs: build
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16', '17', '18']
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${{ github.ref_name }}"
+          fi
+          echo "VERSION=${VER#v}" >> $GITHUB_ENV
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a
+        with:
+          platforms: arm64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push image
+        id: build_push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        with:
+          context: .
+          file: tools/docker/postgres-pqn.Dockerfile
+          build-args: |
+            POSTGRES_IMAGE=postgres:${{ matrix.pg }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/pqn-postgres:${{ matrix.pg }}-${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}/pqn-postgres:${{ matrix.pg }}
+          sbom: true
+          provenance: true
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign OCI image by digest
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          DIGEST="${{ steps.build_push.outputs.digest }}"
+          test -n "$DIGEST"
+          cosign sign --yes "ghcr.io/${{ github.repository }}/pqn-postgres@${DIGEST}"

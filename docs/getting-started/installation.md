@@ -97,4 +97,5 @@ Details: [Supported versions and limits](../reference/versions-limits.md).
 ## See also
 
 [Quick start](quickstart.md) · [Connect your PostgreSQL](connect-postgres.md) ·
+[Install the pqn extension](pqn-installation.md) (the terminal tool, no server) ·
 [Configuration](../reference/configuration.md) · [Docs overview](../index.md)

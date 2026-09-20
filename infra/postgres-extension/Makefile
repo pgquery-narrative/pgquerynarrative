@@ -2,7 +2,7 @@
 
 PG_CONFIG ?= pg_config
 EXTENSION_NAME = pgquerynarrative
-VERSION = 1.0
+VERSION = 1.1
 
 # Detect PostgreSQL installation
 PGXS := $(shell $(PG_CONFIG) --pgxs)

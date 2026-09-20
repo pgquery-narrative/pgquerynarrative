@@ -12,6 +12,10 @@ see [Configuration – database](configuration.md#database).
 | 17 | Supported (extensions and migrations don't depend on version-specific features); not exercised by CI today |
 | 18 | Exercised in CI via the `pgvector/pgvector:pg18` testcontainer image used by Go integration tests |
 
+The separate [`pqn` extension](../getting-started/pqn-installation.md#requirements) needs PostgreSQL 16 or later and is
+exercised against 16, 17 and 18 in CI (`make verify-pqn-extension`, `make verify-pqn-image`). The release archives include the `pqn` tool and
+the extension files, and a PostgreSQL image with `pqn` is published per major version ([releases](../project/releases.md)).
+
 `pg_stat_statements`, `hypopg`, and `pgvector` (`vector`) are optional extensions —
 the application degrades gracefully when any is absent (see
 [Regressions](../workflows/regressions.md), [Suggest and rank candidates](../workflows/candidates.md#index-advice-and-hypopg),
@@ -34,7 +38,7 @@ on a tag push:
 |---|---|
 | `linux/amd64`, `linux/arm64`, `darwin/arm64`, `darwin/amd64` | `linux/amd64`, `linux/arm64` |
 
-Each archive (`pgquerynarrative-<version>-<os>-<arch>.tar.gz`) bundles the server,
+Each archive (`pgquerynarrative-<version>-<os>-<arch>.tar.gz`) bundles the server, the `pqn` tool and extension files,
 the MCP server, `migrate`, the migration files, the built frontend, the entrypoint
 script, and an example env file — self-contained, no clone required. Every archive,
 plus `checksums.txt` and an SPDX SBOM, is signed with cosign (Sigstore v0.3 bundles —

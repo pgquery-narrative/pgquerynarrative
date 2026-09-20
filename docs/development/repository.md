@@ -9,6 +9,7 @@ architecture (services, data flow, security boundaries): [Architecture](../archi
 |---|---|
 | `cmd/server` | Entry point: wires config, pools, services, HTTP routes, background workers |
 | `cmd/mcp-server` | The [MCP server](../integrations/mcp.md) binary |
+| `cmd/pqn` | The `pqn` terminal tool. The logic is in `internal/pqncli` |
 | `cmd/mockoidc`, `cmd/mockollama` | Local stand-ins for an IdP and an LLM, used by tests and Playwright |
 | `api/design/` | Goa API design — the source of truth for the REST contract |
 | `api/gen/` | Generated Goa code, **committed** (see [Code generation](#code-generation)) |
@@ -20,7 +21,8 @@ architecture (services, data flow, security boundaries): [Architecture](../archi
 | `pkg/narrative` | The embeddable Go client and HTTP middleware — see [Embedded Go](../integrations/embedded-go.md) |
 | `web/` | Report HTML/PDF/Markdown/JSON/SQL export handlers |
 | `frontend/` | React SPA (Vite, Tailwind, shadcn/ui); `frontend/src/api/schema.gen.ts` is generated |
-| `infra/postgres-extension/` | The [PostgreSQL extension](../integrations/postgres-extension.md) SQL |
+| `infra/postgres-extension/` | The [REST-calling PostgreSQL extension](../integrations/postgres-extension.md) SQL |
+| `infra/pqn-extension/` | The `pqn` extension: control file, version scripts and the role script. See [Install the pqn extension](../getting-started/pqn-installation.md) |
 | `infra/postgres-init/` | Role/schema bootstrap SQL for a fresh database |
 | `tools/` | Build and ops scripts: `db/` (seed, migrate, verify), `docker/` (entrypoint, images), `ops/` (backup, restore, Helm checks), `demo/`, `changelog/`, `openapi-ts/`, `openapi-strip-examples/`, `docscheck/` |
 | `deploy/` | Docker Compose, Kubernetes manifests, Helm chart, Grafana dashboard, Prometheus alerts |

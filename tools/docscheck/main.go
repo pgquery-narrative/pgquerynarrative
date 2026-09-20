@@ -43,6 +43,7 @@ func main() {
 	checkForbiddenVocabulary(root, r)
 	checkRepoMarkdownLinks(root, r)
 	checkNavCoverage(root, r)
+	checkPqnDocs(root, r)
 	_ = cfgVars
 
 	if len(r.failures) == 0 {
@@ -337,6 +338,7 @@ var forbiddenVocab = []vocabRule{
 	{"bare `regression_id`", regexp.MustCompile(`\bregression_id\b`)},
 	{"Go 1.20–1.25 claim", regexp.MustCompile(`Go[ \-]1\.2[0-5]\b`)},
 	{"\"8,000 rows\" dataset claim", regexp.MustCompile(`\b8,?000[ \-]rows?\b`)},
+	{"\"mathematically prove\" (verification is never a mathematical proof)", regexp.MustCompile(`(?i)mathematically\s+prov`)},
 }
 
 // The stale-owner-URL check is a plain substring match, not a regex: a regex

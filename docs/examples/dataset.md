@@ -138,8 +138,8 @@ Declared on the parent (propagate to all partitions):
 
 > **Case study:** [Verified rewrite](02-verified-rewrite.md) —
 > a `DATE_TRUNC`-wrapped filter on the partition key forces a 49-partition
-> scan; the AST rewrite engine unwraps it and proves row-for-row equivalence
-> over the full result set before calling it safe.
+> scan; the AST rewrite engine unwraps it and verifies row-for-row equivalence
+> over the full result set (a fingerprint, not a proof) before calling it safe.
 
 ## Data distribution
 
