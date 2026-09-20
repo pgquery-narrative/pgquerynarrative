@@ -95,10 +95,10 @@ func (s *OrgConnectionSecretStore) Upsert(ctx context.Context, orgID, connection
 	connectionID = strings.TrimSpace(connectionID)
 	dsn = strings.TrimSpace(dsn)
 	if orgID == "" || connectionID == "" || dsn == "" {
-		return fmt.Errorf("organization_id, connection_id, and dsn are required")
+		return InputError("organization_id, connection_id, and dsn are required")
 	}
 	if len(allowedSchemas) == 0 {
-		return fmt.Errorf("allowed_schemas must be non-empty for organisation connection secrets")
+		return InputError("allowed_schemas must be non-empty for organisation connection secrets")
 	}
 	sealed, err := security.Seal(s.encKey, dsn)
 	if err != nil {
@@ -128,7 +128,7 @@ func (s *OrgConnectionSecretStore) Delete(ctx context.Context, orgID, connection
 	orgID = strings.TrimSpace(orgID)
 	connectionID = strings.TrimSpace(connectionID)
 	if orgID == "" || connectionID == "" {
-		return fmt.Errorf("organization_id and connection_id are required")
+		return InputError("organization_id and connection_id are required")
 	}
 	return execWithOrg(ctx, s.pool, orgID, `
 		DELETE FROM app.organization_connection_secrets
@@ -143,7 +143,7 @@ func (s *OrgConnectionSecretStore) List(ctx context.Context, orgID string) ([]Co
 	}
 	orgID = strings.TrimSpace(orgID)
 	if orgID == "" {
-		return nil, fmt.Errorf("organization_id is required")
+		return nil, InputError("organization_id is required")
 	}
 	rows, err := queryWithOrg(ctx, s.pool, orgID, `
 		SELECT connection_id, allowed_schemas, enabled

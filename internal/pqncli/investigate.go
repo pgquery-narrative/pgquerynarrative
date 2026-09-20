@@ -93,6 +93,9 @@ func verdictFromMeasurement(m *Measurement) (string, string) {
 	switch {
 	case !m.Equal:
 		return VerdictDifferent, "the two statements returned different rows"
+	case m.BeforeRows == 0 && m.AfterRows == 0:
+		// Two empty results are equal whatever the statements do. Nothing was compared.
+		return VerdictUnverified, "both statements returned no rows, so nothing was compared; try values that return rows"
 	case m.Speedup >= minProvenSpeedup:
 		return VerdictProven, fmt.Sprintf("same rows, %.2fx faster", m.Speedup)
 	default:

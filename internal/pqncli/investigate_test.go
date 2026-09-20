@@ -156,7 +156,7 @@ func TestDifferentRowsAreNeverAnImprovement(t *testing.T) {
 }
 
 func TestSameRowsButNotFasterIsNotProven(t *testing.T) {
-	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 95, Speedup: 1.05}}
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, BeforeMs: 100, AfterMs: 95, Speedup: 1.05}}
 	rep, _ := Investigate(context.Background(), be, validator(), InvestigateOptions{SQL: dayQuery})
 	if rep.Proven != 0 {
 		t.Fatalf("1.05x is not a proof, got %d proven", rep.Proven)
@@ -166,8 +166,27 @@ func TestSameRowsButNotFasterIsNotProven(t *testing.T) {
 	}
 }
 
+func TestTwoEmptyResultsAreNotAProof(t *testing.T) {
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 1, Speedup: 100}}
+	rep, err := Investigate(context.Background(), be, validator(), InvestigateOptions{SQL: dayQuery, NoRecord: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Proven != 0 {
+		t.Errorf("two empty result sets were reported as proven: %+v", rep.Candidates)
+	}
+	for _, c := range rep.Candidates {
+		if c.Verdict == VerdictProven {
+			t.Errorf("a candidate was proven on empty results: %+v", c)
+		}
+	}
+	if v, why := verdictFromMeasurement(be.measure); v != VerdictUnverified || !strings.Contains(why, "no rows") {
+		t.Errorf("verdict %q (%s), want Unverified naming the empty result", v, why)
+	}
+}
+
 func TestPlaceholdersAreNotExecutedWithoutBinds(t *testing.T) {
-	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, Speedup: 50}}
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, Speedup: 50}}
 	rep, err := Investigate(context.Background(), be, validator(),
 		InvestigateOptions{SQL: "SELECT * FROM shop.orders WHERE date_trunc('day', created_at) = $1"})
 	if err != nil {
@@ -182,7 +201,7 @@ func TestPlaceholdersAreNotExecutedWithoutBinds(t *testing.T) {
 }
 
 func TestBindsMakeAPlaceholderStatementMeasurable(t *testing.T) {
-	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 5, Speedup: 20}}
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, BeforeMs: 100, AfterMs: 5, Speedup: 20}}
 	rep, err := Investigate(context.Background(), be, validator(), InvestigateOptions{
 		SQL: "SELECT * FROM shop.orders WHERE date_trunc('day', created_at) = $1", Binds: []string{"2025-03-01"}})
 	if err != nil {
@@ -197,7 +216,7 @@ func TestBindsMakeAPlaceholderStatementMeasurable(t *testing.T) {
 }
 
 func TestQueryIDIsLookedUpInTop(t *testing.T) {
-	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, Speedup: 5}}
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, Speedup: 5}}
 	id := int64(42)
 	rep, err := Investigate(context.Background(), be, validator(), InvestigateOptions{QueryID: &id})
 	if err != nil {
@@ -214,7 +233,7 @@ func TestQueryIDIsLookedUpInTop(t *testing.T) {
 
 func TestALedgerFailureDoesNotHideTheAnalysis(t *testing.T) {
 	be := &fakeBackend{replica: true, recordErr: errors.New("permission denied for function record_investigation"),
-		measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
+		measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
 	rep, err := Investigate(context.Background(), be, validator(), InvestigateOptions{SQL: dayQuery})
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +247,7 @@ func TestALedgerFailureDoesNotHideTheAnalysis(t *testing.T) {
 }
 
 func TestNoRecordWritesNothing(t *testing.T) {
-	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
 	rep, _ := Investigate(context.Background(), be, validator(), InvestigateOptions{SQL: dayQuery, NoRecord: true})
 	if len(be.evidence) != 0 || rep.InvestigationID != 0 {
 		t.Errorf("--no-record must not write: evidence=%v id=%d", be.evidence, rep.InvestigationID)
@@ -261,7 +280,7 @@ func TestReportRendersEverySection(t *testing.T) {
 }
 
 func TestMainCommands(t *testing.T) {
-	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
+	be := &fakeBackend{replica: true, measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
 	connect := func(context.Context, string, string) (Backend, error) { return be, nil }
 	env := func(string) string { return "" }
 	run := func(args ...string) (int, string, string) {
@@ -368,7 +387,7 @@ func TestAnIndexTheRewriteUsesIsNeverSuggestedForRemoval(t *testing.T) {
 		IndexAdvice: &queryrunner.IndexAdvice{CandidateDDL: "DROP INDEX CONCURRENTLY IF EXISTS \"orders_dup_idx\";", Issues: []string{"duplicate_prefix"}},
 	}
 	be := &fakeBackend{replica: true, extra: []queryrunner.PlanFinding{drop, other},
-		measure: &Measurement{Equal: true, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
+		measure: &Measurement{Equal: true, BeforeRows: 10, AfterRows: 10, BeforeMs: 100, AfterMs: 10, Speedup: 10}}
 	rep, err := Investigate(context.Background(), be, validator(), InvestigateOptions{SQL: dayQuery, NoRecord: true})
 	if err != nil {
 		t.Fatal(err)

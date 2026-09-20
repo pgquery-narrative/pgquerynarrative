@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// InputError is a validation failure the caller can fix. Its text is written by this package and is
+// safe to return to the caller, unlike a database error.
+type InputError string
+
+func (e InputError) Error() string { return string(e) }
+
 // UpsertMembership creates or updates a user's membership in an organization.
 func (s *MembershipStore) UpsertMembership(ctx context.Context, userID, orgID, role string) error {
 	if s == nil || s.pool == nil {
@@ -14,7 +20,7 @@ func (s *MembershipStore) UpsertMembership(ctx context.Context, userID, orgID, r
 	userID = strings.TrimSpace(userID)
 	orgID = strings.TrimSpace(orgID)
 	if userID == "" || orgID == "" {
-		return fmt.Errorf("user_id and organization_id are required")
+		return InputError("user_id and organization_id are required")
 	}
 	role = normalizeRole(role)
 	return execWithOrg(ctx, s.pool, orgID, `
@@ -32,7 +38,7 @@ func (a *ConnectionAuthorizer) AssignConnection(ctx context.Context, orgID, conn
 	orgID = strings.TrimSpace(orgID)
 	connectionID = strings.TrimSpace(connectionID)
 	if orgID == "" || connectionID == "" {
-		return fmt.Errorf("organization_id and connection_id are required")
+		return InputError("organization_id and connection_id are required")
 	}
 	return execWithOrg(ctx, a.pool, orgID, `
 		INSERT INTO app.organization_connections (organization_id, connection_id, enabled)
@@ -49,7 +55,7 @@ func (a *ConnectionAuthorizer) UnassignConnection(ctx context.Context, orgID, co
 	orgID = strings.TrimSpace(orgID)
 	connectionID = strings.TrimSpace(connectionID)
 	if orgID == "" || connectionID == "" {
-		return fmt.Errorf("organization_id and connection_id are required")
+		return InputError("organization_id and connection_id are required")
 	}
 	return execWithOrg(ctx, a.pool, orgID, `
 		DELETE FROM app.organization_connections
@@ -64,7 +70,7 @@ func (a *ConnectionAuthorizer) ListAssignedConnections(ctx context.Context, orgI
 	}
 	orgID = strings.TrimSpace(orgID)
 	if orgID == "" {
-		return nil, fmt.Errorf("organization_id is required")
+		return nil, InputError("organization_id is required")
 	}
 	rows, err := queryWithOrg(ctx, a.pool, orgID, `
 		SELECT connection_id FROM app.organization_connections
@@ -95,7 +101,7 @@ func (a *ConnectionAuthorizer) GrantPermission(ctx context.Context, orgID, conne
 	connectionID = strings.TrimSpace(connectionID)
 	principalID = strings.TrimSpace(principalID)
 	if orgID == "" || connectionID == "" || principalID == "" {
-		return fmt.Errorf("organization_id, connection_id, and principal_id are required")
+		return InputError("organization_id, connection_id, and principal_id are required")
 	}
 	get := func(name string) bool { return actions[name] }
 	if err := execWithOrg(ctx, a.pool, orgID, `

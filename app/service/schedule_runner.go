@@ -207,9 +207,13 @@ func (s *SchedulesService) claimDueSchedules(ctx context.Context, workerID strin
 }
 
 func (s *SchedulesService) executeClaimedRun(ctx context.Context, workerID string, claim claimedScheduleRun) error {
-	ownerUserID, ownerRole, err := s.resolveScheduleOwner(ctx, claim.ScheduleID, claim.OrgID)
+	// A worker has no request, so nothing puts the claimed organization in ctx. Row-level security
+	// hides the schedule and its owner's membership without it, and the schedule would be disabled as
+	// "owner unauthorized".
+	workerCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: workerID, OrgID: claim.OrgID, Role: auth.RoleTenantAdmin})
+	ownerUserID, ownerRole, err := s.resolveScheduleOwner(workerCtx, claim.ScheduleID, claim.OrgID)
 	if err != nil {
-		runCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: workerID, OrgID: claim.OrgID, Role: auth.RoleTenantAdmin})
+		runCtx := workerCtx
 		_ = s.disableSchedule(runCtx, claim.ScheduleID, err.Error())
 		return s.finishScheduleRun(runCtx, claim.RunID, "", "failed", err, "owner_unauthorized")
 	}

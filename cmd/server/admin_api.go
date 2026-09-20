@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
@@ -275,7 +278,7 @@ func adminUpsertMembership(w http.ResponseWriter, r *http.Request, deps adminDep
 		return
 	}
 	if err := deps.membership.UpsertMembership(r.Context(), body.UserID, orgID, body.Role); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if deps.sessions != nil {
@@ -315,7 +318,7 @@ func adminAssignConnection(w http.ResponseWriter, r *http.Request, deps adminDep
 		return
 	}
 	if err := deps.connAuthz.AssignConnection(r.Context(), orgID, body.ConnectionID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if !recordAdminAudit(w, r, deps, audit.Entry{
@@ -351,7 +354,7 @@ func adminGrantConnectionPermission(w http.ResponseWriter, r *http.Request, deps
 		return
 	}
 	if err := deps.connAuthz.GrantPermission(r.Context(), orgID, body.ConnectionID, body.PrincipalID, body.Actions); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if !recordAdminAudit(w, r, deps, audit.Entry{
@@ -387,7 +390,7 @@ func adminRevokeConnectionPermission(w http.ResponseWriter, r *http.Request, dep
 		return
 	}
 	if err := deps.connAuthz.RevokePermission(r.Context(), orgID, body.ConnectionID, body.PrincipalID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if !recordAdminAudit(w, r, deps, audit.Entry{
@@ -430,7 +433,7 @@ func adminCreateOrganization(w http.ResponseWriter, r *http.Request, deps adminD
 	}
 	id, err := deps.membership.CreateOrganization(r.Context(), body.Name, body.Slug)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
@@ -482,7 +485,7 @@ func adminRevokeMembership(w http.ResponseWriter, r *http.Request, deps adminDep
 		return
 	}
 	if err := deps.membership.RevokeMembership(r.Context(), body.UserID, orgID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if deps.sessions != nil {
@@ -537,7 +540,7 @@ func adminUnassignConnection(w http.ResponseWriter, r *http.Request, deps adminD
 		return
 	}
 	if err := deps.connAuthz.UnassignConnection(r.Context(), orgID, body.ConnectionID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if deps.pools != nil {
@@ -608,7 +611,7 @@ func adminUpsertConnectionSecret(w http.ResponseWriter, r *http.Request, deps ad
 		return
 	}
 	if err := deps.orgSecrets.Upsert(r.Context(), orgID, body.ConnectionID, body.DSN, body.AllowedSchemas); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if deps.pools != nil {
@@ -649,7 +652,7 @@ func adminDeleteConnectionSecret(w http.ResponseWriter, r *http.Request, deps ad
 		return
 	}
 	if err := deps.orgSecrets.Delete(r.Context(), orgID, body.ConnectionID); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		adminStoreError(w, r, err)
 		return
 	}
 	if deps.pools != nil {
@@ -669,6 +672,36 @@ func adminDeleteConnectionSecret(w http.ResponseWriter, r *http.Request, deps ad
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// adminStoreError answers for an error a store returned. A message the store wrote for the caller
+// (auth.InputError) is shown. A conflict, a bad reference or a bad value from the database is a fixed
+// 409 or 400 that says what kind of problem it is. Everything else is a fixed 500. The error itself is
+// logged and never returned: it names constraints, tables and columns.
+func adminStoreError(w http.ResponseWriter, r *http.Request, err error) {
+	var input auth.InputError
+	if errors.As(err, &input) {
+		http.Error(w, input.Error(), http.StatusBadRequest)
+		return
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch {
+		case pgErr.Code == "23505":
+			log.Printf("admin api %s %s: conflict: %v", r.Method, r.URL.Path, err)
+			http.Error(w, "already exists", http.StatusConflict)
+			return
+		case pgErr.Code == "23503":
+			log.Printf("admin api %s %s: bad reference: %v", r.Method, r.URL.Path, err)
+			http.Error(w, "a referenced organization or record does not exist", http.StatusBadRequest)
+			return
+		case strings.HasPrefix(pgErr.Code, "22") || pgErr.Code == "23502" || pgErr.Code == "23514":
+			log.Printf("admin api %s %s: bad value: %v", r.Method, r.URL.Path, err)
+			http.Error(w, "a value is invalid", http.StatusBadRequest)
+			return
+		}
+	}
+	adminInternalError(w, r, err)
 }
 
 // adminInternalError answers 500 with a fixed message. The database error is logged, not returned:

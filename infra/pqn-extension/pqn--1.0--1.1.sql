@@ -243,8 +243,8 @@ $f$;
 -- Server-side time of one statement, planning plus execution. EXPLAIN ANALYZE runs the plan to
 -- the end, so it uses parallel workers exactly as the application's own statement does. A
 -- cursor fetch cannot: PostgreSQL never launches workers for a row-limited fetch, so timing
--- through one overstates how slow a parallel statement is. Only measure_pair calls this, after it
--- has run the same text through a read-only cursor, so it never sees a statement that writes.
+-- through one overstates how slow a parallel statement is. Only measure_pair calls this, inside the
+-- read-only sub-transaction described there.
 CREATE FUNCTION pqn_api.explain_ms(l_query text, l_path text) RETURNS numeric
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
 DECLARE
@@ -262,6 +262,11 @@ $f$;
 -- one snapshot. The times come from explain_ms, which runs each statement the way the application
 -- does. The order alternates each round and the fastest round counts, so neither side benefits
 -- from a warm cache. Statements with $n placeholders cannot run.
+--
+-- The statements run as pqn_owner, so a volatile function inside one could write. They therefore run
+-- in a read-only sub-transaction. PostgreSQL cannot make a transaction read-write again, and the
+-- caller (prove) has to write the proof afterwards, so the sub-transaction ends by raising a private
+-- error that rolls it back, read-only flag included. Nothing done inside it is kept.
 CREATE FUNCTION pqn_api.measure_pair(l_a text, l_b text, repeats integer DEFAULT 2) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
 DECLARE
@@ -282,6 +287,7 @@ DECLARE
   v_sum numeric;
   v_xor bigint;
   same boolean;
+  res jsonb;
 BEGIN
   IF l_a IS NULL OR l_b IS NULL OR btrim(l_a) = '' OR btrim(l_b) = '' THEN
     RAISE EXCEPTION 'pqn: both statements are required';
@@ -290,37 +296,45 @@ BEGIN
     RAISE EXCEPTION 'pqn: statements with $n placeholders cannot be executed. Substitute values first.';
   END IF;
   PERFORM set_config('search_path', v_path, true);
-  -- Each statement must stand alone as one query. This is what stops a text that closes the
-  -- wrapper below and continues.
-  FOREACH s IN ARRAY stmts LOOP
-    OPEN c FOR EXECUTE s;
-    CLOSE c;
-  END LOOP;
-
-  FOR side IN 1..2 LOOP
-    OPEN c FOR EXECUTE format(
-      'SELECT count(*)::bigint, COALESCE(sum(h), 0)::numeric, COALESCE(bit_xor(h), 0)::bigint '
-      'FROM (SELECT hashtextextended(t::text, 0) AS h FROM (%s' || E'\n' || ') t) x', stmts[side]);
-    FETCH c INTO v_cnt, v_sum, v_xor;
-    CLOSE c;
-    cnt[side] := v_cnt; sm[side] := v_sum; xr[side] := v_xor;
-  END LOOP;
-
-  FOR i IN 1..reps LOOP
-    FOR k IN 1..2 LOOP
-      side := CASE WHEN i % 2 = 1 THEN k ELSE 3 - k END;
-      ms := round(pqn_api.explain_ms(stmts[side], v_path), 3);
-      IF best[side] IS NULL OR ms < best[side] THEN best[side] := ms; END IF;
+  BEGIN
+    -- (a STABLE function may not run SET, so this goes through set_config)
+    PERFORM set_config('transaction_read_only', 'on', false);
+    -- Each statement must stand alone as one query. This is what stops a text that closes the
+    -- wrapper below and continues.
+    FOREACH s IN ARRAY stmts LOOP
+      OPEN c FOR EXECUTE s;
+      CLOSE c;
     END LOOP;
-  END LOOP;
 
-  same := cnt[1] = cnt[2] AND sm[1] = sm[2] AND xr[1] = xr[2];
-  RETURN jsonb_build_object(
-    'equal', same,
-    'before', jsonb_build_object('rows', cnt[1], 'sum', sm[1], 'xor', xr[1], 'ms', best[1]),
-    'after',  jsonb_build_object('rows', cnt[2], 'sum', sm[2], 'xor', xr[2], 'ms', best[2]),
-    'speedup', CASE WHEN best[2] > 0 THEN round(best[1] / best[2], 2) END,
-    'rounds', reps);
+    FOR side IN 1..2 LOOP
+      OPEN c FOR EXECUTE format(
+        'SELECT count(*)::bigint, COALESCE(sum(h), 0)::numeric, COALESCE(bit_xor(h), 0)::bigint '
+        'FROM (SELECT hashtextextended(t::text, 0) AS h FROM (%s' || E'\n' || ') t) x', stmts[side]);
+      FETCH c INTO v_cnt, v_sum, v_xor;
+      CLOSE c;
+      cnt[side] := v_cnt; sm[side] := v_sum; xr[side] := v_xor;
+    END LOOP;
+
+    FOR i IN 1..reps LOOP
+      FOR k IN 1..2 LOOP
+        side := CASE WHEN i % 2 = 1 THEN k ELSE 3 - k END;
+        ms := round(pqn_api.explain_ms(stmts[side], v_path), 3);
+        IF best[side] IS NULL OR ms < best[side] THEN best[side] := ms; END IF;
+      END LOOP;
+    END LOOP;
+
+    same := cnt[1] = cnt[2] AND sm[1] = sm[2] AND xr[1] = xr[2];
+    res := jsonb_build_object(
+      'equal', same,
+      'before', jsonb_build_object('rows', cnt[1], 'sum', sm[1], 'xor', xr[1], 'ms', best[1]),
+      'after',  jsonb_build_object('rows', cnt[2], 'sum', sm[2], 'xor', xr[2], 'ms', best[2]),
+      'speedup', CASE WHEN best[2] > 0 THEN round(best[1] / best[2], 2) END,
+      'rounds', reps);
+    RAISE EXCEPTION 'measured' USING ERRCODE = 'PQN01';
+  EXCEPTION WHEN SQLSTATE 'PQN01' THEN
+    NULL;
+  END;
+  RETURN res;
 END
 $f$;
 RESET ROLE;
@@ -342,8 +356,9 @@ BEGIN
   IF grp NOT IN ('viewer', 'analyst', 'admin') THEN
     RAISE EXCEPTION 'pqn: group must be viewer, analyst or admin';
   END IF;
-  IF stmt_timeout !~ '^[1-9][0-9]*(ms|s|min)?$' THEN
-    RAISE EXCEPTION 'pqn: statement timeout must look like 15s, 500ms or 2min';
+  -- The unit is required: PostgreSQL reads a bare number as milliseconds and interval as seconds.
+  IF stmt_timeout !~ '^[1-9][0-9]*(ms|s|min)$' THEN
+    RAISE EXCEPTION 'pqn: statement timeout must look like 15s, 500ms or 2min (the unit is required)';
   END IF;
   IF login::text LIKE 'pqn\_%' THEN
     RAISE EXCEPTION 'pqn: % is a pqn role and cannot be enrolled', login;
@@ -373,19 +388,33 @@ $f$;
 CREATE FUNCTION pqn_api.enforce_limits()
 RETURNS TABLE (pid integer, login name, running interval, limit_ms bigint, cancelled boolean)
 LANGUAGE plpgsql AS $f$
+DECLARE
+  r record;
 BEGIN
   IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
      AND NOT (pg_has_role(current_user, 'pg_read_all_stats', 'USAGE') AND pg_has_role(current_user, 'pg_signal_backend', 'USAGE')) THEN
     RAISE EXCEPTION 'pqn: enforce_limits must run as a superuser, or a role that is a member of pg_read_all_stats and pg_signal_backend'
       USING HINT = 'GRANT pg_read_all_stats, pg_signal_backend TO the role a scheduler uses.';
   END IF;
-  RETURN QUERY
-  SELECT a.pid, l.login, clock_timestamp() - a.query_start, l.statement_timeout_ms, pg_cancel_backend(a.pid)
-    FROM pqn.limits l
-    JOIN pg_stat_activity a ON a.usename = l.login
-   WHERE a.state = 'active' AND a.backend_type = 'client backend' AND a.datname = current_database()
-     AND a.pid <> pg_backend_pid()
-     AND clock_timestamp() - a.query_start > make_interval(secs => l.statement_timeout_ms / 1000.0);
+  FOR r IN
+    SELECT a.pid AS a_pid, l.login AS a_login, clock_timestamp() - a.query_start AS a_running, l.statement_timeout_ms AS a_limit
+      FROM pqn.limits l
+      JOIN pg_stat_activity a ON a.usename = l.login
+     WHERE a.state = 'active' AND a.backend_type = 'client backend' AND a.datname = current_database()
+       AND a.pid <> pg_backend_pid()
+       AND clock_timestamp() - a.query_start > make_interval(secs => l.statement_timeout_ms / 1000.0)
+     ORDER BY a.query_start
+  LOOP
+    pid := r.a_pid; login := r.a_login; running := r.a_running; limit_ms := r.a_limit;
+    -- A caller without SUPERUSER may not cancel a superuser's statement, and PostgreSQL raises. That
+    -- must not stop the pass: report the session as not cancelled and go on to the next one.
+    BEGIN
+      cancelled := pg_cancel_backend(r.a_pid);
+    EXCEPTION WHEN insufficient_privilege THEN
+      cancelled := false;
+    END;
+    RETURN NEXT;
+  END LOOP;
 END
 $f$;
 
@@ -524,6 +553,7 @@ $f$;
 --   VerifiedEqual, not faster -> NotFaster
 --   rows differ               -> Different   (never reported as an improvement)
 --   $n placeholders           -> Unverified  (plans compared, nothing executed)
+--   both return no rows       -> Unverified  (equal, but nothing was compared)
 CREATE FUNCTION pqn_api.prove(l_investigation bigint, l_before text, l_after text, l_note text DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
 DECLARE
@@ -567,6 +597,10 @@ BEGIN
     IF NOT (m->>'equal')::boolean THEN
       verdict := 'Different';
       reason := 'the two statements returned different rows';
+    ELSIF (m->'before'->>'rows')::bigint = 0 AND (m->'after'->>'rows')::bigint = 0 THEN
+      -- Two empty results are equal whatever the statements do. Nothing was compared.
+      verdict := 'Unverified';
+      reason := 'both statements returned no rows, so nothing was compared; try values that return rows';
     ELSIF speed >= 1.2 THEN
       verdict := 'Proven';
       reason := format('same rows, %sx faster', speed);
@@ -744,14 +778,15 @@ BEGIN
 END
 $f$;
 
--- Undo expose(): drop the view and the registry row, and take the table access back unless
--- another view still uses the table.
+-- Undo expose(): drop the view and the registry row, then give pqn_owner exactly the access the
+-- remaining views on that table need (none when this was the last).
 CREATE FUNCTION pqn_api.unexpose(l_view name) RETURNS text
 LANGUAGE plpgsql AS $f$
 DECLARE
   r record;
   saved name := current_user;
   script text := '';
+  cols text;
 BEGIN
   SELECT * INTO r FROM pqn_api.exposed() e WHERE e.view_name = l_view;
   IF NOT FOUND THEN
@@ -762,9 +797,22 @@ BEGIN
   EXECUTE format('DELETE FROM pqn.exposed WHERE view_name = %L', l_view);
   EXECUTE format('SET LOCAL ROLE %I', saved);
   script := format('DROP VIEW pqn.%I;', l_view);
-  IF NOT EXISTS (SELECT 1 FROM pqn_api.exposed() e WHERE e.schema_name = r.schema_name AND e.table_name = r.table_name) THEN
-    EXECUTE format('REVOKE ALL ON %I.%I FROM pqn_owner', r.schema_name, r.table_name);
-    script := script || E'\n' || format('REVOKE ALL ON %I.%I FROM pqn_owner;', r.schema_name, r.table_name);
+  -- pqn_owner's access to the table is the union of what the views that remain need. Removing one
+  -- view must not leave its columns readable, so take everything back and grant that union again.
+  EXECUTE format('REVOKE ALL ON %I.%I FROM pqn_owner', r.schema_name, r.table_name);
+  script := script || E'\n' || format('REVOKE ALL ON %I.%I FROM pqn_owner;', r.schema_name, r.table_name);
+  IF EXISTS (SELECT 1 FROM pqn_api.exposed() e
+              WHERE e.schema_name = r.schema_name AND e.table_name = r.table_name AND e.scope = 'full') THEN
+    EXECUTE format('GRANT SELECT ON %I.%I TO pqn_owner', r.schema_name, r.table_name);
+    script := script || E'\n' || format('GRANT SELECT ON %I.%I TO pqn_owner;', r.schema_name, r.table_name);
+  ELSE
+    SELECT string_agg(quote_ident(c), ', ' ORDER BY c) INTO cols
+      FROM (SELECT DISTINCT unnest(e.columns) AS c FROM pqn_api.exposed() e
+             WHERE e.schema_name = r.schema_name AND e.table_name = r.table_name) x;
+    IF cols IS NOT NULL THEN
+      EXECUTE format('GRANT SELECT (%s) ON %I.%I TO pqn_owner', cols, r.schema_name, r.table_name);
+      script := script || E'\n' || format('GRANT SELECT (%s) ON %I.%I TO pqn_owner;', cols, r.schema_name, r.table_name);
+    END IF;
   END IF;
   RETURN script;
 END

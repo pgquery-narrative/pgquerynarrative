@@ -152,7 +152,21 @@ four, plus the lifecycle and deployment gaps found alongside them.
 - **Row-level security on the identity tables** (migration `000060`): `organization_members`,
   `oidc_group_org_mappings` and `audit_log_buffer` now isolate organizations like the rest
   of the schema. Login keeps working through two read-only lookups (a user's own memberships,
-  and the mappings for the token's groups); writes stay inside one organization.
+  and the mappings for the token's groups). Those lookups are `SELECT` policies only:
+  `INSERT`, `UPDATE` and `DELETE` have their own policies that name the current organization,
+  so a session that set a login lookup could otherwise have deleted a user's memberships in
+  other organizations.
+- **Statement statistics on a shared role are refused by what the connection is, not what the
+  role is called.** The check compared the pool's login name with the configured one, so a
+  shared role with a non-default name skipped it. It now asks whether the organization has
+  credentials of its own; an unknown case counts as shared.
+- **The admin API no longer returns database errors.** Nine write handlers answered `400` with
+  the raw error (constraint and table names). A conflict is `409 already exists`, a bad
+  reference or value is a fixed `400`, and anything else is a fixed `500`; the error is logged.
+  A message the store wrote for the caller (`user_id … are required`) is still shown.
+- **`pqn`: analyst SQL measured by `measure_pair` runs read only.** It runs as `pqn_owner`, so
+  a volatile function inside a statement could write. It now runs in a read-only sub-transaction
+  that is rolled back on exit, so `prove()` can still record afterwards.
 - **Only a schedule's owner or an admin can update, run or retry it**, as the docs said.
 - **The application does not depend on the read-only role's stored defaults.** A role can
   reset its own defaults and PostgreSQL cannot prevent it, but the server already set the
@@ -221,6 +235,20 @@ four, plus the lifecycle and deployment gaps found alongside them.
   work anywhere. An unknown flag is an error with a hint, a statement given twice (`--sql` plus words,
   or `--file`) and stray arguments (`pqn top 5`) are refused, and `pqn run SELECT -1` and a `--`
   comment after a word still reach PostgreSQL as SQL.
+- **Migration `000058` adds its constraint `NOT VALID`.** A validated `ADD CONSTRAINT` scans the
+  audit table under an exclusive lock, which blocks every audit insert. The constraint still
+  applies to new rows, and no existing row can violate it.
+- **A schedule's owner is looked up inside its organization.** With row-level security on
+  `organization_members` the worker's lookup, which had no organization, found nothing and disabled
+  the schedule as "owner unauthorized". The claimed organization is now set first.
+- **`pqn`: `prove` no longer calls two empty results proven.** Equal because both are empty is not a
+  comparison; the verdict is `Unverified` and the reason says so.
+- **`pqn`: `unexpose` takes back the removed view's columns.** With another view on the same table
+  it kept every column grant, and a removed `full` view left the whole table readable.
+- **`pqn`: `enroll` requires a unit on the timeout.** `'500'` was set as 500 ms by PostgreSQL and
+  recorded as 500 s. Use `15s`, `500ms` or `2min`.
+- **`pqn`: one refused cancel no longer stops `enforce_limits()`.** Cancelling a superuser's session
+  raised an error and aborted the pass for everyone else; it is now reported as not cancelled.
 - **`pqn` prints each wrapped `note:` once**, and every `--json` field is `snake_case`.
 - **The setup check's standby message was wrong.** It said `record_*` "reflects this server only";
   on a standby `record_*`, `investigate` and `prove` fail, and only `top()` reflects that server.

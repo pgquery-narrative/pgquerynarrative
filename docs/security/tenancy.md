@@ -16,8 +16,8 @@ and alerts, and more — has row-level security enabled and forced. That include
 tables `organization_members` and `oidc_group_org_mappings` and the audit writer's
 `audit_log_buffer` (migration `000060`). Login resolves an identity before an organization
 is chosen, so those two tables have one narrow, read-only exception each: a user's own
-memberships in every organization, and the mappings for the groups in the token. Writes
-stay inside one organization. Only tables that hold no organization-scoped data have none:
+memberships in every organization, and the mappings for the groups in the token. Each is a `SELECT`
+policy only: an `INSERT`, `UPDATE` or `DELETE` can reach a row only inside the current organization. Only tables that hold no organization-scoped data have none:
 `organizations` (the list itself), `api_key_usage`, `oidc_pkce_states` and
 `rate_limit_buckets`:
 

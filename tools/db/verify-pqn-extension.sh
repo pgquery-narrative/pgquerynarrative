@@ -373,6 +373,46 @@ rm -f "$IVAN_OUT" "$NORA_OUT"
 expect_eq "verify_setup names the login that removed its own timeout" "ivan" "$(su -c "SELECT string_agg(substr(detail, 1, strpos(detail, ' ') - 1), ',') FROM pqn_api.verify_setup() WHERE level = 'BLOCK' AND check_name = 'login has no statement_timeout'")"
 su -c "DELETE FROM pqn.limits WHERE login = 'ivan'" >/dev/null; su -c "DROP ROLE ivan" >/dev/null; su -c "DROP ROLE nora" >/dev/null
 
+echo "== review round 2: side effects, empty proofs, grants, units, enforcement"
+expect_err "enroll refuses a timeout with no unit (PostgreSQL and interval read it differently)" "must look like" postgres "SELECT pqn_api.enroll('alice', 'analyst', '500')"
+# unexpose keeps exactly what the remaining views need
+su -c "CREATE TABLE hr.badge (id int PRIMARY KEY, name text, secret text)" >/dev/null
+su -c "SELECT pqn_api.expose('hr.badge', ARRAY['id','name'], 'badge_a')" >/dev/null
+su -c "SELECT pqn_api.expose('hr.badge', ARRAY['id','secret'], 'badge_b')" >/dev/null
+su -c "SELECT pqn_api.unexpose('badge_b')" >/dev/null
+expect_eq "unexpose took back the removed view's column" "f" "$(su -c "SELECT has_column_privilege('pqn_owner', 'hr.badge', 'secret', 'SELECT')")"
+expect_eq "unexpose kept the remaining view's columns" "t" "$(su -c "SELECT has_column_privilege('pqn_owner', 'hr.badge', 'id', 'SELECT') AND has_column_privilege('pqn_owner', 'hr.badge', 'name', 'SELECT')")"
+su -c "SELECT pqn_api.expose('hr.badge', ARRAY['id'], 'badge_full', 'full')" >/dev/null
+su -c "SELECT pqn_api.unexpose('badge_full')" >/dev/null
+expect_eq "removing a 'full' view no longer leaves the whole table readable" "f" "$(su -c "SELECT has_column_privilege('pqn_owner', 'hr.badge', 'secret', 'SELECT')")"
+su -c "SELECT pqn_api.unexpose('badge_a')" >/dev/null
+expect_eq "removing the last view leaves no access" "f" "$(su -c "SELECT has_column_privilege('pqn_owner', 'hr.badge', 'id', 'SELECT')")"
+su -c "DROP TABLE hr.badge" >/dev/null
+# a volatile function inside analyst SQL cannot write as pqn_owner
+su -c "CREATE TABLE public.side_log (n serial); CREATE FUNCTION public.log_it() RETURNS int LANGUAGE sql VOLATILE SECURITY DEFINER AS 'INSERT INTO public.side_log DEFAULT VALUES RETURNING n'; GRANT EXECUTE ON FUNCTION public.log_it() TO PUBLIC" >/dev/null
+expect_err "measure_pair refuses a statement that writes" "read-only transaction" alice "SELECT pqn_api.measure_pair('SELECT public.log_it() AS n', 'SELECT 1 AS n')"
+expect_eq "and nothing was written" "0" "$(su -c "SELECT count(*) FROM public.side_log")"
+expect_ok "measure_pair leaves the caller's transaction writable (prove records right after it)" alice \
+  "DO \$\$ BEGIN PERFORM pqn_api.measure_pair('SELECT 1 AS n', 'SELECT 1 AS n'); IF current_setting('transaction_read_only') = 'on' THEN RAISE EXCEPTION 'left read only'; END IF; END \$\$"
+su -c "DROP FUNCTION public.log_it(); DROP TABLE public.side_log" >/dev/null
+# two empty results are not a proof
+EMPTY_ID="$(run alice "$DB" -c "SELECT pqn_api.record_investigation('SELECT id FROM pqn.people WHERE id < 0', NULL, 'empty')")"
+expect_eq "two empty result sets are Unverified, however much faster" "Unverified" \
+  "$(run alice "$DB" -c "SELECT pqn_api.prove($EMPTY_ID, 'SELECT id FROM pqn.people WHERE id < 0 AND (SELECT count(*) FROM generate_series(1, 300000)) > 0', 'SELECT id FROM pqn.people WHERE id < 0')->>'verdict'")"
+su -c "DELETE FROM pqn_ledger.evidence WHERE investigation_id = $EMPTY_ID; DELETE FROM pqn_ledger.investigations WHERE id = $EMPTY_ID" >/dev/null
+# one refused cancel (a superuser's session) must not stop the pass
+su -c "CREATE ROLE sched LOGIN; GRANT pg_read_all_stats, pg_signal_backend, pqn_admin TO sched; CREATE ROLE rooty LOGIN SUPERUSER; CREATE ROLE peon LOGIN; SELECT pqn_api.enroll('peon', 'analyst', '1s')" >/dev/null
+su -c "SELECT pqn_api.record_limit('rooty', 1000)" >/dev/null
+( run rooty "$DB" -c "SELECT pg_sleep(9)" >/dev/null 2>&1 ) &
+ROOTY_PID=$!
+( run peon "$DB" -c "SET statement_timeout = 0" -c "SELECT pg_sleep(9)" >/dev/null 2>&1 ) &
+PEON_PID=$!
+sleep 4
+PASS_OUT="$(run sched "$DB" -c "SELECT login || '=' || cancelled FROM pqn_api.enforce_limits() ORDER BY login" 2>&1)" || true
+expect_eq "enforce_limits reports the superuser as not cancelled and still cancels the rest" "peon=true rooty=false" "$(echo "$PASS_OUT" | tr '\n' ' ' | sed 's/ $//')"
+wait "$PEON_PID" || true; wait "$ROOTY_PID" || true
+su -c "DELETE FROM pqn.limits WHERE login IN ('rooty','peon'); DROP ROLE peon; DROP ROLE rooty; DROP ROLE sched" >/dev/null
+
 echo "== DROP EXTENSION keeps the evidence"
 run pqn_installer "$DB" -c "DROP EXTENSION pqn"
 expect_eq "the ledger rows are still there" "5" "$(su -c "SELECT count(*) FROM pqn_ledger.investigations")"

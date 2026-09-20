@@ -49,7 +49,7 @@ rewrite returned different rows, or was not fast enough). `1` an error, includin
 | `Proven` | Same rows (an order-independent fingerprint of every row) and at least 1.2 times faster |
 | `NotFaster` | Same rows, not 1.2 times faster |
 | `Different` | The rows differ. Never an improvement, however fast |
-| `Unverified` | Not measured: `$n` placeholders, a statement timeout, or index DDL, which is review only |
+| `Unverified` | Not compared: `$n` placeholders, a statement timeout, index DDL (review only), or both statements returned no rows. Two empty results are equal whatever the statements do |
 
 A verification on today's data, not a mathematical proof; see [Verify result equivalence](../workflows/verify-results.md),
 which uses the same fingerprint. Times are server-side, planning plus execution, and are the fastest of two rounds
@@ -67,7 +67,7 @@ Nothing is executable by `PUBLIC`.
 | `pqn_api.plan(query)` | analyst | The estimated plan as JSON. Executes nothing. `$n` placeholders need PostgreSQL 16 |
 | `pqn_api.run(query, row_limit = 100)` | analyst | `{rows, columns, truncated}`. One read-only statement over the exposed views; `row_limit` is clamped to 1–10000. Makes the rest of its transaction read only |
 | `pqn_api.findings(plan)` | analyst | Findings from a plan, as rules over the plan JSON |
-| `pqn_api.measure_pair(a, b, repeats = 2)` | analyst | `{equal, before, after, speedup, rounds}`. Both fingerprints in one snapshot; `repeats` is clamped to 1–5. Refuses `$n` |
+| `pqn_api.measure_pair(a, b, repeats = 2)` | analyst | `{equal, before, after, speedup, rounds}`. Both fingerprints in one snapshot; `repeats` is clamped to 1–5. Refuses `$n`. Runs the statements read only, so one that writes fails, and leaves your transaction writable |
 | `pqn_api.investigate(query, title, queryid)` | analyst | Plans, finds, and records a new investigation. `investigation_id` and `findings` in the result |
 | `pqn_api.prove(investigation, before, after, note)` | analyst | The verdict, both plan costs and the measurement, recorded as a proof |
 | `pqn_api.record_investigation(query, queryid, title)` | analyst | The new investigation's id |
@@ -77,9 +77,9 @@ Nothing is executable by `PUBLIC`.
 | `pqn_api.verify_setup()` | admin | One row per check: `level` (`BLOCK`, `WARN`, `INFO`, `OK`), `check_name`, `detail`, `fix` |
 | `pqn_api.init()` | admin | Creates the ledger, the exposure registry and the limits registry. Safe to repeat |
 | `pqn_api.expose(table, columns, view_name, scope = 'view')`, `pqn_api.expose_sql(…)` | admin | Creates the view and registers it; `expose_sql` prints the statements instead. `scope` is `view` or `full` |
-| `pqn_api.unexpose(view_name)`, `pqn_api.exposed()` | admin | Removes a view; lists what is exposed |
-| `pqn_api.enroll(login, group = 'analyst', stmt_timeout = '15s')`, `pqn_api.enroll_sql(…)` | admin | Puts a login into `viewer`, `analyst` or `admin` with limits; `enroll_sql` prints the statements |
-| `pqn_api.enforce_limits()` | admin | Cancels statements that outlived their enrolled limit. Needs a superuser, or `pg_read_all_stats` and `pg_signal_backend` |
+| `pqn_api.unexpose(view_name)`, `pqn_api.exposed()` | admin | Removes a view and leaves `pqn_owner` exactly the access the remaining views on that table need; lists what is exposed |
+| `pqn_api.enroll(login, group = 'analyst', stmt_timeout = '15s')`, `pqn_api.enroll_sql(…)` | admin | Puts a login into `viewer`, `analyst` or `admin` with limits; `enroll_sql` prints the statements. The timeout needs a unit: `15s`, `500ms` or `2min` |
+| `pqn_api.enforce_limits()` | admin | Cancels statements that outlived their enrolled limit. Needs a superuser, or `pg_read_all_stats` and `pg_signal_backend`. A superuser's session cannot be cancelled without being one: it is reported with `cancelled = false` and the pass goes on |
 | `pqn_api.record_limit(login, ms)` | admin | Called by the `enroll` script |
 
 `explain_ms` and `exposed_path` are helpers only their owner can execute.

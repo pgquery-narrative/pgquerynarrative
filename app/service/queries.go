@@ -324,7 +324,7 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 	if err != nil {
 		return nil, connectionNotFoundQueriesError(err)
 	}
-	filterRole, err := s.connectionResolver.readOnlyUserFor(payload.ConnectionID)
+	configuredRole, err := s.connectionResolver.readOnlyUserFor(payload.ConnectionID)
 	if err != nil {
 		return nil, connectionNotFoundQueriesError(err)
 	}
@@ -333,7 +333,7 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 		return nil, &queries.ValidationError{Name: "validation_error", Message: apperrors.ErrStatStatementsUnavailable.Error(), Code: strPtr("STAT_STATEMENTS_UNAVAILABLE")}
 	}
 	// Prefer the live role of the resolved (possibly tenant) pool over catalog config.
-	configuredRole := filterRole
+	filterRole := configuredRole
 	var liveRole string
 	if qerr := statsPool.QueryRow(ctx, `SELECT current_user`).Scan(&liveRole); qerr == nil && strings.TrimSpace(liveRole) != "" {
 		filterRole = liveRole
@@ -341,8 +341,9 @@ func (s *QueriesService) StatStatements(ctx context.Context, payload *queries.St
 	// pg_stat_statements is kept per database role, not per organization. On a role several
 	// organizations share, the statement text of one organization's analysts is in every other
 	// organization's results, so only a platform administrator may read it there. An organization
-	// with credentials of its own (a different role) or a single-organization install is unaffected.
-	if s.appPool != nil && filterRole == configuredRole && !auth.IsPlatformAdminRole(auth.PrincipalFromContext(ctx).Role) {
+	// with credentials of its own or a single-organization install is unaffected. Whether the role is
+	// shared is a property of the connection, so a role's name does not decide it.
+	if s.appPool != nil && runner.SharesReadOnlyRole(ctx) && !auth.IsPlatformAdminRole(auth.PrincipalFromContext(ctx).Role) {
 		var orgs int
 		if err := s.appPool.QueryRow(ctx, `SELECT count(*) FROM app.organizations`).Scan(&orgs); err != nil || orgs > 1 {
 			return nil, &queries.ValidationError{Name: "validation_error", Message: "statement statistics on a connection shared by several organizations are visible to platform administrators only; give the organization its own read-only credentials to see its own", Code: strPtr(statStatementsSharedCode)}

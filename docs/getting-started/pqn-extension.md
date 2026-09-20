@@ -151,7 +151,7 @@ Evidence is in the ledger: pqn evidence 1
 | `Proven` | Same rows (a fingerprint of every row) and at least 1.2 times faster in the measured run |
 | `NotFaster` | Same rows, not 1.2 times faster |
 | `Different` | The rows differ. Never an improvement, however fast |
-| `Unverified` | Not measured: `$n` placeholders, a statement timeout, or index DDL, which is review only |
+| `Unverified` | Not compared: `$n` placeholders, a statement timeout, index DDL (review only), or both statements returned no rows |
 
 `Proven` is a verification on today's data, not a mathematical proof; see [Verify result equivalence](../workflows/verify-results.md).
 

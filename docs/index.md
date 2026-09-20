@@ -25,7 +25,7 @@ LLM; an optional LLM adds natural-language Ask and narrative reports on top.
 |---|---|---|
 | **Evaluating it** | [Quick start](getting-started/quickstart.md) — `make demo`, guided investigation | [Concepts](concepts.md) |
 | **Investigating a real query** | [Connect your PostgreSQL](getting-started/connect-postgres.md) | [Investigate a slow query](workflows/investigate.md) |
-| **Working from a terminal, with no server** | [Quick start: pqn](getting-started/pqn-extension.md) | [Install the pqn extension](getting-started/pqn-installation.md) |
+| **Working from a terminal, with only PostgreSQL** | [Quick start: pqn](getting-started/pqn-extension.md) | [Install the pqn extension](getting-started/pqn-installation.md) |
 | **A DBA reviewing access** | [Trust model](trust-model.md) | [Database roles](security/database-roles.md) · [Query execution safety](security/query-safety.md) |
 | **Deploying it** | [Deployment](operate/deployment.md) | [Production configuration](operate/production.md) · [Health and monitoring](operate/monitoring.md) |
 | **Integrating with it** | [REST API](integrations/rest-api.md) | [API reference](reference/api.md) · [MCP server](integrations/mcp.md) · [PostgreSQL extensions](integrations/postgres-extension.md) |

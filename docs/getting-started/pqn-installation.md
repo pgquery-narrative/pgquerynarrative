@@ -96,7 +96,7 @@ This exposes `id` and `dept` and leaves `ssn` out. Pick a scope with a fourth ar
   investigate real application statements, which use `SELECT *`. A plan or row count over a hidden column can reveal how common a
   value is, so the setup check warns about each `full` table.
 
-List with `pqn_api.exposed()`, remove with `pqn_api.unexpose('people')`.
+List with `pqn_api.exposed()`, remove with `pqn_api.unexpose('people')`. Removing a view also takes back the columns only that view needed.
 
 ## 4. Enroll people
 
@@ -117,7 +117,7 @@ ALTER ROLE alice SET temp_file_limit = '1GB';
 
 Groups: `viewer` reads their own investigations. `analyst` also plans, runs, ranks statements, investigates and checks rewrites.
 `admin` also exposes tables, enrolls people and runs the setup check, and is not a superuser. The third argument sets the timeout
-(`'120s'`, `'2min'`). Limits are set on the login, because a limit on a group role does nothing. Only a superuser can set
+(`'120s'`, `'2min'`); a bare number is refused, because PostgreSQL reads it as milliseconds and other tools as seconds. Limits are set on the login, because a limit on a group role does nothing. Only a superuser can set
 `temp_file_limit`; for anyone else that line is a comment.
 
 ### Enforce the limits
@@ -129,7 +129,7 @@ cancels the running statement of every enrolled person that has outlived the tim
 themselves or removed from their role. Run it as a superuser, or as a role that belongs to `pg_read_all_stats` and `pg_signal_backend`:
 
 ```bash
-psql -U postgres -d app -At -c "SELECT 'limits enforced: ' || count(*) FROM pqn_api.enforce_limits()"
+psql -U postgres -d app -At -c "SELECT 'limits enforced: ' || count(*) FILTER (WHERE cancelled) FROM pqn_api.enforce_limits()"
 ```
 
 ```text
@@ -141,6 +141,8 @@ It cancels only what has already run too long, so run it every few seconds from 
 ```sh
 while true; do psql -U postgres -d app -qAtc "SELECT * FROM pqn_api.enforce_limits()"; sleep 5; done
 ```
+
+A caller that is not a superuser cannot cancel a superuser's statement. That session is listed with `cancelled = false` and the pass carries on with the others.
 
 `pqn doctor` reports a login that has lost its timeout, and anyone enrolled before limits were recorded (run `enroll` for them again).
 

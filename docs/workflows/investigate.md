@@ -95,4 +95,4 @@ no equivalence claim.
 
 [Concepts](../concepts.md) · [REST API](../integrations/rest-api.md) ·
 [Architecture — request paths](../architecture.md#request-paths) ·
-[`pqn`](../getting-started/pqn-extension.md), the same investigation from a terminal against your database, with no server
+[`pqn`](../getting-started/pqn-extension.md), the same investigation from a terminal against your database, with no PgQueryNarrative server

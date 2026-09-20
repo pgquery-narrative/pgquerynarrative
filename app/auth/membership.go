@@ -194,7 +194,7 @@ func (s *MembershipStore) ListMembershipDetails(ctx context.Context, userID stri
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return nil, fmt.Errorf("user_id is required")
+		return nil, InputError("user_id is required")
 	}
 	var out []MembershipDetail
 	err := withLookupTx(ctx, s.pool, map[string]string{"app.membership_user_id": userID}, func(ctx context.Context, tx pgx.Tx) error {
@@ -230,7 +230,7 @@ func (s *MembershipStore) ListMemberships(ctx context.Context, userID string) ([
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
-		return nil, fmt.Errorf("user_id is required")
+		return nil, InputError("user_id is required")
 	}
 	return s.listMemberships(ctx, userID)
 }
@@ -273,7 +273,7 @@ func (s *MembershipStore) CreateOrganization(ctx context.Context, name, slug str
 	name = strings.TrimSpace(name)
 	slug = strings.TrimSpace(strings.ToLower(slug))
 	if name == "" || slug == "" {
-		return "", fmt.Errorf("name and slug are required")
+		return "", InputError("name and slug are required")
 	}
 	var id string
 	err := s.pool.QueryRow(ctx, `
@@ -291,7 +291,7 @@ func (s *MembershipStore) ListOrgMembers(ctx context.Context, orgID string) ([]M
 	}
 	orgID = strings.TrimSpace(orgID)
 	if orgID == "" {
-		return nil, fmt.Errorf("organization_id is required")
+		return nil, InputError("organization_id is required")
 	}
 	rows, err := queryWithOrg(ctx, s.pool, orgID, `
 		SELECT organization_id::text, role, user_id
@@ -323,7 +323,7 @@ func (s *MembershipStore) RevokeMembership(ctx context.Context, userID, orgID st
 	userID = strings.TrimSpace(userID)
 	orgID = strings.TrimSpace(orgID)
 	if userID == "" || orgID == "" {
-		return fmt.Errorf("user_id and organization_id are required")
+		return InputError("user_id and organization_id are required")
 	}
 	return execWithOrg(ctx, s.pool, orgID, `
 		DELETE FROM app.organization_members
