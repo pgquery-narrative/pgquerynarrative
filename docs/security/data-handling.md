@@ -59,13 +59,17 @@ provider is sent rows at all.
 | Mode | Behavior | Allowed in production? |
 |---|---|---|
 | `best_effort` | Logged asynchronously; a write failure never blocks the request | No |
-| `required` | High-risk actions (`queries.run`, `reports.generate`) **fail the request** if the audit write fails; other events remain best-effort | Yes |
+| `required` | High-risk actions (`queries.run`, `reports.generate`, and every admin change: keys, memberships, connection permissions) **fail the request** if the audit write fails; other events remain best-effort | Yes |
 | `buffered` | Queued (1,000 entries) and flushed in the background; on a full queue or a failed write, entries spill to a durable table and are replayed every 30 seconds | Yes |
 
 `best_effort` is rejected under production StrictMode specifically because a
 security review needs to know that logging silently dropping does not also mean
 the request silently succeeded unaudited. Recorded event types include API
-requests, authentication failures, and rate-limit rejections.
+requests, authentication failures, and rate-limit rejections, plus key create and revoke,
+membership and connection-permission changes, and share create and revoke. The application
+role can insert and read `app.audit_logs` but not update, delete or truncate it (migration
+`000059`); a role that owns the table can still grant those back, so run migrations as a
+different owner if the audit trail must resist a compromised application role.
 
 ## See also
 

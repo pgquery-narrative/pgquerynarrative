@@ -69,6 +69,10 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("invalid configuration: %v", err)
 	}
+	if err := auth.ValidateCredentialSources(cfg.Security.AuthEnabled, cfg.Security.APIKey, cfg.Security.APIKeyHash,
+		cfg.Security.APIKeysJSON, strings.TrimSpace(cfg.Security.OIDCIssuer) != ""); err != nil {
+		log.Fatalf("invalid configuration: %v", err)
+	}
 	if cfg.Security.AllowInsecureNoAuth {
 		log.Printf("WARNING: SECURITY_ALLOW_INSECURE_NO_AUTH=true — authentication is disabled and the API uses an open-admin principal. Local/dev only; forbidden when APP_ENV=production.")
 	}

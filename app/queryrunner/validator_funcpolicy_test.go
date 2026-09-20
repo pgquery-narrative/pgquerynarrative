@@ -34,6 +34,15 @@ func TestValidator_FunctionPolicy(t *testing.T) {
 		{"SELECT pg_terminate_backend(1)", apperrors.ErrFunctionNotAllowed},
 		// Executes a second, unvalidated query.
 		{"SELECT query_to_xml('SELECT 1', false, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT schema_to_xml('opendata', true, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT schema_to_xmlschema('opendata', true, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT schema_to_xml_and_xmlschema('opendata', true, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT database_to_xml(true, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT database_to_xmlschema(true, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT database_to_xml_and_xmlschema(true, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT pg_catalog.schema_to_xml('opendata', true, false, '')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT xpath('//note/text()', database_to_xml(true, false, ''))", apperrors.ErrFunctionNotAllowed},
+		{"SELECT * FROM ts_stat('SELECT to_tsvector(note) FROM opendata.t')", apperrors.ErrFunctionNotAllowed},
 		// External systems.
 		{"SELECT dblink('host=x', 'SELECT 1')", apperrors.ErrFunctionNotAllowed},
 		{"SELECT pg_notify('c', 'p')", apperrors.ErrFunctionNotAllowed},

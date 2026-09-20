@@ -39,6 +39,17 @@ const (
 	EventConnectionAuthz   = "CONNECTION_AUTHZ_CHANGE"
 )
 
+// AllEventTypes lists every event type the application emits. The audit_logs event_type CHECK
+// constraint must allow exactly these (plus UPDATE_QUERY, kept for old rows); a test compares them.
+func AllEventTypes() []string {
+	return []string{
+		EventAPIRequest, EventAuthFailure, EventAuthSuccess, EventRateLimitExceeded, EventUnauthorized,
+		EventRunQuery, EventGenerateReport, EventExportReport, EventSaveQuery, EventDeleteQuery,
+		EventInvalidSQL, EventViewRawSQL, EventCreateShare, EventRevokeShare,
+		EventManagedKeyCreate, EventManagedKeyRevoke, EventMembershipChange, EventConnectionAuthz,
+	}
+}
+
 // Mode controls audit write durability/enforcement semantics.
 type Mode string
 

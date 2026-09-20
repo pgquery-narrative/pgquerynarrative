@@ -94,7 +94,7 @@ func (m *SessionManager) Issue(w http.ResponseWriter, s Session) error {
 		s.OrgID = DefaultOrgID()
 	}
 	if s.Role == "" {
-		s.Role = RoleAnalyst
+		s.Role = RoleViewer
 	}
 	if s.ExpiresAt.IsZero() {
 		s.ExpiresAt = time.Now().UTC().Add(m.ttl)

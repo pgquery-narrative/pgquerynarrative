@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -130,7 +131,7 @@ func adminListAPIKeys(w http.ResponseWriter, r *http.Request, deps adminDeps) {
 	p := auth.PrincipalFromContext(r.Context())
 	keys, err := deps.keys.List(r.Context(), p.OrgID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	type item struct {
@@ -172,6 +173,19 @@ func adminCreateAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps) {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
+	if !auth.IsKnownRole(body.Role) {
+		http.Error(w, "role must be one of viewer, analyst, tenant_admin, platform_admin", http.StatusBadRequest)
+		return
+	}
+	for _, sc := range body.Scopes {
+		if !auth.IsKnownScope(sc) {
+			http.Error(w, "scopes may only contain admin, write, read", http.StatusBadRequest)
+			return
+		}
+	}
+	if body.Scopes == nil {
+		body.Scopes = []string{}
+	}
 	p := auth.PrincipalFromContext(r.Context())
 	if !auth.CanAssignRole(p.Role, body.Role) {
 		auth.WriteForbidden(w)
@@ -188,7 +202,7 @@ func adminCreateAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps) {
 	}
 	issued, err := deps.keys.Create(r.Context(), p.OrgID, body.Role, p.UserID, body.Scopes, expires)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	id := issued.ID
@@ -217,7 +231,7 @@ func adminRevokeAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps, k
 	p := auth.PrincipalFromContext(r.Context())
 	ok, err := deps.keys.Revoke(r.Context(), p.OrgID, keyID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	if !ok {
@@ -245,6 +259,10 @@ func adminUpsertMembership(w http.ResponseWriter, r *http.Request, deps adminDep
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if !auth.IsKnownRole(body.Role) {
+		http.Error(w, "role must be one of viewer, analyst, tenant_admin, platform_admin", http.StatusBadRequest)
 		return
 	}
 	p := auth.PrincipalFromContext(r.Context())
@@ -392,7 +410,7 @@ func adminRevokeConnectionPermission(w http.ResponseWriter, r *http.Request, dep
 func adminListOrganizations(w http.ResponseWriter, r *http.Request, deps adminDeps) {
 	orgs, err := deps.membership.ListOrganizations(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	if orgs == nil {
@@ -440,7 +458,7 @@ func adminListMemberships(w http.ResponseWriter, r *http.Request, deps adminDeps
 	}
 	members, err := deps.membership.ListOrgMembers(r.Context(), orgID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	if members == nil {
@@ -495,7 +513,7 @@ func adminListConnectionAssignments(w http.ResponseWriter, r *http.Request, deps
 	}
 	ids, err := deps.connAuthz.ListAssignedConnections(r.Context(), orgID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	if ids == nil {
@@ -552,7 +570,7 @@ func adminListConnectionSecrets(w http.ResponseWriter, r *http.Request, deps adm
 	}
 	items, err := deps.orgSecrets.List(r.Context(), orgID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		adminInternalError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"secrets": items, "organization_id": orgID})
@@ -651,6 +669,13 @@ func adminDeleteConnectionSecret(w http.ResponseWriter, r *http.Request, deps ad
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// adminInternalError answers 500 with a fixed message. The database error is logged, not returned:
+// it names tables and columns.
+func adminInternalError(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("admin api %s %s failed: %v", r.Method, r.URL.Path, err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

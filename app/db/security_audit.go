@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
@@ -227,7 +228,7 @@ func probeReadonlyConnection(ctx context.Context, conn config.DataConnectionConf
 	defer pool.Close()
 
 	prefix := fmt.Sprintf("connection %s: ", id)
-	if _, err := pool.Exec(ctx, fmt.Sprintf("INSERT INTO %s.sales DEFAULT VALUES", pgxQuoteIdent(schema))); err == nil {
+	if err := probeAsWriter(ctx, pool, fmt.Sprintf("INSERT INTO %s.sales DEFAULT VALUES", pgxQuoteIdent(schema))); err == nil {
 		result.WriteBlocked = false
 		issues = append(issues, prefix+"readonly role can write to allowed schema")
 	} else if !isPermissionDenied(err) && !isUndefinedTable(err) {
@@ -235,7 +236,7 @@ func probeReadonlyConnection(ctx context.Context, conn config.DataConnectionConf
 		issues = append(issues, prefix+"readonly write probe inconclusive: "+err.Error())
 	}
 
-	if _, err := pool.Exec(ctx, fmt.Sprintf("CREATE TABLE %s.pgqn_forbidden_write(id int)", pgxQuoteIdent(schema))); err == nil {
+	if err := probeAsWriter(ctx, pool, fmt.Sprintf("CREATE TABLE %s.pgqn_forbidden_write(id int)", pgxQuoteIdent(schema))); err == nil {
 		result.DDLBlocked = false
 		issues = append(issues, prefix+"readonly role can create tables")
 	} else if !isPermissionDenied(err) {
@@ -265,6 +266,24 @@ func probeReadonlyConnection(ctx context.Context, conn config.DataConnectionConf
 	}
 
 	return result, issues
+}
+
+// probeAsWriter runs stmt in a read-write transaction that is always rolled back. The read-only role
+// carries default_transaction_read_only=on, so a plain statement fails with "cannot execute ... in a
+// read-only transaction" (SQLSTATE 25006) whatever the role's privileges are, which proves nothing.
+// Lifting the flag first makes the answer depend on privileges only: permission denied means the
+// role cannot write, success means it can (and the rollback undoes the probe).
+func probeAsWriter(ctx context.Context, pool *pgxpool.Pool, stmt string) error {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadWrite})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "SET LOCAL transaction_read_only = off"); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, stmt)
+	return err
 }
 
 func isPermissionDenied(err error) bool {

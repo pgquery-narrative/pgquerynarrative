@@ -138,7 +138,7 @@ Requests choose a connection with `connection_id` — see
 | `SECURITY_ALLOW_INSECURE_NO_AUTH` | `false` | Required (`true`) when auth is off — explicit opt-in for open local/dev access. Forbidden in production |
 | `SECURITY_API_KEY` | empty | Plaintext bearer token. ≥16 chars if set. Forbidden in production — use the hash below |
 | `SECURITY_API_KEY_HASH` | empty | SHA-256 hex of the bearer token, compared in constant time |
-| `SECURITY_API_KEYS_JSON` | empty | JSON array of managed keys (`key_hash`, `id`, `role`, `scopes`, `expires_at`, `revoked`). Must use `key_hash`, not plaintext `key`, in production |
+| `SECURITY_API_KEYS_JSON` | empty | JSON array of managed keys (`key_hash`, `id`, `role`, `scopes`, `expires_at`, `revoked`). `role` is required, `expires_at` must be RFC 3339, and any mistake stops startup ([details](../security/authentication.md)). Must use `key_hash`, not plaintext `key`, in production |
 | `SECURITY_TRUSTED_PROXIES` | empty | Comma-separated CIDRs trusted to set forwarded-for headers for per-IP rate limiting |
 | `SECURITY_MAX_REQUEST_BODY_BYTES` | `5242880` (5 MiB) | Hard cap on request body size |
 

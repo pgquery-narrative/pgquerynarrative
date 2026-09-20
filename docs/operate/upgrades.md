@@ -4,10 +4,10 @@
 
 Migrations use [golang-migrate](https://github.com/golang-migrate/migrate) against
 `app/db/migrations/`. The server enforces a **minimum schema version**
-(`db.RequiredMigrationVersion`, currently **57**) at readiness time — not at process
+(`db.RequiredMigrationVersion`, currently **59**) at readiness time — not at process
 start:
 
-- `GET /ready` returns **503** with `schema migration version N < required 57: run
+- `GET /ready` returns **503** with `schema migration version N < required 59: run
   database migrations` (or `dirty at version N: resolve with migrate force before
   starting`) if the database is behind or the last migration failed partway.
 - The server **process itself still starts and accepts connections** — only
@@ -37,7 +37,7 @@ dirty flag before running `up` again.
 4. Confirm `GET /ready` is `200` on the new version.
 
 Upgrading from a `2.0.x` install specifically requires running migrations through
-schema version 57 first — the server on a database behind that version will report
+schema version 59 first — the server on a database behind that version will report
 `/ready` as unhealthy rather than boot-loop, but it will not serve traffic correctly
 either.
 

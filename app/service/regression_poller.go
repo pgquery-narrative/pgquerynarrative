@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +17,8 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
+
+var sharedStatsWarning sync.Once
 
 // RegressionPollerConfig tunes background regression detection.
 type RegressionPollerConfig struct {
@@ -108,7 +111,10 @@ func (p *RegressionPoller) pollAllOrgs(ctx context.Context) {
 // pg_stat_statements from. Each connection is snapshotted and evaluated
 // independently.
 func (p *RegressionPoller) pollOrg(ctx context.Context, orgID string) error {
-	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: "regression-poller", OrgID: orgID, Role: auth.RoleAdmin})
+	// A tenant-scoped principal, not a platform admin: on a database role shared by several
+	// organizations the snapshot would copy every organization's SQL text into this one's tables, so
+	// StatStatements refuses it there and the poller skips that connection.
+	ctx = auth.WithPrincipal(ctx, auth.Principal{UserID: "regression-poller", OrgID: orgID, Role: auth.RoleTenantAdmin})
 	if !p.queriesSvc.statStatementsEnabled {
 		return nil
 	}
@@ -158,6 +164,12 @@ func (p *RegressionPoller) pollOrgConnection(ctx context.Context, orgID, connID 
 		Limit:        50,
 		ConnectionID: &connIDPtr,
 	})
+	if isStatStatementsSharedError(err) {
+		sharedStatsWarning.Do(func() {
+			log.Printf("regression poller: skipping connection %q: its read-only role is shared by several organizations, so polling would copy one organization's SQL text into another's. Give each organization its own read-only credentials (connection secrets) to poll it.", connID)
+		})
+		return nil
+	}
 	if err != nil || stats == nil || len(stats.Items) == 0 {
 		return err
 	}

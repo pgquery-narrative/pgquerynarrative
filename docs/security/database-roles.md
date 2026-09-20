@@ -15,7 +15,7 @@ role, the model is defeated — use a real read-only grant set in production.
 
 - **Migration role** may `CREATE EXTENSION` and `ALTER ROLE`. It has no other special
   status; it is used for exactly one command and then discarded.
-- **App role** has ordinary DML on `app.*` and is subject to the same row-level
+- **App role** has ordinary DML on `app.*` (except `app.audit_logs`, which it can only insert into and read) and is subject to the same row-level
   security as everyone else at the SQL level — the application enforces isolation by
   setting `app.current_org_id` per transaction (see
   [Organizations and tenancy](tenancy.md)), not by bypassing RLS.
@@ -30,6 +30,14 @@ The one place a read-only pool briefly gains write capability is the HypoPG inde
 projection, which runs `SET LOCAL transaction_read_only = off` inside a single
 transaction to create a **hypothetical** index (`hypopg_create_index`), then resets
 it and rolls back — nothing is committed to your schema.
+
+That window is the one place the read-only role's own settings could be changed: PostgreSQL lets
+a role change its own defaults (`ALTER ROLE … RESET statement_timeout`, and so on) whenever it
+holds a read-write transaction, and the role's timeouts and `default_transaction_read_only`
+are such defaults. Nothing user-supplied runs in that window (the validator admits only a
+single `SELECT` or `EXPLAIN` of one, and the HypoPG step runs fixed statements), but anyone
+holding the role's own credentials can do it directly, so keep those credentials out of reach and
+compare `pg_roles.rolconfig` with the migrations if in doubt.
 
 ## On a fresh database
 
@@ -51,6 +59,10 @@ verify` job) checks, as the read-only role:
 - No read access to `pg_authid` or `app.saved_queries`, no `USAGE` on the `app` schema
 - No privileged role membership
 - The HypoPG read-write boundary still resets correctly
+
+The server runs the same write and DDL probes at startup in production, with the read-only
+session flag lifted first, so the result depends on the role's privileges and not on the
+`default_transaction_read_only=on` the migrations set.
 
 ## See also
 

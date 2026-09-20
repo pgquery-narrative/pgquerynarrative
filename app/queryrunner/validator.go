@@ -468,6 +468,11 @@ var deniedFunctions = map[string]struct{}{
 	"table_to_xml":               {}, "table_to_xmlschema": {},
 	"table_to_xml_and_xmlschema": {},
 	"cursor_to_xml":              {}, "cursor_to_xmlschema": {},
+	// Read every table in a schema or database the role can see, whatever the schema allowlist says.
+	"schema_to_xml": {}, "schema_to_xmlschema": {}, "schema_to_xml_and_xmlschema": {},
+	"database_to_xml": {}, "database_to_xmlschema": {}, "database_to_xml_and_xmlschema": {},
+	// Runs a query string of its own and returns word statistics of the result.
+	"ts_stat": {},
 
 	// Reach external systems.
 	"dblink": {}, "dblink_exec": {}, "dblink_connect": {},

@@ -55,6 +55,9 @@ func (s *ManagedKeyStore) Create(ctx context.Context, orgID, role, createdBy str
 		return nil, fmt.Errorf("organization_id is required")
 	}
 	role = normalizeRole(role)
+	if scopes == nil {
+		scopes = []string{} // the column is NOT NULL
+	}
 	secret, err := newAPIKeySecret()
 	if err != nil {
 		return nil, err

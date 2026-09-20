@@ -7,6 +7,43 @@ the fix lifecycle mixed up two databases reporting the same `queryid`, and
 "verified" claimed more than the algorithm delivers. This release closes all
 four, plus the lifecycle and deployment gaps found alongside them.
 
+### Security fixes (roles review)
+
+- **Bad key configuration no longer turns authentication off.** With
+  `SECURITY_AUTH_ENABLED=true`, invalid JSON, `[]` or a misspelled field in
+  `SECURITY_API_KEYS_JSON` used to start the server normally and serve every caller as
+  `platform_admin`. `AuthRequired()` now depends only on the switch, and startup refuses
+  any key configuration that would weaken or drop a key (unknown field, missing or unknown
+  role, non-RFC 3339 `expires_at`, unknown scope, malformed hash, no usable credential).
+- **Unknown roles are never write roles.** `read-only`, `guest` or a missing role used to
+  become `analyst`. Configuration and the admin API now refuse them; identity-provider
+  values that are missing or unrecognised become `viewer`.
+- **`/web/reports/export/{md,json,sql}` require authentication** (they ran as the default
+  organization's admin with no credential). Everything under `/web/reports/export` is now
+  protected by prefix except the shared-link PDF, and a route-matrix test covers every
+  route `main.go` registers.
+- **Audit constraint** (migration `000058`): key create and revoke, membership and
+  connection-permission changes, share create and revoke, and raw-SQL views were rejected
+  by `audit_logs_event_type_check`, so they were never recorded and, in `required` mode,
+  failed the request after the change had been applied. A test now compares the code's event
+  types with the latest constraint. **Audit log is append-only** for the application role
+  (migration `000059`). **The schema gate is now version 59.**
+- **`schema_to_xml`, `database_to_xml` (and their `_xmlschema` forms) and `ts_stat` are
+  denied**, closing a bypass of the schema allowlist.
+- **`/queries/stats` on a role shared by several organizations** is limited to platform
+  administrators (`STAT_STATEMENTS_SHARED`); it exposed other organizations' SQL text. The
+  regression poller skips such a connection (it copied the shared role's SQL text into every
+  organization's snapshot tables) and the workspace overview's two workload totals read zero
+  for non-platform users there. Single-organization installs and organizations with their own
+  credentials are unaffected.
+- **Only a schedule's owner or an admin can update, run or retry it**, as the docs said.
+- **Startup boundary probe** lifts the read-only session flag, so a superuser-migrated
+  read-only role no longer makes a production start fail on SQLSTATE 25006.
+- Admin API: unknown roles and scopes are `400`, a key without `scopes` no longer fails
+  with `500`, and database errors are logged, not returned.
+- **`pqn`**: terminal control characters are stripped from all output, and a proof recorded
+  with `record_evidence` is stamped `"source": "client"` (`prove()` stamps `"database"`).
+
 ### Breaking
 
 - **`col::numeric = const` and `col::text = 'const'` are no longer rewritten.**

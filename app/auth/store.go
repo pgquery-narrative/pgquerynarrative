@@ -3,8 +3,11 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -78,53 +81,108 @@ func (a *Authenticator) SetManagedKeyStore(store *ManagedKeyStore) {
 	}
 }
 
-func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []APIKeyEntry {
-	var out []APIKeyEntry
-	raw := strings.TrimSpace(keysJSON)
-	if raw != "" {
-		var parsed []struct {
-			Key       string   `json:"key"`
-			KeyHash   string   `json:"key_hash"`
-			ID        string   `json:"id"`
-			Prefix    string   `json:"prefix"`
-			Role      string   `json:"role"`
-			OrgID     string   `json:"org_id"`
-			ExpiresAt string   `json:"expires_at"`
-			Scopes    []string `json:"scopes"`
-			Revoked   bool     `json:"revoked"`
+// apiKeyJSON is one element of SECURITY_API_KEYS_JSON. Unknown fields are rejected so a
+// misspelled field ("keyhash") is an error, not a key that silently does not exist.
+type apiKeyJSON struct {
+	Key       string   `json:"key"`
+	KeyHash   string   `json:"key_hash"`
+	ID        string   `json:"id"`
+	Prefix    string   `json:"prefix"`
+	Role      string   `json:"role"`
+	OrgID     string   `json:"org_id"`
+	ExpiresAt string   `json:"expires_at"`
+	Scopes    []string `json:"scopes"`
+	Revoked   bool     `json:"revoked"`
+}
+
+var sha256HexPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+// ParseAPIKeysJSON parses SECURITY_API_KEYS_JSON strictly. Every mistake that would leave a key
+// missing, unrestricted or never expiring is an error: invalid JSON, unknown fields, an entry
+// with neither key nor key_hash, a malformed key_hash, an unknown or missing role, an expires_at
+// that is not RFC3339, and an unknown scope. An empty string yields no keys and no error.
+func ParseAPIKeysJSON(raw string) ([]APIKeyEntry, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var parsed []apiKeyJSON
+	if err := dec.Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("not a valid JSON array of keys: %w", err)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("unexpected data after the JSON array")
+	}
+	out := make([]APIKeyEntry, 0, len(parsed))
+	for i, e := range parsed {
+		at := fmt.Sprintf("entry %d", i)
+		if e.ID != "" {
+			at = fmt.Sprintf("entry %d (id %q)", i, e.ID)
 		}
-		if err := json.Unmarshal([]byte(raw), &parsed); err == nil {
-			for _, e := range parsed {
-				if strings.TrimSpace(e.Key) == "" && strings.TrimSpace(e.KeyHash) == "" {
-					continue
-				}
-				entry := APIKeyEntry{
-					Key:     strings.TrimSpace(e.Key),
-					KeyHash: strings.TrimSpace(e.KeyHash),
-					ID:      e.ID,
-					Prefix:  strings.TrimSpace(e.Prefix),
-					Role:    e.Role,
-					OrgID:   e.OrgID,
-					Scopes:  append([]string(nil), e.Scopes...),
-					Revoked: e.Revoked,
-				}
-				if entry.Role == "" {
-					entry.Role = RoleAnalyst
-				}
-				if entry.ID == "" {
-					entry.ID = "api-key"
-				}
-				if entry.Prefix == "" && entry.Key != "" {
-					entry.Prefix = keyPrefix(entry.Key)
-				}
-				if ts := strings.TrimSpace(e.ExpiresAt); ts != "" {
-					if t, err := time.Parse(time.RFC3339, ts); err == nil {
-						entry.ExpiresAt = t.UTC()
-					}
-				}
-				out = append(out, entry)
+		key, hash := strings.TrimSpace(e.Key), strings.TrimSpace(e.KeyHash)
+		if key == "" && hash == "" {
+			return nil, fmt.Errorf("%s has neither key nor key_hash", at)
+		}
+		if hash != "" && !sha256HexPattern.MatchString(hash) {
+			return nil, fmt.Errorf("%s: key_hash must be 64 hexadecimal characters (SHA-256)", at)
+		}
+		if !IsKnownRole(e.Role) {
+			return nil, fmt.Errorf("%s: role %q is not one of viewer, analyst, tenant_admin, platform_admin (or an alias); a missing role is refused too", at, e.Role)
+		}
+		entry := APIKeyEntry{Key: key, KeyHash: hash, ID: e.ID, Prefix: strings.TrimSpace(e.Prefix), Role: e.Role, OrgID: e.OrgID, Revoked: e.Revoked}
+		for _, sc := range e.Scopes {
+			if !IsKnownScope(sc) {
+				return nil, fmt.Errorf("%s: scope %q is not one of admin, write, read", at, sc)
 			}
+			entry.Scopes = append(entry.Scopes, sc)
 		}
+		if entry.ID == "" {
+			entry.ID = "api-key"
+		}
+		if entry.Prefix == "" && entry.Key != "" {
+			entry.Prefix = keyPrefix(entry.Key)
+		}
+		if ts := strings.TrimSpace(e.ExpiresAt); ts != "" {
+			t, err := time.Parse(time.RFC3339, ts)
+			if err != nil {
+				return nil, fmt.Errorf("%s: expires_at %q must be RFC3339, for example 2030-01-01T00:00:00Z", at, ts)
+			}
+			entry.ExpiresAt = t.UTC()
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// ValidateCredentialSources is the startup check for the authentication settings. With
+// authentication enabled it requires at least one usable credential source and refuses a
+// configuration that would parse to none, so a typo cannot leave the server without keys.
+func ValidateCredentialSources(enabled bool, apiKey, apiKeyHash, keysJSON string, oidcConfigured bool) error {
+	keys, err := ParseAPIKeysJSON(keysJSON)
+	if err != nil {
+		return fmt.Errorf("SECURITY_API_KEYS_JSON: %w", err)
+	}
+	if h := strings.TrimSpace(apiKeyHash); h != "" && !sha256HexPattern.MatchString(h) {
+		return fmt.Errorf("SECURITY_API_KEY_HASH must be 64 hexadecimal characters (SHA-256)")
+	}
+	if !enabled {
+		return nil
+	}
+	if len(keys) == 0 && strings.TrimSpace(apiKey) == "" && strings.TrimSpace(apiKeyHash) == "" && !oidcConfigured {
+		return fmt.Errorf("authentication is enabled but no credential source yields a key: SECURITY_API_KEYS_JSON holds no keys and no other source is set")
+	}
+	return nil
+}
+
+// loadAPIKeys builds the key list. Invalid JSON configuration yields no JSON keys; the startup
+// check (ValidateCredentialSources) refuses to run with it, and AuthRequired stays true, so a
+// caller that skips the check still gets 401 rather than open access.
+func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []APIKeyEntry {
+	out, err := ParseAPIKeysJSON(keysJSON)
+	if err != nil {
+		out = nil
 	}
 	if pk := strings.TrimSpace(primaryKey); pk != "" {
 		out = append(out, APIKeyEntry{Key: pk, ID: "api-key", Role: RoleAdmin})
@@ -135,9 +193,11 @@ func loadAPIKeys(primaryKey string, primaryKeyHash string, keysJSON string) []AP
 	return out
 }
 
-// AuthRequired reports whether requests on protected paths must be authenticated.
+// AuthRequired reports whether requests on protected paths must be authenticated. It depends only
+// on whether authentication is enabled, never on whether credentials happen to exist: an enabled
+// server with no usable key answers 401, it does not fall back to an open admin principal.
 func (a *Authenticator) AuthRequired() bool {
-	return a != nil && a.enabled && a.HasCredentials()
+	return a != nil && a.enabled
 }
 
 // HasCredentials reports whether any API keys, OIDC issuer, or browser session support is configured.
@@ -175,7 +235,7 @@ func (a *Authenticator) ValidatePrincipal(r *http.Request) (Principal, bool) {
 	preferredOrg := PreferredOrgFromRequest(r)
 	if a.oidc != nil && a.oidc.Enabled() {
 		if sub, roles, err := a.oidc.Validate(r.Context(), token); err == nil && strings.TrimSpace(sub) != "" {
-			fallbackRole := RoleAnalyst
+			fallbackRole := RoleViewer // a token without a roles claim gets the least privilege
 			if len(roles) > 0 {
 				fallbackRole = mapOIDCRole(roles[0])
 			}
@@ -347,7 +407,7 @@ func (a *Authenticator) PeekPrincipal(r *http.Request) (Principal, bool) {
 			if org == "" {
 				org = DefaultOrgID()
 			}
-			role := RoleAnalyst
+			role := RoleViewer
 			if len(roles) > 0 {
 				role = mapOIDCRole(roles[0])
 			}
@@ -383,18 +443,41 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(auth[len(prefix):])
 }
 
-func normalizeRole(role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case RolePlatformAdmin, "platform_administrator", "global_admin", "superadmin":
-		// Explicit platform-wide administrators only. Legacy "admin" is tenant-scoped.
-		return RolePlatformAdmin
-	case RoleTenantAdmin, "admin", "administrator", "org_admin", "organization_admin", "organisation_admin":
-		return RoleTenantAdmin
-	case RoleViewer, "read", "readonly", "reader":
-		return RoleViewer
-	default:
-		return RoleAnalyst
+// roleAliases maps every accepted spelling onto its canonical role.
+var roleAliases = map[string]string{
+	// Explicit platform-wide administrators only. Legacy "admin" is tenant-scoped.
+	RolePlatformAdmin: RolePlatformAdmin, "platform_administrator": RolePlatformAdmin, "global_admin": RolePlatformAdmin, "superadmin": RolePlatformAdmin,
+	RoleTenantAdmin: RoleTenantAdmin, "admin": RoleTenantAdmin, "administrator": RoleTenantAdmin, "org_admin": RoleTenantAdmin,
+	"organization_admin": RoleTenantAdmin, "organisation_admin": RoleTenantAdmin,
+	RoleViewer: RoleViewer, "read": RoleViewer, "readonly": RoleViewer, "reader": RoleViewer,
+	RoleAnalyst: RoleAnalyst,
+}
+
+func roleKey(role string) string { return strings.ToLower(strings.TrimSpace(role)) }
+
+// IsKnownRole reports whether role is a recognised spelling. Callers that accept a role from a
+// person or a configuration file use it to refuse a typo instead of guessing.
+func IsKnownRole(role string) bool {
+	_, ok := roleAliases[roleKey(role)]
+	return ok
+}
+
+// IsKnownScope reports whether scope is one of admin, write or read.
+func IsKnownScope(scope string) bool {
+	switch roleKey(scope) {
+	case "admin", "write", "read":
+		return true
 	}
+	return false
+}
+
+// normalizeRole maps a role spelling to its canonical name. An unrecognised value becomes the
+// least-privileged role, viewer: a typo such as "read-only" must never grant write access.
+func normalizeRole(role string) string {
+	if r, ok := roleAliases[roleKey(role)]; ok {
+		return r
+	}
+	return RoleViewer
 }
 
 // NormalizeRole maps configured role aliases onto canonical RBAC role names.

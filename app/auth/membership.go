@@ -324,9 +324,6 @@ func (s *MembershipStore) RevokeMembership(ctx context.Context, userID, orgID st
 
 func (s *MembershipStore) ensureDefaultMembership(ctx context.Context, userID, fallbackRole string) (Membership, error) {
 	role := normalizeRole(fallbackRole)
-	if role == "" {
-		role = RoleAnalyst
-	}
 	orgID := DefaultOrgID()
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO app.organization_members (organization_id, user_id, role)

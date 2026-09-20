@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
@@ -14,7 +15,8 @@ func recordAdminAudit(w http.ResponseWriter, r *http.Request, deps adminDeps, en
 	}
 	entry.HighRisk = true
 	if err := deps.auditStore.Record(r.Context(), entry); err != nil {
-		http.Error(w, "audit required but failed: "+err.Error(), http.StatusServiceUnavailable)
+		log.Printf("admin api %s %s: audit required but failed: %v", r.Method, r.URL.Path, err)
+		http.Error(w, "audit required but failed", http.StatusServiceUnavailable)
 		return false
 	}
 	return true

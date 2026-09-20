@@ -20,6 +20,14 @@ run as an implicit admin principal.
 At least one of `SECURITY_API_KEY`, `SECURITY_API_KEY_HASH`, `SECURITY_API_KEYS_JSON`
 or `SECURITY_OIDC_ISSUER` is required whenever auth is enabled.
 
+`SECURITY_API_KEYS_JSON` is checked strictly at startup, and the server refuses to start on
+any of these, so a typo can never leave a key missing, over-privileged or never expiring:
+invalid JSON, an unknown field (`keyhash`), an entry with neither `key` nor `key_hash`, a
+`key_hash` that is not 64 hex characters, a missing or unrecognised `role`, an `expires_at`
+that is not RFC 3339 (`2030-01-01T00:00:00Z`, not `2030-01-01`), an unknown scope, and an
+array that holds no key when nothing else supplies a credential. With authentication
+enabled and no usable key, every protected request answers `401`.
+
 ## Roles and write permission
 
 | Role | Can do |
@@ -28,6 +36,12 @@ or `SECURITY_OIDC_ISSUER` is required whenever auth is enabled.
 | `admin` (tenant admin) | Everything within their organization |
 | `analyst` | GET/HEAD/OPTIONS anywhere, plus a specific write allowlist: the full Investigation flow (create, suggest/rank, compare, fix, report), acknowledging a regression, creating/updating/running/deleting their own schedules and saved queries |
 | `viewer` | GET/HEAD/OPTIONS only |
+
+A role is never guessed. Accepted spellings are `platform_admin`, `tenant_admin` (also `admin`),
+`analyst` and `viewer` (also `read`, `readonly`, `reader`). A key, membership or admin request
+with any other role (`read-only`, `guest`) is refused. Where a role is read from an identity
+provider, an unrecognised or missing value becomes `viewer`, the least privilege, and a stored
+membership always overrides the token's claim.
 
 `GET /reports/shared/{token}` is reachable by any role (including no auth at all) —
 it is the one intentionally public read path.
