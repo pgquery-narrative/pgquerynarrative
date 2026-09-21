@@ -45,6 +45,36 @@ const (
 	StatStatementsQueryMaxLen = 10000
 )
 
+// statStatementsSchema resolves the schema pg_stat_statements was installed
+// into. pg_extension/pg_namespace are catalog tables, always visible via the
+// implicit pg_catalog search path entry regardless of the caller's search_path.
+func statStatementsSchema(ctx context.Context, statsPool statsQuerier) (string, error) {
+	rows, err := statsPool.Query(ctx, `
+		SELECT n.nspname
+		FROM pg_extension e
+		JOIN pg_namespace n ON n.oid = e.extnamespace
+		WHERE e.extname = 'pg_stat_statements'
+	`)
+	if err != nil {
+		return "", fmt.Errorf("pg_stat_statements schema lookup: %w", err)
+	}
+	defer rows.Close()
+
+	var schema string
+	if rows.Next() {
+		if err := rows.Scan(&schema); err != nil {
+			return "", fmt.Errorf("scan pg_stat_statements schema: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if schema == "" {
+		return "", fmt.Errorf("%w: extension not installed", apperrors.ErrStatStatementsUnavailable)
+	}
+	return schema, nil
+}
+
 // StatStatements queries pg_stat_statements on the selected analytical connection
 // and filters to statements executed by filterRole when non-empty.
 func StatStatements(ctx context.Context, statsPool statsQuerier, filterRole, orderBy string, limit int, timeout time.Duration) (*StatStatementsResult, error) {
@@ -66,6 +96,19 @@ func StatStatements(ctx context.Context, statsPool statsQuerier, filterRole, ord
 	queryCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// pg_stat_statements lives wherever CREATE EXTENSION put it (public on stock
+	// installs). The analytical role's search_path is deliberately locked to its
+	// allowed data schemas (e.g. "demo" or "demo, opendata") and does not include
+	// public, so an unqualified reference here resolves to nothing and every call
+	// fails with "relation pg_stat_statements does not exist" even though the
+	// view exists and the role can read it. Resolve and schema-qualify instead,
+	// the same way hypopgSchema does for hypopg.
+	schema, err := statStatementsSchema(queryCtx, statsPool)
+	if err != nil {
+		return nil, err
+	}
+	qualified := pgx.Identifier{schema}.Sanitize()
+
 	roleFilter := ""
 	args := []any{limit}
 	if strings.TrimSpace(filterRole) != "" {
@@ -81,10 +124,10 @@ SELECT
   ROUND(total_exec_time::numeric, 3)::float8 AS total_time_ms,
   ROUND(mean_exec_time::numeric, 3)::float8 AS mean_time_ms,
   rows
-FROM pg_stat_statements
+FROM %s.pg_stat_statements
 WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())%s
 ORDER BY %s DESC
-LIMIT $1`, StatStatementsQueryMaxLen, roleFilter, col)
+LIMIT $1`, StatStatementsQueryMaxLen, qualified, roleFilter, col)
 
 	rows, err := statsPool.Query(queryCtx, sql, args...)
 	if err != nil {

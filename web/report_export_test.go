@@ -38,6 +38,11 @@ func investigationReportFixture() *reports.Report {
 					map[string]any{
 						"proposed_change": "CREATE INDEX CONCURRENTLY ON demo.sales (date, product_category)",
 					},
+					map[string]any{
+						"kind":              "investigate_hint",
+						"proposed_change":   "Investigate index or predicate shape for Seq Scan",
+						"why_it_might_help": "Sequential scan on sales_2024_01",
+					},
 				},
 				"equivalence_validation": map[string]any{
 					"status": "Equal",
@@ -76,6 +81,14 @@ func TestBuildReportMarkdown_Investigation(t *testing.T) {
 			t.Errorf("markdown missing %q\n---\n%s", want, md)
 		}
 	}
+	// An investigate_hint is prose, not SQL — it must render as plain text,
+	// never fenced as if it were a statement.
+	if strings.Contains(md, "```sql\nInvestigate index or predicate shape for Seq Scan\n```") {
+		t.Errorf("investigate_hint was fenced as SQL:\n%s", md)
+	}
+	if !strings.Contains(md, "Investigate index or predicate shape for Seq Scan") {
+		t.Errorf("investigate_hint text missing from markdown:\n%s", md)
+	}
 }
 
 func TestBuildReportSQL_Investigation(t *testing.T) {
@@ -99,6 +112,14 @@ func TestBuildReportSQL_Investigation(t *testing.T) {
 	// The CREATE INDEX must never be emitted as a plain rewrite.
 	if strings.Contains(sql, "-- AFTER (candidate rewrite 2)") {
 		t.Errorf("index DDL leaked into the rewrite list:\n%s", sql)
+	}
+	// A plan-finding investigate_hint is prose, not a statement — it must
+	// never appear in the exported .sql file at all (it previously leaked in
+	// as e.g. "Investigate index or predicate shape for Seq Scan;", a broken
+	// non-statement dropped straight into a file meant to be run or pasted
+	// into a migration).
+	if strings.Contains(sql, "Investigate index or predicate shape") {
+		t.Errorf("investigate_hint leaked into the SQL export:\n%s", sql)
 	}
 }
 

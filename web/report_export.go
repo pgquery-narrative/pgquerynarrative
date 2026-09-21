@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
+	"github.com/pgquerynarrative/pgquerynarrative/app/story"
 )
 
 // fetchReport loads the report named by the ?id= query param, or writes an HTTP
@@ -83,6 +84,14 @@ func (h *Handlers) ExportReportSQL(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, buildReportSQL(report))
 }
 
+// isSQLCandidate reports whether a candidate_improvements entry's
+// proposed_change is executable SQL rather than a plain-English investigate
+// pointer. Reports persisted before the "kind" field existed have no kind set;
+// treat those as SQL (the prior behavior) rather than silently dropping them.
+func isSQLCandidate(c map[string]any) bool {
+	return mapString(c, "kind") != story.CandidateKindInvestigateHint
+}
+
 func buildReportMarkdown(report *reports.Report) string {
 	var b strings.Builder
 	inv := investigationMap(report)
@@ -138,8 +147,12 @@ func buildReportMarkdown(report *reports.Report) string {
 				if i >= 3 {
 					break
 				}
-				if sql := strings.TrimSpace(mapString(c, "proposed_change")); sql != "" {
-					fmt.Fprintf(&b, "```sql\n%s\n```\n\n", sql)
+				if change := strings.TrimSpace(mapString(c, "proposed_change")); change != "" {
+					if isSQLCandidate(c) {
+						fmt.Fprintf(&b, "```sql\n%s\n```\n\n", change)
+					} else {
+						fmt.Fprintf(&b, "%s\n\n", change)
+					}
 				}
 				if why := mapString(c, "why_it_might_help"); why != "" {
 					fmt.Fprintf(&b, "%s\n\n", why)
@@ -203,11 +216,17 @@ func buildReportSQL(report *reports.Report) string {
 
 		var rewrites, indexes []string
 		for _, c := range mapSlice(inv, "candidate_improvements") {
+			if !isSQLCandidate(c) {
+				// Plan-finding pointers ("Investigate index or predicate shape
+				// for Seq Scan") are prose, not SQL — writing them into a .sql
+				// file with a trailing semicolon produced a broken script.
+				continue
+			}
 			sql := strings.TrimSpace(mapString(c, "proposed_change"))
 			if sql == "" {
 				continue
 			}
-			head := strings.ToLower(strings.TrimSpace(sql))
+			head := strings.ToLower(sql)
 			if strings.HasPrefix(head, "create ") && strings.Contains(head, "index") {
 				indexes = append(indexes, sql)
 			} else {

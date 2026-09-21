@@ -29,6 +29,7 @@ export interface InvestigationReportPayload {
     investigate?: string[];
   }>;
   candidate_improvements?: Array<{
+    kind?: string;
     proposed_change?: string;
     why_it_might_help?: string;
     confidence?: string;
@@ -121,7 +122,11 @@ export function InvestigationReportView({ report }: { report: InvestigationRepor
           <div className="space-y-3">
             {report.candidate_improvements.map((c, i) => (
               <div key={i} className="rounded-lg border border-border/70 p-3 text-sm space-y-2">
-                <pre className="text-xs font-mono bg-muted/30 rounded p-2 overflow-x-auto whitespace-pre-wrap">{c.proposed_change}</pre>
+                {c.kind === "investigate_hint" ? (
+                  <p className="text-xs text-muted-foreground">{c.proposed_change}</p>
+                ) : (
+                  <pre className="text-xs font-mono bg-muted/30 rounded p-2 overflow-x-auto whitespace-pre-wrap">{c.proposed_change}</pre>
+                )}
                 <p>{c.why_it_might_help}</p>
                 {c.confidence && <Badge variant="secondary" className="text-[10px] capitalize">Confidence: {c.confidence}</Badge>}
                 {c.required_verification && (
