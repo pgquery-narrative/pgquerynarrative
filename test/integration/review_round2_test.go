@@ -3,15 +3,21 @@ package integration
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
 	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/app/service"
 	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
@@ -202,5 +208,126 @@ func TestStatStatementsRefusedOnASharedRoleWhateverItIsCalled(t *testing.T) {
 	var ve *queries.ValidationError
 	if !errors.As(err, &ve) || ve.Code == nil || *ve.Code != "STAT_STATEMENTS_SHARED" {
 		t.Errorf("a tenant read another organization's statement statistics on a shared role: err = %v", err)
+	}
+}
+
+// A role that may read a large object (SELECT on it, or lo_compat_privileges) could read its bytes through
+// lo_get, which the deny-list did not name. The read runs on the analytical role with that privilege held.
+func TestLargeObjectReadsAreDeniedEvenWhenThePrivilegeIsHeld(t *testing.T) {
+	admin, connStr, ctx := multiOrgPostgres(t)
+	if err := testhelpers.EnsurePostgresRoles(ctx, admin); err != nil {
+		t.Fatal(err)
+	}
+	var oid uint32
+	if err := admin.QueryRow(ctx, `SELECT lo_from_bytea(0, 'top secret'::bytea)`).Scan(&oid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, fmt.Sprintf(`GRANT SELECT ON LARGE OBJECT %d TO pgquerynarrative_readonly`, oid)); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.User, cfg.ConnConfig.Password = "pgquerynarrative_readonly", "pgquerynarrative_readonly"
+	roPool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(roPool.Close)
+
+	// The privilege really is held: the raw read works on this pool.
+	var raw string
+	if err := roPool.QueryRow(ctx, fmt.Sprintf(`SELECT convert_from(lo_get(%d), 'utf8')`, oid)).Scan(&raw); err != nil || raw != "top secret" {
+		t.Fatalf("precondition: the read-only role should be able to read the large object: %q %v", raw, err)
+	}
+	runner := queryrunner.NewRunner(roPool, queryrunner.NewValidator([]string{"demo"}, 1000), 100, 10*time.Second)
+	if _, err := runner.Run(ctx, fmt.Sprintf(`SELECT convert_from(lo_get(%d), 'utf8') AS body`, oid), 10); err == nil {
+		t.Error("the runner returned a large object's bytes")
+	}
+}
+
+// AddCandidate accepted only one EXPLAIN ANALYZE run: timing_runs was on the plan comparison but not on
+// the candidate call, so a candidate's speedup always rested on a single sample.
+func TestAddCandidateForwardsTimingRuns(t *testing.T) {
+	admin, _, ctx := multiOrgPostgres(t)
+	if _, err := admin.Exec(ctx, `
+		INSERT INTO demo.sales (id, date, product_category, product_name, quantity, unit_price, total_amount, region, sales_rep)
+		SELECT gen_random_uuid(), d::date, 'Electronics', 'Widget', 1, 10, 10, 'North', 'A'
+		FROM generate_series(DATE '2025-01-01', DATE '2025-01-20', INTERVAL '1 day') AS d`); err != nil {
+		t.Fatal(err)
+	}
+	runner := queryrunner.NewRunner(admin, queryrunner.NewValidator([]string{"demo"}, 10000), 5000, 30*time.Second,
+		queryrunner.WithExplainAnalyze(true))
+	appDB := db.NewOrgScoped(admin)
+	queriesSvc := service.NewQueriesService(admin, appDB, runner, config.MetricsConfig{})
+	reportsSvc := service.NewReportsService(admin, appDB, runner, nil, config.MetricsConfig{})
+	invSvc := service.NewInvestigationsService(appDB, queriesSvc, reportsSvc)
+	reqCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "timing", OrgID: auth.DefaultOrganizationID, Role: auth.RoleAdmin})
+
+	inv, err := invSvc.Create(reqCtx, &investigations.CreateInvestigationPayload{
+		Title: "timing runs", SQL: `SELECT region, count(*) FROM demo.sales WHERE region = 'North' GROUP BY region`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invSvc.AddCandidate(reqCtx, &investigations.AddCandidatePayload{
+		ID: inv.ID, CandidateSQL: `SELECT region, count(*) FROM demo.sales WHERE region = 'North' GROUP BY 1`,
+		Analyze: true, TimingRuns: 3}); err != nil {
+		t.Fatal(err)
+	}
+	var comparison string
+	if err := admin.QueryRow(ctx, `SELECT comparison::text FROM app.investigation_candidates WHERE investigation_id = $1`, inv.ID).Scan(&comparison); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(comparison, "3 runs") {
+		t.Errorf("the stored comparison does not show three timing runs: %.300s", comparison)
+	}
+}
+
+// Managed (database-stored) API keys were invisible to the rate limiter's DB-free identity check, so
+// every one fell into its client's IP bucket: keys behind one NAT shared a budget, and one key could
+// spend another's. Once a key has authenticated it is keyed by organization and key id; a token that
+// never authenticated stays in the IP bucket, so guessing tokens cannot shed the IP limit.
+func TestManagedKeysGetTheirOwnRateLimitBucket(t *testing.T) {
+	pool, ctx := setupMigratedPool(t)
+	org := auth.DefaultOrgID()
+	store := auth.NewManagedKeyStore(pool)
+	a, err := store.Create(ctx, org, auth.RoleAnalyst, "admin", []string{"read"}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := store.Create(ctx, org, auth.RoleAnalyst, "admin", []string{"read"}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authn := auth.NewAuthenticator(true, "", "", "", nil)
+	authn.SetManagedKeyStore(store)
+
+	req := func(token string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/queries", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		r.RemoteAddr = "203.0.113.7:4000" // the same NAT for every caller
+		return r
+	}
+	key := func(token string) string { k, _ := httpmw.RateLimitKey(req(token), nil, authn, nil); return k }
+
+	// Authentication is what teaches the limiter a key is real.
+	for _, k := range []*auth.IssuedKey{a, b} {
+		if _, ok := authn.ValidatePrincipal(req(k.Secret)); !ok {
+			t.Fatal("managed key did not authenticate")
+		}
+	}
+	ka, kb := key(a.Secret), key(b.Secret)
+	if strings.HasPrefix(ka, "ip:") || strings.HasPrefix(kb, "ip:") {
+		t.Errorf("authenticated managed keys are still in the IP bucket: %q %q", ka, kb)
+	}
+	if ka == kb {
+		t.Errorf("two keys share one bucket: %q", ka)
+	}
+	if !strings.Contains(ka, a.ID) {
+		t.Errorf("the bucket does not name the key: %q", ka)
+	}
+	if k := key("pgqn_" + strings.Repeat("x", 43)); !strings.HasPrefix(k, "ip:") {
+		t.Errorf("a token that never authenticated must stay in the IP bucket, got %q", k)
 	}
 }

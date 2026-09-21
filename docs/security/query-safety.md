@@ -34,7 +34,7 @@ side-effect free — so the validator applies its own policy on top of it:
 | Advisory locks (`pg_advisory_lock`, …) | Denied | Session-scoped; would outlive the transaction on a pooled connection |
 | Session state (`set_config`) | Denied | Mutates GUCs a later, unrelated request would reuse |
 | Sleep (`pg_sleep`, …) | Denied | Holds a connection for its full duration |
-| File and large-object access (`pg_read_file`, `lo_import`, …) | Denied | Reads outside the database |
+| File and large-object access (`pg_read_file`, `lo_import`, `lo_get`, …) | Denied | Reads outside the database |
 | Sequence mutation (`nextval`, `setval`) | Denied | A write, denied explicitly rather than relying on the transaction |
 | Backend/WAL/replication control, `pg_stat_*_reset` | Denied | Server-wide effects |
 | Second-query execution (`dblink`, `query_to_xml`, …) | Denied | Runs SQL that never passed validation |

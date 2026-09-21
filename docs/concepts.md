@@ -82,8 +82,9 @@ queries and reports one of five states:
 | `Unverified` | The check could not complete. Never reported as a mismatch |
 | `NotRequested` | Verification was not asked for |
 
-This is verification, not mathematical proof: the fingerprint is a 64-bit hash
-aggregate over each row's text form, and it ignores column names, column types and
+This is verification, not mathematical proof: the fingerprint is a 128-bit hash
+aggregate (two independent 64-bit hashes) over each row's text form, so a match is
+probabilistic agreement, and it ignores column names, column types and
 `ORDER BY`. Read [Verify result equivalence](workflows/verify-results.md) before relying on it.
 
 ## Two report types

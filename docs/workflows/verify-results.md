@@ -99,7 +99,7 @@ not as a bug in the rewrite.
 ## In the database, without the server
 
 [`pqn`](../reference/pqn.md) checks a rewrite the same way from a terminal: `pqn_api.measure_pair` fingerprints every row
-of both statements (count, sum and xor of a 64-bit hash of each row's text, so order does not matter) in one snapshot, then
+of both statements (count, then sum and xor of two independent 64-bit hashes of each row's text, 128 bits in all, so order does not matter) in one snapshot, then
 times them. It never falls back to a sample, so it has no `SampleMatch`; its verdicts are
 [`Proven`, `NotFaster`, `Different` and `Unverified`](../reference/pqn.md#verdicts), and `Different` is never an improvement.
 

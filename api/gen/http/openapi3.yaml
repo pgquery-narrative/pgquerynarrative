@@ -1526,6 +1526,13 @@ components:
         id:
           type: string
           format: uuid
+        timing_runs:
+          type: integer
+          description: How many times to run each side under ANALYZE before reporting a duration, as in a plan comparison. 1 (the default) reports a single sample; higher values report the median and the observed range. Ignored unless analyze is true.
+          default: 1
+          format: int64
+          minimum: 1
+          maximum: 5
         verify_results:
           type: boolean
           description: Execute the candidate and the original to check result equivalence. Requires the `query` permission on the connection.
@@ -1549,6 +1556,13 @@ components:
           pattern: ^[^;]+$
           minLength: 1
           maxLength: 10000
+        timing_runs:
+          type: integer
+          description: How many times to run each side under ANALYZE before reporting a duration, as in a plan comparison. 1 (the default) reports a single sample; higher values report the median and the observed range. Ignored unless analyze is true.
+          default: 1
+          format: int64
+          minimum: 1
+          maximum: 5
         verify_results:
           type: boolean
           description: Execute the candidate and the original to check result equivalence. Requires the `query` permission on the connection.
@@ -1784,7 +1798,7 @@ components:
           maximum: 5
         verify_results:
           type: boolean
-          description: 'Execute both queries to check result equivalence: an order-independent fingerprint over every row (count, sum and XOR of a 64-bit per-row hash), falling back to COUNT(*) plus a bounded deterministic sample when fingerprinting fails. This is verification, not proof: column names, types and ORDER BY are not part of the fingerprint. Requires the `query` permission on the connection; off by default so a compare only plans.'
+          description: 'Execute both queries to check result equivalence: an order-independent fingerprint over every row (count, then sum and XOR of two independent 64-bit per-row hashes: 128 bits), falling back to COUNT(*) plus a bounded deterministic sample when fingerprinting fails. This is verification, not proof: column names, types and ORDER BY are not part of the fingerprint. Requires the `query` permission on the connection; off by default so a compare only plans.'
           default: false
       required:
         - before_sql

@@ -171,12 +171,40 @@ func TestSuggestRewrites_NotInToExists(t *testing.T) {
 	if !strings.Contains(got, "not exists") && !strings.Contains(got, "not (exists") {
 		t.Fatalf("expected NOT EXISTS, got: %s", c.SQL)
 	}
-	if !strings.Contains(got, "is not null") {
-		t.Fatalf("NULL-safe NOT IN must include IS NOT NULL, got: %s", c.SQL)
+	// A NULL subquery value and a NULL outer value both stop NOT IN from being TRUE, unless the subquery is
+	// empty; the two `IS NULL` tests inside NOT EXISTS say exactly that.
+	if strings.Count(got, "is null") != 2 || strings.Contains(got, "is not null") {
+		t.Fatalf("NOT IN must test the subquery value and the outer value for NULL inside NOT EXISTS, got: %s", c.SQL)
 	}
-	if !strings.Contains(got, "is null") {
-		t.Fatalf("NULL-safe NOT IN must treat subquery NULLs, got: %s", c.SQL)
+}
+
+// Shapes where EXISTS is not the same statement are declined: under another NOT, for an operator that is
+// not equality, and when both scopes name the same table.
+func TestSuggestRewrites_InToExistsDeclinesWhatItCannotProve(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT id FROM t WHERE NOT (v IN (SELECT v FROM s) OR k = 2)`,
+		`SELECT id FROM t WHERE NOT (v NOT IN (SELECT v FROM s))`,
+		`SELECT id FROM t WHERE NOT (k = 2 AND v NOT IN (SELECT v FROM s))`,
+		`SELECT id FROM t WHERE v > ANY (SELECT v FROM s)`,
+		`SELECT id FROM t WHERE v < ANY (SELECT v FROM s)`,
+		`SELECT id FROM t WHERE id IN (SELECT parent_id FROM t)`,
+		`SELECT id FROM t a WHERE id IN (SELECT parent_id FROM t a)`,
+		`SELECT id FROM t WHERE id NOT IN (SELECT parent_id FROM t)`,
+	} {
+		for _, c := range SuggestRewrites(sql, nil) {
+			if c.Category == "in_to_exists" || c.Category == "not_in_to_exists" {
+				t.Errorf("%s\n  was rewritten to %s", sql, c.SQL)
+			}
+		}
 	}
+	// = ANY is IN, IN under AND / OR is still rewritten, and NOT (x IN ...) is NOT IN.
+	for _, sql := range []string{
+		`SELECT id FROM t WHERE v = ANY (SELECT v FROM s)`,
+		`SELECT id FROM t WHERE k = 1 OR v IN (SELECT v FROM s)`,
+	} {
+		mustFindCategory(t, SuggestRewrites(sql, nil), "in_to_exists")
+	}
+	mustFindCategory(t, SuggestRewrites(`SELECT id FROM t WHERE NOT (v IN (SELECT v FROM s))`, nil), "not_in_to_exists")
 }
 
 func TestSuggestRewrites_MultiplePatterns(t *testing.T) {

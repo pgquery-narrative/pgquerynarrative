@@ -149,7 +149,7 @@ or `SECURITY_OIDC_ISSUER` is required whenever auth is enabled.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SECURITY_RATE_LIMIT_RPM` | `0` (disabled) | Max requests per minute per client IP. Must be > 0 in production |
+| `SECURITY_RATE_LIMIT_RPM` | `0` (disabled) | Max requests per minute. Counted per organization, identity and route class for a signed-in session or an API key or token that has authenticated (a managed key's first request is still counted by IP), and per client IP for everything else. Must be > 0 in production |
 | `SECURITY_RATE_LIMIT_BURST` | `0` (= 2× RPM) | Burst size |
 | `SECURITY_RATE_LIMIT_DISTRIBUTED` | `false` | Use the PostgreSQL-backed limiter instead of in-memory. Must be `true` in production when RPM > 0 |
 | `SECURITY_RATE_LIMIT_FAILURE_MODE` | `closed` if StrictMode or auth is on, else `open` | `open`/`closed`/`local_fallback`. Cannot be `open` while auth is enabled, or in production |

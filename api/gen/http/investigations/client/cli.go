@@ -170,6 +170,12 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		if utf8.RuneCountInString(body.CandidateSQL) > 10000 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_sql", body.CandidateSQL, utf8.RuneCountInString(body.CandidateSQL), 10000, false))
 		}
+		if body.TimingRuns < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.timing_runs", body.TimingRuns, 1, true))
+		}
+		if body.TimingRuns > 5 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.timing_runs", body.TimingRuns, 5, false))
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -186,6 +192,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		CandidateSQL:  body.CandidateSQL,
 		Analyze:       body.Analyze,
 		VerifyResults: body.VerifyResults,
+		TimingRuns:    body.TimingRuns,
 	}
 	{
 		var zero bool
@@ -203,6 +210,12 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		v.Binds = make([]string, len(body.Binds))
 		for i, val := range body.Binds {
 			v.Binds[i] = val
+		}
+	}
+	{
+		var zero int
+		if v.TimingRuns == zero {
+			v.TimingRuns = 1
 		}
 	}
 	v.ID = id

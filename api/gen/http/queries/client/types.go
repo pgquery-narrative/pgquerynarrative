@@ -44,11 +44,12 @@ type ComparePlansRequestBody struct {
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
 	// Execute both queries to check result equivalence: an order-independent
-	// fingerprint over every row (count, sum and XOR of a 64-bit per-row hash),
-	// falling back to COUNT(*) plus a bounded deterministic sample when
-	// fingerprinting fails. This is verification, not proof: column names, types
-	// and ORDER BY are not part of the fingerprint. Requires the `query`
-	// permission on the connection; off by default so a compare only plans.
+	// fingerprint over every row (count, then sum and XOR of two independent
+	// 64-bit per-row hashes: 128 bits), falling back to COUNT(*) plus a bounded
+	// deterministic sample when fingerprinting fails. This is verification, not
+	// proof: column names, types and ORDER BY are not part of the fingerprint.
+	// Requires the `query` permission on the connection; off by default so a
+	// compare only plans.
 	VerifyResults bool `form:"verify_results" json:"verify_results" xml:"verify_results"`
 	// How many times to run each side under ANALYZE before reporting a duration. 1
 	// (the default) reports a single sample; higher values report the median and

@@ -59,6 +59,7 @@ type Authenticator struct {
 	lastUsed   sync.Map // entry ID (string) -> time.Time
 	keyUsage   *KeyUsageStore
 	usageWarm  sync.Once
+	seen       seenManagedKeys // managed keys that authenticated recently, for rate-limit keying
 }
 
 // NewAuthenticator builds an authenticator from security configuration.
@@ -299,7 +300,9 @@ func (a *Authenticator) ValidatePrincipal(r *http.Request) (Principal, bool) {
 				return Principal{}, false
 			}
 			a.recordUsage(entry.ID)
-			return Principal{UserID: entry.ID, OrgID: orgID, Role: role}, true
+			p := Principal{UserID: entry.ID, OrgID: orgID, Role: role}
+			a.seen.put(entry.KeyHash, p)
+			return p, true
 		}
 	}
 	return Principal{}, false
@@ -393,7 +396,7 @@ func keyPrefix(key string) string {
 // membership. Callers MUST NOT use the result for authorization decisions; use
 // ValidatePrincipal for that. Safe to call before or in addition to ValidatePrincipal.
 func (a *Authenticator) PeekPrincipal(r *http.Request) (Principal, bool) {
-	if a == nil || !a.enabled || (len(a.keys) == 0 && (a.oidc == nil || !a.oidc.Enabled())) {
+	if a == nil || !a.enabled || (len(a.keys) == 0 && a.managed == nil && (a.oidc == nil || !a.oidc.Enabled())) {
 		return Principal{}, false
 	}
 	token := bearerToken(r)
@@ -430,6 +433,12 @@ func (a *Authenticator) PeekPrincipal(r *http.Request) (Principal, bool) {
 			org = DefaultOrgID()
 		}
 		return Principal{UserID: entry.ID, OrgID: org, Role: normalizeRole(entry.Role)}, true
+	}
+	// A managed key lives in the database, which this check must not touch: a stream of made-up tokens
+	// would then cost a query each before any limit applied. A key that has authenticated recently is
+	// remembered, so it gets a bucket of its own; anything else stays in the client's IP bucket.
+	if p, ok := a.seen.get(HashAPIKey(token)); ok {
+		return p, true
 	}
 	return Principal{}, false
 }
@@ -607,4 +616,56 @@ func LoadAPIKeysJSON(keysJSON string) string {
 		return keysJSON
 	}
 	return os.Getenv("SECURITY_API_KEYS_JSON")
+}
+
+// seenManagedKeys remembers, briefly, which managed API keys have authenticated. It is consulted only to
+// choose a rate-limit bucket, never to authorize, so a revoked key staying here for a few seconds changes
+// nothing but which bucket it is counted in. It is bounded: when full it drops what has expired, and if
+// that frees nothing a new key is simply not remembered (it stays in its IP bucket).
+type seenManagedKeys struct {
+	mu sync.Mutex
+	m  map[string]seenKey
+}
+
+type seenKey struct {
+	p       Principal
+	expires time.Time
+}
+
+const (
+	seenManagedKeyTTL = 60 * time.Second
+	seenManagedKeyMax = 10000
+)
+
+func (s *seenManagedKeys) get(hash string) (Principal, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.m[hash]
+	if !ok || time.Now().After(e.expires) {
+		return Principal{}, false
+	}
+	return e.p, true
+}
+
+func (s *seenManagedKeys) put(hash string, p Principal) {
+	if hash == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = make(map[string]seenKey)
+	}
+	now := time.Now()
+	if _, exists := s.m[hash]; !exists && len(s.m) >= seenManagedKeyMax {
+		for k, e := range s.m {
+			if now.After(e.expires) {
+				delete(s.m, k)
+			}
+		}
+		if len(s.m) >= seenManagedKeyMax {
+			return
+		}
+	}
+	s.m[hash] = seenKey{p: p, expires: now.Add(seenManagedKeyTTL)}
 }

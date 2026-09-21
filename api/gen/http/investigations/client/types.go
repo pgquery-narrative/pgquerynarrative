@@ -45,6 +45,11 @@ type AddCandidateRequestBody struct {
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// How many times to run each side under ANALYZE before reporting a duration,
+	// as in a plan comparison. 1 (the default) reports a single sample; higher
+	// values report the median and the observed range. Ignored unless analyze is
+	// true.
+	TimingRuns int `form:"timing_runs" json:"timing_runs" xml:"timing_runs"`
 }
 
 // UpdateFixRequestBody is the type of the "investigations" service
@@ -739,6 +744,7 @@ func NewAddCandidateRequestBody(p *investigations.AddCandidatePayload) *AddCandi
 		CandidateSQL:  p.CandidateSQL,
 		Analyze:       p.Analyze,
 		VerifyResults: p.VerifyResults,
+		TimingRuns:    p.TimingRuns,
 	}
 	{
 		var zero bool
@@ -756,6 +762,12 @@ func NewAddCandidateRequestBody(p *investigations.AddCandidatePayload) *AddCandi
 		body.Binds = make([]string, len(p.Binds))
 		for i, val := range p.Binds {
 			body.Binds[i] = val
+		}
+	}
+	{
+		var zero int
+		if body.TimingRuns == zero {
+			body.TimingRuns = 1
 		}
 	}
 	return body

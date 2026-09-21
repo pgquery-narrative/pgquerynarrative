@@ -28,6 +28,21 @@ func TestValidator_FunctionPolicy(t *testing.T) {
 		// Server-side file access.
 		{"SELECT pg_read_file('/etc/passwd')", apperrors.ErrFunctionNotAllowed},
 		{"SELECT pg_ls_dir('/')", apperrors.ErrFunctionNotAllowed},
+		// Large objects: reading one is as much file access as writing one, when the role may.
+		{"SELECT lo_get(16400)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_get(16400, 0, 100)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT pg_catalog.lo_get(16400)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT convert_from(lo_get(16400), 'utf8')", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_close(0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_lseek(0, 0, 0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_lseek64(0, 0, 0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_tell(0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_tell64(0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_truncate(0, 0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_truncate64(0, 0)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_creat(-1)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT lo_open(16400, 262144)", apperrors.ErrFunctionNotAllowed},
+		{"SELECT loread(0, 10)", apperrors.ErrFunctionNotAllowed},
 		// Sequence mutation.
 		{"SELECT nextval('demo.s')", apperrors.ErrFunctionNotAllowed},
 		// Backend control.
