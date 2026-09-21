@@ -65,12 +65,12 @@ Nothing is executable by `PUBLIC`.
 |---|---|---|
 | `pqn_api.top(n = 20)` | analyst | Statements by total time: `queryid`, `query`, `calls`, `total_exec_time`, `mean_exec_time`, `rows` |
 | `pqn_api.plan(query)` | analyst | The estimated plan as JSON. Read only, and nothing it does is kept. A statement that writes (INSERT, UPDATE, DELETE, MERGE) is refused with a hint to plan its SELECT. `$n` placeholders need PostgreSQL 16 |
-| `pqn_api.run(query, row_limit = 100)` | analyst | `{rows, columns, truncated}`. One read-only statement over the exposed views; `row_limit` is clamped to 1–10000. Makes the rest of its transaction read only |
+| `pqn_api.run(query, row_limit = 100)` | analyst | `{rows, columns, truncated}`. One read-only statement over the exposed views; `row_limit` is clamped to 1–10000, and the answer is cut at 16 MB (`truncated` is then true). A column name that repeats gets a `_2`, `_3` suffix. Makes the rest of its transaction read only |
 | `pqn_api.findings(plan)` | analyst | Findings from a plan, as rules over the plan JSON |
 | `pqn_api.measure_pair(a, b, repeats = 2)` | analyst | `{equal, before, after, speedup, rounds}`. Both fingerprints in one snapshot; `repeats` is clamped to 1–5. Refuses `$n`. Runs the statements read only, so one that writes fails, and leaves your transaction writable |
 | `pqn_api.investigate(query, title, queryid)` | analyst | Plans, finds, and records a new investigation. `investigation_id` and `findings` in the result |
 | `pqn_api.prove(investigation, before, after, note)` | analyst | The verdict, both plan costs and the measurement, recorded as a proof |
-| `pqn_api.record_investigation(query, queryid, title)` | analyst | The new investigation's id |
+| `pqn_api.record_investigation(query, queryid, title)` | analyst | The new investigation's id. Each person may keep 256 MiB and 20000 rows in the ledger, counting `record_evidence`, `investigate` and `prove` too; past that the write is refused until an administrator removes old investigations |
 | `pqn_api.record_evidence(investigation, kind, payload)` | analyst | The new evidence id. `kind` is lowercase letters and underscores, at most 40; the payload at most 1 MiB. Your own investigation only; an admin may write to anyone's |
 | `pqn_api.investigations(limit = 50)` | viewer | Your investigations; an admin sees everyone's |
 | `pqn_api.evidence(investigation)` | viewer | Its evidence, under the same rule |
@@ -82,7 +82,7 @@ Nothing is executable by `PUBLIC`.
 | `pqn_api.enforce_limits()` | admin | Cancels statements that outlived their enrolled limit. Needs a superuser, or `pg_read_all_stats` and `pg_signal_backend`. A superuser's session cannot be cancelled without being one: it is reported with `cancelled = false` and the pass goes on |
 | `pqn_api.record_limit(login, ms)` | admin | Called by the `enroll` script |
 
-`explain_ms` and `exposed_path` are helpers only their owner can execute.
+`explain_ms`, `exposed_path`, `has_params` and `ledger_room` are helpers that only the extension's own roles can execute.
 
 The **Group** column is who may *execute* a function. Some admin functions also change roles and grants, and a caller that is not a
 superuser needs those rights too. Membership in `pqn_admin` alone is enough for the read-only ones:

@@ -25,8 +25,8 @@ var pqnDocPages = []string{
 // are checked for what they name; this one is also checked for what it leaves out.
 const pqnReferencePage = "docs/reference/pqn.md"
 
-// pqnInternalFuncs are helpers only their owner can execute. They need no reference entry.
-var pqnInternalFuncs = map[string]bool{"explain_ms": true, "exposed_path": true}
+// pqnInternalFuncs are helpers only the extension's own roles can execute. They need no reference entry.
+var pqnInternalFuncs = map[string]bool{"explain_ms": true, "exposed_path": true, "has_params": true, "ledger_room": true}
 
 const pqnExtDir = "infra/pqn-extension"
 
