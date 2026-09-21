@@ -356,7 +356,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg: ['16', '17', '18']
+        # base is the tag pinned by digest (the multi-arch index); update both together.
+        include:
+          - {pg: '16', base: 'postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6'}
+          - {pg: '17', base: 'postgres:17@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232'}
+          - {pg: '18', base: 'postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae'}
     permissions:
       contents: read
       packages: write
@@ -390,7 +394,7 @@ jobs:
           context: .
           file: tools/docker/postgres-pqn.Dockerfile
           build-args: |
-            POSTGRES_IMAGE=postgres:${{ matrix.pg }}
+            POSTGRES_IMAGE=${{ matrix.base }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |

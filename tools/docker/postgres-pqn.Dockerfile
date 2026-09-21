@@ -9,7 +9,8 @@
 #
 # The init script runs only when the data directory is new. For an existing database, connect
 # as a superuser and run: CREATE EXTENSION pqn; SELECT pqn_api.init();
-ARG POSTGRES_IMAGE=postgres:18
+# Pinned by digest (the multi-arch index) so a build cannot change under us; update it with the tag.
+ARG POSTGRES_IMAGE=postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
 FROM ${POSTGRES_IMAGE}
 
 COPY infra/pqn-extension/pqn.control infra/pqn-extension/pqn--1.0.sql infra/pqn-extension/pqn--1.0--1.1.sql /tmp/pqn/
