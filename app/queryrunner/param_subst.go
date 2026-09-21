@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // maxBindValueLen bounds a single bind value. Compare/equivalence binds are
@@ -150,25 +152,62 @@ func replaceDollarParams(sql string, lits []string) string {
 	return b.String()
 }
 
-// stripQuotedAndComments blanks single-quoted strings, -- line comments and
-// /* */ block comments so a lexical scan for $N doesn't see placeholders that
-// are really string or comment content.
+// HasParams reports whether sql refers to a $n parameter. One inside a string, a
+// quoted name, a dollar-quoted string or a comment is text, not a parameter.
+func HasParams(sql string) bool { return maxParamNumber(sql) > 0 }
+
+// dollarTagEnd returns the index just past an opening $$ or $tag$ that starts at
+// r[i], or 0 when r[i] does not open a dollar-quoted string ($1 does not).
+func dollarTagEnd(r []rune, i int) int {
+	j := i + 1
+	if j < len(r) && (unicode.IsLetter(r[j]) || r[j] == '_') {
+		for j < len(r) && (unicode.IsLetter(r[j]) || unicode.IsDigit(r[j]) || r[j] == '_') {
+			j++
+		}
+	}
+	if j < len(r) && r[j] == '$' {
+		return j + 1
+	}
+	return 0
+}
+
+// stripQuotedAndComments blanks single-quoted strings, "quoted names",
+// dollar-quoted strings, -- line comments and /* */ block comments so a lexical
+// scan for $N doesn't see placeholders that are really string or comment content.
 func stripQuotedAndComments(sql string) string {
 	var b strings.Builder
 	r := []rune(sql)
 	for i := 0; i < len(r); {
 		switch {
-		case r[i] == '\'':
+		case r[i] == '\'' || r[i] == '"':
+			q := r[i]
+			// E'...' lets a backslash escape the next character, so E'it\'s' is one string.
+			esc := q == '\'' && i > 0 && (r[i-1] == 'e' || r[i-1] == 'E') &&
+				(i < 2 || !(unicode.IsLetter(r[i-2]) || unicode.IsDigit(r[i-2]) || r[i-2] == '_' || r[i-2] == '$'))
 			i++
 			for i < len(r) {
-				if r[i] == '\'' {
-					if i+1 < len(r) && r[i+1] == '\'' {
+				if esc && r[i] == '\\' {
+					i += 2
+					continue
+				}
+				if r[i] == q {
+					if i+1 < len(r) && r[i+1] == q {
 						i += 2
 						continue
 					}
 					i++
 					break
 				}
+				i++
+			}
+		case r[i] == '$' && dollarTagEnd(r, i) > 0:
+			end := dollarTagEnd(r, i)
+			tag := string(r[i:end])
+			rest := string(r[end:])
+			if j := strings.Index(rest, tag); j >= 0 {
+				i = end + utf8.RuneCountInString(rest[:j]) + (end - i)
+			} else { // never closed: PostgreSQL would refuse it, so do not hide what follows
+				b.WriteRune(r[i])
 				i++
 			}
 		case r[i] == '-' && i+1 < len(r) && r[i+1] == '-':

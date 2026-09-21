@@ -13,11 +13,12 @@
 #     (same rows, then faster), a wrong rewrite reported as Different, and everything recorded
 #   - a real 1.0 -> 1.1 upgrade keeps the ledger and the views
 #
-# Requires: docker. Usage: sh tools/db/verify-pqn-extension.sh   (PG_IMAGE=postgres:16 by default)
+# Requires: docker. Usage: sh tools/db/verify-pqn-extension.sh   (PG_IMAGE=postgres:16 by default;
+# PQN_EXT_DIR=/path checks another copy of the extension files, such as an older release)
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-EXT_DIR="$ROOT_DIR/infra/pqn-extension"
+EXT_DIR="${PQN_EXT_DIR:-$ROOT_DIR/infra/pqn-extension}"
 PG_IMAGE="${PG_IMAGE:-postgres:16}"
 ID="$$"
 C="pqn-verify-primary-$ID"
@@ -395,6 +396,11 @@ expect_eq "and nothing was written" "0" "$(su -c "SELECT count(*) FROM public.si
 expect_ok "measure_pair leaves the caller's transaction writable (prove records right after it)" alice \
   "DO \$\$ BEGIN PERFORM pqn_api.measure_pair('SELECT 1 AS n', 'SELECT 1 AS n'); IF current_setting('transaction_read_only') = 'on' THEN RAISE EXCEPTION 'left read only'; END IF; END \$\$"
 su -c "DROP FUNCTION public.log_it(); DROP TABLE public.side_log" >/dev/null
+# a function that raises the SQLSTATE the tool uses internally must not look like a finished measurement
+su -c "CREATE FUNCTION public.spoof() RETURNS int LANGUAGE plpgsql AS \$f\$ BEGIN RAISE EXCEPTION 'x' USING ERRCODE = 'PQN01'; END \$f\$; GRANT EXECUTE ON FUNCTION public.spoof() TO PUBLIC" >/dev/null
+expect_err "a statement that raises the tool's internal SQLSTATE is an error, not a NULL measurement" "did not complete" alice "SELECT pqn_api.measure_pair('SELECT public.spoof() AS n', 'SELECT 1 AS n')"
+su -c "DROP FUNCTION public.spoof()" >/dev/null
+expect_eq "the fingerprint carries two independent 64-bit hashes" "t" "$(run alice "$DB" -c "SELECT (m->'before' ? 'sum2') AND (m->'before' ? 'xor2') AND (m->'before'->>'sum' <> m->'before'->>'sum2') FROM (SELECT pqn_api.measure_pair('SELECT id FROM pqn.people', 'SELECT id FROM pqn.people') AS m) x")"
 # two empty results are not a proof
 EMPTY_ID="$(run alice "$DB" -c "SELECT pqn_api.record_investigation('SELECT id FROM pqn.people WHERE id < 0', NULL, 'empty')")"
 expect_eq "two empty result sets are Unverified, however much faster" "Unverified" \
@@ -412,6 +418,95 @@ PASS_OUT="$(run sched "$DB" -c "SELECT login || '=' || cancelled FROM pqn_api.en
 expect_eq "enforce_limits reports the superuser as not cancelled and still cancels the rest" "peon=true rooty=false" "$(echo "$PASS_OUT" | tr '\n' ' ' | sed 's/ $//')"
 wait "$PEON_PID" || true; wait "$ROOTY_PID" || true
 su -c "DELETE FROM pqn.limits WHERE login IN ('rooty','peon'); DROP ROLE peon; DROP ROLE rooty; DROP ROLE sched" >/dev/null
+
+echo "== review round 3: planning runs the caller's code, top() shows text, run() answers"
+# The planner runs the IMMUTABLE functions it folds, and an analyst may create one in pg_temp that calls a
+# volatile one. Inside plan() that code ran as pqn_owner, which owns the limits, the registry and the views.
+ATTACK="$(cat <<'EOF'
+CREATE FUNCTION pg_temp.w() RETURNS void LANGUAGE plpgsql VOLATILE AS $$
+BEGIN
+  BEGIN DELETE FROM pqn.limits WHERE login = 'alice'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN EXECUTE 'CREATE TABLE pqn.pwned (x int)'; EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN EXECUTE 'GRANT SELECT ON pqn.people TO PUBLIC'; EXCEPTION WHEN OTHERS THEN NULL; END;
+END $$;
+CREATE FUNCTION pg_temp.evil() RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN PERFORM pg_temp.w(); RETURN 1; END $$;
+SELECT pqn_api.plan('SELECT pg_temp.evil()');
+SELECT pqn_api.investigate('SELECT pg_temp.evil()');
+EOF
+)"
+R3_MAX="$(su -c "SELECT COALESCE(max(id), 0) FROM pqn_ledger.investigations")"
+expect_eq "alice has a recorded limit to lose" "1" "$(su -c "SELECT count(*) FROM pqn.limits WHERE login = 'alice'")"
+run alice "$DB" -c "$ATTACK" >/dev/null 2>&1 || true
+expect_eq "code that plan() and investigate() run cannot delete a limit" "1" "$(su -c "SELECT count(*) FROM pqn.limits WHERE login = 'alice'")"
+expect_eq "nor create an object in pqn" "t" "$(su -c "SELECT to_regclass('pqn.pwned') IS NULL")"
+expect_eq "nor grant a view to PUBLIC" "f" "$(su -c "SELECT has_table_privilege('eve', 'pqn.people', 'SELECT')")"
+expect_eq "plan leaves the caller's transaction writable" "ok" \
+  "$(run alice "$DB" -c "BEGIN; SELECT pqn_api.plan('SELECT 1'); SELECT 'ok' FROM (SELECT pqn_api.record_investigation('SELECT 1')) r; COMMIT" | tail -1)"
+expect_err "a statement that raises the tool's internal SQLSTATE is not a plan" "did not complete" alice \
+  "CREATE FUNCTION pg_temp.spoof() RETURNS int LANGUAGE plpgsql IMMUTABLE AS \$\$ BEGIN RAISE EXCEPTION 'x' USING ERRCODE = 'PQN01'; END \$\$; SELECT pqn_api.plan('SELECT pg_temp.spoof()')"
+# top() runs as pg_monitor for every analyst. pg_stat_statements keeps utility statements as typed.
+su -c "CREATE ROLE topleak LOGIN PASSWORD 'pw-SECRET-leak'" >/dev/null
+expect_eq "top() does not show a password from a utility statement" "0" "$(count alice "SELECT count(*) FROM pqn_api.top(500) WHERE query LIKE '%SECRET-leak%'")"
+su -c "DROP ROLE topleak" >/dev/null
+# (PostgreSQL 18 drops the leading comment itself, earlier versions keep it: top() must list both)
+expect_eq "top() still lists the workload, comment prefix and all" "t" \
+  "$(su -c "/* app='x' */ SELECT count(*) FROM hr.events WHERE customer = 7" >/dev/null; count alice "SELECT count(*) > 0 FROM pqn_api.top(500) WHERE query LIKE '%FROM hr.events WHERE customer = \$1%'")"
+expect_eq "run keeps every value when column names repeat" "1,2,3" \
+  "$(count alice "SELECT string_agg(v, ',' ORDER BY k) FROM jsonb_each_text(pqn_api.run('SELECT 1, 2, 3')->'rows'->0) e(k, v)")"
+expect_eq "run names the columns of an empty answer" "id,dept" \
+  "$(count alice "SELECT string_agg(c, ',' ORDER BY o) FROM jsonb_array_elements_text(pqn_api.run('SELECT id, dept FROM pqn.people WHERE false')->'columns') WITH ORDINALITY e(c, o)")"
+expect_eq "run cuts an answer by size, so one analyst cannot exhaust server memory" "true" \
+  "$(count alice "SELECT pqn_api.run('SELECT repeat(chr(65 + g), 5000000) FROM generate_series(1, 40) g', 10000)->>'truncated'")"
+# A '$5' or $$...$$ in a string is text, not a placeholder: the statement can run and be measured.
+expect_eq "a string that holds \$5 is not a placeholder" "true" \
+  "$(count alice "SELECT pqn_api.measure_pair('SELECT id FROM hr.people WHERE dept <> ''\$5''', 'SELECT id FROM hr.people WHERE dept <> ''\$5''', 1)->>'equal'")"
+expect_eq "a \$\$ string that starts with a digit is not a placeholder" "true" \
+  "$(count alice "SELECT pqn_api.measure_pair('SELECT id FROM hr.people WHERE dept <> \$\$2025\$\$', 'SELECT id FROM hr.people WHERE dept <> \$\$2025\$\$', 1)->>'equal'")"
+expect_err "a real placeholder is still refused by measure_pair" "placeholders" alice \
+  "SELECT pqn_api.measure_pair('SELECT id FROM hr.people WHERE id = \$1', 'SELECT id FROM hr.people WHERE id = \$1', 1)"
+expect_eq "prove treats a string that holds \$5 as runnable" "Different" \
+  "$(run alice "$DB" -c "SELECT pqn_api.prove(pqn_api.record_investigation('SELECT 1'), 'SELECT id FROM hr.people WHERE dept <> ''\$5''', 'SELECT id FROM hr.people WHERE dept = ''ops''')->>'verdict'")"
+# pqn_owner holds no write privilege. The error must say what happened, not "permission denied for table".
+expect_err "a statement that writes cannot be planned, and the error says why" "a statement that writes cannot be planned" alice \
+  "SELECT pqn_api.plan('UPDATE hr.people SET dept = ''x'' WHERE id = 1')"
+expect_err "a hidden column in a SELECT is still a plain permission error" "permission denied" alice \
+  "SELECT pqn_api.plan('SELECT ssn FROM hr.people')"
+expect_err "run says so when there is no statement" "give a statement to run" alice "SELECT pqn_api.run('-- nothing')"
+expect_err "run says so for NULL" "give a statement to run" alice "SELECT pqn_api.run(NULL)"
+expect_err "plan says so when there is no statement" "give a statement to plan" alice "SELECT pqn_api.plan(' ; ')"
+expect_err "measure_pair says so when there is no statement" "both statements are required" alice "SELECT pqn_api.measure_pair('/* x */', 'SELECT 1')"
+expect_eq "findings skips a Plans that is not an array" "[]" \
+  "$(count alice "SELECT pqn_api.findings('[{\"Plan\":{\"Node Type\":\"Seq Scan\",\"Plans\":null}}]'::jsonb)")"
+expect_eq "findings skips a Plans that is an object" "[]" \
+  "$(count alice "SELECT pqn_api.findings('[{\"Plan\":{\"Node Type\":\"Seq Scan\",\"Plans\":{\"a\":1}}}]'::jsonb)")"
+expect_eq "findings skips a cost and a row count that are not numbers" "[]" \
+  "$(count alice "SELECT pqn_api.findings('[{\"Plan\":{\"Node Type\":\"Sort\",\"Total Cost\":\"abc\",\"Plan Rows\":\"abc\"}}]'::jsonb)")"
+expect_eq "findings still finds a large sort" "sort_large" \
+  "$(count alice "SELECT pqn_api.findings('[{\"Plan\":{\"Node Type\":\"Sort\",\"Total Cost\":10,\"Plan Rows\":2000000}}]'::jsonb)->0->>'category'")"
+# One person cannot fill the disk with the ledger. Fill a stand-in past the limit with rows that do not compress.
+su -c "CREATE ROLE quota LOGIN; SELECT pqn_api.enroll('quota', 'analyst')" >/dev/null
+QID="$(su -c "INSERT INTO pqn_ledger.investigations (who, sql) VALUES ('quota', 'SELECT 1') RETURNING id" | head -1)"
+su -c "INSERT INTO pqn_ledger.evidence (investigation_id, kind, payload, who)
+       SELECT $QID, 'note', jsonb_build_object('x', repeat(r, 16)), 'quota'
+         FROM (SELECT string_agg(md5(i::text), '') AS r FROM generate_series(1, 2048) i) s, generate_series(1, 300)" >/dev/null
+expect_err "a person at the ledger limit cannot record another investigation" "limit is 256 MiB" quota "SELECT pqn_api.record_investigation('SELECT 2')"
+expect_err "nor add evidence" "limit is 256 MiB" quota "SELECT pqn_api.record_evidence($QID, 'note', '{}')"
+expect_err "nor prove, which is refused before anything is measured" "limit is 256 MiB" quota "SELECT pqn_api.prove($QID, 'SELECT 1', 'SELECT 1')"
+# The limit counts rows too: a million payloads of '{}' are 5 MB of payload and 60 MB of table, and each write reads
+# all of that person's rows, so an unbounded row count would make every write slower.
+su -c "CREATE ROLE quota2 LOGIN; SELECT pqn_api.enroll('quota2', 'analyst')" >/dev/null
+QID2="$(su -c "INSERT INTO pqn_ledger.investigations (who, sql) VALUES ('quota2', 'SELECT 1') RETURNING id" | head -1)"
+su -c "INSERT INTO pqn_ledger.evidence (investigation_id, kind, payload, who) SELECT $QID2, 'note', '{}', 'quota2' FROM generate_series(1, 19999)" >/dev/null
+expect_err "a person at 20000 rows cannot record another investigation" "limit is 20000" quota2 "SELECT pqn_api.record_investigation('SELECT 2')"
+expect_err "nor add evidence, however small" "limit is 20000" quota2 "SELECT pqn_api.record_evidence($QID2, 'note', '{}')"
+su -c "DELETE FROM pqn_ledger.evidence WHERE investigation_id = $QID2; DELETE FROM pqn_ledger.investigations WHERE id = $QID2; DELETE FROM pqn.limits WHERE login = 'quota2'; DROP ROLE quota2" >/dev/null
+expect_ok "someone under the limit is not affected" alice "SELECT pqn_api.record_investigation('SELECT 3')"
+su -c "DELETE FROM pqn_ledger.evidence WHERE investigation_id = $QID; DELETE FROM pqn_ledger.investigations WHERE id = $QID; DELETE FROM pqn.limits WHERE login = 'quota'; DROP ROLE quota" >/dev/null
+expect_eq "a single row over the size budget is refused before it is copied" "true,0" \
+  "$(count alice "SELECT (r->>'truncated') || ',' || jsonb_array_length(r->'rows') FROM (SELECT pqn_api.run('SELECT repeat(chr(66), 20000000) AS big') r) x")"
+expect_eq "a large row under the budget comes back whole, with its column" "false,big,10000000" \
+  "$(count alice "SELECT (r->>'truncated') || ',' || (r->'columns'->>0) || ',' || length(r->'rows'->0->>'big') FROM (SELECT pqn_api.run('SELECT repeat(chr(66), 10000000) AS big') r) x")"
+su -c "DELETE FROM pqn_ledger.evidence WHERE investigation_id > $R3_MAX; DELETE FROM pqn_ledger.investigations WHERE id > $R3_MAX" >/dev/null
 
 echo "== DROP EXTENSION keeps the evidence"
 run pqn_installer "$DB" -c "DROP EXTENSION pqn"

@@ -14,7 +14,7 @@ no PgQueryNarrative server. It is not the [`pgquerynarrative` CLI](cli.md), and 
 |---|---|---|
 | `doctor` | Runs `pqn_api.verify_setup()`. Exits 1 on any blocking finding | |
 | `top` | The statements that cost the most, from `pg_stat_statements` | `-n` |
-| `plan` | Estimated plan and findings for one statement. Executes nothing | statement, `--bind` |
+| `plan` | Estimated plan and findings for one statement. Reads only, keeps nothing. A statement that writes cannot be planned: plan its SELECT | statement, `--bind` |
 | `run` | Runs one read-only statement over the views you may see | statement, `-n` |
 | `investigate` | Plans it, names what is wrong, proposes fixes from the plan and proves them | statement, `--queryid`, `--bind`, `--title`, `--no-record`, `--max-candidates`, `--max-proofs` |
 | `prove` | Proves a rewrite you wrote: same rows, then faster | `--before`, `--after`, `--bind`, `--title`, `--no-record`, `--id` |
@@ -51,7 +51,7 @@ rewrite returned different rows, or was not fast enough). `1` an error, includin
 | `Different` | The rows differ. Never an improvement, however fast |
 | `Unverified` | Not compared: `$n` placeholders, a statement timeout, index DDL (review only), or both statements returned no rows. Two empty results are equal whatever the statements do |
 
-A verification on today's data, not a mathematical proof; see [Verify result equivalence](../workflows/verify-results.md),
+A verification on today's data, not a mathematical proof: the fingerprint is 128 bits (two independent 64-bit hashes), so agreement is probabilistic and not built to resist someone crafting colliding rows. See [Verify result equivalence](../workflows/verify-results.md),
 which uses the same fingerprint. Times are server-side, planning plus execution, and are the fastest of two rounds
 that alternate the two statements. A proof `prove()` computes carries `"source": "database"`; one stored with
 `record_evidence`, as the replica flow does, carries `"source": "client"` whatever its payload says.
@@ -64,7 +64,7 @@ Nothing is executable by `PUBLIC`.
 | Function | Group | Returns and notes |
 |---|---|---|
 | `pqn_api.top(n = 20)` | analyst | Statements by total time: `queryid`, `query`, `calls`, `total_exec_time`, `mean_exec_time`, `rows` |
-| `pqn_api.plan(query)` | analyst | The estimated plan as JSON. Executes nothing. `$n` placeholders need PostgreSQL 16 |
+| `pqn_api.plan(query)` | analyst | The estimated plan as JSON. Read only, and nothing it does is kept. A statement that writes (INSERT, UPDATE, DELETE, MERGE) is refused with a hint to plan its SELECT. `$n` placeholders need PostgreSQL 16 |
 | `pqn_api.run(query, row_limit = 100)` | analyst | `{rows, columns, truncated}`. One read-only statement over the exposed views; `row_limit` is clamped to 1–10000. Makes the rest of its transaction read only |
 | `pqn_api.findings(plan)` | analyst | Findings from a plan, as rules over the plan JSON |
 | `pqn_api.measure_pair(a, b, repeats = 2)` | analyst | `{equal, before, after, speedup, rounds}`. Both fingerprints in one snapshot; `repeats` is clamped to 1–5. Refuses `$n`. Runs the statements read only, so one that writes fails, and leaves your transaction writable |
@@ -83,6 +83,20 @@ Nothing is executable by `PUBLIC`.
 | `pqn_api.record_limit(login, ms)` | admin | Called by the `enroll` script |
 
 `explain_ms` and `exposed_path` are helpers only their owner can execute.
+
+The **Group** column is who may *execute* a function. Some admin functions also change roles and grants, and a caller that is not a
+superuser needs those rights too. Membership in `pqn_admin` alone is enough for the read-only ones:
+
+| Function | What a non-superuser needs beyond `pqn_admin` |
+|---|---|
+| `verify_setup()`, `exposed()`, `record_limit()`, `expose_sql()`, `enroll_sql()` | Nothing. The two `_sql` functions only print statements |
+| `init()` | Membership in `pqn_owner` and `pqn_ledger`: the installer, not a day-to-day administrator |
+| `expose()`, `unexpose()` | Membership in `pqn_owner` with `SET`, and the right to grant on the table and its schema (own them, or hold `GRANT OPTION`). Otherwise run the printed script as someone who has it |
+| `enroll()` | `CREATEROLE`, `ADMIN OPTION` on the group being granted, and `ADMIN` on the login (a login the administrator created has it). Otherwise run the printed script as someone who has it |
+| `enforce_limits()` | A superuser, or membership in `pg_read_all_stats` and `pg_signal_backend` |
+
+A superuser needs nothing extra. [Install the pqn extension](../getting-started/pqn-installation.md#install-without-a-superuser)
+shows how to set up a non-superuser administrator.
 
 ## Roles and tables
 

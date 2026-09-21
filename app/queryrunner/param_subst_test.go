@@ -233,3 +233,43 @@ func TestSubstituteParams_TimestampBindKeepsCast(t *testing.T) {
 		}
 	}
 }
+
+// A $n inside a string, a quoted name, a dollar-quoted string or a comment is text. Only a real
+// parameter makes a statement unrunnable, so a false yes refuses a statement that could run.
+func TestHasParams(t *testing.T) {
+	cases := []struct {
+		sql  string
+		want bool
+	}{
+		{`SELECT * FROM t WHERE a = $1`, true},
+		{`SELECT $2, $1`, true},
+		{`SELECT 'a', $1, 'b'`, true},
+		{"SELECT 1 -- c\nWHERE a = $1", true},
+		{`SELECT /* c */ $3`, true},
+		{`SELECT $$a$$, $1`, true},
+		{`SELECT $q$a$q$, $1`, true},
+		{`SELECT 1`, false},
+		{`SELECT '$5'`, false},
+		{`SELECT count(*) FROM t WHERE s <> '$5'`, false},
+		{`SELECT 'it''s $1'`, false},
+		{`SELECT "col$1" FROM t`, false},
+		{`SELECT 1 -- costs $5`, false},
+		{`SELECT 1 /* $1 */`, false},
+		{`SELECT $$2025-03-01$$`, false},
+		{`SELECT date_trunc($$day$$, ts) = timestamptz $$2025-03-01$$`, false},
+		{`SELECT $q$it's $1$q$`, false},
+		{`SELECT $$é✓ $1$$`, false},
+		{`SELECT $$ never closed, $1`, true}, // PostgreSQL refuses it; do not hide what follows
+		{`SELECT E'it\'s $1'`, false},        // a backslash escapes the quote in an E string
+		{`SELECT e'it\'s $1'`, false},
+		{`SELECT E'\'', $1`, true},    // the string is \' and $1 is outside it
+		{`SELECT E'a\\', $1`, true},   // an escaped backslash, then the closing quote
+		{`SELECT 'a\', $1`, true},     // in a plain string a backslash is just a character
+		{`SELECT date'a\', $1`, true}, // the e of "date" is not an E prefix, so the backslash is plain
+	}
+	for _, c := range cases {
+		if got := HasParams(c.sql); got != c.want {
+			t.Errorf("HasParams(%q) = %v, want %v", c.sql, got, c.want)
+		}
+	}
+}

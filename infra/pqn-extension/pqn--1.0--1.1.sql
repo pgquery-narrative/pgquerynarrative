@@ -134,27 +134,114 @@ DECLARE
   r record;
   acc jsonb[] := '{}';
   cols jsonb := '[]'::jsonb;
+  v_names text[];
+  v_base text;
+  v_k integer;
+  v_row jsonb;
+  v_renamed boolean := false;
+  v_bytes bigint := 0;
   n integer := 0;
   lim integer := least(greatest(coalesce(row_limit, 100), 1), 10000);
 BEGIN
+  IF l_query IS NULL OR l_query ~ '^(\s|;|--[^\n]*|/\*([^*]|\*+[^*/])*\*+/)*$' THEN
+    RAISE EXCEPTION 'pqn: give a statement to run';
+  END IF;
   SET TRANSACTION READ ONLY;
   OPEN c FOR EXECUTE l_query;
   LOOP
     FETCH c INTO r;
     EXIT WHEN NOT FOUND;
     n := n + 1;
-    IF n = 1 THEN
-      -- jsonb does not keep key order, json does, so the column order comes from json.
-      SELECT COALESCE(jsonb_agg(k), '[]'::jsonb) INTO cols FROM json_object_keys(to_json(r)) AS k;
-    END IF;
-    IF n > lim THEN
+    -- Size the row before copying it. to_json and to_jsonb each make a full copy, and one 150 MB row
+    -- took this backend past 1 GB. The row itself is only as large as the statement made it, which
+    -- PostgreSQL allows any SELECT to do; what this function adds is copies, so it makes none of a
+    -- row it is going to refuse.
+    IF pg_column_size(r) > 16777216 THEN
       CLOSE c;
       RETURN jsonb_build_object('columns', cols, 'rows', to_jsonb(acc), 'truncated', true);
     END IF;
-    acc := acc || to_jsonb(r);
+    IF n = 1 THEN
+      -- jsonb does not keep key order, json does, so the column order comes from json.
+      SELECT array_agg(k ORDER BY o) INTO v_names FROM json_object_keys(to_json(r)) WITH ORDINALITY AS t(k, o);
+      -- A jsonb object holds each name once, so SELECT 1, 2 or max(a), max(b) would keep only the
+      -- last value under a name listed twice. Make the names unique instead of losing a column.
+      FOR i IN 1..COALESCE(array_length(v_names, 1), 0) LOOP
+        v_base := v_names[i];
+        v_k := 1;
+        WHILE v_names[i] = ANY (v_names[1:i - 1]) LOOP
+          v_k := v_k + 1;
+          v_names[i] := v_base || '_' || v_k;
+          v_renamed := true;
+        END LOOP;
+      END LOOP;
+      cols := COALESCE(to_jsonb(v_names), '[]'::jsonb);
+    END IF;
+    IF v_renamed THEN
+      SELECT jsonb_object_agg(nm.name, e.value::jsonb) INTO v_row
+        FROM json_each(to_json(r)) WITH ORDINALITY AS e(key, value, ord)
+        JOIN unnest(v_names) WITH ORDINALITY AS nm(name, ord) USING (ord);
+    ELSE
+      v_row := to_jsonb(r);
+    END IF;
+    -- row_limit bounds rows, not bytes: 40 rows of 90 MB would be held in this backend's memory and
+    -- the operating system would kill it, restarting every session. The budget bounds the answer.
+    v_bytes := v_bytes + pg_column_size(v_row);
+    IF n > lim OR v_bytes > 16777216 THEN
+      CLOSE c;
+      RETURN jsonb_build_object('columns', cols, 'rows', to_jsonb(acc), 'truncated', true);
+    END IF;
+    acc := acc || v_row;
   END LOOP;
   CLOSE c;
+  IF n = 0 THEN
+    -- No row carries the column names, so ask for one row of NULLs shaped like the answer. It is a
+    -- convenience: a statement that cannot be wrapped (SHOW, EXPLAIN) simply has no names.
+    BEGIN
+      OPEN c FOR EXECUTE 'SELECT pqn_t.* FROM (SELECT 1) AS pqn_d LEFT JOIN (' || l_query || E'\n) AS pqn_t ON false';
+      FETCH c INTO r;
+      IF FOUND THEN
+        SELECT COALESCE(jsonb_agg(k), '[]'::jsonb) INTO cols FROM json_object_keys(to_json(r)) AS k;
+      END IF;
+      CLOSE c;
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
+  END IF;
   RETURN jsonb_build_object('columns', cols, 'rows', to_jsonb(acc), 'truncated', false);
+END
+$f$;
+RESET ROLE;
+
+-- top(): only statements pg_stat_statements has normalized. It keeps utility statements
+-- (ALTER ROLE ... PASSWORD 'x', CREATE USER MAPPING, COPY, PREPARE) exactly as typed, literals and
+-- all, and this function runs as pg_monitor for every analyst. A statement that starts with a
+-- query keyword has its constants replaced by $n; everything else is left out.
+SET LOCAL ROLE pqn_stats;
+CREATE OR REPLACE FUNCTION pqn_api.top(n integer DEFAULT 20)
+RETURNS TABLE (queryid bigint, query text, calls bigint, total_exec_time double precision,
+               mean_exec_time double precision, "rows" bigint)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
+#variable_conflict use_column
+DECLARE
+  ns name;
+BEGIN
+  SELECT x.nspname INTO ns
+  FROM pg_extension e JOIN pg_namespace x ON x.oid = e.extnamespace
+  WHERE e.extname = 'pg_stat_statements';
+  IF ns IS NULL THEN
+    RAISE EXCEPTION 'pqn: pg_stat_statements is not installed in this database'
+      USING HINT = 'CREATE EXTENSION pg_stat_statements; it also needs shared_preload_libraries.';
+  END IF;
+  RETURN QUERY EXECUTE format(
+    'SELECT s.queryid, s.query, s.calls, s.total_exec_time, s.mean_exec_time, s.rows
+       FROM %I.pg_stat_statements s
+      WHERE s.dbid = (SELECT d.oid FROM pg_database d WHERE d.datname = current_database())
+        AND regexp_replace(s.query, $2, '''') ~* $3
+      ORDER BY s.total_exec_time DESC
+      LIMIT $1', ns)
+    USING least(greatest(coalesce(n, 20), 1), 500),
+          '^(\s+|/\*([^*]|\*+[^*/])*\*+/|--[^\n]*\n)+',
+          '^(select|with|insert|update|delete|merge|values|table)\M';
 END
 $f$;
 RESET ROLE;
@@ -196,27 +283,69 @@ BEGIN
 END
 $f$;
 
+-- Does the statement refer to a $n parameter? One inside a string, a quoted name, a $$ string or a
+-- comment is text: '$5' and $$2025-03-01$$ are not placeholders. A $tag$ string is not skipped, so
+-- one holding "$1" counts as a parameter: that refuses a statement that could have run, and never runs
+-- one that cannot.
+CREATE FUNCTION pqn_api.has_params(l_query text) RETURNS boolean
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $f$
+  SELECT regexp_replace(l_query,
+           $re$[eE]'([^'\\]|\\.|'')*'|'([^']|'')*'|"([^"]|"")*"|--[^\n]*|/\*([^*]|\*+[^*/])*\*+/|\$\$([^$]|\$[^$])*\$\$$re$,
+           ' ', 'g') ~ '\$[0-9]'
+$f$;
+
 -- Estimated plan for one statement, without running it. Owned by pqn_owner, whose SELECT on the
 -- exposed tables is what lets the planner accept a statement over base tables while the caller
 -- has no access to them. A cursor accepts exactly one statement. $n placeholders need
--- GENERIC_PLAN (PostgreSQL 16+). EXPLAIN executes nothing, so the function does NOT make the
--- transaction read only (it cannot be STABLE, PostgreSQL forbids EXPLAIN there): plan(...) can be passed straight into record_evidence(...).
--- VERBOSE adds schema names, so findings can resolve tables.
+-- GENERIC_PLAN (PostgreSQL 16+). VERBOSE adds schema names, so findings can resolve tables.
+--
+-- EXPLAIN does not run the statement, but the planner does run the IMMUTABLE and STABLE functions
+-- it folds into constants, and the caller can supply one (a function in pg_temp, which everyone may
+-- create; an immutable one may call a volatile one). That code would run as pqn_owner, which owns
+-- the views, the exposure registry and the limits table. So planning happens in a read-only
+-- sub-transaction, the way measure_pair works: PostgreSQL cannot make it read-write again, and it
+-- ends by raising a private error that rolls it back, read-only flag included, so plan(...) can
+-- still be passed straight into record_evidence(...) in the caller's transaction.
 CREATE OR REPLACE FUNCTION pqn_api.plan(l_query text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
 DECLARE
   c refcursor;
   p json;
+  res jsonb;
   opts text := 'VERBOSE, FORMAT JSON';
 BEGIN
+  IF l_query IS NULL OR l_query ~ '^(\s|;|--[^\n]*|/\*([^*]|\*+[^*/])*\*+/)*$' THEN
+    RAISE EXCEPTION 'pqn: give a statement to plan';
+  END IF;
   PERFORM set_config('search_path', pqn_api.exposed_path(), true);
-  IF l_query ~ '\$[0-9]' THEN
+  IF pqn_api.has_params(l_query) THEN
     opts := 'GENERIC_PLAN, VERBOSE, FORMAT JSON';
   END IF;
-  OPEN c FOR EXECUTE format('EXPLAIN (%s) %s', opts, l_query);
-  FETCH c INTO p;
-  CLOSE c;
-  RETURN p::jsonb;
+  BEGIN
+    PERFORM set_config('transaction_read_only', 'on', false);
+    OPEN c FOR EXECUTE format('EXPLAIN (%s) %s', opts, l_query);
+    FETCH c INTO p;
+    CLOSE c;
+    res := p::jsonb;
+    RAISE EXCEPTION 'planned' USING ERRCODE = 'PQN01';
+  EXCEPTION
+    WHEN SQLSTATE 'PQN01' THEN
+      NULL;
+    WHEN insufficient_privilege THEN
+      -- pqn_owner reads what the DBA exposed and holds no write privilege, and PostgreSQL checks it
+      -- even to plan a write. Say so, instead of "permission denied for table orders".
+      IF regexp_replace(l_query, '^(\s+|/\*([^*]|\*+[^*/])*\*+/|--[^\n]*\n)+', '') ~* '^(insert|update|delete|merge)\M' THEN
+        RAISE EXCEPTION 'pqn: a statement that writes cannot be planned: pqn only reads what you expose'
+          USING HINT = 'Plan the SELECT that finds the rows: the WHERE clause of the UPDATE or DELETE, or the SELECT of an INSERT.',
+                DETAIL = SQLERRM;
+      END IF;
+      RAISE;
+  END;
+  -- A function inside the statement can raise the same SQLSTATE. That is not a finished plan.
+  IF res IS NULL THEN
+    RAISE EXCEPTION 'pqn: the plan did not complete (a statement raised an error the tool uses internally)';
+  END IF;
+  RETURN res;
 END
 $f$;
 
@@ -256,9 +385,10 @@ BEGIN
 END
 $f$;
 
--- Run two statements, fingerprint their rows, and time both. The fingerprint is the row count,
--- the sum and the xor of a 64-bit hash of every row's text, so it is independent of row order and
--- reveals no row values. Both fingerprints are taken inside one caller statement, so they share
+-- Run two statements, fingerprint their rows, and time both. The fingerprint is the row count, and
+-- the sum and the xor of two independent 64-bit hashes (two seeds, 128 bits) of every row's text, so
+-- it is independent of row order and reveals no row values. It is a fingerprint, not a proof: it
+-- cannot tell rows that print the same, and a collision is astronomically unlikely, not impossible. Both fingerprints are taken inside one caller statement, so they share
 -- one snapshot. The times come from explain_ms, which runs each statement the way the application
 -- does. The order alternates each round and the fastest round counts, so neither side benefits
 -- from a warm cache. Statements with $n placeholders cannot run.
@@ -282,17 +412,22 @@ DECLARE
   cnt bigint[] := ARRAY[NULL, NULL]::bigint[];
   sm numeric[] := ARRAY[NULL, NULL]::numeric[];
   xr bigint[] := ARRAY[NULL, NULL]::bigint[];
+  sm2 numeric[] := ARRAY[NULL, NULL]::numeric[];
+  xr2 bigint[] := ARRAY[NULL, NULL]::bigint[];
   best numeric[] := ARRAY[NULL, NULL]::numeric[];
   v_cnt bigint;
   v_sum numeric;
   v_xor bigint;
+  v_sum2 numeric;
+  v_xor2 bigint;
   same boolean;
   res jsonb;
 BEGIN
-  IF l_a IS NULL OR l_b IS NULL OR btrim(l_a) = '' OR btrim(l_b) = '' THEN
+  IF l_a IS NULL OR l_b IS NULL
+     OR l_a ~ '^(\s|;|--[^\n]*|/\*([^*]|\*+[^*/])*\*+/)*$' OR l_b ~ '^(\s|;|--[^\n]*|/\*([^*]|\*+[^*/])*\*+/)*$' THEN
     RAISE EXCEPTION 'pqn: both statements are required';
   END IF;
-  IF l_a ~ '\$[0-9]' OR l_b ~ '\$[0-9]' THEN
+  IF pqn_api.has_params(l_a) OR pqn_api.has_params(l_b) THEN
     RAISE EXCEPTION 'pqn: statements with $n placeholders cannot be executed. Substitute values first.';
   END IF;
   PERFORM set_config('search_path', v_path, true);
@@ -308,11 +443,12 @@ BEGIN
 
     FOR side IN 1..2 LOOP
       OPEN c FOR EXECUTE format(
-        'SELECT count(*)::bigint, COALESCE(sum(h), 0)::numeric, COALESCE(bit_xor(h), 0)::bigint '
-        'FROM (SELECT hashtextextended(t::text, 0) AS h FROM (%s' || E'\n' || ') t) x', stmts[side]);
-      FETCH c INTO v_cnt, v_sum, v_xor;
+        'SELECT count(*)::bigint, COALESCE(sum(h), 0)::numeric, COALESCE(bit_xor(h), 0)::bigint, '
+        'COALESCE(sum(g), 0)::numeric, COALESCE(bit_xor(g), 0)::bigint '
+        'FROM (SELECT hashtextextended(t::text, 0) AS h, hashtextextended(t::text, 1) AS g FROM (%s' || E'\n' || ') t) x', stmts[side]);
+      FETCH c INTO v_cnt, v_sum, v_xor, v_sum2, v_xor2;
       CLOSE c;
-      cnt[side] := v_cnt; sm[side] := v_sum; xr[side] := v_xor;
+      cnt[side] := v_cnt; sm[side] := v_sum; xr[side] := v_xor; sm2[side] := v_sum2; xr2[side] := v_xor2;
     END LOOP;
 
     FOR i IN 1..reps LOOP
@@ -323,17 +459,23 @@ BEGIN
       END LOOP;
     END LOOP;
 
-    same := cnt[1] = cnt[2] AND sm[1] = sm[2] AND xr[1] = xr[2];
+    same := cnt[1] = cnt[2] AND sm[1] = sm[2] AND xr[1] = xr[2] AND sm2[1] = sm2[2] AND xr2[1] = xr2[2];
     res := jsonb_build_object(
       'equal', same,
-      'before', jsonb_build_object('rows', cnt[1], 'sum', sm[1], 'xor', xr[1], 'ms', best[1]),
-      'after',  jsonb_build_object('rows', cnt[2], 'sum', sm[2], 'xor', xr[2], 'ms', best[2]),
+      'before', jsonb_build_object('rows', cnt[1], 'sum', sm[1], 'xor', xr[1], 'sum2', sm2[1], 'xor2', xr2[1], 'ms', best[1]),
+      'after',  jsonb_build_object('rows', cnt[2], 'sum', sm[2], 'xor', xr[2], 'sum2', sm2[2], 'xor2', xr2[2], 'ms', best[2]),
       'speedup', CASE WHEN best[2] > 0 THEN round(best[1] / best[2], 2) END,
       'rounds', reps);
     RAISE EXCEPTION 'measured' USING ERRCODE = 'PQN01';
   EXCEPTION WHEN SQLSTATE 'PQN01' THEN
     NULL;
   END;
+  -- The handler above catches its own private error. A function inside the analyst's statement can raise
+  -- the same SQLSTATE, and that would look like a finished measurement. It is not one until res is set,
+  -- and res is set only on the line before our own raise.
+  IF res IS NULL THEN
+    RAISE EXCEPTION 'pqn: the measurement did not complete (a statement raised an error the tool uses internally)';
+  END IF;
   RETURN res;
 END
 $f$;
@@ -435,7 +577,10 @@ DECLARE
   col text;
   has_idx boolean;
   fn_wrap boolean;
-  root_cost numeric := (l_plan->0->'Plan'->>'Total Cost')::numeric;
+  -- l_plan is whatever the caller passed, so a value that is not the shape EXPLAIN prints is skipped
+  -- (a "Plans" that is not an array, a cost that is not a number), never an error.
+  root_cost numeric := CASE WHEN jsonb_typeof(l_plan->0->'Plan'->'Total Cost') = 'number'
+                            THEN (l_plan->0->'Plan'->'Total Cost')::numeric END;
 BEGIN
   IF root_cost >= 100000 THEN
     res := res || jsonb_build_array(jsonb_build_object(
@@ -448,7 +593,8 @@ BEGIN
     WITH RECURSIVE n(node) AS (
       SELECT l_plan->0->'Plan'
       UNION ALL
-      SELECT p FROM n, jsonb_array_elements(COALESCE(n.node->'Plans', '[]'::jsonb)) p)
+      SELECT p FROM n, jsonb_array_elements(CASE WHEN jsonb_typeof(n.node->'Plans') = 'array'
+                                                 THEN n.node->'Plans' ELSE '[]'::jsonb END) p)
     SELECT n.node FROM n
   LOOP
     nt := node->>'Node Type';
@@ -499,7 +645,8 @@ BEGIN
       END IF;
     END IF;
 
-    IF nt = 'Sort' AND COALESCE((node->>'Plan Rows')::bigint, 0) >= 1000000 THEN
+    IF nt = 'Sort' AND COALESCE(CASE WHEN jsonb_typeof(node->'Plan Rows') = 'number'
+                                     THEN (node->'Plan Rows')::numeric END, 0) >= 1000000 THEN
       res := res || jsonb_build_array(jsonb_build_object(
         'category', 'sort_large', 'severity', 'medium', 'relation', NULL,
         'message', format('Sort of about %s rows. It may spill to disk. An index in the sort order, or a LIMIT, can avoid it.', node->>'Plan Rows'),
@@ -515,6 +662,36 @@ $f$;
 -- read functions above, which run as pqn_owner.
 -- ---------------------------------------------------------------------------------------
 SET LOCAL ROLE pqn_ledger;
+
+-- What one person may keep in the ledger: 256 MiB, counted as whole rows (statement, title, evidence,
+-- and the row overhead a payload-only count leaves out: a million payloads of '{}' are 5 MB of payload and
+-- 60 MB of table), and 20000 rows. The row limit is also what bounds this function: it reads only this
+-- person's rows, and each write is refused before they pass it, so it is a fixed, small scan however
+-- large the ledger of everyone else is. Nothing else limits it, so one analyst could otherwise fill the
+-- disk of the database everyone else uses. It is a plain function, called by the writers below, which run
+-- as pqn_ledger. Two writers at the same moment can each pass and overshoot a little. That is fine for a
+-- disk guard.
+CREATE FUNCTION pqn_api.ledger_room(l_who text, l_add bigint) RETURNS void
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $f$
+DECLARE
+  used bigint;
+  n bigint;
+BEGIN
+  SELECT COALESCE(sum(pg_column_size(i)), 0), count(*) INTO used, n
+    FROM pqn_ledger.investigations i WHERE i.who = l_who;
+  SELECT used + COALESCE(sum(pg_column_size(e)), 0), n + count(*) INTO used, n
+    FROM pqn_ledger.evidence e JOIN pqn_ledger.investigations j ON j.id = e.investigation_id
+   WHERE j.who = l_who;
+  IF used + l_add > 268435456 THEN
+    RAISE EXCEPTION 'pqn: the ledger already holds % of your evidence, and the limit is 256 MiB', pg_size_pretty(used)
+      USING HINT = 'Ask an administrator to remove old investigations.';
+  END IF;
+  IF n >= 20000 THEN
+    RAISE EXCEPTION 'pqn: the ledger already holds % of your investigations and evidence rows, and the limit is 20000', n
+      USING HINT = 'Ask an administrator to remove old investigations.';
+  END IF;
+END
+$f$;
 
 CREATE FUNCTION pqn_api.investigate(l_query text, l_title text DEFAULT NULL, l_queryid bigint DEFAULT NULL) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
@@ -536,6 +713,7 @@ BEGIN
   END IF;
   p := pqn_api.plan(l_query);
   f := pqn_api.findings(p);
+  PERFORM pqn_api.ledger_room(session_user, length(l_query) + pg_column_size(p) + pg_column_size(f));
   INSERT INTO pqn_ledger.investigations (sql, queryid, title)
   VALUES (l_query, l_queryid, left(l_title, 200)) RETURNING id INTO new_id;
   INSERT INTO pqn_ledger.evidence (investigation_id, kind, payload) VALUES (new_id, 'plan', p);
@@ -581,13 +759,15 @@ BEGIN
      OR (owner_of <> session_user AND NOT pg_has_role(session_user, 'pqn_admin', 'MEMBER')) THEN
     RAISE EXCEPTION 'pqn: no investigation % that you may write to', l_investigation;
   END IF;
+  -- Before the measuring, not after it. A proof is a few KB, so it is checked without its size.
+  PERFORM pqn_api.ledger_room(owner_of, 0);
 
   pb := pqn_api.plan(l_before);
   pa := pqn_api.plan(l_after);
   cost_b := (pb->0->'Plan'->>'Total Cost')::numeric;
   cost_a := (pa->0->'Plan'->>'Total Cost')::numeric;
 
-  IF l_before ~ '\$[0-9]' OR l_after ~ '\$[0-9]' THEN
+  IF pqn_api.has_params(l_before) OR pqn_api.has_params(l_after) THEN
     verdict := 'Unverified';
     reason := 'a statement has $n placeholders and cannot be executed; only the plans were compared';
     m := NULL;
@@ -645,6 +825,7 @@ BEGIN
   IF length(l_query) > 100000 THEN
     RAISE EXCEPTION 'pqn: the query text is longer than 100000 characters';
   END IF;
+  PERFORM pqn_api.ledger_room(session_user, length(l_query));
   INSERT INTO pqn_ledger.investigations (sql, queryid, title)
   VALUES (l_query, l_queryid, left(l_title, 200))
   RETURNING id INTO new_id;
@@ -677,6 +858,7 @@ BEGIN
      OR (owner_of <> session_user AND NOT pg_has_role(session_user, 'pqn_admin', 'MEMBER')) THEN
     RAISE EXCEPTION 'pqn: no investigation % that you may write to', l_investigation;
   END IF;
+  PERFORM pqn_api.ledger_room(owner_of, pg_column_size(l_payload));
   -- A proof stored here was computed by the caller, not by the database. Stamp it so it can never
   -- be mistaken for one prove() computed, whatever the caller put in the payload.
   IF l_kind = 'proof' THEN
@@ -827,7 +1009,7 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA pqn_api FROM PUBLIC;
 -- The ledger role calls the read functions from inside investigate and prove.
 GRANT USAGE ON SCHEMA pqn_api TO pqn_ledger;
 GRANT EXECUTE ON FUNCTION pqn_api.plan(text), pqn_api.measure_pair(text, text, integer),
-                          pqn_api.findings(jsonb) TO pqn_ledger;
+                          pqn_api.findings(jsonb), pqn_api.has_params(text) TO pqn_ledger;
 -- The owner role calls its own helper from inside plan and measure_pair.
 GRANT USAGE ON SCHEMA pqn_api TO pqn_owner;
 GRANT EXECUTE ON FUNCTION pqn_api.exposed_path(), pqn_api.explain_ms(text, text) TO pqn_owner;

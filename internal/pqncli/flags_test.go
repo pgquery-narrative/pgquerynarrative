@@ -113,6 +113,25 @@ func TestStatementWordsAreNotSwallowedSilently(t *testing.T) {
 	if code, _ := run("run", "SELECT 1", "--timeout"); code != 1 {
 		t.Errorf("a value flag with no value must fail: %d", code)
 	}
+	// A value flag followed directly by another flag is a missing value, not a value that looks like one.
+	for _, args := range [][]string{
+		{"run", "SELECT 1", "--title", "--json"},
+		{"investigate", "SELECT 1", "--bind", "--no-record"},
+		{"run", "SELECT 1", "-n", "--json"},
+	} {
+		if code, errs := run(args...); code != 1 || !strings.Contains(errs, "needs a value") || len(be.ran) != 0 {
+			t.Errorf("%q: want a missing-value error, got %d %q", args, code, errs)
+		}
+	}
+	// ...but a negative number, --flag=value and a value that is not a flag are values.
+	be2 := &spyBackend{}
+	Main([]string{"run", "SELECT 1", "-n", "-5"}, &bytes.Buffer{}, &bytes.Buffer{}, func(string) string { return "" },
+		func(context.Context, string, string) (Backend, error) { return be2, nil })
+	Main([]string{"run", "SELECT 1", "--title=--json"}, &bytes.Buffer{}, &bytes.Buffer{}, func(string) string { return "" },
+		func(context.Context, string, string) (Backend, error) { return be2, nil })
+	if len(be2.ran) != 2 {
+		t.Errorf("a negative number and --flag=value are values: %d runs", len(be2.ran))
+	}
 }
 
 // A dash that is part of the statement is kept: numbers, and a SQL comment after the first word.
@@ -134,5 +153,33 @@ func TestDashesInsideAStatement(t *testing.T) {
 		if len(be.ran) != 1 || be.ran[0] != tc.want {
 			t.Errorf("%q: sent %q, want %q (%s)", tc.args, be.ran, tc.want, errb.String())
 		}
+	}
+}
+
+// The connection string comes from the environment and carries a password. --help prints a flag's
+// default, so it must not be one; the environment still connects.
+func TestHelpDoesNotPrintTheDSNFromTheEnvironment(t *testing.T) {
+	const secret = "postgres://alice:hunter2@db/app"
+	getenv := func(k string) string {
+		if k == "PQN_DSN" || k == "PQN_REPLICA_DSN" {
+			return secret
+		}
+		return ""
+	}
+	var got string
+	connect := func(_ context.Context, primary, _ string) (Backend, error) {
+		got = primary
+		return &fakeBackend{}, nil
+	}
+	var out, errb bytes.Buffer
+	Main([]string{"run", "-h"}, &out, &errb, getenv, connect)
+	if strings.Contains(out.String()+errb.String(), "hunter2") {
+		t.Fatalf("help printed the password:\n%s%s", out.String(), errb.String())
+	}
+	out.Reset()
+	errb.Reset()
+	Main([]string{"run", "SELECT 1"}, &out, &errb, getenv, connect)
+	if got != secret {
+		t.Fatalf("the environment DSN did not reach connect: %q", got)
 	}
 }

@@ -70,7 +70,8 @@ psql -U postgres -d reports -c "REVOKE pqn_owner, pqn_reader, pqn_stats, pqn_led
 The installer needs the membership again only to upgrade. Run the script in each database you install into.
 
 The DBA can also be a non-superuser. It needs `CREATEROLE`, `CREATE` on the database and `ADMIN OPTION` on `pg_monitor` to run the
-script, and to call `expose` and `enroll` it needs `pqn_admin` and `pqn_owner` with inherit. PostgreSQL 16 gives the creator of a
+script, and to call `expose` and `enroll` it needs `pqn_admin` and `pqn_owner` with inherit (the
+[reference](../reference/pqn.md#sql-api) lists what each function needs). PostgreSQL 16 gives the creator of a
 role a membership that carries no rights, so grant them once:
 
 ```shell

@@ -33,7 +33,7 @@ Usage: pqn <command> [flags]   (flags may come before or after the statement; qu
 
   doctor          Check that the setup is safe (pqn_api.verify_setup)
   top             The statements that cost the most (from pg_stat_statements)
-  plan            Estimated plan and findings for one statement. Executes nothing
+  plan            Estimated plan and findings for one statement. Reads only, keeps nothing
   run             Run one read-only statement over the views you may see
   investigate     Plan it, name what is wrong, propose fixes from the plan, prove them
   prove           Prove a rewrite you wrote: same rows, then faster
@@ -57,9 +57,11 @@ type common struct {
 	timeout time.Duration
 }
 
-func addCommon(fs *flag.FlagSet, c *common, getenv func(string) string) {
-	fs.StringVar(&c.dsn, "dsn", getenv("PQN_DSN"), "primary connection string")
-	fs.StringVar(&c.replica, "replica", getenv("PQN_REPLICA_DSN"), "replica connection string")
+// The environment fills dsn and replica after parsing, not as the flags' defaults: --help prints a
+// default, and a connection string carries a password.
+func addCommon(fs *flag.FlagSet, c *common) {
+	fs.StringVar(&c.dsn, "dsn", "", "primary connection string")
+	fs.StringVar(&c.replica, "replica", "", "replica connection string")
 	fs.BoolVar(&c.asJSON, "json", false, "print JSON")
 	fs.DurationVar(&c.timeout, "timeout", 10*time.Minute, "give up after this long")
 }
@@ -86,6 +88,10 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 			name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
 			if f := fs.Lookup(name); f != nil && !hasValue && i+1 < len(args) {
 				if b, ok := f.Value.(interface{ IsBoolFlag() bool }); !ok || !b.IsBoolFlag() {
+					// `--title --json` is a missing value, not a title of "--json".
+					if next := args[i+1]; looksLikeFlag(fs, next) {
+						return nil, flagValueError{flag: a, next: next}
+					}
 					i++
 					flags = append(flags, args[i])
 				}
@@ -93,6 +99,22 @@ func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
 		}
 	}
 	return words, fs.Parse(flags)
+}
+
+// flagValueError is a value flag followed directly by another flag.
+type flagValueError struct{ flag, next string }
+
+func (e flagValueError) Error() string {
+	return fmt.Sprintf("%s needs a value, but the next argument is the flag %s (write --flag=value to use a value that starts with -)", e.flag, e.next)
+}
+
+// looksLikeFlag reports whether a is one of this command's flags, spelled with a dash or two.
+func looksLikeFlag(fs *flag.FlagSet, a string) bool {
+	if !strings.HasPrefix(a, "-") || a == "-" || a == "--" || isNumber(a[1:]) {
+		return false
+	}
+	name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "=")
+	return fs.Lookup(name) != nil
 }
 
 func isNumber(s string) bool {
@@ -116,7 +138,7 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 	fs := flag.NewFlagSet("pqn "+cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var c common
-	addCommon(fs, &c, getenv)
+	addCommon(fs, &c)
 	var (
 		n         = fs.Int("n", 20, "how many rows")
 		title     = fs.String("title", "", "title for the ledger")
@@ -136,6 +158,10 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
+		}
+		var missing flagValueError
+		if errors.As(err, &missing) {
+			fmt.Fprintln(stderr, "pqn:", err)
 		}
 		if strings.Contains(err.Error(), "not defined") {
 			fmt.Fprintln(stderr, "pqn: if that was part of the statement, put the statement in quotes or after --")
@@ -184,6 +210,12 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 		return 1
 	}
 
+	if c.dsn == "" {
+		c.dsn = getenv("PQN_DSN")
+	}
+	if c.replica == "" {
+		c.replica = getenv("PQN_REPLICA_DSN")
+	}
 	be, err := connect(ctx, c.dsn, c.replica)
 	if err != nil {
 		return fail(err)
@@ -234,7 +266,7 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 			return fail(fmt.Errorf("the statement is not accepted: %w", err))
 		}
 		exec := sql
-		if placeholderRe.MatchString(sql) && len(binds) > 0 {
+		if queryrunner.HasParams(sql) && len(binds) > 0 {
 			if exec, err = queryrunner.SubstituteParams(sql, binds); err != nil {
 				return fail(err)
 			}
@@ -347,7 +379,7 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 		}
 		cand := &CandidateResult{Kind: queryrunner.CandidateKindSQLRewrite, SQL: a, Category: "your rewrite", Confidence: "n/a",
 			Rationale: "supplied with --after", Verdict: VerdictUnverified}
-		if placeholderRe.MatchString(b) || placeholderRe.MatchString(a) {
+		if queryrunner.HasParams(b) || queryrunner.HasParams(a) {
 			cand.Reason = "not measured: a statement has $n placeholders (pass --bind)"
 		} else {
 			proveCandidate(ctx, be, rep, cand, b, record)

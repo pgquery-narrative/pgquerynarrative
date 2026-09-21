@@ -23,8 +23,6 @@ const (
 	defaultMaxProofs     = 3
 )
 
-var placeholderRe = regexp.MustCompile(`\$[0-9]+`)
-
 // InvestigateOptions describes one investigation.
 type InvestigateOptions struct {
 	SQL           string
@@ -150,7 +148,7 @@ func Investigate(ctx context.Context, be Backend, val *queryrunner.Validator, op
 
 	report := &Report{SQL: sql}
 	execSQL := sql
-	hasParams := placeholderRe.MatchString(sql)
+	hasParams := queryrunner.HasParams(sql)
 	if hasParams && len(opt.Binds) > 0 {
 		sub, err := queryrunner.SubstituteParams(sql, opt.Binds)
 		if err != nil {
@@ -159,7 +157,7 @@ func Investigate(ctx context.Context, be Backend, val *queryrunner.Validator, op
 		execSQL = sub
 		report.ExecutedSQL = sub
 	}
-	canExecute := !placeholderRe.MatchString(execSQL)
+	canExecute := !queryrunner.HasParams(execSQL)
 	report.GenericPlan = !canExecute
 	if !canExecute {
 		report.Notes = append(report.Notes,
