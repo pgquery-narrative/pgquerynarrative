@@ -173,8 +173,27 @@ four, plus the lifecycle and deployment gaps found alongside them.
   search path and timeouts on every connection and opened every statement `READ ONLY`. A
   test wipes the role's defaults and proves it.
 
-### Added
-
+- **`pqn_api.plan` and `pqn_api.investigate` no longer run the caller's code as `pqn_owner`.** The planner
+  runs the IMMUTABLE and STABLE functions it folds into constants, and any analyst may create one in
+  `pg_temp` that calls a volatile function. That code ran as the role that owns the views, the exposure
+  registry and the limits table, so an analyst could delete their own limit, edit the registry that
+  builds the search path, create objects in `pqn` or grant a view to PUBLIC. Planning now happens in a
+  read-only sub-transaction, as `measure_pair` already did, and leaves the caller's transaction writable.
+- **`pqn_api.top` no longer shows utility statements.** `pg_stat_statements` keeps `ALTER ROLE … PASSWORD`,
+  `CREATE USER MAPPING`, `COPY` and `PREPARE` as typed, and `top` reads it as `pg_monitor` for every
+  analyst. Only statements that start with a query keyword, whose constants are already `$n`, are listed.
+- **`pqn_api.run` cannot exhaust server memory with one call.** `row_limit` bounded rows, not bytes: 40 rows
+  of 90 MB were held in the backend until the operating system killed it and restarted every session. The
+  answer is now cut at 16 MB and marked truncated, and a row over that is refused before it is copied: one
+  150 MB row took the backend 1.1 GB above idle, and now takes 0.4 GB, close to the 0.3 GB any `SELECT` of
+  that value costs. A single value is still as large as the statement makes it.
+- **`pqn --help` no longer prints the password in `$PQN_DSN`.** The environment was the flag's default, and
+  a flag's default is printed.
+- **One person cannot fill the disk through the ledger.** Statements and evidence are capped at 256 MiB and
+  20000 rows per person, counted as whole rows (a million payloads of `{}` are 5 MB of payload but 60 MB of
+  table). Every writer checks it (`record_investigation`, `record_evidence`, `investigate`, `prove`, which
+  refuses before it measures). The row limit also bounds the check itself: it reads only that person's rows,
+  about 10 ms at the limit on a 1.1 GB ledger. An administrator prunes old investigations to make room.
 - **`pqn`: the product's pitch from a terminal, inside your database.** *We do not ask you for the
   rewrite. We propose it from the plan, then prove it.* `pqn` is a PostgreSQL extension plus a
   terminal tool (`make build-pqn`, `bin/pqn`) that needs no PgQueryNarrative server, no REST API and
@@ -245,6 +264,44 @@ four, plus the lifecycle and deployment gaps found alongside them.
   comparison; the verdict is `Unverified` and the reason says so.
 - **`pqn`: `unexpose` takes back the removed view's columns.** With another view on the same table
   it kept every column grant, and a removed `full` view left the whole table readable.
+- **Rewrites that were not the same statement are declined.** A differential test now runs every
+  proposed rewrite against PostgreSQL with NULLs, empty subqueries and duplicates and compares the
+  rows. It found four: `x NOT IN (subquery)` dropped a NULL `x` when the subquery was empty; an
+  `IN` or `NOT IN` under another `NOT` returned different rows; `x > ANY (…)` and `x < ANY (…)` were
+  rewritten as equality; and a table compared with itself (`WHERE id IN (SELECT parent_id FROM t)`)
+  correlated the inner table with itself. The first is rewritten correctly now, the rest are declined.
+- **A failed `EXPLAIN` no longer leaves a hypothetical index on a pooled connection.** The reset ran
+  inside the aborted transaction and could not run. The connection is held for the whole call and
+  cleared after the transaction ends; if that cannot be confirmed it leaves the pool.
+- **`lo_get` and the other large-object readers are denied** (`lo_close`, `lo_creat`, `lo_lseek`,
+  `lo_tell`, `lo_truncate` and the 64-bit forms), tested with the read privilege actually held.
+- **`timing_runs` works on adding a candidate.** It was accepted by the plan comparison but not by
+  `POST /investigations/{id}/candidates`, so a candidate's speedup always rested on one run.
+- **Managed API keys get their own rate-limit bucket.** They fell into the client's IP bucket, so keys
+  behind one NAT shared a budget. A key that has authenticated is remembered for 60 seconds and keyed
+  by organization and key; a token that never authenticated stays in the IP bucket, so guessing
+  tokens cannot shed the IP limit and the check still touches no database.
+- **The result fingerprint is 128 bits, and is described as agreement, not proof.** It was the count,
+  sum and xor of one 64-bit hash; `pqn_api.measure_pair` and result verification now use two
+  independent hashes. `measure_pair` also refuses a statement that raises its internal SQLSTATE
+  instead of returning an empty result.
+- **`pqn_api.run` no longer shows the wrong number when column names repeat.** `SELECT max(a), max(b)` or
+  `SELECT 1, 2, 3` kept only the last value under the shared name, and `pqn run` printed it in every such
+  column. Repeated names get a `_2`, `_3` suffix. An empty answer now names its columns too.
+- **A `$5` inside a string, a quoted name, a `$$` string or a comment is no longer taken for a placeholder.**
+  `measure_pair`, `prove` and `pqn` refused to run or measure `WHERE note <> '$5'`, and `pqn_api.plan` planned it
+  generically. The database and `pqn` now agree on what a parameter is, including `E'it\'s'` strings, checked
+  against 300,000 generated statements.
+- **Planning a statement that writes says why it cannot.** `pqn_api.plan('UPDATE …')` failed with
+  "permission denied for table", because `pqn_owner` holds no write privilege. It now says that pqn only
+  reads what you expose and to plan the statement's `SELECT`. `pqn plan` already refused it before the database.
+- **An empty or comment-only statement is named as one.** `run`, `plan` and `measure_pair` answered "cannot
+  open multi-query plan as cursor", and `pqn` said "multiple SQL statements".
+- **`pqn_api.findings` skips a plan it cannot read** (a `Plans` that is not an array, a cost that is not a
+  number) instead of raising an error.
+- **`pqn`: `--title --json` is an error,** not a title of "--json".
+- **The `pqn` PostgreSQL image is built from base images pinned by digest** (Dockerfile default, release
+  build and the CI image matrix).
 - **`pqn`: `enroll` requires a unit on the timeout.** `'500'` was set as 500 ms by PostgreSQL and
   recorded as 500 s. Use `15s`, `500ms` or `2min`.
 - **`pqn`: one refused cancel no longer stops `enforce_limits()`.** Cancelling a superuser's session
