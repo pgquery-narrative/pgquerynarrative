@@ -112,7 +112,7 @@ func (v *Validator) Validate(sql string) error {
 
 	treeJSON, err := pg_query.ParseToJSON(trimmed)
 	if err != nil {
-		return errors.ErrOnlySelectAllowed
+		return errors.ErrSyntaxError
 	}
 
 	var tree parseTree
