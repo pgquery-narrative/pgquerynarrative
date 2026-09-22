@@ -67,6 +67,11 @@ type AddCandidatePayload struct {
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string
+	// How many times to run each side under ANALYZE before reporting a duration,
+	// as in a plan comparison. 1 (the default) reports a single sample; higher
+	// values report the median and the observed range. Ignored unless analyze is
+	// true.
+	TimingRuns int
 }
 
 type ComparePlansResult struct {

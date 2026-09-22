@@ -37,6 +37,8 @@ func TestValidator(t *testing.T) {
 		{"explain_drop", "EXPLAIN DROP TABLE demo.sales", errors.ErrOnlySelectAllowed},
 		{"empty_query", "", errors.ErrOnlySelectAllowed},
 		{"whitespace_only", "   \n\t  ", errors.ErrOnlySelectAllowed},
+		{"comment_only", "-- nothing here", errors.ErrOnlySelectAllowed},
+		{"block_comment_only", "/* nothing */ ;", errors.ErrOnlySelectAllowed},
 		{"too_long", "SELECT * FROM demo.sales WHERE '" + strings.Repeat("a", 20000) + "' = 'x'", errors.ErrQueryTooLong},
 		{"non_select", "UPDATE demo.sales SET quantity = 1", errors.ErrOnlySelectAllowed},
 		{"mixed_case_delete", "DeLeTe FrOm demo.sales", errors.ErrOnlySelectAllowed},

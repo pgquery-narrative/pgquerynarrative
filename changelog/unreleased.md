@@ -47,6 +47,32 @@ four, plus the lifecycle and deployment gaps found alongside them.
   dedicated is a deployment property this endpoint cannot observe, and RLS being
   enabled is not evidence for it.
 
+- **PostgreSQL extension 1.1 withholds `EXECUTE` from `PUBLIC`.** Roles that used
+  the `pgquerynarrative_*` functions lose access on `ALTER EXTENSION pgquerynarrative
+  UPDATE` until the owner runs `SELECT pgquerynarrative_grant_access('role')`. The API
+  URL is now a stored setting that only the owner can change with
+  `pgquerynarrative_set_api_url`; the old per-session URL override is gone.
+
+- **`SECURITY_API_KEYS_JSON` and roles are checked strictly.** The server refuses to start
+  on a key list that could weaken or drop a key: invalid JSON, an unknown field, an entry
+  with neither `key` nor `key_hash`, a `key_hash` that is not 64 hex characters, a missing
+  or unrecognised `role`, an `expires_at` that is not RFC 3339, an unknown scope, or no
+  usable credential. `read-only`, `guest` and a missing role used to become `analyst`; the
+  configuration and the admin API now refuse them, and a role that an identity provider
+  omits or that is unrecognised becomes `viewer`. Fix the entry the startup message names.
+- **`/web/reports/export/{md,json,sql}` require authentication**, as the HTML and PDF
+  exports already did.
+- **Statement statistics on a database role shared by several organizations** are limited
+  to platform administrators (`STAT_STATEMENTS_SHARED`). The regression poller skips such a
+  connection, and the workspace overview's two workload totals read zero for other users
+  there. Give each organization its own read-only credentials to see its own. Single-
+  organization installs and organizations with their own credentials are unaffected.
+- **Migrations `000058` to `000060`; the schema gate is now 60.** Run them before the new
+  binary, or `/ready` reports 503. What they change is under Security.
+- **The `pqn` alias in the CLI container's shell (`make cli-shell`) is removed.** `pqn` now
+  names the terminal tool for the `pqn` extension, so the alias would have run a different
+  program. Use `pgquerynarrative`.
+
 ### Security
 
 - **The schema allowlist now covers function calls, explicit operators and type
@@ -93,7 +119,196 @@ four, plus the lifecycle and deployment gaps found alongside them.
   tests link against (`MIGRATE_VERSION`), and the container image satisfies
   `go.mod`'"'"'s `go` directive (`MIGRATE_GO_IMAGE`).
 
+- **The PostgreSQL extension can no longer be redirected by any role.** In 1.0
+  `pgquerynarrative_set_api_url` was executable by `PUBLIC` and set a session
+  setting, so any role could make the database server send HTTP requests to an address
+  of its choosing. In 1.1 the URL is stored, the owner alone can change it, and it must
+  be `http://` or `https://`. Callers also supply their own API key with
+  `pgquerynarrative_set_api_key`, sent as a Bearer token, so the extension works
+  against a server with authentication enabled. Verified by
+  `tools/db/verify-extension.sh`.
+
+- **Bad key configuration no longer turns authentication off.** With authentication
+  enabled, an invalid, empty or misspelled `SECURITY_API_KEYS_JSON` used to start the server
+  and serve every caller, with no token or a wrong one, as `platform_admin`, in production
+  too. `AuthRequired()` now depends only on the enable switch, so a server with no usable
+  key answers `401`, and startup refuses the configuration (see Breaking).
+- **Every route is decided.** The report exports `md`, `json` and `sql` ran as the default
+  organization's admin with no credential, and `app/httpmw` had no tests. Everything under
+  `/web/reports/export` except the shared-link PDF is now authenticated by prefix, and a
+  route-matrix test fails when a route `main.go` registers is reachable without a credential
+  and is not listed as public.
+- **The audit trail records what it should, and the application role cannot edit it.**
+  `audit_logs_event_type_check` rejected seven event types the code emits (key create and
+  revoke, membership and connection-permission changes, share create and revoke, raw-SQL
+  views), so they were dropped in `best_effort` and, in `required` mode, failed the request
+  after the change had been applied. Migration `000058` allows them, and a test compares the
+  code's event types with the latest constraint. Migration `000059` revokes `UPDATE`,
+  `DELETE` and `TRUNCATE` on `audit_logs` from the application role; a role that owns the
+  table can grant them back, so run migrations as a different owner if the trail must resist
+  a compromised application role.
+- **`schema_to_xml`, `database_to_xml`, their `_xmlschema` forms and `ts_stat` are denied.**
+  Each reads a schema outside the allowlist.
+- **Row-level security on the identity tables** (migration `000060`): `organization_members`,
+  `oidc_group_org_mappings` and `audit_log_buffer` now isolate organizations like the rest
+  of the schema. Login keeps working through two read-only lookups (a user's own memberships,
+  and the mappings for the token's groups). Those lookups are `SELECT` policies only:
+  `INSERT`, `UPDATE` and `DELETE` have their own policies that name the current organization,
+  so a session that set a login lookup could otherwise have deleted a user's memberships in
+  other organizations.
+- **Statement statistics on a shared role are refused by what the connection is, not what the
+  role is called.** The check compared the pool's login name with the configured one, so a
+  shared role with a non-default name skipped it. It now asks whether the organization has
+  credentials of its own; an unknown case counts as shared.
+- **The admin API no longer returns database errors.** Nine write handlers answered `400` with
+  the raw error (constraint and table names). A conflict is `409 already exists`, a bad
+  reference or value is a fixed `400`, and anything else is a fixed `500`; the error is logged.
+  A message the store wrote for the caller (`user_id … are required`) is still shown.
+- **`pqn`: analyst SQL measured by `measure_pair` runs read only.** It runs as `pqn_owner`, so
+  a volatile function inside a statement could write. It now runs in a read-only sub-transaction
+  that is rolled back on exit, so `prove()` can still record afterwards.
+- **Only a schedule's owner or an admin can update, run or retry it**, as the docs said.
+- **The application does not depend on the read-only role's stored defaults.** A role can
+  reset its own defaults and PostgreSQL cannot prevent it, but the server already set the
+  search path and timeouts on every connection and opened every statement `READ ONLY`. A
+  test wipes the role's defaults and proves it.
+
+- **`pqn_api.plan` and `pqn_api.investigate` no longer run the caller's code as `pqn_owner`.** The planner
+  runs the IMMUTABLE and STABLE functions it folds into constants, and any analyst may create one in
+  `pg_temp` that calls a volatile function. That code ran as the role that owns the views, the exposure
+  registry and the limits table, so an analyst could delete their own limit, edit the registry that
+  builds the search path, create objects in `pqn` or grant a view to PUBLIC. Planning now happens in a
+  read-only sub-transaction, as `measure_pair` already did, and leaves the caller's transaction writable.
+- **`pqn_api.top` no longer shows utility statements.** `pg_stat_statements` keeps `ALTER ROLE … PASSWORD`,
+  `CREATE USER MAPPING`, `COPY` and `PREPARE` as typed, and `top` reads it as `pg_monitor` for every
+  analyst. Only statements that start with a query keyword, whose constants are already `$n`, are listed.
+- **`pqn_api.run` cannot exhaust server memory with one call.** `row_limit` bounded rows, not bytes: 40 rows
+  of 90 MB were held in the backend until the operating system killed it and restarted every session. The
+  answer is now cut at 16 MB and marked truncated, and a row over that is refused before it is copied: one
+  150 MB row took the backend 1.1 GB above idle, and now takes 0.4 GB, close to the 0.3 GB any `SELECT` of
+  that value costs. A single value is still as large as the statement makes it.
+- **`pqn --help` no longer prints the password in `$PQN_DSN`.** The environment was the flag's default, and
+  a flag's default is printed.
+- **One person cannot fill the disk through the ledger.** Statements and evidence are capped at 256 MiB and
+  20000 rows per person, counted as whole rows (a million payloads of `{}` are 5 MB of payload but 60 MB of
+  table). Every writer checks it (`record_investigation`, `record_evidence`, `investigate`, `prove`, which
+  refuses before it measures). The row limit also bounds the check itself: it reads only that person's rows,
+  about 10 ms at the limit on a 1.1 GB ledger. An administrator prunes old investigations to make room.
+- **`pqn`: the product's pitch from a terminal, inside your database.** *We do not ask you for the
+  rewrite. We propose it from the plan, then prove it.* `pqn` is a PostgreSQL extension plus a
+  terminal tool (`make build-pqn`, `bin/pqn`) that needs no PgQueryNarrative server, no REST API and
+  no API key: it logs in as you.
+  - `pqn top` ranks the statements that cost the most. `pqn investigate` reads the plan, names what
+    is wrong (sequential scan, a function on a column, a missing index), proposes a rewrite from the
+    plan with the existing rewrite engine, and **proves it**: both statements are run, the rows are
+    compared by a fingerprint of every row, and both are timed. `Proven` means the same rows and at
+    least 1.2x faster. A rewrite that returns different rows is `Different`, however fast, and exits
+    with code 2. Nothing is created or changed in your database, and index proposals stay review
+    only. Plan, findings and proofs are recorded in an audit ledger under the caller's own name.
+  - Proof timing runs the statements the way your application does. `EXPLAIN ANALYZE` uses parallel
+    workers; timing through a cursor does not, and had overstated the speedup of a parallel statement
+    (88x measured, 36x real). `make verify-pqn-pitch` checks the pitch against independent oracles on a
+    17-million-row database. `pqn evidence 7 --json` now honors the flag after the id.
+  - Per-person limits are enforced from outside the session. A statement timeout is a setting a
+    person can lift for themselves, so `enroll` also records it where they cannot reach it and
+    `pqn_api.enforce_limits()`, run every few seconds from `pg_cron` or cron, cancels any enrolled
+    person's statement that has outlived it, even after they lifted their own timeout or reset
+    their role settings.
+  - A proof `prove()` computes is stamped `"source": "database"`; one stored with
+    `record_evidence`, as the replica flow does, is stamped `"source": "client"` whatever its
+    payload says.
+  - Everything the tool prints passes a filter that strips terminal control characters:
+    titles, notes and proof text are chosen by the people who write them, and an administrator
+    reads them in a terminal.
+  - The extension writes only to its own ledger, reads your data only through views a DBA chose, runs
+    analyst SQL as one read-only statement, and lets PostgreSQL do the authentication. An ordinary
+    non-superuser installs it, it works on a hot standby for everything that reads, and
+    `DROP EXTENSION` keeps the ledger. `verify_setup()` (`pqn doctor`) is the safety report.
+  - **Installing is two commands.** As a superuser, `CREATE EXTENSION pqn` creates the roles it needs and
+    `SELECT pqn_api.init()` creates the ledger. `make build-pqn-image` builds a PostgreSQL image
+    (`tools/docker/postgres-pqn.Dockerfile`) that does both on first start with `pg_stat_statements`
+    preloaded, so a published image is just `docker run`. An installer who is not a superuser still uses
+    `pqn-roles.sql`.
+  - Tables are exposed with a scope: `view` (only the listed columns can be read or planned) or
+    `full` (statements over every column can be planned and measured, while `run` still returns only
+    the listed columns).
+  - **Delivery.** Release archives now include `bin/pqn` and `pqn-extension/` (the extension files and an
+    `install.sh`). The release workflow builds and signs a PostgreSQL image with `pqn` per major version
+    (`ghcr.io/<owner>/<repo>/pqn-postgres:16`, `:17`, `:18`). CI runs the extension on PostgreSQL 16, 17 and 18,
+    the tool, the pqn documentation, and the image on four bases (`make verify-pqn-image`), which includes
+    swapping the image under an existing data volume. `tools/db/pqn-heavy-scenario.sh` plays a user story on
+    17 million rows (not part of CI).
+  - Verified on PostgreSQL 16, 17 and 18 by `make verify-pqn-extension` (including a primary with a
+    hot standby and a real 1.0 to 1.1 upgrade that keeps the data) and `make verify-pqn-cli`
+    (the terminal tool, end to end, against a slow-query lab). See
+    `docs/integrations/postgres-extension.md`.
+
 ### Fixed
+
+- **`pqn investigate` no longer suggests dropping an index that its own proposed rewrite uses.**
+  An index can show no scans only because the slow statement cannot use it. The finding and its
+  `DROP INDEX` suggestion are withheld for an index a proposal uses, and the report says why.
+- **`pqn` reads flags written after the statement.** `pqn investigate "SELECT …" --no-record` used to
+  treat `--no-record` as part of the SQL (after `--`, a comment), so it still wrote to the ledger;
+  `--replica`, `--bind`, `--title`, `--json`, `--dsn` and `-n` were ignored the same way. Flags now
+  work anywhere. An unknown flag is an error with a hint, a statement given twice (`--sql` plus words,
+  or `--file`) and stray arguments (`pqn top 5`) are refused, and `pqn run SELECT -1` and a `--`
+  comment after a word still reach PostgreSQL as SQL.
+- **Migration `000058` adds its constraint `NOT VALID`.** A validated `ADD CONSTRAINT` scans the
+  audit table under an exclusive lock, which blocks every audit insert. The constraint still
+  applies to new rows, and no existing row can violate it.
+- **A schedule's owner is looked up inside its organization.** With row-level security on
+  `organization_members` the worker's lookup, which had no organization, found nothing and disabled
+  the schedule as "owner unauthorized". The claimed organization is now set first.
+- **`pqn`: `prove` no longer calls two empty results proven.** Equal because both are empty is not a
+  comparison; the verdict is `Unverified` and the reason says so.
+- **`pqn`: `unexpose` takes back the removed view's columns.** With another view on the same table
+  it kept every column grant, and a removed `full` view left the whole table readable.
+- **Rewrites that were not the same statement are declined.** A differential test now runs every
+  proposed rewrite against PostgreSQL with NULLs, empty subqueries and duplicates and compares the
+  rows. It found four: `x NOT IN (subquery)` dropped a NULL `x` when the subquery was empty; an
+  `IN` or `NOT IN` under another `NOT` returned different rows; `x > ANY (…)` and `x < ANY (…)` were
+  rewritten as equality; and a table compared with itself (`WHERE id IN (SELECT parent_id FROM t)`)
+  correlated the inner table with itself. The first is rewritten correctly now, the rest are declined.
+- **A failed `EXPLAIN` no longer leaves a hypothetical index on a pooled connection.** The reset ran
+  inside the aborted transaction and could not run. The connection is held for the whole call and
+  cleared after the transaction ends; if that cannot be confirmed it leaves the pool.
+- **`lo_get` and the other large-object readers are denied** (`lo_close`, `lo_creat`, `lo_lseek`,
+  `lo_tell`, `lo_truncate` and the 64-bit forms), tested with the read privilege actually held.
+- **`timing_runs` works on adding a candidate.** It was accepted by the plan comparison but not by
+  `POST /investigations/{id}/candidates`, so a candidate's speedup always rested on one run.
+- **Managed API keys get their own rate-limit bucket.** They fell into the client's IP bucket, so keys
+  behind one NAT shared a budget. A key that has authenticated is remembered for 60 seconds and keyed
+  by organization and key; a token that never authenticated stays in the IP bucket, so guessing
+  tokens cannot shed the IP limit and the check still touches no database.
+- **The result fingerprint is 128 bits, and is described as agreement, not proof.** It was the count,
+  sum and xor of one 64-bit hash; `pqn_api.measure_pair` and result verification now use two
+  independent hashes. `measure_pair` also refuses a statement that raises its internal SQLSTATE
+  instead of returning an empty result.
+- **`pqn_api.run` no longer shows the wrong number when column names repeat.** `SELECT max(a), max(b)` or
+  `SELECT 1, 2, 3` kept only the last value under the shared name, and `pqn run` printed it in every such
+  column. Repeated names get a `_2`, `_3` suffix. An empty answer now names its columns too.
+- **A `$5` inside a string, a quoted name, a `$$` string or a comment is no longer taken for a placeholder.**
+  `measure_pair`, `prove` and `pqn` refused to run or measure `WHERE note <> '$5'`, and `pqn_api.plan` planned it
+  generically. The database and `pqn` now agree on what a parameter is, including `E'it\'s'` strings, checked
+  against 300,000 generated statements.
+- **Planning a statement that writes says why it cannot.** `pqn_api.plan('UPDATE …')` failed with
+  "permission denied for table", because `pqn_owner` holds no write privilege. It now says that pqn only
+  reads what you expose and to plan the statement's `SELECT`. `pqn plan` already refused it before the database.
+- **An empty or comment-only statement is named as one.** `run`, `plan` and `measure_pair` answered "cannot
+  open multi-query plan as cursor", and `pqn` said "multiple SQL statements".
+- **`pqn_api.findings` skips a plan it cannot read** (a `Plans` that is not an array, a cost that is not a
+  number) instead of raising an error.
+- **`pqn`: `--title --json` is an error,** not a title of "--json".
+- **The `pqn` PostgreSQL image is built from base images pinned by digest** (Dockerfile default, release
+  build and the CI image matrix).
+- **`pqn`: `enroll` requires a unit on the timeout.** `'500'` was set as 500 ms by PostgreSQL and
+  recorded as 500 s. Use `15s`, `500ms` or `2min`.
+- **`pqn`: one refused cancel no longer stops `enforce_limits()`.** Cancelling a superuser's session
+  raised an error and aborted the pass for everyone else; it is now reported as not cancelled.
+- **`pqn` prints each wrapped `note:` once**, and every `--json` field is `snake_case`.
+- **The setup check's standby message was wrong.** It said `record_*` "reflects this server only";
+  on a standby `record_*`, `investigate` and `prove` fail, and only `top()` reflects that server.
 
 - **Validator rejections explain themselves again.** The four new validator
   errors were not in `ClassifyRunError`, so a query calling a denied function
@@ -134,7 +349,34 @@ four, plus the lifecycle and deployment gaps found alongside them.
   It held one pool connection open while acquiring two more per row, which under
   concurrency with a bounded pool deadlocks rather than merely running slowly.
 
+- **The production startup boundary probe no longer fails on the project's own read-only
+  role.** Migration `000011` sets `default_transaction_read_only=on`, so a plain write probe
+  failed with SQLSTATE 25006 and production start was refused. The probe lifts the flag first.
+- **Errors the services already returned now have their real status.** Deleting a schedule
+  or dashboard that is not yours or does not exist is `404`, and share links being disabled
+  is `400` (both were `500`: the Goa design did not declare the error). The design also
+  declares the validation error `save` and `create_share` can return.
+- **Admin API errors.** Unknown roles and scopes are `400`, a key created without `scopes`
+  no longer fails with `500`, and database errors are logged instead of returned.
+
 ### Documentation
+
+- **Installing and setting up the `pqn` extension is documented and executed.** A
+  [quick start](docs/getting-started/pqn-extension.md) and an
+  [installation guide](docs/getting-started/pqn-installation.md) cover the extension files, the
+  role script, creating and initializing the extension, exposing tables, enrolling people, the
+  setup check, a read replica, upgrading, backup and restore, and uninstalling, with the real error
+  messages and their fixes, and stays short. `make verify-pqn-docs` runs every `bash` block of both pages
+  against real servers, and also runs the upgrade, restore and uninstall steps and a non-superuser DBA.
+  Restoring onto a server without the roles fails, so the guide restores the roles first with
+  `pg_dumpall --roles-only`. The verified-rewrite case study no longer says the tool "mathematically
+  proves" equivalence (it is a verification, never a proof), and `docs-contract-check` now rejects that
+  wording. `make docs-contract-check`
+  now fails when those pages name a file, role, function, `make` target, command, flag, warning or
+  error message that the code does not have. A [`pqn` reference](docs/reference/pqn.md) lists
+  every command, flag, environment variable, SQL function, role and table, and the same check
+  fails when it leaves any of them out. The CLI reference, the two workflow pages `pqn`
+  builds on, the index, the README and the roles page now link to it.
 
 - **The documentation was reorganised by audience** — Learn → Investigate →
   Integrate → Secure → Deploy & Operate → Reference → Develop. New pages:

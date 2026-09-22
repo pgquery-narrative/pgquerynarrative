@@ -11,6 +11,7 @@ checked by `make docs-contract-check` against every `strPtr("CODE")` literal in
 | `TIMEOUT_ERROR` | 400 | The query exceeded `QUERY_TIMEOUT` | Simplify the query, raise the timeout, or add an index |
 | `QUERY_RESULT_TOO_LARGE` | 400 | Result exceeded `QUERY_MAX_RESULT_BYTES` | Add a `LIMIT`, narrow columns, or raise the cap |
 | `STAT_STATEMENTS_UNAVAILABLE` | 400 | `pg_stat_statements` is off or unreadable on the target connection | Enable the extension and `SECURITY_STAT_STATEMENTS_ENABLED` |
+| `STAT_STATEMENTS_SHARED` | 400 | The connection's read-only role is shared by several organizations, so its statement text belongs to all of them | Ask a platform administrator, or give the organization its own read-only credentials |
 | `CONNECTION_NOT_FOUND` | 400 | An unknown, non-empty `connection_id` | Check `GET /connections`; see [Multiple connections](../workflows/connections.md) |
 | `CONNECTION_FORBIDDEN` | 400 | The organization lacks the required action on that connection | Grant the action via `/admin/connection-permissions`, or check `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` |
 | `ENCRYPTION_ERROR` | 400 | Sealing SQL at rest failed (a data-encryption-key problem) | Check `SECURITY_DATA_ENCRYPTION_KEY`/`SECURITY_SESSION_SECRET` |

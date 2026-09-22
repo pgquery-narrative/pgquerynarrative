@@ -135,9 +135,9 @@ Hand-registered in `cmd/server/*.go`. Classified by who they're for:
 
 | Path | Purpose |
 |---|---|
-| `GET|POST /api/v1/admin/api-keys`, `POST .../{id}/revoke` | Managed API keys |
+| `GET|POST /api/v1/admin/api-keys`, `POST .../{id}/revoke` | Managed API keys. `role` is required and must be recognised, `scopes` may only hold `admin`, `write`, `read` (`400` otherwise) |
 | `GET|POST /api/v1/admin/organizations` | Platform admin only |
-| `GET|POST|DELETE /api/v1/admin/memberships` | Organization membership |
+| `GET|POST|DELETE /api/v1/admin/memberships` | Organization membership. `role` must be recognised (`400` otherwise) |
 | `GET|POST|DELETE /api/v1/admin/connection-assignments` | Which connections an org may use |
 | `POST|DELETE /api/v1/admin/connection-permissions` | Per-connection actions granted to an org |
 | `GET|POST|DELETE /api/v1/admin/connection-secrets` | Per-organization connection credentials |

@@ -12,6 +12,6 @@ if ! docker compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; the
 fi
 
 # Mounted at /extension; copy to Postgres extension dir
-docker compose exec -T postgres sh -c 'cp /extension/pgquerynarrative.control /extension/pgquerynarrative--1.0.sql "$(pg_config --sharedir)/extension/"'
+docker compose exec -T postgres sh -c 'cp /extension/pgquerynarrative.control /extension/pgquerynarrative--*.sql "$(pg_config --sharedir)/extension/"'
 echo "Extension files installed in container."
 echo "In psql: CREATE EXTENSION pgquerynarrative;"

@@ -46,7 +46,7 @@ func TestWrapFingerprintSQLRejectsWrites(t *testing.T) {
 }
 
 func TestAggregateFingerprintEquality(t *testing.T) {
-	base := aggregateFingerprint{Count: 5, Sum: "-9059239638504963042", Xor: -9112442938751334206}
+	base := aggregateFingerprint{Count: 5, Sum: "-9059239638504963042", Xor: -9112442938751334206, Sum2: "77", Xor2: 88}
 
 	if !base.equal(base) {
 		t.Error("a fingerprint must equal itself")
@@ -56,9 +56,11 @@ func TestAggregateFingerprintEquality(t *testing.T) {
 	// catches changed values, and xor catches a transposition that happens to
 	// leave the sum intact.
 	for name, other := range map[string]aggregateFingerprint{
-		"count differs": {Count: 6, Sum: base.Sum, Xor: base.Xor},
-		"sum differs":   {Count: 5, Sum: "1", Xor: base.Xor},
-		"xor differs":   {Count: 5, Sum: base.Sum, Xor: 1},
+		"count differs": {Count: 6, Sum: base.Sum, Xor: base.Xor, Sum2: base.Sum2, Xor2: base.Xor2},
+		"sum differs":   {Count: 5, Sum: "1", Xor: base.Xor, Sum2: base.Sum2, Xor2: base.Xor2},
+		"xor differs":   {Count: 5, Sum: base.Sum, Xor: 1, Sum2: base.Sum2, Xor2: base.Xor2},
+		"second sum":    {Count: 5, Sum: base.Sum, Xor: base.Xor, Sum2: "1", Xor2: base.Xor2},
+		"second xor":    {Count: 5, Sum: base.Sum, Xor: base.Xor, Sum2: base.Sum2, Xor2: 1},
 	} {
 		if base.equal(other) {
 			t.Errorf("%s: fingerprints must not compare equal", name)

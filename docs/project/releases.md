@@ -37,11 +37,12 @@ which runs `make generate`, builds, and publishes:
 
 | Artifact | Platforms / detail |
 |---|---|
-| Binary archives | `linux/amd64`, `linux/arm64`, `darwin/arm64`, `darwin/amd64`. Each archive bundles the server, MCP server, `migrate`, migration files, the built SPA, the entrypoint script, and an example env file |
+| Binary archives | `linux/amd64`, `linux/arm64`, `darwin/arm64`, `darwin/amd64`. Each archive bundles the server, MCP server, `migrate`, the `pqn` tool (`bin/pqn`), the `pqn` extension files (`pqn-extension/`, with `install.sh`), migration files, the built SPA, the entrypoint script, and an example env file |
 | Checksums | `checksums.txt` over the archives |
 | SBOM | `sbom.spdx.json` |
 | Signatures | Every archive, `checksums.txt`, and the SBOM are cosign-signed (Sigstore v0.3 bundles — verify with cosign v3+) |
 | Container image | `ghcr.io/pgquery-narrative/pgquerynarrative:<version>` and `:latest`, `linux/amd64` + `linux/arm64`, built from the root `Dockerfile` with SBOM and provenance attestations, signed and verified by digest |
+| PostgreSQL image with `pqn` | `ghcr.io/pgquery-narrative/pgquerynarrative/pqn-postgres:<16, 17 or 18>` and `:<16, 17 or 18>-<version>`, `linux/amd64` + `linux/arm64`, built from `tools/docker/postgres-pqn.Dockerfile`, signed by digest. The extension is created on first start |
 
 There is no separate CLI container image — `Dockerfile.cli` is not built by
 release CI. See [Supported versions and limits](../reference/versions-limits.md) for

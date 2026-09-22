@@ -47,6 +47,11 @@ type AddCandidateRequestBody struct {
 	// Sample bind values for a parameterized candidate ($1, $2, ...); used only
 	// for the compare/equivalence run, not stored
 	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// How many times to run each side under ANALYZE before reporting a duration,
+	// as in a plan comparison. 1 (the default) reports a single sample; higher
+	// values report the median and the observed range. Ignored unless analyze is
+	// true.
+	TimingRuns *int `form:"timing_runs,omitempty" json:"timing_runs,omitempty" xml:"timing_runs,omitempty"`
 }
 
 // UpdateFixRequestBody is the type of the "investigations" service
@@ -1253,6 +1258,9 @@ func NewAddCandidatePayload(body *AddCandidateRequestBody, id string) *investiga
 	if body.VerifyResults != nil {
 		v.VerifyResults = *body.VerifyResults
 	}
+	if body.TimingRuns != nil {
+		v.TimingRuns = *body.TimingRuns
+	}
 	if body.Analyze == nil {
 		v.Analyze = false
 	}
@@ -1264,6 +1272,9 @@ func NewAddCandidatePayload(body *AddCandidateRequestBody, id string) *investiga
 		for i, val := range body.Binds {
 			v.Binds[i] = val
 		}
+	}
+	if body.TimingRuns == nil {
+		v.TimingRuns = 1
 	}
 	v.ID = id
 
@@ -1379,6 +1390,16 @@ func ValidateAddCandidateRequestBody(body *AddCandidateRequestBody) (err error) 
 	if body.CandidateSQL != nil {
 		if utf8.RuneCountInString(*body.CandidateSQL) > 10000 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_sql", *body.CandidateSQL, utf8.RuneCountInString(*body.CandidateSQL), 10000, false))
+		}
+	}
+	if body.TimingRuns != nil {
+		if *body.TimingRuns < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.timing_runs", *body.TimingRuns, 1, true))
+		}
+	}
+	if body.TimingRuns != nil {
+		if *body.TimingRuns > 5 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.timing_runs", *body.TimingRuns, 5, false))
 		}
 	}
 	return

@@ -120,6 +120,9 @@ func (v *Validator) Validate(sql string) error {
 		return errors.ErrOnlySelectAllowed
 	}
 
+	if len(tree.Stmts) == 0 { // nothing but comments, like an empty string
+		return errors.ErrOnlySelectAllowed
+	}
 	if len(tree.Stmts) != 1 {
 		return errors.ErrMultipleStatements
 	}
@@ -432,6 +435,11 @@ var deniedFunctions = map[string]struct{}{
 	"lo_import": {}, "lo_export": {}, "lo_create": {}, "lo_unlink": {},
 	"lo_put": {}, "lo_from_bytea": {}, "lo_open": {}, "lo_write": {},
 	"lowrite": {}, "loread": {},
+	// Reading a large object needs no write, only a role that may (SELECT on the object, or
+	// lo_compat_privileges), so the readers and cursor functions are named too.
+	"lo_get": {}, "lo_close": {}, "lo_creat": {},
+	"lo_lseek": {}, "lo_lseek64": {}, "lo_tell": {}, "lo_tell64": {},
+	"lo_truncate": {}, "lo_truncate64": {},
 
 	// Sequence mutation.
 	"nextval": {}, "setval": {},
@@ -468,6 +476,11 @@ var deniedFunctions = map[string]struct{}{
 	"table_to_xml":               {}, "table_to_xmlschema": {},
 	"table_to_xml_and_xmlschema": {},
 	"cursor_to_xml":              {}, "cursor_to_xmlschema": {},
+	// Read every table in a schema or database the role can see, whatever the schema allowlist says.
+	"schema_to_xml": {}, "schema_to_xmlschema": {}, "schema_to_xml_and_xmlschema": {},
+	"database_to_xml": {}, "database_to_xmlschema": {}, "database_to_xml_and_xmlschema": {},
+	// Runs a query string of its own and returns word statistics of the result.
+	"ts_stat": {},
 
 	// Reach external systems.
 	"dblink": {}, "dblink_exec": {}, "dblink_connect": {},

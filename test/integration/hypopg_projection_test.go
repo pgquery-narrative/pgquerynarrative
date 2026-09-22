@@ -181,3 +181,29 @@ func TestProjectIndexCost_InvalidDDLLeavesSessionClean(t *testing.T) {
 		t.Fatalf("expected a valid hypopg projection to still succeed after the earlier failure, got Method=%q failure_reason=%q", goodProj.Method, goodProj.FailureReason)
 	}
 }
+
+// A statement that fails in EXPLAIN after the hypothetical index was created aborts the transaction, so a
+// reset issued inside it cannot run. hypopg's registration lives in the backend, not the transaction, so
+// the index would stay on the pooled connection and colour the next plan taken on it.
+func TestProjectIndexCost_FailedExplainLeavesSessionClean(t *testing.T) {
+	pool, ctx := setupHypopgPool(t)
+	seedHypopgSales(t, ctx, pool)
+
+	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
+	runner := queryrunner.NewRunner(pool, validator, 5000, 30*time.Second)
+
+	// 1/0 is folded while planning, so EXPLAIN fails after hypopg_create_index succeeded.
+	proj := runner.ProjectIndexCost(ctx, `SELECT 1/0 FROM demo.sales WHERE sales_rep = 'A'`,
+		`CREATE INDEX idx_sales_rep ON demo.sales (sales_rep)`, 100)
+	if proj.Method == queryrunner.IndexProjectionHypopg {
+		t.Fatalf("a failed EXPLAIN must not report Method=hypopg: %+v", proj)
+	}
+
+	var hidden int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM hypopg_list_indexes`).Scan(&hidden); err != nil {
+		t.Fatalf("connection unusable after a failed EXPLAIN: %v", err)
+	}
+	if hidden != 0 {
+		t.Fatalf("%d hypothetical index(es) left on the pooled connection after a failed EXPLAIN", hidden)
+	}
+}

@@ -164,7 +164,7 @@ func (b *BrowserOIDC) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id_token", http.StatusUnauthorized)
 		return
 	}
-	role := RoleAnalyst
+	role := RoleViewer
 	if len(roles) > 0 {
 		role = mapOIDCRole(roles[0])
 	}

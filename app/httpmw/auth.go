@@ -20,9 +20,11 @@ func AuthMiddleware(next http.Handler, authenticator *auth.Authenticator, sessio
 		isPublicSharedAPI := strings.HasPrefix(path, "/api/v1/reports/shared/")
 		isPublicSharedPDF := path == "/web/reports/export/shared/pdf"
 		isAuthRoute := strings.HasPrefix(path, "/auth/")
+		// Everything under /web/reports/export is protected except the shared-link PDF: a prefix, so a
+		// new export route is authenticated by default instead of by remembering to list it.
 		needAuth := (strings.HasPrefix(path, "/api/") && !isPublicSharedAPI) ||
 			path == "/metrics" ||
-			((path == "/web/reports/export" || path == "/web/reports/export/pdf") && !isPublicSharedPDF)
+			(strings.HasPrefix(path, "/web/reports/export") && !isPublicSharedPDF)
 		// Public share routes must not inherit the default-org admin principal.
 		if isPublicSharedAPI || isPublicSharedPDF {
 			next.ServeHTTP(w, r)

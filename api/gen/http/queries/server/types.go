@@ -46,11 +46,12 @@ type ComparePlansRequestBody struct {
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze *bool `form:"analyze,omitempty" json:"analyze,omitempty" xml:"analyze,omitempty"`
 	// Execute both queries to check result equivalence: an order-independent
-	// fingerprint over every row (count, sum and XOR of a 64-bit per-row hash),
-	// falling back to COUNT(*) plus a bounded deterministic sample when
-	// fingerprinting fails. This is verification, not proof: column names, types
-	// and ORDER BY are not part of the fingerprint. Requires the `query`
-	// permission on the connection; off by default so a compare only plans.
+	// fingerprint over every row (count, then sum and XOR of two independent
+	// 64-bit per-row hashes: 128 bits), falling back to COUNT(*) plus a bounded
+	// deterministic sample when fingerprinting fails. This is verification, not
+	// proof: column names, types and ORDER BY are not part of the fingerprint.
+	// Requires the `query` permission on the connection; off by default so a
+	// compare only plans.
 	VerifyResults *bool `form:"verify_results,omitempty" json:"verify_results,omitempty" xml:"verify_results,omitempty"`
 	// How many times to run each side under ANALYZE before reporting a duration. 1
 	// (the default) reports a single sample; higher values report the median and
@@ -214,6 +215,14 @@ type ExplainPlanValidationErrorResponseBody struct {
 // ComparePlansValidationErrorResponseBody is the type of the "queries" service
 // "compare_plans" endpoint HTTP response body for the "validation_error" error.
 type ComparePlansValidationErrorResponseBody struct {
+	Name    string  `form:"name" json:"name" xml:"name"`
+	Message string  `form:"message" json:"message" xml:"message"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// SaveValidationErrorResponseBody is the type of the "queries" service "save"
+// endpoint HTTP response body for the "validation_error" error.
+type SaveValidationErrorResponseBody struct {
 	Name    string  `form:"name" json:"name" xml:"name"`
 	Message string  `form:"message" json:"message" xml:"message"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -711,6 +720,17 @@ func NewExplainPlanValidationErrorResponseBody(res *queries.ValidationError) *Ex
 // from the result of the "compare_plans" endpoint of the "queries" service.
 func NewComparePlansValidationErrorResponseBody(res *queries.ValidationError) *ComparePlansValidationErrorResponseBody {
 	body := &ComparePlansValidationErrorResponseBody{
+		Name:    res.Name,
+		Message: res.Message,
+		Code:    res.Code,
+	}
+	return body
+}
+
+// NewSaveValidationErrorResponseBody builds the HTTP response body from the
+// result of the "save" endpoint of the "queries" service.
+func NewSaveValidationErrorResponseBody(res *queries.ValidationError) *SaveValidationErrorResponseBody {
+	body := &SaveValidationErrorResponseBody{
 		Name:    res.Name,
 		Message: res.Message,
 		Code:    res.Code,

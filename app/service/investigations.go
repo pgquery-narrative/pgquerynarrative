@@ -943,6 +943,7 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 		VerifyResults: payload.VerifyResults,
 		ConnectionID:  &inv.ConnectionID,
 		Binds:         payload.Binds,
+		TimingRuns:    payload.TimingRuns,
 	})
 	if err != nil && wantAnalyze {
 		cmp, err = s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
@@ -952,6 +953,7 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 			VerifyResults: payload.VerifyResults,
 			ConnectionID:  &inv.ConnectionID,
 			Binds:         payload.Binds,
+			TimingRuns:    payload.TimingRuns,
 		})
 	}
 	if err != nil {

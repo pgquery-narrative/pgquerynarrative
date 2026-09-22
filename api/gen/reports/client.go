@@ -106,6 +106,7 @@ func (c *Client) Rewrite(ctx context.Context, p *RewritePayload) (res *Narrative
 // CreateShare calls the "create_share" endpoint of the "reports" service.
 // CreateShare may return the following errors:
 //   - "not_found" (type *NotFoundError)
+//   - "validation_error" (type *ValidationError)
 //   - error: internal error
 func (c *Client) CreateShare(ctx context.Context, p *CreateSharePayload) (res *ReportShareLink, err error) {
 	var ires any

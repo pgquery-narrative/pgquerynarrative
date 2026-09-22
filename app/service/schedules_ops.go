@@ -40,6 +40,17 @@ func (s *SchedulesService) ListRuns(ctx context.Context, payload *schedules.List
 
 // RetryRun requeues a failed or dead-letter schedule run via an atomic claim and the durable worker path.
 func (s *SchedulesService) RetryRun(ctx context.Context, payload *schedules.RetryRunPayload) (*schedules.ScheduleRunRecord, error) {
+	var scheduleID string
+	if err := s.appPool.QueryRow(ctx, `SELECT schedule_id::text FROM app.schedule_runs WHERE id = $1 AND organization_id = $2`,
+		payload.RunID, orgID(ctx)).Scan(&scheduleID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &schedules.NotFoundError{Name: "not_found", Message: "schedule run not found or not retryable", Code: strPtr("NOT_FOUND")}
+		}
+		return nil, err
+	}
+	if err := s.requireScheduleOwner(ctx, scheduleID); err != nil {
+		return nil, err
+	}
 	workerID := scheduleWorkerID()
 	leaseUntil := time.Now().UTC().Add(defaultScheduleLease)
 	row := s.appPool.QueryRow(ctx, `

@@ -15,16 +15,19 @@ import (
 // Equivalence status values returned to API / reports.
 //
 // VerifiedEqual means every row of both results contributed to a full-result,
-// order-independent fingerprint (count + sum + xor of a 64-bit row hash) and the
-// fingerprints matched. That is strong whole-result verification, but it is a
-// fingerprint comparison, not a literal proof, and its limits are worth naming:
+// order-independent fingerprint (count, then sum and xor of two independent 64-bit
+// row hashes: 128 bits) and the fingerprints matched. That is strong whole-result
+// verification, but it is probabilistic agreement of a fingerprint, not a literal
+// proof, and its limits are worth naming:
 //
 //   - it compares row *text*, so two results with identical text but different
 //     column types or column names fingerprint the same;
 //   - it is deliberately order-independent, so ORDER BY differences are
 //     invisible — where ordering is part of the query's contract, that must be
 //     checked separately;
-//   - a hash collision is astronomically unlikely but not impossible.
+//   - a hash collision is astronomically unlikely but not impossible, and the hash
+//     is not cryptographic, so it guards against a mistaken rewrite, not against
+//     someone crafting data to collide.
 //
 // SampleMatch is the fallback when full-result fingerprinting could not run:
 // supporting evidence over a bounded sample, never full verification.
@@ -315,6 +318,10 @@ type aggregateFingerprint struct {
 	Count int64
 	Sum   string // numeric: the running sum can exceed int64
 	Xor   int64
+	// Sum2 and Xor2 come from a second hash of the same row text with a different seed, so the two are
+	// independent 64-bit values: 128 bits in all, not 64.
+	Sum2 string
+	Xor2 int64
 }
 
 // wrapFingerprintSQL builds an aggregate that summarises the whole result in one
@@ -340,7 +347,9 @@ func wrapFingerprintSQL(sql string) (string, error) {
 	}
 	return fmt.Sprintf(`SELECT count(*)::bigint AS pgqn_n,
        coalesce(sum(hashtextextended(pgqn_eq::text, 0)::numeric), 0)::text AS pgqn_s,
-       coalesce(bit_xor(hashtextextended(pgqn_eq::text, 0)), 0)::bigint AS pgqn_x
+       coalesce(bit_xor(hashtextextended(pgqn_eq::text, 0)), 0)::bigint AS pgqn_x,
+       coalesce(sum(hashtextextended(pgqn_eq::text, 1)::numeric), 0)::text AS pgqn_s2,
+       coalesce(bit_xor(hashtextextended(pgqn_eq::text, 1)), 0)::bigint AS pgqn_x2
 FROM (%s) AS pgqn_eq`, inner), nil
 }
 
@@ -354,7 +363,7 @@ func runResultFingerprint(ctx context.Context, runner *queryrunner.Runner, sql s
 	if err != nil {
 		return fp, err
 	}
-	if res == nil || len(res.Rows) == 0 || len(res.Rows[0]) < 3 {
+	if res == nil || len(res.Rows) == 0 || len(res.Rows[0]) < 5 {
 		return fp, fmt.Errorf("empty fingerprint result")
 	}
 	row := res.Rows[0]
@@ -365,11 +374,15 @@ func runResultFingerprint(ctx context.Context, runner *queryrunner.Runner, sql s
 	if fp.Xor, err = asInt64(row[2]); err != nil {
 		return fp, fmt.Errorf("fingerprint xor: %w", err)
 	}
+	fp.Sum2 = fmt.Sprintf("%v", row[3])
+	if fp.Xor2, err = asInt64(row[4]); err != nil {
+		return fp, fmt.Errorf("fingerprint xor: %w", err)
+	}
 	return fp, nil
 }
 
 func (f aggregateFingerprint) equal(other aggregateFingerprint) bool {
-	return f.Count == other.Count && f.Sum == other.Sum && f.Xor == other.Xor
+	return f.Count == other.Count && f.Sum == other.Sum && f.Xor == other.Xor && f.Sum2 == other.Sum2 && f.Xor2 == other.Xor2
 }
 
 // compareByFingerprint compares two results with one aggregate pass each.

@@ -44,11 +44,12 @@ type ComparePlansRequestBody struct {
 	// Run EXPLAIN ANALYZE when enabled server-side
 	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
 	// Execute both queries to check result equivalence: an order-independent
-	// fingerprint over every row (count, sum and XOR of a 64-bit per-row hash),
-	// falling back to COUNT(*) plus a bounded deterministic sample when
-	// fingerprinting fails. This is verification, not proof: column names, types
-	// and ORDER BY are not part of the fingerprint. Requires the `query`
-	// permission on the connection; off by default so a compare only plans.
+	// fingerprint over every row (count, then sum and XOR of two independent
+	// 64-bit per-row hashes: 128 bits), falling back to COUNT(*) plus a bounded
+	// deterministic sample when fingerprinting fails. This is verification, not
+	// proof: column names, types and ORDER BY are not part of the fingerprint.
+	// Requires the `query` permission on the connection; off by default so a
+	// compare only plans.
 	VerifyResults bool `form:"verify_results" json:"verify_results" xml:"verify_results"`
 	// How many times to run each side under ANALYZE before reporting a duration. 1
 	// (the default) reports a single sample; higher values report the median and
@@ -212,6 +213,14 @@ type ExplainPlanValidationErrorResponseBody struct {
 // ComparePlansValidationErrorResponseBody is the type of the "queries" service
 // "compare_plans" endpoint HTTP response body for the "validation_error" error.
 type ComparePlansValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// SaveValidationErrorResponseBody is the type of the "queries" service "save"
+// endpoint HTTP response body for the "validation_error" error.
+type SaveValidationErrorResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -765,6 +774,18 @@ func NewSavedQueryOK(body *SaveResponseBody) *queries.SavedQuery {
 	return v
 }
 
+// NewSaveValidationError builds a queries service save endpoint
+// validation_error error.
+func NewSaveValidationError(body *SaveValidationErrorResponseBody) *queries.ValidationError {
+	v := &queries.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
 // NewGetSavedSavedQueryOK builds a "queries" service "get_saved" endpoint
 // result from a HTTP "OK" response.
 func NewGetSavedSavedQueryOK(body *GetSavedResponseBody) *queries.SavedQuery {
@@ -1081,6 +1102,18 @@ func ValidateExplainPlanValidationErrorResponseBody(body *ExplainPlanValidationE
 // ValidateComparePlansValidationErrorResponseBody runs the validations defined
 // on compare_plans_validation_error_response_body
 func ValidateComparePlansValidationErrorResponseBody(body *ComparePlansValidationErrorResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateSaveValidationErrorResponseBody runs the validations defined on
+// save_validation_error_response_body
+func ValidateSaveValidationErrorResponseBody(body *SaveValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

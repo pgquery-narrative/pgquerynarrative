@@ -9,6 +9,6 @@ EXT_DIR="$ROOT_DIR/infra/postgres-extension"
 DEST="$($PG_CONFIG --sharedir)/extension"
 
 cp "$EXT_DIR/pgquerynarrative.control" "$DEST/"
-cp "$EXT_DIR/pgquerynarrative--1.0.sql" "$DEST/"
+cp "$EXT_DIR"/pgquerynarrative--*.sql "$DEST/"
 echo "Extension files copied to $DEST"
 echo "In psql: CREATE EXTENSION pgquerynarrative;"

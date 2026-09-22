@@ -117,6 +117,8 @@ nav:
       - Quick start (demo): getting-started/quickstart.md
       - Installation: getting-started/installation.md
       - Connect your PostgreSQL: getting-started/connect-postgres.md
+      - "Quick start: pqn (extension)": getting-started/pqn-extension.md
+      - Install the pqn extension: getting-started/pqn-installation.md
   - Core workflows:
       - Investigate a slow query: workflows/investigate.md
       - Understand plan findings: workflows/plan-findings.md
@@ -133,7 +135,7 @@ nav:
   - Integrations:
       - REST API: integrations/rest-api.md
       - MCP server: integrations/mcp.md
-      - PostgreSQL extension: integrations/postgres-extension.md
+      - PostgreSQL extensions: integrations/postgres-extension.md
       - Embedded Go: integrations/embedded-go.md
       - LLM providers: integrations/llm.md
       - Semantic search (pgvector): integrations/semantic-search.md
@@ -155,6 +157,7 @@ nav:
       - API errors: reference/api-errors.md
       - Evidence and status vocabulary: reference/evidence.md
       - CLI: reference/cli.md
+      - "pqn: tool and SQL API": reference/pqn.md
       - Supported versions and limits: reference/versions-limits.md
   - Development:
       - Setup: development/setup.md

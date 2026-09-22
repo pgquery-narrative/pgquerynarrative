@@ -102,9 +102,11 @@ var _ = Service("queries", func() {
 		Description("Save a query")
 		Payload(SaveQueryPayload)
 		Result(SavedQuery)
+		Error("validation_error", ValidationError)
 		HTTP(func() {
 			POST("/api/v1/queries/saved")
 			Response(StatusOK)
+			Response(StatusBadRequest, "validation_error")
 		})
 	})
 

@@ -23,7 +23,7 @@ func suggestInToExists(sql string, findings []PlanFinding) *RewriteCandidate {
 		return nil
 	}
 	var kinds []string
-	newWhere, n := rewriteInToExistsInExpr(sel.WhereClause, outerAlias, &kinds)
+	newWhere, n := rewriteInToExistsInExpr(sel.WhereClause, outerAlias, false, &kinds)
 	if n == 0 || newWhere == nil {
 		return nil
 	}
@@ -58,9 +58,13 @@ func suggestInToExists(sql string, findings []PlanFinding) *RewriteCandidate {
 	}
 }
 
-func rewriteInToExistsInExpr(node *pg_query.Node, outerAlias string, kinds *[]string) (*pg_query.Node, int) {
-	if node == nil {
-		return nil, 0
+// rewriteInToExistsInExpr rewrites the IN / NOT IN sub-links a WHERE clause reaches through AND and OR.
+// IN and NOT IN can be NULL; EXISTS and NOT EXISTS cannot. WHERE treats NULL and FALSE alike, so that
+// difference is invisible at the top of a WHERE, through AND and through OR, but not under an enclosing
+// NOT, which turns NULL into NULL and FALSE into TRUE. Nothing under another NOT is rewritten.
+func rewriteInToExistsInExpr(node *pg_query.Node, outerAlias string, negated bool, kinds *[]string) (*pg_query.Node, int) {
+	if node == nil || negated {
+		return node, 0
 	}
 	if sl := node.GetSubLink(); sl != nil {
 		if replacement, ok := tryRewriteInSubLink(sl, outerAlias, false); ok {
@@ -78,11 +82,14 @@ func rewriteInToExistsInExpr(node *pg_query.Node, outerAlias string, kinds *[]st
 				}
 			}
 		}
+		if be.Boolop == pg_query.BoolExprType_NOT_EXPR {
+			return node, 0
+		}
 		total := 0
 		args := make([]*pg_query.Node, len(be.Args))
 		changed := false
 		for i, arg := range be.Args {
-			rewritten, n := rewriteInToExistsInExpr(arg, outerAlias, kinds)
+			rewritten, n := rewriteInToExistsInExpr(arg, outerAlias, false, kinds)
 			total += n
 			if n > 0 && rewritten != nil {
 				args[i] = rewritten
@@ -104,6 +111,11 @@ func tryRewriteInSubLink(sl *pg_query.SubLink, outerAlias string, notIn bool) (*
 	if sl == nil || sl.SubLinkType != pg_query.SubLinkType_ANY_SUBLINK {
 		return nil, false
 	}
+	// `x IN (...)` has no operator name; `x = ANY (...)` names "=". `x > ANY (...)` and the rest are not
+	// equality and must not become one.
+	if len(sl.OperName) > 0 && !(len(sl.OperName) == 1 && sl.OperName[0].GetString_().GetSval() == "=") {
+		return nil, false
+	}
 	if sl.Testexpr == nil || sl.Testexpr.GetColumnRef() == nil {
 		return nil, false
 	}
@@ -112,7 +124,9 @@ func tryRewriteInSubLink(sl *pg_query.SubLink, outerAlias string, notIn bool) (*
 		return nil, false
 	}
 	innerAlias, ok := singleFromAlias(subSel)
-	if !ok {
+	if !ok || strings.EqualFold(innerAlias, outerAlias) {
+		// The same name in both scopes (a table compared with itself) would make `inner.col = outer.col`
+		// compare the inner table with itself.
 		return nil, false
 	}
 	target := resTargetVal(subSel.TargetList[0])
@@ -138,9 +152,12 @@ func tryRewriteInSubLink(sl *pg_query.SubLink, outerAlias string, notIn bool) (*
 		{Node: &pg_query.Node_ResTarget{ResTarget: &pg_query.ResTarget{Val: aConstInt(1)}}},
 	}
 	if notIn {
+		// x NOT IN (subquery) is TRUE for an empty subquery whatever x is, and never TRUE when x or any
+		// subquery value is NULL. "A row equal to x, a NULL row, or x itself NULL" as the thing to be
+		// absent gives exactly that; `x IS NOT NULL AND ...` would drop a NULL x from an empty subquery.
 		existsSel.WhereClause = combineAnd([]*pg_query.Node{
 			existsSel.WhereClause,
-			orExpr(eq, nullTest(cloneColumnRef(innerCol), true)),
+			orExpr(eq, nullTest(cloneColumnRef(innerCol), true), nullTest(cloneColumnRef(outerCol), true)),
 		})
 	} else {
 		existsSel.WhereClause = combineAnd([]*pg_query.Node{existsSel.WhereClause, eq})
@@ -152,10 +169,7 @@ func tryRewriteInSubLink(sl *pg_query.SubLink, outerAlias string, notIn bool) (*
 	if !notIn {
 		return existsNode, true
 	}
-	return combineAnd([]*pg_query.Node{
-		nullTest(cloneColumnRef(outerCol), false),
-		notExpr(existsNode),
-	}), true
+	return notExpr(existsNode), true
 }
 
 func outerSelectSafeForInExists(sel *pg_query.SelectStmt) bool {

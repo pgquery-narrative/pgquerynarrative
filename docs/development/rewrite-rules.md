@@ -66,7 +66,7 @@ for what each one does and does not cover.
 
 A reviewer should be able to answer, from the PR alone: what pattern this rule
 targets, why the rewrite preserves results for every value the column can hold (not
-just the demo's data), what makes it bail out, and what the equivalence test proves.
+just the demo's data), what makes it bail out, and what the equivalence test checks.
 If any of those isn't answerable, the rule isn't ready.
 
 ## See also

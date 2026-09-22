@@ -506,6 +506,21 @@ func (p *Pools) ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 	return pool
 }
 
+// SharedReadOnlyRole reports whether the read-only pool for ctx's organization is the catalog pool
+// every organization uses, as opposed to a pool built from credentials the organization owns. It is
+// a fact about the connection, not about what the role is called.
+func (p *Pools) SharedReadOnlyRole(ctx context.Context, connectionID string) bool {
+	orgID := auth.OrgIDFromContext(ctx)
+	if p == nil || p.orgDSN == nil || orgID == "" {
+		return true
+	}
+	if connectionID == "" {
+		connectionID = p.DefaultConnectionID
+	}
+	res, err := p.orgDSN.Resolve(ctx, orgID, connectionID)
+	return err != nil || res.Mode != auth.OrgConnectionDedicated
+}
+
 // AllowedSchemas returns the effective schemas for the selected connection in the
 // current request context, preferring per-organisation overrides when present.
 // A non-nil empty slice means the tenant override is authoritative and denies all schemas.

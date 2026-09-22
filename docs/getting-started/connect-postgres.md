@@ -88,3 +88,4 @@ Leaving laptop demo mode: [Production configuration](../operate/production.md) a
 - [Configuration](../reference/configuration.md)
 - [Installation](installation.md)
 - [REST API](../integrations/rest-api.md)
+- [Install the pqn extension](pqn-installation.md) — the alternative that runs inside your database, with no PgQueryNarrative server

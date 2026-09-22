@@ -33,6 +33,12 @@ type poolResolver interface {
 	ReadOnly(ctx context.Context, connectionID string) *pgxpool.Pool
 }
 
+// sharedRoleResolver is implemented by a pool resolver that knows whether an organization has
+// credentials of its own for a connection.
+type sharedRoleResolver interface {
+	SharedReadOnlyRole(ctx context.Context, connectionID string) bool
+}
+
 type schemaResolver interface {
 	AllowedSchemas(ctx context.Context, connectionID string) []string
 }
@@ -120,6 +126,15 @@ func (r *Runner) StatsPool() *pgxpool.Pool {
 // StatsPoolFor returns the analytical pool for the request context.
 func (r *Runner) StatsPoolFor(ctx context.Context) *pgxpool.Pool {
 	return r.activePool(ctx)
+}
+
+// SharesReadOnlyRole reports whether the pool for ctx is one several organizations use. It is true
+// unless the resolver can say the organization has a dedicated login, so an unknown case counts as shared.
+func (r *Runner) SharesReadOnlyRole(ctx context.Context) bool {
+	if sr, ok := r.poolResolver.(sharedRoleResolver); ok && r.pool == nil {
+		return sr.SharedReadOnlyRole(ctx, r.connectionID)
+	}
+	return true
 }
 
 func (r *Runner) activePool(ctx context.Context) *pgxpool.Pool {

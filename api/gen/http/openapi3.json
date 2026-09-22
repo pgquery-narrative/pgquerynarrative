@@ -24,6 +24,14 @@
             "format": "uuid",
             "type": "string"
           },
+          "timing_runs": {
+            "default": 1,
+            "description": "How many times to run each side under ANALYZE before reporting a duration, as in a plan comparison. 1 (the default) reports a single sample; higher values report the median and the observed range. Ignored unless analyze is true.",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
           "verify_results": {
             "default": false,
             "description": "Execute the candidate and the original to check result equivalence. Requires the `query` permission on the connection.",
@@ -54,6 +62,14 @@
             "minLength": 1,
             "pattern": "^[^;]+$",
             "type": "string"
+          },
+          "timing_runs": {
+            "default": 1,
+            "description": "How many times to run each side under ANALYZE before reporting a duration, as in a plan comparison. 1 (the default) reports a single sample; higher values report the median and the observed range. Ignored unless analyze is true.",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
           },
           "verify_results": {
             "default": false,
@@ -380,7 +396,7 @@
           },
           "verify_results": {
             "default": false,
-            "description": "Execute both queries to check result equivalence: an order-independent fingerprint over every row (count, sum and XOR of a 64-bit per-row hash), falling back to COUNT(*) plus a bounded deterministic sample when fingerprinting fails. This is verification, not proof: column names, types and ORDER BY are not part of the fingerprint. Requires the `query` permission on the connection; off by default so a compare only plans.",
+            "description": "Execute both queries to check result equivalence: an order-independent fingerprint over every row (count, then sum and XOR of two independent 64-bit per-row hashes: 128 bits), falling back to COUNT(*) plus a bounded deterministic sample when fingerprinting fails. This is verification, not proof: column names, types and ORDER BY are not part of the fingerprint. Requires the `query` permission on the connection; off by default so a compare only plans.",
             "type": "boolean"
           }
         },
@@ -3250,6 +3266,16 @@
         "responses": {
           "204": {
             "description": "No Content response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            },
+            "description": "not_found: Not Found response."
           }
         },
         "summary": "delete dashboards",
@@ -4103,6 +4129,16 @@
               }
             },
             "description": "OK response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "validation_error: Bad Request response."
           }
         },
         "summary": "save queries",
@@ -4462,6 +4498,16 @@
               }
             },
             "description": "OK response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "validation_error: Bad Request response."
           },
           "404": {
             "content": {
@@ -4831,6 +4877,16 @@
         "responses": {
           "204": {
             "description": "No Content response."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            },
+            "description": "not_found: Not Found response."
           }
         },
         "summary": "delete schedules",

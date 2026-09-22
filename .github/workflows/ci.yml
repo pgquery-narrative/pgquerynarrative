@@ -282,6 +282,56 @@ jobs:
       - name: Check documentation contracts against the code
         run: make docs-contract-check
 
+  # The pqn PostgreSQL extension, on every supported PostgreSQL major: install as an ordinary role,
+  # ownership and PUBLIC grants, analyst limits, the ledger, a real 1.0 -> 1.1 upgrade, and a hot standby.
+  pqn-extension:
+    name: pqn extension (PostgreSQL ${{ matrix.pg }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16', '17', '18']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify the extension on a primary and a hot standby
+        run: PG_IMAGE=postgres:${{ matrix.pg }} sh tools/db/verify-pqn-extension.sh
+
+  # The pqn terminal tool against a slow-query lab, the pqn documentation run as written, and the
+  # REST-calling extension.
+  pqn-tool:
+    name: pqn tool and docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup-go-cgo
+      - name: Build the tool
+        run: make build-pqn
+      - name: The tool, end to end
+        run: make verify-pqn-cli
+      - name: Run the pqn quick start and installation guide as written
+        run: make verify-pqn-docs
+      - name: The REST-calling extension
+        run: make verify-extension
+
+  # The pqn PostgreSQL image: pull-and-run, a restart, and an existing data volume. Alpine is the
+  # smallest base and keeps its files elsewhere, so it is the base most likely to break.
+  pqn-image:
+    name: pqn image (${{ matrix.tag }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # base is the tag pinned by digest (the multi-arch index); tag keeps the check name readable.
+        include:
+          - {tag: 'postgres:16', base: 'postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6'}
+          - {tag: 'postgres:17', base: 'postgres:17@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232'}
+          - {tag: 'postgres:18', base: 'postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae'}
+          - {tag: 'postgres:18-alpine', base: 'postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd'}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify the image
+        run: bash tools/db/verify-pqn-image.sh ${{ matrix.base }}
+
   frontend:
     name: Frontend lint and typecheck
     runs-on: ubuntu-latest

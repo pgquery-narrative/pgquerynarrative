@@ -12,7 +12,14 @@
 PgQueryNarrative's tenancy unit is the **organization**. Every metadata table that
 holds organization-scoped data — investigations (and their candidate history and
 linked regression alerts), reports, saved queries, schedules, regression snapshots
-and alerts, and more — has row-level security enabled and forced:
+and alerts, and more — has row-level security enabled and forced. That includes the identity
+tables `organization_members` and `oidc_group_org_mappings` and the audit writer's
+`audit_log_buffer` (migration `000060`). Login resolves an identity before an organization
+is chosen, so those two tables have one narrow, read-only exception each: a user's own
+memberships in every organization, and the mappings for the groups in the token. Each is a `SELECT`
+policy only: an `INSERT`, `UPDATE` or `DELETE` can reach a row only inside the current organization. Only tables that hold no organization-scoped data have none:
+`organizations` (the list itself), `api_key_usage`, `oidc_pkce_states` and
+`rate_limit_buckets`:
 
 ```sql
 USING (organization_id::text = NULLIF(current_setting('app.current_org_id', true), ''))
@@ -51,6 +58,16 @@ RLS requirement for your own database:
   supply its own connection DSN (encrypted at rest — see
   [Data handling](data-handling.md)), so two organizations can point the same
   connection id at genuinely different databases.
+
+- **Statement statistics**: `pg_stat_statements` is kept per database role, not per
+  organization. On a connection several organizations share (one read-only role), the SQL
+  text of one organization's analysts would appear in every other organization's
+  `GET /queries/stats`. When more than one organization exists, only a platform
+  administrator may read it on a shared role (`STAT_STATEMENTS_SHARED`); an organization
+  with its own credentials sees only its own role's statements.
+  The regression poller skips such a connection for the same reason (it would copy the
+  other organizations' SQL text into this one's tables), and the two workload totals on the
+  workspace overview read as zero for non-platform users there.
 
 An organization with no assignment for a connection, under
 `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` (on by default in production), gets **400

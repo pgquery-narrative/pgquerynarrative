@@ -6,6 +6,7 @@ export interface AddCandidatePayload {
   binds?: string[];
   candidate_sql: string;
   id: string;
+  timing_runs?: number;
   verify_results?: boolean;
 }
 
@@ -13,6 +14,7 @@ export interface AddCandidatePayload2 {
   analyze?: boolean;
   binds?: string[];
   candidate_sql: string;
+  timing_runs?: number;
   verify_results?: boolean;
 }
 

@@ -133,10 +133,12 @@ var _ = Service("reports", func() {
 		})
 		Result(ReportShareLink)
 		Error("not_found", NotFoundError)
+		Error("validation_error", ValidationError)
 		HTTP(func() {
 			POST("/api/v1/reports/share")
 			Response(StatusOK)
 			Response(StatusNotFound, "not_found")
+			Response(StatusBadRequest, "validation_error")
 		})
 	})
 

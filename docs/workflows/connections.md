@@ -46,7 +46,7 @@ missing the required action fails with **400 `CONNECTION_FORBIDDEN`**.
 | `schema` | Schema browsing |
 | `report` | Workbench report generation |
 | `schedule` | Scheduled report runs |
-| `stats` | `pg_stat_statements` reads, regression polling |
+| `stats` | `pg_stat_statements` reads, regression polling. On a read-only role shared by several organizations only a platform admin may read statistics, and the poller skips it ([why](../security/tenancy.md#analytical-database-separation)) |
 | `ask` | Natural-language Ask |
 
 ## Readiness per connection

@@ -288,7 +288,7 @@ func NewDeleteHandler(
 	var (
 		decodeRequest  = DecodeDeleteRequest(mux, decoder)
 		encodeResponse = EncodeDeleteResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeDeleteError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))

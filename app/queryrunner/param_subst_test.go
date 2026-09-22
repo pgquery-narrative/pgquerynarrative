@@ -186,6 +186,23 @@ func TestSubstituteParams_BlockCommentDollarIsNotAParam(t *testing.T) {
 	}
 }
 
+func TestSubstituteParams_QuotedIdentifierDollarIsNotAParam(t *testing.T) {
+	// `$1` appears twice: once as a real parameter, once as text inside a quoted
+	// identifier. Only the real one is substituted; the identifier is untouched,
+	// so it still names the same (nonexistent, here) column rather than being
+	// silently rewritten to "col42".
+	got, err := SubstituteParams(`SELECT $1, "col$1" FROM t`, []string{"42"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "SELECT 42") {
+		t.Fatalf("real param not substituted: %s", got)
+	}
+	if !strings.Contains(got, `"col$1"`) {
+		t.Fatalf("quoted identifier was rewritten: %s", got)
+	}
+}
+
 func TestSubstituteParams_RealParamBesideBlockComment(t *testing.T) {
 	// A real $1 is still substituted when a decoy $2 sits in a block comment.
 	got, err := SubstituteParams(
@@ -230,6 +247,46 @@ func TestSubstituteParams_TimestampBindKeepsCast(t *testing.T) {
 		}
 		if !strings.Contains(got, tc.want) {
 			t.Fatalf("%q should produce %s, got: %s", tc.bind, tc.want, got)
+		}
+	}
+}
+
+// A $n inside a string, a quoted name, a dollar-quoted string or a comment is text. Only a real
+// parameter makes a statement unrunnable, so a false yes refuses a statement that could run.
+func TestHasParams(t *testing.T) {
+	cases := []struct {
+		sql  string
+		want bool
+	}{
+		{`SELECT * FROM t WHERE a = $1`, true},
+		{`SELECT $2, $1`, true},
+		{`SELECT 'a', $1, 'b'`, true},
+		{"SELECT 1 -- c\nWHERE a = $1", true},
+		{`SELECT /* c */ $3`, true},
+		{`SELECT $$a$$, $1`, true},
+		{`SELECT $q$a$q$, $1`, true},
+		{`SELECT 1`, false},
+		{`SELECT '$5'`, false},
+		{`SELECT count(*) FROM t WHERE s <> '$5'`, false},
+		{`SELECT 'it''s $1'`, false},
+		{`SELECT "col$1" FROM t`, false},
+		{`SELECT 1 -- costs $5`, false},
+		{`SELECT 1 /* $1 */`, false},
+		{`SELECT $$2025-03-01$$`, false},
+		{`SELECT date_trunc($$day$$, ts) = timestamptz $$2025-03-01$$`, false},
+		{`SELECT $q$it's $1$q$`, false},
+		{`SELECT $$é✓ $1$$`, false},
+		{`SELECT $$ never closed, $1`, true}, // PostgreSQL refuses it; do not hide what follows
+		{`SELECT E'it\'s $1'`, false},        // a backslash escapes the quote in an E string
+		{`SELECT e'it\'s $1'`, false},
+		{`SELECT E'\'', $1`, true},    // the string is \' and $1 is outside it
+		{`SELECT E'a\\', $1`, true},   // an escaped backslash, then the closing quote
+		{`SELECT 'a\', $1`, true},     // in a plain string a backslash is just a character
+		{`SELECT date'a\', $1`, true}, // the e of "date" is not an E prefix, so the backslash is plain
+	}
+	for _, c := range cases {
+		if got := HasParams(c.sql); got != c.want {
+			t.Errorf("HasParams(%q) = %v, want %v", c.sql, got, c.want)
 		}
 	}
 }

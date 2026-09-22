@@ -36,11 +36,14 @@ Common issues, then incident runbooks for production. See also
 
 ## Extension (PostgreSQL)
 
+For the `pqn` extension, see [Troubleshooting installation and setup](../getting-started/pqn-installation.md#troubleshooting-installation-and-setup). The rows below are for the REST-calling `pgquerynarrative` extension.
+
 | Issue | Solution |
 |---|---|
 | `CREATE EXTENSION pgquerynarrative` fails | Copy the files first — `make install-extension` (local) or `make install-extension-docker` (Docker). See [PostgreSQL extension](../integrations/postgres-extension.md) |
 | Functions return `{"status":"pending",...}` | The `http` extension wasn't installed **before** `pgquerynarrative` — install it, then re-run the extension's SQL |
-| Functions raise `PgQueryNarrative API error: 401` | The server has auth enabled; the extension sends no API key at all |
+| Functions raise `permission denied for function pgquerynarrative_...` | Version 1.1 withholds `EXECUTE` from `PUBLIC`. As the extension owner run `SELECT pgquerynarrative_grant_access('role');` |
+| Functions raise `PgQueryNarrative API error: 401` | The server has auth enabled. Call `SELECT pgquerynarrative_set_api_key('...')` in that session first |
 
 ---
 
@@ -160,12 +163,22 @@ HTTP behind a misconfigured proxy will silently fail to persist.
 [Production configuration](production.md) for the full checklist `config.Validate()`
 enforces, so you can fix the actual variable rather than trial-and-error.
 
+**`invalid configuration: SECURITY_API_KEYS_JSON: …`:** the key list is checked strictly
+and any mistake stops startup (unknown field such as `keyhash`, no `key` or `key_hash`,
+a `key_hash` that is not 64 hex characters, a missing or unrecognised `role`,
+`expires_at` not in RFC 3339 form, an unknown scope, or an array with no key when no
+other credential is set). Fix the entry the message names; the server never starts with
+a key list it could only half read. See
+[Authentication and roles](../security/authentication.md).
+
 ### Audit fail-closed behavior
 
-**Symptoms:** `queries.run` or `reports.generate` start failing with an audit error,
-with the metadata database otherwise healthy.
+**Symptoms:** `queries.run`, `reports.generate` or an admin change (API keys, memberships,
+connection permissions) start failing with an audit error, with the metadata database
+otherwise healthy. If they fail right after an upgrade, confirm migration `000058` has run
+(`/ready` reports the schema version): without it the database rejects those event types.
 
-**Actions:** this is `SECURITY_AUDIT_MODE=required` doing its job — those two
+**Actions:** this is `SECURITY_AUDIT_MODE=required` doing its job — these
 high-risk actions are refused rather than left unaudited when the audit write
 itself fails. Fix the underlying write failure (metadata pool health, disk space);
 do not switch to `best_effort` in production to make the symptom go away. See
@@ -213,7 +226,9 @@ alert never resolves.
 `SECURITY_STAT_STATEMENTS_ENABLED` are both true, and that `pg_stat_statements` is
 actually installed and tracking on the analytical database. A query needs at least
 3 baseline polling intervals before it's eligible to alert at all — a poller
-restarted recently will look quiet for a while by design. See
+restarted recently will look quiet for a while by design. On a connection whose read-only
+role is shared by several organizations the poller deliberately does nothing and logs
+`skipping connection`: give each organization its own read-only credentials. See
 [Regressions and applied fixes](../workflows/regressions.md).
 
 ### Pool exhaustion

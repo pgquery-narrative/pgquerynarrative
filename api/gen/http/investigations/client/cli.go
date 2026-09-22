@@ -25,7 +25,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 	{
 		err = json.Unmarshal([]byte(investigationsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"calls\": 4236025865502581797,\n      \"connection_id\": \"Est debitis sint totam.\",\n      \"mean_time_ms\": 0.9288878768215214,\n      \"queryid\": \"Dolor numquam.\",\n      \"rows\": 7969417918548853831,\n      \"sql\": \"qy\",\n      \"title\": \"cf\",\n      \"total_time_ms\": 0.506226064954352\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"calls\": 4275150930172113407,\n      \"connection_id\": \"Mollitia ea doloremque dolores ab.\",\n      \"mean_time_ms\": 0.2922231360562939,\n      \"queryid\": \"Repudiandae accusantium.\",\n      \"rows\": 828094725750890580,\n      \"sql\": \"n\",\n      \"title\": \"e\",\n      \"total_time_ms\": 0.3615465961292405\n   }'")
 		}
 		if utf8.RuneCountInString(body.Title) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 1, true))
@@ -73,7 +73,7 @@ func BuildCreateFromRegressionPayload(investigationsCreateFromRegressionBody str
 	{
 		err = json.Unmarshal([]byte(investigationsCreateFromRegressionBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"6a936f2d-6dd5-4260-927e-f1a30504863c\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"b36f6f2d-6dd5-4260-927e-f1a30504863c\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.regression_alert_id", body.RegressionAlertID, goa.FormatUUID))
 		if err != nil {
@@ -161,7 +161,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 	{
 		err = json.Unmarshal([]byte(investigationsAddCandidateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Fuga sed velit officia consequatur dolores nobis.\",\n         \"Rerum et mollitia tenetur exercitationem.\",\n         \"Necessitatibus sit exercitationem sed ex nostrum facilis.\",\n         \"Deleniti magni distinctio consequuntur illum quae accusantium.\"\n      ],\n      \"candidate_sql\": \"a\",\n      \"verify_results\": true\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Fuga sed velit officia consequatur dolores nobis.\",\n         \"Rerum et mollitia tenetur exercitationem.\",\n         \"Necessitatibus sit exercitationem sed ex nostrum facilis.\",\n         \"Deleniti magni distinctio consequuntur illum quae accusantium.\"\n      ],\n      \"candidate_sql\": \"a\",\n      \"timing_runs\": 2,\n      \"verify_results\": true\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
@@ -169,6 +169,12 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		}
 		if utf8.RuneCountInString(body.CandidateSQL) > 10000 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_sql", body.CandidateSQL, utf8.RuneCountInString(body.CandidateSQL), 10000, false))
+		}
+		if body.TimingRuns < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.timing_runs", body.TimingRuns, 1, true))
+		}
+		if body.TimingRuns > 5 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.timing_runs", body.TimingRuns, 5, false))
 		}
 		if err != nil {
 			return nil, err
@@ -186,6 +192,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		CandidateSQL:  body.CandidateSQL,
 		Analyze:       body.Analyze,
 		VerifyResults: body.VerifyResults,
+		TimingRuns:    body.TimingRuns,
 	}
 	{
 		var zero bool
@@ -203,6 +210,12 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		v.Binds = make([]string, len(body.Binds))
 		for i, val := range body.Binds {
 			v.Binds[i] = val
+		}
+	}
+	{
+		var zero int
+		if v.TimingRuns == zero {
+			v.TimingRuns = 1
 		}
 	}
 	v.ID = id

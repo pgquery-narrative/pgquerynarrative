@@ -509,6 +509,7 @@ func EncodeCreateShareRequest(encoder func(*http.Request) goahttp.Encoder) func(
 // body should be restored after having been read.
 // DecodeCreateShareResponse may return the following errors:
 //   - "not_found" (type *reports.NotFoundError): http.StatusNotFound
+//   - "validation_error" (type *reports.ValidationError): http.StatusBadRequest
 //   - error: internal error
 func DecodeCreateShareResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (any, error) {
@@ -554,6 +555,20 @@ func DecodeCreateShareResponse(decoder func(*http.Response) goahttp.Decoder, res
 				return nil, goahttp.ErrValidationError("reports", "create_share", err)
 			}
 			return nil, NewCreateShareNotFound(&body)
+		case http.StatusBadRequest:
+			var (
+				body CreateShareValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("reports", "create_share", err)
+			}
+			err = ValidateCreateShareValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("reports", "create_share", err)
+			}
+			return nil, NewCreateShareValidationError(&body)
 		default:
 			body, _ := io.ReadAll(resp.Body)
 			return nil, goahttp.ErrInvalidResponse("reports", "create_share", resp.StatusCode, string(body))

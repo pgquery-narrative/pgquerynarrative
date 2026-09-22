@@ -142,6 +142,9 @@ func (s *SchedulesService) Create(ctx context.Context, payload *schedules.Schedu
 }
 
 func (s *SchedulesService) Update(ctx context.Context, payload *schedules.UpdatePayload) (*schedules.Schedule, error) {
+	if err := s.requireScheduleOwner(ctx, payload.ID); err != nil {
+		return nil, err
+	}
 	current, err := s.getByID(ctx, payload.ID)
 	if err != nil {
 		return nil, err
@@ -184,22 +187,10 @@ func (s *SchedulesService) Update(ctx context.Context, payload *schedules.Update
 }
 
 func (s *SchedulesService) Delete(ctx context.Context, payload *schedules.DeletePayload) error {
-	p := auth.PrincipalFromContext(ctx)
-	var createdBy string
-	err := s.appPool.QueryRow(ctx, `
-		SELECT COALESCE(created_by, '') FROM app.schedules
-		WHERE id = $1 AND organization_id = $2
-	`, payload.ID, p.OrgID).Scan(&createdBy)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
-		}
+	if err := s.requireScheduleOwner(ctx, payload.ID); err != nil {
 		return err
 	}
-	if !canMutateOwnedResource(ctx, createdBy) {
-		return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
-	}
-	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.schedules WHERE id = $1 AND organization_id = $2`, payload.ID, p.OrgID)
+	tag, err := s.appPool.Exec(ctx, `DELETE FROM app.schedules WHERE id = $1 AND organization_id = $2`, payload.ID, orgID(ctx))
 	if err != nil {
 		return err
 	}
@@ -209,7 +200,31 @@ func (s *SchedulesService) Delete(ctx context.Context, payload *schedules.Delete
 	return nil
 }
 
+// requireScheduleOwner answers "not found" unless the caller may change the schedule: its creator or
+// an administrator. Update, run and delete all go through it, so an analyst cannot rewrite the SQL or
+// destination of another person's schedule, or trigger it under that person's identity.
+func (s *SchedulesService) requireScheduleOwner(ctx context.Context, scheduleID string) error {
+	var createdBy string
+	err := s.appPool.QueryRow(ctx, `
+		SELECT COALESCE(created_by, '') FROM app.schedules
+		WHERE id = $1 AND organization_id = $2
+	`, scheduleID, orgID(ctx)).Scan(&createdBy)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
+		}
+		return err
+	}
+	if !canMutateOwnedResource(ctx, createdBy) {
+		return &schedules.NotFoundError{Name: "not_found", Message: "schedule not found", Code: strPtr("NOT_FOUND")}
+	}
+	return nil
+}
+
 func (s *SchedulesService) RunNow(ctx context.Context, payload *schedules.RunNowPayload) (*schedules.ScheduleRunResult, error) {
+	if err := s.requireScheduleOwner(ctx, payload.ID); err != nil {
+		return nil, err
+	}
 	sc, err := s.getByID(ctx, payload.ID)
 	if err != nil {
 		return nil, err

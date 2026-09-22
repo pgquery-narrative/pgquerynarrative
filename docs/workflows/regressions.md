@@ -13,6 +13,11 @@ organization × connection that has the `stats` permission on that connection. I
 takes a PostgreSQL advisory lock per (org, connection) so replicas of the server
 don't double-poll — there is no separate leader election.
 
+It skips a connection whose read-only role is shared by more than one organization
+(logging one line): `pg_stat_statements` is kept per role, so polling would copy every
+organization's SQL text into each organization's own tables. Give each organization its
+own read-only credentials (`/admin/connection-secrets`) to poll it.
+
 Each poll snapshots the top 50 statements by `total_time` (excluding the tool's own
 traffic), computes the delta since the previous interval for each `queryid`, and
 drops intervals with no prior snapshot or a negative delta (a stats counter reset).

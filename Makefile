@@ -1,4 +1,4 @@
-.PHONY: setup tidy generate generate-api-types build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release pilot-acceptance pilot-report helm-strict-check demo demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
+.PHONY: build-pqn build-pqn-image verify-pqn-image verify-pqn-cli verify-pqn-docs verify-pqn-pitch install-pqn-extension verify-pqn-extension verify-extension setup tidy generate generate-api-types build build-mcp run test test-unit test-features test-integration test-e2e test-playwright test-playwright-oidc test-load-smoke test-frontend lint fmt migrate migrate-docker migrate-cycle-docker db-security-verify-docker seed seed-large seed-large-docker seed-nyc seed-nyc-docker postgres-up postgres-recreate dev dev-stop dev-watch dev-build dev-teardown docker-up docker-down docker-logs db-init db-init-docker start start-docker start-local stop cli cli-shell changelog build-release pilot-acceptance pilot-report helm-strict-check demo demo-bootstrap demo-smoke demo-multi-org ollama-up ollama-pull docs
 
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -230,10 +230,11 @@ build-release:
 	echo "Building release binaries for $$native_os/$$native_arch..."; \
 	CGO_ENABLED=1 $(GO) build $(SERVER_LDFLAGS) -o bin/pgquerynarrative-server-$$native_os-$$native_arch ./cmd/server; \
 	CGO_ENABLED=0 $(GO) build $(MCP_LDFLAGS) -o bin/pgquerynarrative-mcp-$$native_os-$$native_arch ./cmd/mcp-server; \
+	CGO_ENABLED=1 $(GO) build -ldflags "-X main.version=$(VERSION)" -o bin/pgquerynarrative-pqn-$$native_os-$$native_arch ./cmd/pqn; \
 	CGO_ENABLED=0 $(GO) build -tags postgres -ldflags "-s -w" -o bin/pgquerynarrative-migrate-$$native_os-$$native_arch \
 		github.com/golang-migrate/migrate/v4/cmd/migrate; \
 	(cd bin && sha256sum pgquerynarrative-* > checksums.txt)
-	@echo "✅ Release binaries (server, mcp, migrate) in bin/ (VERSION=$(VERSION))"
+	@echo "✅ Release binaries (server, mcp, migrate, pqn) in bin/ (VERSION=$(VERSION))"
 
 run:
 	@# Local/dev open-admin requires explicit opt-in (compose sets this too). Override by enabling auth.
@@ -255,7 +256,7 @@ test-unit:
 	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./app/service/... \
 		./app/security/... ./app/llm/... ./app/audit/... ./app/story/... \
 		./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... \
-		./app/metrics/... ./web/... ./tools/docscheck/... -v
+		./app/metrics/... ./web/... ./tools/docscheck/... ./internal/pqncli/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:
@@ -581,7 +582,6 @@ cli:
 cli-shell:
 	@echo "💻 Starting interactive CLI shell..."
 	@echo "Type 'pgquerynarrative help' for commands"
-	@echo "Or use 'pqn' as alias"
 	@echo ""
 	@docker compose run --rm -it --entrypoint /bin/sh cli -l
 
@@ -615,6 +615,48 @@ install-extension:
 
 install-extension-docker:
 	@sh ./tools/db/install-extension-docker.sh
+
+# Throwaway-container checks of the extension: upgrade path, PUBLIC grants, URL lock, API key (needs Docker)
+verify-extension:
+	@sh ./tools/db/verify-extension.sh
+
+# Copy the in-database pqn extension files to the local Postgres sharedir
+install-pqn-extension:
+	@sh ./tools/db/install-pqn-extension.sh
+
+# Throwaway primary + hot standby checks of the pqn extension: ownership, PUBLIC, analyst limits, ledger, replica (needs Docker)
+verify-pqn-extension:
+	@sh ./tools/db/verify-pqn-extension.sh
+
+# PostgreSQL image with pqn installed and created on first start (pqn-postgres:18). Needs Docker
+PQN_IMAGE ?= pqn-postgres:18
+build-pqn-image:
+	@docker build -f tools/docker/postgres-pqn.Dockerfile -t $(PQN_IMAGE) .
+
+# Build the pqn terminal tool (bin/pqn). Set VERSION for ldflags, e.g. VERSION=1.1.0 make build-pqn
+build-pqn:
+	@echo "🔨 Building pqn..."
+	$(GO) build -ldflags "-X main.version=$${VERSION:-dev}" -o bin/pqn ./cmd/pqn
+	@echo "✅ Built bin/pqn"
+
+# The pqn PostgreSQL image, the way a user meets it: pull-and-run, restart, existing data volume (needs Docker).
+# PQN_BASE picks the base image, e.g. PQN_BASE=postgres:18-alpine
+verify-pqn-image:
+	@bash ./tools/db/verify-pqn-image.sh $(or $(PQN_BASE),postgres:18)
+
+# End to end: the pqn tool against a throwaway PostgreSQL with a slow-query lab (needs Docker)
+verify-pqn-cli: build-pqn
+	@sh ./tools/db/verify-pqn-cli.sh
+
+# Run the pqn quick start (docs/getting-started/pqn-extension.md) exactly as written (needs Docker)
+verify-pqn-docs:
+	@bash ./tools/db/verify-pqn-docs.sh
+
+# The core pitch, checked against independent oracles on a 17M-row database: every proposal, every wrong
+# rewrite, time zones, concurrent writes, limits, access, the ledger (needs Docker and Python 3, ~5 min).
+# PQN_PITCH_KEEP=1 leaves the database running.
+verify-pqn-pitch: build-pqn
+	@python3 ./tools/db/verify-pqn-pitch.py
 
 # ============================================================================
 # Documentation (MkDocs Material — local preview at http://localhost:8000)
