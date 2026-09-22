@@ -124,6 +124,44 @@ func TestSuggestRewrites_OrToUnion(t *testing.T) {
 	}
 }
 
+// Splitting an OR into UNION ALL branches changes the result of an aggregate
+// with no GROUP BY: SUM(x) WHERE a=1 OR b=2 becomes two partial sums (one row
+// each) instead of one combined total. Pins the B-03 fix: the rewriter must
+// fail closed here rather than propose a candidate the equivalence check
+// later has to catch.
+func TestSuggestRewrites_OrAggregateNoGroupBySkipped(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT SUM(total_amount) FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics'`,
+		`SELECT count(*) FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics'`,
+	} {
+		if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+			t.Fatalf("aggregate without GROUP BY must not be split across UNION ALL branches.\n in: %s\nout: %#v", sql, cands)
+		}
+	}
+}
+
+// UNION ALL branches are separate SELECTs, so an ORDER BY referencing a
+// column absent from the (explicit) target list does not deparse to valid
+// SQL. Pins the B-04 fix.
+func TestSuggestRewrites_OrOrderByMissingColumnSkipped(t *testing.T) {
+	sql := `SELECT id FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics' ORDER BY date`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("ORDER BY on a column outside the target list must not be rewritten, got %#v", cands)
+	}
+}
+
+// The same query, but selecting the sorted column, must still rewrite —
+// confirms the B-04 guard only rejects genuinely unresolvable ORDER BY
+// columns, not every ORDER BY.
+func TestSuggestRewrites_OrOrderBySelectedColumnStillRewrites(t *testing.T) {
+	sql := `SELECT id, date FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics' ORDER BY date`
+	c := mustFindCategory(t, SuggestRewrites(sql, nil), "or_to_union")
+	got := normalizeSQL(c.SQL)
+	if !strings.Contains(got, "union all") || !strings.Contains(got, "order by date") {
+		t.Fatalf("expected UNION ALL with ORDER BY date preserved, got: %s", c.SQL)
+	}
+}
+
 func TestSuggestRewrites_OrComplexLeafSkipped(t *testing.T) {
 	sql := `SELECT id, date, region, product_category FROM demo.sales WHERE region = 'North' OR product_category LIKE 'Elec%'`
 	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
