@@ -127,8 +127,8 @@ func ComparePlans(beforePlan, afterPlan json.RawMessage) (*PlanComparison, error
 	metrics := []ComparisonMetric{
 		formatTimingMetric(bm, am),
 		formatCostMetric(bm.TotalCost, am.TotalCost),
-		formatMetric("Rows scanned", bm.RowsScanned, am.RowsScanned, "rows", true),
-		formatMetric("Max node rows", bm.MaxNodeRows, am.MaxNodeRows, "rows", true),
+		formatRowsScannedMetric(bm.RowsScanned, am.RowsScanned),
+		formatMaxNodeRowsMetric(bm.MaxNodeRows, am.MaxNodeRows),
 		formatPartitionsMetric(bm, am),
 		formatMetric("Temp written", bm.TempWrittenBytes, am.TempWrittenBytes, "bytes", true),
 		{
@@ -339,6 +339,29 @@ func formatCostMetric(before, after float64) ComparisonMetric {
 		Change:   formatPercentChange(before, after),
 		Caveat:   "Planner estimate in arbitrary units — not a time, and not a speed multiple. Use execution time (with ANALYZE) to claim a speedup.",
 	}
+}
+
+// formatRowsScannedMetric renders the sum of rows returned by base-table scan
+// nodes. It carries a caveat because a partition-pruning win does not always
+// move this number: if only a few of the pruned partitions held matching rows
+// to begin with, before and after can report the same total even though the
+// before plan opened far more partition files to get there — see the
+// "Partitions scanned" row for that effect instead.
+func formatRowsScannedMetric(before, after float64) ComparisonMetric {
+	m := formatMetric("Rows scanned", before, after, "rows", true)
+	m.Caveat = "Sum of rows returned by base-table scan nodes, not partitions/tables touched. Partition pruning can leave this unchanged even when it cuts real work — see Partitions scanned."
+	return m
+}
+
+// formatMaxNodeRowsMetric renders the largest row count at any single plan
+// node. It carries a caveat because this can legitimately increase even in a
+// faster plan — e.g. rows that were spread across many parallel partition
+// scans now flow through one node instead — so a rise here alone is not
+// evidence the candidate is worse.
+func formatMaxNodeRowsMetric(before, after float64) ComparisonMetric {
+	m := formatMetric("Max node rows", before, after, "rows", true)
+	m.Caveat = "Largest row count at any one plan node. A plan-shape change (e.g. fewer, larger scans instead of many small ones) can raise this even when the overall plan is faster — read together with execution time, not alone."
+	return m
 }
 
 // formatPercentChange is formatChange without the fold-change branch, for
