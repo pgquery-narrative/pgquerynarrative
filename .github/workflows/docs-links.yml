@@ -43,7 +43,7 @@ jobs:
       # Cache results for a day so reruns and busy weeks do not hammer the same
       # hosts (fewer rate limits, fewer spurious failures).
       - name: Restore lychee cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .lycheecache
           key: lychee-${{ github.sha }}
