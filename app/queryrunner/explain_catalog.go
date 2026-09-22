@@ -34,6 +34,14 @@ type tableCatalogStats struct {
 	// column still scans every partition, but there was never a predicate on
 	// the partition key to prune with.
 	PartitionKeyColumns []string
+	// ParentSchema/ParentRelation name this relation's partition parent (empty
+	// when the relation is not itself a partition). buildIndexAdvice drafts
+	// CREATE INDEX DDL against the parent rather than one physical partition —
+	// a parent-level index propagates to every partition, which is what an
+	// engineer would actually run instead of one near-duplicate DDL per
+	// partition scanned by the query.
+	ParentSchema   string
+	ParentRelation string
 }
 
 // smallTableRowThreshold is the row count below which index recommendations
@@ -112,13 +120,24 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 			         SELECT COUNT(*)::int FROM pg_inherits sib
 			         WHERE sib.inhparent = (SELECT self.inhparent FROM pg_inherits self WHERE self.inhrelid = c.oid)
 			       ), 0),
-			       (SELECT pg_get_partkeydef(self.inhparent) FROM pg_inherits self WHERE self.inhrelid = c.oid)
+			       (SELECT pg_get_partkeydef(self.inhparent) FROM pg_inherits self WHERE self.inhrelid = c.oid),
+			       COALESCE((
+			         SELECT pn.nspname FROM pg_inherits pi
+			         JOIN pg_class pc ON pc.oid = pi.inhparent
+			         JOIN pg_namespace pn ON pn.oid = pc.relnamespace
+			         WHERE pi.inhrelid = c.oid
+			       ), ''),
+			       COALESCE((
+			         SELECT pc.relname FROM pg_inherits pi
+			         JOIN pg_class pc ON pc.oid = pi.inhparent
+			         WHERE pi.inhrelid = c.oid
+			       ), '')
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
 			LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
 			WHERE n.nspname = $1 AND c.relname = $2
 		`, k.schema, k.name).Scan(&row.EstimatedRows, &row.TotalBytes, &row.IndexCount, &row.LastAnalyze, &row.LastAutoanalyze,
-			&row.TotalPartitions, &partKeyDef)
+			&row.TotalPartitions, &partKeyDef, &row.ParentSchema, &row.ParentRelation)
 		if err != nil {
 			continue
 		}
@@ -608,7 +627,17 @@ func buildIndexAdvice(f PlanFinding, st tableCatalogStats) *IndexAdvice {
 	} else {
 		advice.StorageCost = "unknown (no catalog row-count estimate available)"
 	}
-	advice.CandidateDDL = draftCandidateDDL(f.Schema, f.Relation, cols)
+	// A partitioned table's index goes on the parent — CREATE INDEX there
+	// propagates to every partition — not on one physical partition the
+	// query happened to scan. Drafting per-partition DDL (one identical
+	// suggestion per partition scanned) is both wrong advice and, before
+	// CollectIndexDDLCandidates' exact-string dedup, a wall of near-duplicate
+	// candidates for a partitioned table.
+	ddlSchema, ddlRelation := f.Schema, f.Relation
+	if st.ParentRelation != "" {
+		ddlSchema, ddlRelation = st.ParentSchema, st.ParentRelation
+	}
+	advice.CandidateDDL = draftCandidateDDL(ddlSchema, ddlRelation, cols)
 	return advice
 }
 
