@@ -241,6 +241,8 @@ type UpdateFixResponseBody struct {
 // "suggest_rewrite" endpoint HTTP response body.
 type SuggestRewriteResponseBody struct {
 	Candidates []*RewriteCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Set when candidates is empty: why the rewriter found nothing to propose
+	DeclineReason *string `form:"decline_reason,omitempty" json:"decline_reason,omitempty" xml:"decline_reason,omitempty"`
 }
 
 // RankCandidatesResponseBody is the type of the "investigations" service
@@ -1150,7 +1152,9 @@ func NewUpdateFixValidationError(body *UpdateFixValidationErrorResponseBody) *in
 // NewSuggestRewriteRewriteSuggestionListOK builds a "investigations" service
 // "suggest_rewrite" endpoint result from a HTTP "OK" response.
 func NewSuggestRewriteRewriteSuggestionListOK(body *SuggestRewriteResponseBody) *investigations.RewriteSuggestionList {
-	v := &investigations.RewriteSuggestionList{}
+	v := &investigations.RewriteSuggestionList{
+		DeclineReason: body.DeclineReason,
+	}
 	v.Candidates = make([]*investigations.RewriteCandidate, len(body.Candidates))
 	for i, val := range body.Candidates {
 		if val == nil {

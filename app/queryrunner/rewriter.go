@@ -20,6 +20,19 @@ type RewriteCandidate struct {
 	Confidence string
 }
 
+// DeclineReason explains why SuggestRewrites returned no candidates. It is the
+// single source of truth for this message — both the API (RewriteSuggestionList's
+// decline_reason, set when Candidates is empty) and the Investigate UI surface it,
+// so the list of patterns named here must be kept in sync with the patterns
+// SuggestRewrites actually attempts (see its doc comment) rather than duplicated
+// by hand in a second place. Casts are deliberately not named: they are a known,
+// permanent limitation (no catalog access to confirm a cast is a no-op), not a
+// pattern this function tries and fails.
+const DeclineReason = "No rewrite offered. The rewriter only proposes transforms it can prove preserve results, " +
+	"so most queries get nothing back. It looks for: a function wrapping a filtered column " +
+	"(DATE_TRUNC / EXTRACT / to_char / ::date / COALESCE over a date), OR across columns → UNION ALL, " +
+	"IN / NOT IN → EXISTS, and LEFT JOIN … IS NULL → NOT EXISTS. The plan findings above still apply."
+
 // SuggestRewrites analyzes sql (and optional plan findings) and returns
 // candidate rewrites. Supported patterns:
 //
