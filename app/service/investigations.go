@@ -1098,6 +1098,16 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 
 		if !equivalenceIsShippable(status) {
 			msg := "result equivalence was not verified — re-run Compare plans with result verification until status is VerifiedEqual before generating a shippable report"
+			// "Re-run Compare plans" is only useful advice when the cause is
+			// transient (nondeterministic sample ordering, a timeout). A
+			// candidate that failed with a real Postgres error (division by
+			// zero, a type mismatch, a missing column) fails identically on
+			// every re-run — telling someone to retry it is a dead end. Point
+			// at fixing the SQL instead when the notes carry that signal.
+			if status == EquivalenceUnverified && inv.Comparison != nil && inv.Comparison.ResultEquivalenceNotes != nil &&
+				strings.Contains(*inv.Comparison.ResultEquivalenceNotes, "ERROR:") {
+				msg = "result equivalence could not be verified — the candidate SQL failed with a database error (see the comparison notes); fix the candidate, not just re-run the comparison, before generating a shippable report"
+			}
 			switch status {
 			case EquivalenceDifferent:
 				msg = "result equivalence is Different — reconcile the candidate rewrite before generating a shippable report"
