@@ -21,6 +21,37 @@ func loadPlanRoot(t *testing.T, fixture string) map[string]interface{} {
 	return roots[0].Plan
 }
 
+// TestPartitionPruningAlreadyWorked pins the B-01 fix: a CategoryPartitionPruning
+// finding is only real when the Append's scanned-child count is not materially
+// close to the table's true partition count. EXPLAIN never reports how many
+// siblings the planner pruned at plan time, so this is the only place that can
+// tell "3 of 50, pruning worked" apart from "50 of 50, pruning failed."
+func TestPartitionPruningAlreadyWorked(t *testing.T) {
+	tests := []struct {
+		name              string
+		scanned           int
+		totalPartitions   int
+		wantAlreadyWorked bool
+	}{
+		{name: "3 of 50 - pruning worked", scanned: 3, totalPartitions: 50, wantAlreadyWorked: true},
+		{name: "50 of 50 - pruning failed", scanned: 50, totalPartitions: 50, wantAlreadyWorked: false},
+		{name: "25 of 50 - exactly half, treated as pruned", scanned: 25, totalPartitions: 50, wantAlreadyWorked: true},
+		{name: "26 of 50 - just over half, treated as failed", scanned: 26, totalPartitions: 50, wantAlreadyWorked: false},
+		{name: "no PartitionsScanned recorded", scanned: 0, totalPartitions: 50, wantAlreadyWorked: false},
+		{name: "no catalog partition count available", scanned: 3, totalPartitions: 0, wantAlreadyWorked: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := PlanFinding{Category: CategoryPartitionPruning, PartitionsScanned: tt.scanned}
+			st := tableCatalogStats{TotalPartitions: tt.totalPartitions}
+			if got := partitionPruningAlreadyWorked(f, st); got != tt.wantAlreadyWorked {
+				t.Errorf("partitionPruningAlreadyWorked(scanned=%d, total=%d) = %v, want %v",
+					tt.scanned, tt.totalPartitions, got, tt.wantAlreadyWorked)
+			}
+		})
+	}
+}
+
 func TestExtractFilterColumns(t *testing.T) {
 	tests := []struct {
 		name   string

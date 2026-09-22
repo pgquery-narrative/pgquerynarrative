@@ -121,21 +121,60 @@ func detectPlanSignals(node map[string]interface{}, nodeType, schema, relation s
 	}
 
 	// Partition pruning report on Append/Merge Append nodes.
+	//
+	// EXPLAIN never reports how many sibling partitions the planner pruned at
+	// plan time — only executor-time "Subplans Removed", which stays 0 for the
+	// common case of a constant, non-sargable predicate decided entirely by the
+	// planner before execution starts. So a low child count here can mean either
+	// "pruning already worked" (e.g. 3 of 50 partitions, correctly narrowed) or
+	// "the table only has a few partitions" — that ambiguity can only be
+	// resolved against the catalog's true partition count, which happens during
+	// enrichExplainFindings (see explain_catalog.go); this layer only filters
+	// out the case it can decide on its own: when no child scan carries a
+	// Filter, there is no predicate on the partition key to evaluate at all
+	// (an unfiltered scan, e.g. SELECT COUNT(*) FROM t, not a pruning failure).
 	if nodeType == "Append" || nodeType == "Merge Append" {
 		children, _ := node["Plans"].([]interface{})
 		scanned := float64(len(children))
 		removed, hasRemoved := asFloat64(node["Subplans Removed"])
-		if scanned >= 3 && (!hasRemoved || removed == 0) {
+		anyChildFiltered := false
+		var childSchema, childRelation string
+		for _, c := range children {
+			cm, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if f, _ := cm["Filter"].(string); f != "" {
+				anyChildFiltered = true
+			}
+			if childRelation == "" {
+				if r, _ := cm["Relation Name"].(string); r != "" {
+					childRelation = r
+					childSchema, _ = cm["Schema"].(string)
+				}
+			}
+		}
+		if scanned >= 3 && anyChildFiltered && (!hasRemoved || removed == 0) {
 			confidence := "medium"
 			if scanned >= 8 {
 				confidence = "high"
 			}
-			out = append(out, base(CategoryPartitionPruning, confidence,
+			f := base(CategoryPartitionPruning, confidence,
 				fmt.Sprintf("%s scans %.0f partitions with no pruning — predicate on the partition key is missing or non-sargable (e.g. DATE_TRUNC on the key)", nodeType, scanned),
 				[]string{
 					fmt.Sprintf("Subplans Removed=%.0f", removed),
 					fmt.Sprintf("child subplans=%.0f", scanned),
-				}))
+				})
+			// Append/Merge Append carry no relation of their own — base() left
+			// Schema/Relation empty since their children scan different physical
+			// partitions (inferSingleTableRelation bails whenever it sees more
+			// than one). Attribute this finding to one representative child
+			// partition so catalog enrichment can resolve the parent and compare
+			// scanned against its true partition count.
+			f.Schema = childSchema
+			f.Relation = childRelation
+			f.PartitionsScanned = int(scanned)
+			out = append(out, f)
 		}
 	}
 

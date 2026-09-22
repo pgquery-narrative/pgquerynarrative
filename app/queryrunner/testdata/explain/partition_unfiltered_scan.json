@@ -1,0 +1,24 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Append",
+      "Total Cost": 42000.0,
+      "Plan Rows": 3600000,
+      "Subplans Removed": 0,
+      "Plans": [
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_01", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_02", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_03", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_04", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_05", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_06", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_07", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_08", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_09", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_10", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_11", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000},
+        {"Node Type": "Seq Scan", "Relation Name": "trips_2024_12", "Schema": "demo", "Total Cost": 3500.0, "Plan Rows": 300000}
+      ]
+    }
+  }
+]

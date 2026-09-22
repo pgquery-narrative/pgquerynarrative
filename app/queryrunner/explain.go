@@ -34,6 +34,12 @@ type PlanFinding struct {
 	// finding, populated during catalog enrichment when the relation's index
 	// definitions are available. Nil until enriched.
 	IndexAdvice *IndexAdvice
+	// PartitionsScanned is the Append/Merge Append child count for a
+	// CategoryPartitionPruning finding (0 for every other category). EXPLAIN
+	// never reports how many sibling partitions the planner pruned at plan
+	// time, so catalog enrichment cross-checks this against the parent
+	// table's true partition count before deciding the finding is real.
+	PartitionsScanned int
 }
 
 // Plan finding categories.

@@ -17,6 +17,11 @@ type tableCatalogStats struct {
 	Indexes         []IndexDefinition
 	LastAnalyze     *time.Time
 	LastAutoanalyze *time.Time
+	// TotalPartitions is the sibling count of this relation's partition parent
+	// (0 when the relation is not itself a partition). Used to tell a
+	// partition_pruning finding's PartitionsScanned apart from a table that
+	// simply has few partitions — see enrichExplainFindings.
+	TotalPartitions int
 }
 
 // smallTableRowThreshold is the row count below which index recommendations
@@ -89,12 +94,17 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 			       COALESCE(pg_total_relation_size(c.oid), 0),
 			       (SELECT COUNT(*)::int FROM pg_index i WHERE i.indrelid = c.oid AND i.indisvalid),
 			       s.last_analyze,
-			       s.last_autoanalyze
+			       s.last_autoanalyze,
+			       COALESCE((
+			         SELECT COUNT(*)::int FROM pg_inherits sib
+			         WHERE sib.inhparent = (SELECT self.inhparent FROM pg_inherits self WHERE self.inhrelid = c.oid)
+			       ), 0)
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
 			LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
 			WHERE n.nspname = $1 AND c.relname = $2
-		`, k.schema, k.name).Scan(&row.EstimatedRows, &row.TotalBytes, &row.IndexCount, &row.LastAnalyze, &row.LastAutoanalyze)
+		`, k.schema, k.name).Scan(&row.EstimatedRows, &row.TotalBytes, &row.IndexCount, &row.LastAnalyze, &row.LastAutoanalyze,
+			&row.TotalPartitions)
 		if err != nil {
 			continue
 		}
@@ -110,6 +120,7 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 
 	out := make([]PlanFinding, len(findings))
 	copy(out, findings)
+	drop := make([]bool, len(out))
 	for i := range out {
 		if out[i].Relation == "" {
 			continue
@@ -125,9 +136,22 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 		if !ok {
 			continue
 		}
+		if out[i].Category == CategoryPartitionPruning && partitionPruningAlreadyWorked(out[i], st) {
+			drop[i] = true
+			continue
+		}
 		out[i] = applyCatalogContext(out[i], st)
 		out[i].IndexAdvice = buildIndexAdvice(out[i], st)
 		out[i] = promoteIndexCandidateFinding(out[i])
+	}
+	if anyDropped(drop) {
+		kept := out[:0]
+		for i, f := range out {
+			if !drop[i] {
+				kept = append(kept, f)
+			}
+		}
+		out = kept
 	}
 
 	// Beyond per-node enrichment, surface health issues with the *existing*
@@ -247,6 +271,29 @@ func fetchIndexDefinitions(ctx context.Context, pool *pgxpool.Pool, schema, tabl
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+// partitionPruningAlreadyWorked reports whether a CategoryPartitionPruning
+// finding's Append child count is close enough to the table's true partition
+// count that the finding is a false positive — plan-time pruning already cut
+// the scan down (e.g. 3 of 50 partitions), which EXPLAIN itself has no way to
+// report (see the comment on the finding in plan_analysis.go). A scanned
+// count at or below half the true total is treated as real pruning; anything
+// higher (up to and including "scanned every partition") is a genuine failure.
+func partitionPruningAlreadyWorked(f PlanFinding, st tableCatalogStats) bool {
+	if f.PartitionsScanned <= 0 || st.TotalPartitions <= 0 {
+		return false
+	}
+	return f.PartitionsScanned*2 <= st.TotalPartitions
+}
+
+func anyDropped(drop []bool) bool {
+	for _, d := range drop {
+		if d {
+			return true
+		}
+	}
+	return false
 }
 
 func applyCatalogContext(f PlanFinding, st tableCatalogStats) PlanFinding {
