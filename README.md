@@ -193,7 +193,8 @@ make build            # builds the UI, then the server into bin/
 
 ## Try it (5 minutes)
 
-Requires Docker. Starts Postgres + app + small seed (~2 minutes):
+Requires Docker. Starts Postgres + app + small seed (~2 minutes on a warm
+machine; first run also pulls the Ollama image and `llama3.2` model, ~2GB):
 
 ```bash
 make demo
