@@ -717,6 +717,8 @@ function InvestigateLanding() {
   const [scenarios, setScenarios] = useState<Awaited<ReturnType<typeof api.getDemoScenarios>>["items"]>([]);
   const [regressions, setRegressions] = useState<Awaited<ReturnType<typeof api.getRegressions>>["items"]>([]);
   const [loading, setLoading] = useState(true);
+  const [pastedTitle, setPastedTitle] = useState("");
+  const [pastedSql, setPastedSql] = useState("");
 
   useEffect(() => {
     Promise.allSettled([api.getDemoScenarios(), api.getRegressions(5)]).then(([s, r]) => {
@@ -748,6 +750,17 @@ function InvestigateLanding() {
     // Problem SQL only — do not prefill answer-key candidate_sql.
     // Rewrites come from Suggest rewrite / Rank candidates.
     const params = new URLSearchParams({ title: scenario.title, sql: scenario.sql });
+    navigate(`/investigate?${params.toString()}`);
+  };
+
+  // Same navigate-to-create path startDemo and Query Stats already use —
+  // InvestigatePage's mount effect does the actual createInvestigation call.
+  const startFromPastedSql = () => {
+    if (!pastedSql.trim()) return;
+    const params = new URLSearchParams({
+      title: pastedTitle.trim() || "Query investigation",
+      sql: pastedSql.trim(),
+    });
     navigate(`/investigate?${params.toString()}`);
   };
 
@@ -840,11 +853,28 @@ function InvestigateLanding() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Start from SQL</CardTitle>
+          <CardDescription>Paste any query — not just a guided scenario — to run it through EXPLAIN evidence.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Link to="/stats">
-            <Button><Play className="h-4 w-4" /> Select from pg_stat_statements</Button>
-          </Link>
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="Investigation title (optional)"
+            value={pastedTitle}
+            onChange={(e) => setPastedTitle(e.target.value)}
+          />
+          <Textarea
+            placeholder="SELECT ... FROM ..."
+            className="font-mono text-sm min-h-32"
+            value={pastedSql}
+            onChange={(e) => setPastedSql(e.target.value)}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={startFromPastedSql} disabled={!pastedSql.trim()}>
+              <Search className="h-4 w-4" /> Investigate this query
+            </Button>
+            <Link to="/stats">
+              <Button variant="outline"><Play className="h-4 w-4" /> Select from pg_stat_statements</Button>
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
