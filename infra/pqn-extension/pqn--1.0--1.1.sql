@@ -1002,6 +1002,41 @@ BEGIN
       EXECUTE regexp_replace(line, '\s*--.*$', '');
     END IF;
   END LOOP;
+  -- The view runs as pqn_owner (SECURITY of the underlying table, not a
+  -- SECURITY DEFINER view), so row-level security on the source table applies
+  -- to every read through it. A table with RLS enabled but no policy naming
+  -- pqn_owner (or public) silently returns zero rows for every caller — the
+  -- exact shape of "no findings" a query legitimately returning no data also
+  -- produces, so this is easy to mistake for "the query found nothing" rather
+  -- than "the exposure cannot read anything." Flag it up front instead.
+  IF EXISTS (SELECT 1 FROM pg_class WHERE oid = rel AND relrowsecurity)
+     -- Table owners bypass RLS entirely unless FORCE ROW LEVEL SECURITY is
+     -- set, regardless of policies. pqn_owner owning the exposed relation
+     -- (a real deployment shape outside this repo's own demo tables, where
+     -- pqn_owner never owns anything) reads fine without any covering
+     -- policy — skip the notice in that case instead of a false alarm.
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_class c
+       WHERE c.oid = rel AND c.relowner = 'pqn_owner'::regrole AND NOT c.relforcerowsecurity
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_policies p
+       WHERE (p.schemaname, p.tablename) = (SELECT n.nspname, c.relname
+                                             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                                             WHERE c.oid = rel)
+         AND p.cmd IN ('ALL', 'SELECT')
+         AND (
+           'public' = ANY(p.roles)
+           -- pg_has_role(..., 'member') matches direct or inherited group
+           -- membership, not just an exact role-name hit in p.roles — a
+           -- policy granted to a group role pqn_owner belongs to still
+           -- applies to reads through the view, per how PostgreSQL itself
+           -- resolves RLS policy applicability.
+           OR EXISTS (SELECT 1 FROM unnest(p.roles) g WHERE pg_has_role('pqn_owner', g, 'member'))
+         )
+     ) THEN
+    RAISE NOTICE 'pqn: % has row-level security enabled but no policy applies to pqn_owner (or public) — the new view may return 0 rows for every caller regardless of query. Add a policy for pqn_owner, or confirm this is intended.', rel::text;
+  END IF;
   RETURN script;
 END
 $f$;
