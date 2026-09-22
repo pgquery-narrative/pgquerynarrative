@@ -81,12 +81,14 @@ BEGIN
     exposed_at  timestamptz NOT NULL DEFAULT now(),
     exposed_by  text NOT NULL DEFAULT session_user
   );
-  -- The statement timeout each person was enrolled with. It lives here, in the administrators'
-  -- hands, because the copy on the login role is a default the person can lift for their own
-  -- session or remove (ALTER ROLE ... RESET). enforce_limits() reads this one.
+  -- The timeouts each person was enrolled with. They live here, in the administrators' hands,
+  -- because the copies on the login role are defaults the person can lift for their own session
+  -- or remove (ALTER ROLE ... RESET). enforce_limits() reads these.
   CREATE TABLE IF NOT EXISTS pqn.limits (
-    login                name PRIMARY KEY,
-    statement_timeout_ms bigint NOT NULL CHECK (statement_timeout_ms > 0),
+    login                          name PRIMARY KEY,
+    statement_timeout_ms           bigint NOT NULL CHECK (statement_timeout_ms > 0),
+    lock_timeout_ms                bigint NOT NULL CHECK (lock_timeout_ms > 0),
+    idle_in_transaction_timeout_ms bigint NOT NULL CHECK (idle_in_transaction_timeout_ms > 0),
     set_at               timestamptz NOT NULL DEFAULT now(),
     set_by               text NOT NULL DEFAULT session_user
   );
@@ -349,23 +351,28 @@ BEGIN
 END
 $f$;
 
--- Record the timeout a login was enrolled with. The enroll script calls this; only administrators
--- can execute it. A person cannot reach the table, so lifting their own session timeout or
--- resetting their role settings does not change what enforce_limits() applies.
-CREATE FUNCTION pqn_api.record_limit(l_login name, l_ms bigint) RETURNS void
+-- Record the timeouts a login was enrolled with. The enroll script calls this; only administrators
+-- can execute it. A person cannot reach the table, so lifting their own session timeouts or
+-- resetting their role settings does not change what enforce_limits() applies. lock_ms and idle_ms
+-- default to the values enroll_sql sets on the role (2s, 10s) so existing single-argument callers
+-- keep recording a statement timeout without having to name the other two.
+CREATE FUNCTION pqn_api.record_limit(l_login name, l_ms bigint, l_lock_ms bigint DEFAULT 2000, l_idle_ms bigint DEFAULT 10000) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $f$
 BEGIN
   IF to_regclass('pqn.limits') IS NULL THEN
     RAISE EXCEPTION 'pqn: run pqn_api.init() first';
   END IF;
-  IF l_ms IS NULL OR l_ms < 1 THEN
-    RAISE EXCEPTION 'pqn: the limit must be at least 1 millisecond';
+  IF l_ms IS NULL OR l_ms < 1 OR l_lock_ms IS NULL OR l_lock_ms < 1 OR l_idle_ms IS NULL OR l_idle_ms < 1 THEN
+    RAISE EXCEPTION 'pqn: every limit must be at least 1 millisecond';
   END IF;
   IF l_login::text LIKE 'pqn\_%' OR NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = l_login AND rolcanlogin) THEN
     RAISE EXCEPTION 'pqn: % is not a role that can log in', l_login;
   END IF;
-  INSERT INTO pqn.limits (login, statement_timeout_ms) VALUES (l_login, l_ms)
-  ON CONFLICT (login) DO UPDATE SET statement_timeout_ms = EXCLUDED.statement_timeout_ms, set_at = now(), set_by = session_user;
+  INSERT INTO pqn.limits (login, statement_timeout_ms, lock_timeout_ms, idle_in_transaction_timeout_ms)
+  VALUES (l_login, l_ms, l_lock_ms, l_idle_ms)
+  ON CONFLICT (login) DO UPDATE SET statement_timeout_ms = EXCLUDED.statement_timeout_ms,
+    lock_timeout_ms = EXCLUDED.lock_timeout_ms, idle_in_transaction_timeout_ms = EXCLUDED.idle_in_transaction_timeout_ms,
+    set_at = now(), set_by = session_user;
 END
 $f$;
 
@@ -513,7 +520,8 @@ BEGIN
     format('ALTER ROLE %I SET statement_timeout = %L;', login, stmt_timeout),
     format('ALTER ROLE %I SET lock_timeout = %L;', login, '2s'),
     format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L;', login, '10s'),
-    format('SELECT pqn_api.record_limit(%L, %s);', login::text, (extract(epoch FROM stmt_timeout::interval) * 1000)::bigint)], E'\n');
+    format('SELECT pqn_api.record_limit(%L, %s, %s, %s);', login::text,
+      (extract(epoch FROM stmt_timeout::interval) * 1000)::bigint, 2000, 10000)], E'\n');
   SELECT rolsuper INTO is_super FROM pg_roles WHERE rolname = current_user;
   IF is_super THEN
     script := script || E'\n' || format('ALTER ROLE %I SET temp_file_limit = %L;', login, '1GB');
@@ -524,9 +532,16 @@ BEGIN
 END
 $f$;
 
--- Cancel the running statement of every enrolled person that has outlived their limit. Runs with
--- the caller's rights, which must let it see every session (pg_read_all_stats) and cancel it
--- (pg_signal_backend), or be a superuser. Returns one row per statement it cancelled.
+-- Cancel every enrolled person's session that has outlived one of their three limits: a running
+-- statement past statement_timeout, a lock wait past lock_timeout, or an idle-in-transaction
+-- session past idle_in_transaction_session_timeout. All three are session settings a person can
+-- lift for themselves (SET, or ALTER ROLE ... RESET on their own login), so all three are
+-- re-enforced from outside the session the same way. A running statement or a lock wait is an
+-- active query: pg_cancel_backend interrupts it, matching what PostgreSQL's own statement_timeout
+-- and lock_timeout do. An idle-in-transaction session has no query to interrupt, so it is ended
+-- with pg_terminate_backend, matching what PostgreSQL's own idle_in_transaction_session_timeout
+-- does. Runs with the caller's rights, which must let it see every session (pg_read_all_stats) and
+-- signal it (pg_signal_backend), or be a superuser. Returns one row per session it acted on.
 CREATE FUNCTION pqn_api.enforce_limits()
 RETURNS TABLE (pid integer, login name, running interval, limit_ms bigint, cancelled boolean)
 LANGUAGE plpgsql AS $f$
@@ -539,19 +554,50 @@ BEGIN
       USING HINT = 'GRANT pg_read_all_stats, pg_signal_backend TO the role a scheduler uses.';
   END IF;
   FOR r IN
-    SELECT a.pid AS a_pid, l.login AS a_login, clock_timestamp() - a.query_start AS a_running, l.statement_timeout_ms AS a_limit
-      FROM pqn.limits l
-      JOIN pg_stat_activity a ON a.usename = l.login
-     WHERE a.state = 'active' AND a.backend_type = 'client backend' AND a.datname = current_database()
-       AND a.pid <> pg_backend_pid()
-       AND clock_timestamp() - a.query_start > make_interval(secs => l.statement_timeout_ms / 1000.0)
-     ORDER BY a.query_start
+    WITH violations AS (
+      -- A statement that has run longer than statement_timeout allows.
+      SELECT a.pid AS v_pid, l.login AS v_login, clock_timestamp() - a.query_start AS v_running,
+             l.statement_timeout_ms AS v_limit, a.query_start AS v_since, false AS v_terminate
+        FROM pqn.limits l
+        JOIN pg_stat_activity a ON a.usename = l.login
+       WHERE a.state = 'active' AND a.backend_type = 'client backend' AND a.datname = current_database()
+         AND a.pid <> pg_backend_pid()
+         AND clock_timestamp() - a.query_start > make_interval(secs => l.statement_timeout_ms / 1000.0)
+      UNION ALL
+      -- A statement waiting on a lock longer than lock_timeout allows.
+      SELECT a.pid, l.login, clock_timestamp() - a.query_start,
+             l.lock_timeout_ms, a.query_start, false
+        FROM pqn.limits l
+        JOIN pg_stat_activity a ON a.usename = l.login
+       WHERE a.wait_event_type = 'Lock' AND a.backend_type = 'client backend' AND a.datname = current_database()
+         AND a.pid <> pg_backend_pid()
+         AND clock_timestamp() - a.query_start > make_interval(secs => l.lock_timeout_ms / 1000.0)
+      UNION ALL
+      -- A session idling in a transaction longer than idle_in_transaction_session_timeout allows.
+      -- There is no running query to cancel, so this one is terminated, not cancelled.
+      SELECT a.pid, l.login, clock_timestamp() - a.state_change,
+             l.idle_in_transaction_timeout_ms, a.state_change, true
+        FROM pqn.limits l
+        JOIN pg_stat_activity a ON a.usename = l.login
+       WHERE a.state = 'idle in transaction' AND a.backend_type = 'client backend' AND a.datname = current_database()
+         AND a.pid <> pg_backend_pid()
+         AND clock_timestamp() - a.state_change > make_interval(secs => l.idle_in_transaction_timeout_ms / 1000.0)
+    )
+    -- The same pid can match more than one violation (e.g. active and lock-waiting at once);
+    -- act on it once, for whichever violation has been running longest.
+    SELECT DISTINCT ON (v_pid) v_pid, v_login, v_running, v_limit, v_terminate
+      FROM violations
+     ORDER BY v_pid, v_since
   LOOP
-    pid := r.a_pid; login := r.a_login; running := r.a_running; limit_ms := r.a_limit;
-    -- A caller without SUPERUSER may not cancel a superuser's statement, and PostgreSQL raises. That
+    pid := r.v_pid; login := r.v_login; running := r.v_running; limit_ms := r.v_limit;
+    -- A caller without SUPERUSER may not signal a superuser's session, and PostgreSQL raises. That
     -- must not stop the pass: report the session as not cancelled and go on to the next one.
     BEGIN
-      cancelled := pg_cancel_backend(r.a_pid);
+      IF r.v_terminate THEN
+        cancelled := pg_terminate_backend(r.v_pid);
+      ELSE
+        cancelled := pg_cancel_backend(r.v_pid);
+      END IF;
     EXCEPTION WHEN insufficient_privilege THEN
       cancelled := false;
     END;
@@ -1020,7 +1066,7 @@ GRANT EXECUTE ON FUNCTION pqn_api.measure_pair(text, text, integer), pqn_api.fin
 GRANT EXECUTE ON FUNCTION pqn_api.expose(regclass, text[], text, text),
                           pqn_api.expose_sql(regclass, text[], text, text),
                           pqn_api.unexpose(name), pqn_api.exposed(),
-                          pqn_api.record_limit(name, bigint), pqn_api.enforce_limits() TO pqn_admin;
+                          pqn_api.record_limit(name, bigint, bigint, bigint), pqn_api.enforce_limits() TO pqn_admin;
 
 -- ---------------------------------------------------------------------------------------
 -- verify_setup(), extended for the new functions and for exposure scopes
@@ -1387,7 +1433,7 @@ BEGIN
       fix := 'SELECT pqn_api.enroll(login, group) again for each of them'; RETURN NEXT;
     END IF;
     level := 'INFO'; check_name := 'limits enforcement';
-    detail := format('%s login(s) have a recorded statement timeout. A person can lift a session timeout for themselves, so it is enforced from outside: run pqn_api.enforce_limits() every few seconds from pg_cron or cron', n_limits);
+    detail := format('%s login(s) have recorded statement, lock and idle-in-transaction limits. A person can lift any of these for themselves, so they are enforced from outside: run pqn_api.enforce_limits() every few seconds from pg_cron or cron', n_limits);
     fix := NULL; RETURN NEXT;
   END IF;
   IF current_setting('server_version_num')::integer < 160000 THEN

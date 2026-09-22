@@ -234,7 +234,7 @@ func adminRevokeAPIKey(w http.ResponseWriter, r *http.Request, deps adminDeps, k
 	p := auth.PrincipalFromContext(r.Context())
 	ok, err := deps.keys.Revoke(r.Context(), p.OrgID, keyID)
 	if err != nil {
-		adminInternalError(w, r, err)
+		adminStoreError(w, r, err)
 		return
 	}
 	if !ok {

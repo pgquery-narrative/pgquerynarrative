@@ -134,6 +134,9 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 			for _, v := range seenOrgs {
 				m = v
 			}
+			if preferredOrgID != "" && preferredOrgID != m.orgID {
+				return Principal{}, ErrNoOrganizationMembership
+			}
 			role := normalizeRole(m.role)
 			if role == "" {
 				role = normalizeRole(fallbackRole)
@@ -143,9 +146,6 @@ func (s *MembershipStore) ResolveFromGroupClaims(ctx context.Context, userID, pr
 				VALUES ($1::uuid, $2, $3)
 				ON CONFLICT (organization_id, user_id) DO UPDATE SET role = EXCLUDED.role
 			`, m.orgID, strings.TrimSpace(userID), role)
-			if preferredOrgID != "" && preferredOrgID != m.orgID {
-				return Principal{}, ErrNoOrganizationMembership
-			}
 			return Principal{UserID: userID, OrgID: m.orgID, Role: role}, nil
 		}
 	}

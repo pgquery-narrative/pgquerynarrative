@@ -38,7 +38,7 @@ func mountMeAPI(mux *http.ServeMux, deps meDeps) {
 		}
 		details, err := deps.membership.ListMembershipDetails(r.Context(), p.UserID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			adminInternalError(w, r, err)
 			return
 		}
 		if details == nil {

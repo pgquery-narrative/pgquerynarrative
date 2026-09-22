@@ -374,6 +374,23 @@ rm -f "$IVAN_OUT" "$NORA_OUT"
 expect_eq "verify_setup names the login that removed its own timeout" "ivan" "$(su -c "SELECT string_agg(substr(detail, 1, strpos(detail, ' ') - 1), ',') FROM pqn_api.verify_setup() WHERE level = 'BLOCK' AND check_name = 'login has no statement_timeout'")"
 su -c "DELETE FROM pqn.limits WHERE login = 'ivan'" >/dev/null; su -c "DROP ROLE ivan" >/dev/null; su -c "DROP ROLE nora" >/dev/null
 
+echo "== enforce_limits also ends a session idling in transaction past its limit"
+su -c "CREATE ROLE iris LOGIN" >/dev/null
+su -c "SELECT pqn_api.enroll('iris', 'analyst', '15s')" >/dev/null
+expect_eq "enroll recorded the idle-in-transaction limit too" "10000" "$(su -c "SELECT idle_in_transaction_timeout_ms FROM pqn.limits WHERE login = 'iris'")"
+run iris "$DB" -c "ALTER ROLE iris RESET ALL" >/dev/null
+IRIS_OUT="$(mktemp)"
+# iris lifts her own idle-in-transaction limit, then leaves a transaction open with no query running:
+# there is nothing for pg_cancel_backend to interrupt, so enforce_limits must end the session instead.
+( { printf 'SET idle_in_transaction_session_timeout = 0;\nBEGIN;\nSELECT 1;\n'; sleep 20; printf 'COMMIT;\n'; } | run iris "$DB" > "$IRIS_OUT" 2>&1 ) &
+IRIS_PID=$!
+sleep 12
+expect_eq "enforce_limits ends a person idling in transaction past their limit, having lifted it themselves" "1" "$(su -c "SELECT count(*) FROM pqn_api.enforce_limits() WHERE login = 'iris' AND cancelled")"
+wait "$IRIS_PID" || true
+expect_eq "iris's session was ended, not merely a statement cancelled" "1" "$(grep -c 'terminating connection due to administrator command' "$IRIS_OUT")"
+rm -f "$IRIS_OUT"
+su -c "DELETE FROM pqn.limits WHERE login = 'iris'" >/dev/null; su -c "DROP ROLE iris" >/dev/null
+
 echo "== review round 2: side effects, empty proofs, grants, units, enforcement"
 expect_err "enroll refuses a timeout with no unit (PostgreSQL and interval read it differently)" "must look like" postgres "SELECT pqn_api.enroll('alice', 'analyst', '500')"
 # unexpose keeps exactly what the remaining views need

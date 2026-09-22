@@ -186,6 +186,23 @@ func TestSubstituteParams_BlockCommentDollarIsNotAParam(t *testing.T) {
 	}
 }
 
+func TestSubstituteParams_QuotedIdentifierDollarIsNotAParam(t *testing.T) {
+	// `$1` appears twice: once as a real parameter, once as text inside a quoted
+	// identifier. Only the real one is substituted; the identifier is untouched,
+	// so it still names the same (nonexistent, here) column rather than being
+	// silently rewritten to "col42".
+	got, err := SubstituteParams(`SELECT $1, "col$1" FROM t`, []string{"42"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "SELECT 42") {
+		t.Fatalf("real param not substituted: %s", got)
+	}
+	if !strings.Contains(got, `"col$1"`) {
+		t.Fatalf("quoted identifier was rewritten: %s", got)
+	}
+}
+
 func TestSubstituteParams_RealParamBesideBlockComment(t *testing.T) {
 	// A real $1 is still substituted when a decoy $2 sits in a block comment.
 	got, err := SubstituteParams(

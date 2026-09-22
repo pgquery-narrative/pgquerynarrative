@@ -79,8 +79,8 @@ Nothing is executable by `PUBLIC`.
 | `pqn_api.expose(table, columns, view_name, scope = 'view')`, `pqn_api.expose_sql(…)` | admin | Creates the view and registers it; `expose_sql` prints the statements instead. `scope` is `view` or `full` |
 | `pqn_api.unexpose(view_name)`, `pqn_api.exposed()` | admin | Removes a view and leaves `pqn_owner` exactly the access the remaining views on that table need; lists what is exposed |
 | `pqn_api.enroll(login, group = 'analyst', stmt_timeout = '15s')`, `pqn_api.enroll_sql(…)` | admin | Puts a login into `viewer`, `analyst` or `admin` with limits; `enroll_sql` prints the statements. The timeout needs a unit: `15s`, `500ms` or `2min` |
-| `pqn_api.enforce_limits()` | admin | Cancels statements that outlived their enrolled limit. Needs a superuser, or `pg_read_all_stats` and `pg_signal_backend`. A superuser's session cannot be cancelled without being one: it is reported with `cancelled = false` and the pass goes on |
-| `pqn_api.record_limit(login, ms)` | admin | Called by the `enroll` script |
+| `pqn_api.enforce_limits()` | admin | Cancels sessions that outlived their enrolled statement, lock or idle-in-transaction limit. Needs a superuser, or `pg_read_all_stats` and `pg_signal_backend`. A superuser's session cannot be cancelled without being one: it is reported with `cancelled = false` and the pass goes on |
+| `pqn_api.record_limit(login, stmt_ms, lock_ms = 2000, idle_ms = 10000)` | admin | Called by the `enroll` script |
 
 `explain_ms`, `exposed_path`, `has_params` and `ledger_room` are helpers that only the extension's own roles can execute.
 

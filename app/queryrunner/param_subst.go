@@ -89,22 +89,25 @@ func maxParamNumber(sql string) int {
 }
 
 // replaceDollarParams swaps $N tokens for lits[N-1], skipping single-quoted
-// strings, -- line comments and /* */ block comments (a $N inside any of those
-// is text, not a parameter). Nested block comments are not tracked — an early
-// */ leaves a dangling */ that fails the post-substitution re-parse, which is
-// safe (fail closed).
+// strings, "quoted identifiers", -- line comments and /* */ block comments (a
+// $N inside any of those is text, not a parameter — the same shapes
+// stripQuotedAndComments skips when counting params, so the two agree on what
+// counts as a real parameter). Nested block comments are not tracked — an
+// early */ leaves a dangling */ that fails the post-substitution re-parse,
+// which is safe (fail closed).
 func replaceDollarParams(sql string, lits []string) string {
 	var b strings.Builder
 	r := []rune(sql)
 	for i := 0; i < len(r); {
 		switch {
-		case r[i] == '\'':
+		case r[i] == '\'' || r[i] == '"':
+			q := r[i]
 			b.WriteRune(r[i])
 			i++
 			for i < len(r) {
 				b.WriteRune(r[i])
-				if r[i] == '\'' {
-					if i+1 < len(r) && r[i+1] == '\'' {
+				if r[i] == q {
+					if i+1 < len(r) && r[i+1] == q {
 						b.WriteRune(r[i+1])
 						i += 2
 						continue

@@ -27,6 +27,24 @@ func TestSafeWriterStripsTerminalControls(t *testing.T) {
 	}
 }
 
+// A C1 control byte that is not part of a valid UTF-8 sequence (e.g. a lone 0x9b, not the two-byte
+// \u009b) must still be replaced: it reaches the terminal as a raw control byte either way.
+func TestSafeWriterStripsInvalidUTF8C1Bytes(t *testing.T) {
+	var out bytes.Buffer
+	in := append([]byte("before"), 0x9b, 0x9d)
+	in = append(in, []byte("after")...)
+	if _, err := (safeWriter{&out}).Write(in); err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	got := out.Bytes()
+	if bytes.ContainsAny(got, "\x9b\x9d") {
+		t.Errorf("output still contains a raw C1 byte: %q", got)
+	}
+	if !bytes.Contains(got, []byte("before")) || !bytes.Contains(got, []byte("after")) {
+		t.Errorf("output lost surrounding text: %q", got)
+	}
+}
+
 // End to end: a title with escapes must not reach the terminal through the real command path.
 func TestMainNeverPrintsControlCharactersFromTheLedger(t *testing.T) {
 	be := &fakeBackend{}

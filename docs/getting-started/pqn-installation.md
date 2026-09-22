@@ -112,7 +112,7 @@ GRANT pqn_analyst TO alice;
 ALTER ROLE alice SET statement_timeout = '15s';
 ALTER ROLE alice SET lock_timeout = '2s';
 ALTER ROLE alice SET idle_in_transaction_session_timeout = '10s';
-SELECT pqn_api.record_limit('alice', 15000);
+SELECT pqn_api.record_limit('alice', 15000, 2000, 10000);
 ALTER ROLE alice SET temp_file_limit = '1GB';
 ```
 
@@ -123,10 +123,11 @@ Groups: `viewer` reads their own investigations. `analyst` also plans, runs, ran
 
 ### Enforce the limits
 
-The timeouts on the login are session defaults. PostgreSQL lets a person `SET statement_timeout = 0` for their session or `ALTER ROLE` their own
-login, and no function can force a timeout onto the statement it is running in, so a limit cannot be imposed from inside the session. `enroll`
-therefore also records the timeout where the person cannot reach it (`pqn.limits`), and `pqn_api.enforce_limits()` acts from outside: it
-cancels the running statement of every enrolled person that has outlived the timeout they were enrolled with, whatever they set for
+The timeouts on the login are session defaults. PostgreSQL lets a person `SET statement_timeout = 0`, `SET lock_timeout = 0` or
+`SET idle_in_transaction_session_timeout = 0` for their session, or `ALTER ROLE` their own login, and no function can force a timeout onto
+the session it is running in, so none of the three can be imposed from inside the session. `enroll` therefore also records all three where
+the person cannot reach them (`pqn.limits`), and `pqn_api.enforce_limits()` acts from outside: it cancels the session of every enrolled
+person whose running statement, lock wait or idle-in-transaction time has outlived the limit they were enrolled with, whatever they set for
 themselves or removed from their role. Run it as a superuser, or as a role that belongs to `pg_read_all_stats` and `pg_signal_backend`:
 
 ```bash

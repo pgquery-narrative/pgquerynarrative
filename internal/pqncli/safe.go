@@ -18,7 +18,14 @@ func (s safeWriter) Write(p []byte) (int, error) {
 		r, size := utf8.DecodeRune(p[i:])
 		switch {
 		case r == utf8.RuneError && size == 1:
-			out = append(out, p[i]) // not valid UTF-8 (or a split rune): leave it to the terminal
+			// Not valid UTF-8 (or a split rune). A byte in the C1 range still reaches the
+			// terminal as a raw control byte even without a valid encoding around it, so it
+			// gets the same '?' every other C1 byte gets; anything else is left to the terminal.
+			if p[i] >= 0x80 && p[i] <= 0x9f {
+				out = append(out, '?')
+			} else {
+				out = append(out, p[i])
+			}
 		case r == '\n' || r == '\t':
 			out = append(out, byte(r))
 		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f):

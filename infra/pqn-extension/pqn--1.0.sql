@@ -373,8 +373,8 @@ BEGIN
   IF grp NOT IN ('viewer', 'analyst', 'admin') THEN
     RAISE EXCEPTION 'pqn: group must be viewer, analyst or admin';
   END IF;
-  IF stmt_timeout !~ '^[1-9][0-9]*(ms|s|min)?$' THEN
-    RAISE EXCEPTION 'pqn: statement timeout must look like 15s, 500ms or 2min';
+  IF stmt_timeout !~ '^[1-9][0-9]*(ms|s|min)$' THEN
+    RAISE EXCEPTION 'pqn: statement timeout must look like 15s, 500ms or 2min (the unit is required)';
   END IF;
   IF login::text LIKE 'pqn\_%' THEN
     RAISE EXCEPTION 'pqn: % is a pqn role and cannot be enrolled', login;

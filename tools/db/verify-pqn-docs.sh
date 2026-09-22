@@ -107,7 +107,7 @@ icheck "enroll_sql prints the group grant"                   "^GRANT pqn_analyst
 icheck "enroll_sql prints the statement timeout"             "^ALTER ROLE alice SET statement_timeout = '15s';$"
 icheck "enroll_sql prints the lock timeout"                  "^ALTER ROLE alice SET lock_timeout = '2s';$"
 icheck "enroll_sql prints the idle timeout"                  "^ALTER ROLE alice SET idle_in_transaction_session_timeout = '10s';$"
-icheck "enroll_sql records the limit where the person cannot reach it" "^SELECT pqn_api.record_limit\('alice', 15000\);$"
+icheck "enroll_sql records the limit where the person cannot reach it" "^SELECT pqn_api.record_limit\('alice', 15000, 2000, 10000\);$"
 icheck "enroll_sql prints temp_file_limit for a superuser"   "^ALTER ROLE alice SET temp_file_limit = '1GB';$"
 icheck "enforce_limits runs and has nothing to cancel"       "^limits enforced: 0$"
 if grep -qE "^BLOCK " "$INSTALL_OUT"; then bad "the setup check found a BLOCK on the page's own setup"; else ok "the setup check finds nothing blocking"; fi
