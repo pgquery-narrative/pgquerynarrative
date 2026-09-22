@@ -27,7 +27,7 @@ func BuildGeneratePayload(reportsGenerateBody string) (*reports.GenerateReportPa
 		if err != nil {
 			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Voluptatem libero non.\",\n      \"saved_query_id\": \"b23e3e82-199c-4573-b76e-41c71b8f6def\",\n      \"sql\": \"7wq\"\n   }'")
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
 		}

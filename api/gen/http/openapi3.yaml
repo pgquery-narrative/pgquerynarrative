@@ -1520,7 +1520,7 @@ components:
           description: Sample bind values for a parameterized candidate ($1, $2, ...); used only for the compare/equivalence run, not stored
         candidate_sql:
           type: string
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
         id:
@@ -1553,7 +1553,7 @@ components:
           description: Sample bind values for a parameterized candidate ($1, $2, ...); used only for the compare/equivalence run, not stored
         candidate_sql:
           type: string
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
         timing_runs:
@@ -1768,7 +1768,7 @@ components:
         after_sql:
           type: string
           description: Candidate SQL to explain
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
         analyze:
@@ -1778,7 +1778,7 @@ components:
         before_sql:
           type: string
           description: Original SQL to explain
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
         binds:
@@ -1918,7 +1918,7 @@ components:
           format: int64
         sql:
           type: string
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
         title:
@@ -2127,7 +2127,7 @@ components:
         sql:
           type: string
           description: Read-only SQL to explain (SELECT or WITH)
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
       required:
@@ -2211,7 +2211,7 @@ components:
           format: uuid
         sql:
           type: string
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
       required:
@@ -3082,7 +3082,7 @@ components:
         sql:
           type: string
           description: SQL query to execute
-          pattern: ^[^;]+$
+          pattern: ^[^;]+;*\s*$
           minLength: 1
           maxLength: 10000
       required:
