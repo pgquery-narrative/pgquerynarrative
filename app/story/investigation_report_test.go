@@ -29,6 +29,50 @@ func TestBuildInvestigationReport(t *testing.T) {
 	}
 }
 
+// A 50-partition scan produces one seq_scan finding per partition — before
+// the B-06 fix, that meant 50 near-identical "Investigate index or predicate
+// shape for Seq Scan" candidate_improvements in the report. Pins that the
+// report instead groups by (Category, NodeType), reports an occurrence count,
+// and caps at maxInvestigateHints distinct groups.
+func TestBuildInvestigationReport_DedupesRepeatedInvestigateHints(t *testing.T) {
+	var findings []PlanFindingInput
+	for i := 0; i < 50; i++ {
+		findings = append(findings, PlanFindingInput{
+			NodeType:   "Seq Scan",
+			Category:   "seq_scan",
+			Confidence: "high",
+			Message:    "Sequential scan on a partition",
+		})
+	}
+	// A distinct group beyond the cap must still be dropped, not silently merged
+	// into the Seq Scan group.
+	for i := 0; i < 2; i++ {
+		findings = append(findings, PlanFindingInput{
+			NodeType:   "Bitmap Heap Scan",
+			Category:   "index_candidate",
+			Confidence: "medium",
+			Message:    "No covering index",
+		})
+	}
+	report, _ := BuildInvestigationReport("t", "SELECT 1", "", "fp", "conn", StatInput{}, findings, nil, InvestigationProvenance{})
+
+	if got := len(report.CandidateImprovements); got > maxInvestigateHints {
+		t.Fatalf("expected at most %d candidate_improvements, got %d", maxInvestigateHints, got)
+	}
+	found := false
+	for _, c := range report.CandidateImprovements {
+		if c.Kind == CandidateKindInvestigateHint && strings.Contains(c.ProposedChange, "Seq Scan") {
+			found = true
+			if !strings.Contains(c.WhyItMightHelp, "× 50 occurrences") {
+				t.Fatalf("expected the Seq Scan group to report 50 occurrences, got: %s", c.WhyItMightHelp)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected one grouped Seq Scan hint, got: %#v", report.CandidateImprovements)
+	}
+}
+
 func TestBuildInvestigationReport_UnverifiedBlocksShipAdvice(t *testing.T) {
 	cmp := &ComparisonInput{
 		Improved:                []string{"Partition pruning"},
