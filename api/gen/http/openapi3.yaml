@@ -339,18 +339,20 @@ paths:
       description: Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, project index cost (hypopg or honest heuristic), and rank by cost/partitions
       operationId: investigations#rank_candidates
       parameters:
+        - name: analyze
+          in: query
+          description: When true, dry-EXPLAIN uses ANALYZE for timing (slower)
+          allowEmptyValue: true
+          schema:
+            type: boolean
+            description: When true, dry-EXPLAIN uses ANALYZE for timing (slower)
+            default: false
         - name: id
           in: path
           required: true
           schema:
             type: string
             format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RankCandidatesRequestBody'
       responses:
         "200":
           description: OK response.
@@ -2736,13 +2738,6 @@ components:
         - sql
         - title
         - source
-    RankCandidatesRequestBody:
-      type: object
-      properties:
-        analyze:
-          type: boolean
-          description: When true, dry-EXPLAIN uses ANALYZE for timing (slower)
-          default: false
     RankedCandidate:
       type: object
       properties:

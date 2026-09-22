@@ -232,11 +232,10 @@ export const api = {
     }),
 
   rankInvestigationCandidates: (id: string, analyze = false) =>
-    request<RankedCandidateList>(`/investigations/${id}/rank-candidates`, {
-      method: "POST",
-      body: JSON.stringify({ analyze }),
-      signal: AbortSignal.timeout(analyze ? 120_000 : 90_000),
-    }),
+    request<RankedCandidateList>(
+      `/investigations/${id}/rank-candidates${analyze ? "?analyze=true" : ""}`,
+      { method: "POST", signal: AbortSignal.timeout(analyze ? 120_000 : 90_000) },
+    ),
 
   generateInvestigationReport: (id: string, acceptSampleMatch = false) =>
     request<Investigation>(

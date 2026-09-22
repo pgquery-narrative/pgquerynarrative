@@ -25,7 +25,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 	{
 		err = json.Unmarshal([]byte(investigationsCreateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"calls\": 4003690306951331447,\n      \"connection_id\": \"Asperiores eos voluptates enim blanditiis dolorum.\",\n      \"mean_time_ms\": 0.7002273307770776,\n      \"queryid\": \"Atque voluptatem minus.\",\n      \"rows\": 4731646292808753699,\n      \"sql\": \"fc\",\n      \"title\": \"zym\",\n      \"total_time_ms\": 0.8937623424619446\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"calls\": 4275150930172113407,\n      \"connection_id\": \"Mollitia ea doloremque dolores ab.\",\n      \"mean_time_ms\": 0.2922231360562939,\n      \"queryid\": \"Repudiandae accusantium.\",\n      \"rows\": 828094725750890580,\n      \"sql\": \"n\",\n      \"title\": \"e\",\n      \"total_time_ms\": 0.3615465961292405\n   }'")
 		}
 		if utf8.RuneCountInString(body.Title) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 1, true))
@@ -33,7 +33,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 		if utf8.RuneCountInString(body.Title) > 200 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 200, false))
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+;*\\s*$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
 		}
@@ -73,7 +73,7 @@ func BuildCreateFromRegressionPayload(investigationsCreateFromRegressionBody str
 	{
 		err = json.Unmarshal([]byte(investigationsCreateFromRegressionBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"81f96aae-dfee-4c38-9bc6-740d394aaded\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"regression_alert_id\": \"b36f6f2d-6dd5-4260-927e-f1a30504863c\"\n   }'")
 		}
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.regression_alert_id", body.RegressionAlertID, goa.FormatUUID))
 		if err != nil {
@@ -161,9 +161,9 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 	{
 		err = json.Unmarshal([]byte(investigationsAddCandidateBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Et soluta nostrum qui in quo.\",\n         \"Laborum aut.\",\n         \"Omnis nostrum modi.\",\n         \"Repudiandae velit.\"\n      ],\n      \"candidate_sql\": \"mi2\",\n      \"timing_runs\": 2,\n      \"verify_results\": true\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Fuga sed velit officia consequatur dolores nobis.\",\n         \"Rerum et mollitia tenetur exercitationem.\",\n         \"Necessitatibus sit exercitationem sed ex nostrum facilis.\",\n         \"Deleniti magni distinctio consequuntur illum quae accusantium.\"\n      ],\n      \"candidate_sql\": \"a\",\n      \"timing_runs\": 2,\n      \"verify_results\": true\n   }'")
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+;*\\s*$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_sql", body.CandidateSQL, utf8.RuneCountInString(body.CandidateSQL), 1, true))
 		}
@@ -231,7 +231,7 @@ func BuildUpdateFixPayload(investigationsUpdateFixBody string, investigationsUpd
 	{
 		err = json.Unmarshal([]byte(investigationsUpdateFixBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"7tb\",\n      \"fix_status\": \"abandoned\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"fix_reference\": \"v9c\",\n      \"fix_status\": \"verified\"\n   }'")
 		}
 		if body.FixStatus != nil {
 			if !(*body.FixStatus == "proposed" || *body.FixStatus == "verified" || *body.FixStatus == "applied" || *body.FixStatus == "abandoned") {
@@ -284,15 +284,8 @@ func BuildSuggestRewritePayload(investigationsSuggestRewriteID string) (*investi
 
 // BuildRankCandidatesPayload builds the payload for the investigations
 // rank_candidates endpoint from CLI flags.
-func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investigationsRankCandidatesID string) (*investigations.RankCandidatesPayload, error) {
+func BuildRankCandidatesPayload(investigationsRankCandidatesID string, investigationsRankCandidatesAnalyze string) (*investigations.RankCandidatesPayload, error) {
 	var err error
-	var body RankCandidatesRequestBody
-	{
-		err = json.Unmarshal([]byte(investigationsRankCandidatesBody), &body)
-		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false\n   }'")
-		}
-	}
 	var id string
 	{
 		id = investigationsRankCandidatesID
@@ -301,16 +294,18 @@ func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investi
 			return nil, err
 		}
 	}
-	v := &investigations.RankCandidatesPayload{
-		Analyze: body.Analyze,
-	}
+	var analyze bool
 	{
-		var zero bool
-		if v.Analyze == zero {
-			v.Analyze = false
+		if investigationsRankCandidatesAnalyze != "" {
+			analyze, err = strconv.ParseBool(investigationsRankCandidatesAnalyze)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for analyze, must be BOOL")
+			}
 		}
 	}
+	v := &investigations.RankCandidatesPayload{}
 	v.ID = id
+	v.Analyze = analyze
 
 	return v, nil
 }
