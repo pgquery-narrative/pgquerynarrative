@@ -135,26 +135,14 @@ func detectPlanSignals(node map[string]interface{}, nodeType, schema, relation s
 	// (an unfiltered scan, e.g. SELECT COUNT(*) FROM t, not a pruning failure).
 	if nodeType == "Append" || nodeType == "Merge Append" {
 		children, _ := node["Plans"].([]interface{})
-		scanned := float64(len(children))
 		removed, hasRemoved := asFloat64(node["Subplans Removed"])
-		anyChildFiltered := false
-		var childSchema, childRelation string
-		for _, c := range children {
-			cm, ok := c.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			if f, _ := cm["Filter"].(string); f != "" {
-				anyChildFiltered = true
-			}
-			if childRelation == "" {
-				if r, _ := cm["Relation Name"].(string); r != "" {
-					childRelation = r
-					childSchema, _ = cm["Schema"].(string)
-				}
-			}
-		}
-		if scanned >= 3 && anyChildFiltered && (!hasRemoved || removed == 0) {
+		leaf := collectAppendLeafInfo(children)
+		// Multi-level partitioning represents each top-level partition as its
+		// own nested Append, so the true scanned-partition count is the leaf
+		// scan count collectAppendLeafInfo found, not len(children) (which
+		// would undercount to the number of top-level partitions only).
+		scanned := float64(leaf.leafCount)
+		if scanned >= 3 && len(leaf.filterColumns) > 0 && (!hasRemoved || removed == 0) {
 			confidence := "medium"
 			if scanned >= 8 {
 				confidence = "high"
@@ -171,14 +159,76 @@ func detectPlanSignals(node map[string]interface{}, nodeType, schema, relation s
 			// than one). Attribute this finding to one representative child
 			// partition so catalog enrichment can resolve the parent and compare
 			// scanned against its true partition count.
-			f.Schema = childSchema
-			f.Relation = childRelation
+			f.Schema = leaf.schema
+			f.Relation = leaf.relation
 			f.PartitionsScanned = int(scanned)
+			f.FilterColumns = leaf.filterColumns
 			out = append(out, f)
 		}
 	}
 
 	return out
+}
+
+// appendLeafInfo summarizes what an Append/Merge Append's leaf scans reveal:
+// a representative relation to attribute the finding to, and the union of
+// columns referenced by every leaf's Filter (used to tell "no predicate on
+// the partition key" apart from "a predicate on some other column, which
+// still can't be pruned by but isn't a partition-pruning problem").
+type appendLeafInfo struct {
+	schema        string
+	relation      string
+	filterColumns []string
+	// leafCount is the true number of leaf scans found, including through
+	// nested Append/Merge Append descents — the real scanned-partition count
+	// for multi-level partitioning, where len(children) at the top level
+	// would only count top-level partitions.
+	leafCount int
+}
+
+// collectAppendLeafInfo walks an Append/Merge Append's children, descending
+// into any child that is itself an Append/Merge Append (multi-level
+// partitioning presents each top-level partition as a nested Append rather
+// than a leaf scan) so a leaf relation and filter columns are still found.
+func collectAppendLeafInfo(children []interface{}) appendLeafInfo {
+	var info appendLeafInfo
+	seenCols := map[string]bool{}
+	addCols := func(cols []string) {
+		for _, c := range cols {
+			if !seenCols[c] {
+				seenCols[c] = true
+				info.filterColumns = append(info.filterColumns, c)
+			}
+		}
+	}
+	var walk func(nodes []interface{})
+	walk = func(nodes []interface{}) {
+		for _, c := range nodes {
+			cm, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if f, _ := cm["Filter"].(string); f != "" {
+				addCols(extractFilterColumns(f))
+			}
+			if r, _ := cm["Relation Name"].(string); r != "" {
+				info.leafCount++
+				if info.relation == "" {
+					info.relation = r
+					info.schema, _ = cm["Schema"].(string)
+				}
+				continue
+			}
+			// No relation of its own — a nested Append/Merge Append (or any
+			// other intermediate node, e.g. BitmapOr) standing in for a
+			// top-level partition. Descend into its own children.
+			if nested, ok := cm["Plans"].([]interface{}); ok {
+				walk(nested)
+			}
+		}
+	}
+	walk(children)
+	return info
 }
 
 // seqScanEvidence collects the raw plan numbers backing a seq-scan or high-cost finding.

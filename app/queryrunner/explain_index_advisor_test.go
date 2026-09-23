@@ -52,6 +52,82 @@ func TestPartitionPruningAlreadyWorked(t *testing.T) {
 	}
 }
 
+// TestPartitionPruningAlreadyWorked_FilterOnOtherColumn pins a false positive
+// CodeRabbit flagged and live reproduction against real Postgres confirmed:
+// `SELECT * FROM demo.sales WHERE region = 'North'` (region is not the
+// partition key) scans every partition, each carrying a real Filter — the
+// original anyChildFiltered check alone can't tell that apart from a genuine
+// partition-key pruning failure. Only dropping when none of the leaves'
+// FilterColumns intersects the parent's actual PartitionKeyColumns closes it.
+func TestPartitionPruningAlreadyWorked_FilterOnOtherColumn(t *testing.T) {
+	tests := []struct {
+		name              string
+		filterColumns     []string
+		partitionKeyCols  []string
+		wantAlreadyWorked bool
+	}{
+		{
+			name:              "filter on a non-partition-key column, all partitions scanned",
+			filterColumns:     []string{"region"},
+			partitionKeyCols:  []string{"date"},
+			wantAlreadyWorked: true, // false positive: must be dropped
+		},
+		{
+			name:              "filter on the actual partition key column",
+			filterColumns:     []string{"date"},
+			partitionKeyCols:  []string{"date"},
+			wantAlreadyWorked: false, // real pruning failure: must fire
+		},
+		{
+			name:              "filter touches both the partition key and another column",
+			filterColumns:     []string{"region", "date"},
+			partitionKeyCols:  []string{"date"},
+			wantAlreadyWorked: false,
+		},
+		{
+			name:              "no catalog partition key known — fall back to the count-based check",
+			filterColumns:     []string{"region"},
+			partitionKeyCols:  nil,
+			wantAlreadyWorked: false, // count-based check below still applies
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := PlanFinding{Category: CategoryPartitionPruning, PartitionsScanned: 50, FilterColumns: tt.filterColumns}
+			st := tableCatalogStats{TotalPartitions: 50, PartitionKeyColumns: tt.partitionKeyCols}
+			if got := partitionPruningAlreadyWorked(f, st); got != tt.wantAlreadyWorked {
+				t.Errorf("partitionPruningAlreadyWorked(filterColumns=%v, partitionKeyCols=%v) = %v, want %v",
+					tt.filterColumns, tt.partitionKeyCols, got, tt.wantAlreadyWorked)
+			}
+		})
+	}
+}
+
+func TestParsePartitionKeyColumns(t *testing.T) {
+	tests := []struct {
+		def  string
+		want []string
+	}{
+		{"RANGE (date)", []string{"date"}},
+		{"RANGE (date, region)", []string{"date", "region"}},
+		{"LIST (region)", []string{"region"}},
+		{"", nil},
+	}
+	for _, tt := range tests {
+		got := parsePartitionKeyColumns(tt.def)
+		if len(got) != len(tt.want) {
+			t.Errorf("parsePartitionKeyColumns(%q) = %v, want %v", tt.def, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("parsePartitionKeyColumns(%q) = %v, want %v", tt.def, got, tt.want)
+				break
+			}
+		}
+	}
+}
+
 func TestExtractFilterColumns(t *testing.T) {
 	tests := []struct {
 		name   string
