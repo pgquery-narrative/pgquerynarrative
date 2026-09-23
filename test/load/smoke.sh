@@ -30,11 +30,12 @@ check() {
   done
   local latency=""
   if [[ ${#times[@]} -gt 0 ]]; then
+    # Nearest-rank percentile: rank = ceil(n * p), clamped to [1, n].
     latency=$(printf '%s\n' "${times[@]+"${times[@]}"}" | sort -n | awk -v n="${#times[@]}" '
       { a[NR]=$1 }
       END {
-        p50 = a[int((n-1)*0.50)+1]
-        p95 = a[int((n-1)*0.95)+1]
+        p50 = a[int(n * 0.50 + 0.999999)]
+        p95 = a[int(n * 0.95 + 0.999999)]
         printf "min=%.3fs p50=%.3fs p95=%.3fs max=%.3fs", a[1], p50, p95, a[n]
       }')
   fi
@@ -58,8 +59,19 @@ check "ready" "${BASE}/ready"
 # configuration. If the target actually requires auth and no key is given,
 # curl gets a real 401 and this reports FAIL, which is the honest outcome.
 query_run_args=(-X POST -H "Content-Type: application/json" -d '{"sql":"SELECT 1 AS n","limit":1}')
+auth_header_file=""
+cleanup() {
+  [[ -n "$auth_header_file" ]] && rm -f "$auth_header_file"
+  return 0
+}
+trap cleanup EXIT
 if [[ -n "$API_KEY" ]]; then
-  query_run_args+=(-H "Authorization: Bearer ${API_KEY}")
+  # Write the bearer token to a 0600 temp file instead of curl argv, which is
+  # visible to other local users via `ps`.
+  auth_header_file=$(mktemp)
+  chmod 600 "$auth_header_file"
+  printf 'Authorization: Bearer %s\n' "$API_KEY" > "$auth_header_file"
+  query_run_args+=(-H "@${auth_header_file}")
 fi
 check "query-run" "${BASE}/api/v1/queries/run" "${query_run_args[@]}"
 
