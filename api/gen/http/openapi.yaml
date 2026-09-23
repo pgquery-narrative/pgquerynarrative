@@ -1799,7 +1799,7 @@ definitions:
         description: Sample bind values for a parameterized candidate ($1, $2, ...); used only for the compare/equivalence run, not stored
       candidate_sql:
         type: string
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
       timing_runs:
@@ -1998,7 +1998,7 @@ definitions:
       after_sql:
         type: string
         description: Candidate SQL to explain
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
       analyze:
@@ -2008,7 +2008,7 @@ definitions:
       before_sql:
         type: string
         description: Original SQL to explain
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
       binds:
@@ -2145,7 +2145,7 @@ definitions:
         format: int64
       sql:
         type: string
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
       title:
@@ -2364,7 +2364,7 @@ definitions:
       sql:
         type: string
         description: Read-only SQL to explain (SELECT or WITH)
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
     required:
@@ -2441,7 +2441,7 @@ definitions:
         format: uuid
       sql:
         type: string
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
     required:
@@ -3370,7 +3370,7 @@ definitions:
       sql:
         type: string
         description: SQL query to execute
-        pattern: ^[^;]+$
+        pattern: ^[^;]+;*\s*$
         minLength: 1
         maxLength: 10000
     required:

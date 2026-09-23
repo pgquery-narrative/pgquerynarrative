@@ -816,7 +816,7 @@ func ValidateGenerateRequestBody(body *GenerateRequestBody) (err error) {
 		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
 	}
 	if body.SQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+;*\\s*$"))
 	}
 	if body.SQL != nil {
 		if utf8.RuneCountInString(*body.SQL) < 1 {

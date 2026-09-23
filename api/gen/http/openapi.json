@@ -21,7 +21,7 @@
         "candidate_sql": {
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         },
         "timing_runs": {
@@ -294,7 +294,7 @@
           "description": "Candidate SQL to explain",
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         },
         "analyze": {
@@ -306,7 +306,7 @@
           "description": "Original SQL to explain",
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         },
         "binds": {
@@ -490,7 +490,7 @@
         "sql": {
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         },
         "title": {
@@ -792,7 +792,7 @@
           "description": "Read-only SQL to explain (SELECT or WITH)",
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         }
       },
@@ -895,7 +895,7 @@
         "sql": {
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         }
       },
@@ -2168,7 +2168,7 @@
           "description": "SQL query to execute",
           "maxLength": 10000,
           "minLength": 1,
-          "pattern": "^[^;]+$",
+          "pattern": "^[^;]+;*\\s*$",
           "type": "string"
         }
       },

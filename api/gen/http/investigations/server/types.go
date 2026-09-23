@@ -1350,7 +1350,7 @@ func ValidateCreateRequestBody(body *CreateRequestBody) (err error) {
 		}
 	}
 	if body.SQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+;*\\s*$"))
 	}
 	if body.SQL != nil {
 		if utf8.RuneCountInString(*body.SQL) < 1 {
@@ -1384,7 +1384,7 @@ func ValidateAddCandidateRequestBody(body *AddCandidateRequestBody) (err error) 
 		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_sql", "body"))
 	}
 	if body.CandidateSQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", *body.CandidateSQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", *body.CandidateSQL, "^[^;]+;*\\s*$"))
 	}
 	if body.CandidateSQL != nil {
 		if utf8.RuneCountInString(*body.CandidateSQL) < 1 {

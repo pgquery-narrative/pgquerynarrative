@@ -8,7 +8,7 @@ var RunQueryPayload = Type("RunQueryPayload", func() {
 	Attribute("sql", String, "SQL query to execute", func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("limit", Int32, "Maximum number of rows to return", func() {
 		Default(100)
@@ -117,7 +117,7 @@ var ExplainQueryPayload = Type("ExplainQueryPayload", func() {
 	Attribute("sql", String, "Read-only SQL to explain (SELECT or WITH)", func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("analyze", Boolean, "When true, run EXPLAIN (ANALYZE, FORMAT JSON) instead of estimate-only", func() {
 		Default(false)
@@ -297,12 +297,12 @@ var ComparePlansPayload = Type("ComparePlansPayload", func() {
 	Attribute("before_sql", String, "Original SQL to explain", func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("after_sql", String, "Candidate SQL to explain", func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("analyze", Boolean, "Run EXPLAIN ANALYZE when enabled server-side", func() {
 		Default(false)
@@ -453,7 +453,7 @@ var CreateInvestigationPayload = Type("CreateInvestigationPayload", func() {
 	Attribute("sql", String, func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("connection_id", String)
 	Attribute("analyze", Boolean, "Run EXPLAIN ANALYZE (executes the query) instead of an estimate-only plan", func() {
@@ -474,7 +474,7 @@ var AddCandidatePayload = Type("AddCandidatePayload", func() {
 	Attribute("candidate_sql", String, func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("analyze", Boolean, func() {
 		Default(false)
