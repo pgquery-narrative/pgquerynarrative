@@ -328,6 +328,58 @@ func TestBuildIndexAdvice_NoCoveringIndex(t *testing.T) {
 	}
 }
 
+// TestBuildIndexAdvice_PartitionDraftsAgainstParent pins the SF-09 fix:
+// index DDL for a query that scanned a physical partition must target the
+// partition parent (a parent-level index propagates to every partition),
+// not the one partition the query happened to touch. Also pins CodeRabbit's
+// finding that CREATE INDEX CONCURRENTLY on a partitioned table is invalid —
+// confirmed live: "ERROR: cannot create index on partitioned table ...
+// concurrently" — so the drafted DDL for a parent must omit CONCURRENTLY.
+func TestBuildIndexAdvice_PartitionDraftsAgainstParent(t *testing.T) {
+	f := PlanFinding{
+		Schema:         "demo",
+		Relation:       "sales_2026_08", // the physical partition EXPLAIN reported
+		IsSeqScan:      true,
+		RelatedColumns: []string{"product_name"},
+	}
+	st := tableCatalogStats{
+		EstimatedRows:  500000,
+		TotalBytes:     80 << 20,
+		ParentSchema:   "demo",
+		ParentRelation: "sales", // the partition parent
+	}
+	advice := buildIndexAdvice(f, st)
+	if advice == nil {
+		t.Fatal("expected advice, got nil")
+	}
+	if !strings.Contains(advice.CandidateDDL, `"demo"."sales"`) || strings.Contains(advice.CandidateDDL, "sales_2026_08") {
+		t.Fatalf("expected DDL against the parent demo.sales, not the partition, got %q", advice.CandidateDDL)
+	}
+	if strings.Contains(advice.CandidateDDL, "CREATE INDEX CONCURRENTLY") {
+		t.Fatalf("CREATE INDEX CONCURRENTLY on a partitioned table is invalid, got %q", advice.CandidateDDL)
+	}
+}
+
+// TestBuildIndexAdvice_NonPartitionedTableKeepsConcurrently confirms the
+// SF-09 fix did not change behavior for an ordinary (non-partitioned) table:
+// CONCURRENTLY must still be drafted there.
+func TestBuildIndexAdvice_NonPartitionedTableKeepsConcurrently(t *testing.T) {
+	f := PlanFinding{
+		Schema:         "demo",
+		Relation:       "sales",
+		IsSeqScan:      true,
+		RelatedColumns: []string{"product_name"},
+	}
+	st := tableCatalogStats{EstimatedRows: 500000, TotalBytes: 80 << 20} // no ParentRelation set
+	advice := buildIndexAdvice(f, st)
+	if advice == nil {
+		t.Fatal("expected advice, got nil")
+	}
+	if !strings.Contains(advice.CandidateDDL, "CREATE INDEX CONCURRENTLY") {
+		t.Errorf("expected CONCURRENTLY for a non-partitioned table, got %q", advice.CandidateDDL)
+	}
+}
+
 // TestBuildIndexAdvice_AlreadyCovered verifies that when an existing index
 // already covers the columns as a leftmost prefix, no new-index DDL is drafted.
 func TestBuildIndexAdvice_AlreadyCovered(t *testing.T) {
