@@ -454,10 +454,8 @@ jobs:
         run: |
           make postgres-up
           make migrate-docker
-      - name: Playwright smoke (UI + health)
+      - name: Playwright (full suite)
         run: make test-playwright
-      - name: Playwright OIDC browser login
-        run: make test-playwright-oidc
       - name: Upload Playwright report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: failure()
