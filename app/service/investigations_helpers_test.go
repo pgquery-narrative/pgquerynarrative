@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	investigations "github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
@@ -140,4 +141,70 @@ func TestFixTransitionAllowed(t *testing.T) {
 			t.Errorf("expected %s → %s to be denied", tr[0], tr[1])
 		}
 	}
+}
+
+// C-06: "re-run Compare plans" is dead-end advice when the candidate SQL
+// fails with a real Postgres error — it fails identically on every re-run.
+// An Unverified status with such an error in its notes must point at fixing
+// the SQL instead; everything else keeps the original retry-oriented advice.
+func TestEquivalenceNotShippableMessage(t *testing.T) {
+	// Exact wording compareResultEquivalence produces (app/service/equivalence.go)
+	// for a candidate-only failure — confirmed live against a real division-by-zero.
+	candidateErrNotes := "COUNT(*) matched (1 rows) but sample run failed on candidate SQL: row iteration error: ERROR: division by zero (SQLSTATE 22012). Unverified — not a mismatch."
+	// The baseline can fail the exact same way; CodeRabbit flagged that the
+	// original check (bare "ERROR:" substring) would wrongly blame the
+	// candidate here too — confirmed live before this fix.
+	baselineErrNotes := "COUNT(*) matched (1 rows) but sample run failed on original SQL: row iteration error: ERROR: division by zero (SQLSTATE 22012). Unverified — not a mismatch."
+	// Neither side is attributable when both fail.
+	bothErrNotes := "Result equivalence unverified: COUNT(*) failed (before_err=ERROR: syntax error after_err=ERROR: syntax error). Unknown — not a mismatch."
+	transientNotes := "sample rows did not match; the underlying tables may have changed between runs"
+
+	t.Run("Unverified with the candidate failing points at the candidate", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceUnverified, &candidateErrNotes)
+		if !strings.Contains(got, "database error") || strings.Contains(got, "re-run Compare plans") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("Unverified with only the baseline failing does not blame the candidate", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceUnverified, &baselineErrNotes)
+		if strings.Contains(got, "fix the candidate") || !strings.Contains(got, "re-run Compare plans") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("Unverified with both sides failing does not attribute to either", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceUnverified, &bothErrNotes)
+		if strings.Contains(got, "fix the candidate") || !strings.Contains(got, "re-run Compare plans") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("Unverified with a transient cause keeps retry advice", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceUnverified, &transientNotes)
+		if !strings.Contains(got, "re-run Compare plans") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("Unverified with no notes keeps retry advice", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceUnverified, nil)
+		if !strings.Contains(got, "re-run Compare plans") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("Different is never told to retry the comparison", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceDifferent, &candidateErrNotes)
+		if !strings.Contains(got, "Different") || strings.Contains(got, "re-run Compare plans") {
+			t.Errorf("got %q", got)
+		}
+	})
+
+	t.Run("NotRequested still tells you how to check", func(t *testing.T) {
+		got := equivalenceNotShippableMessage(EquivalenceNotRequested, nil)
+		if !strings.Contains(got, "was not checked") {
+			t.Errorf("got %q", got)
+		}
+	})
 }
