@@ -65,6 +65,12 @@ cleanup() {
   return 0
 }
 trap cleanup EXIT
+# A plain `trap cleanup ... INT TERM` would replace the default INT/TERM
+# disposition with one that just returns, so Ctrl-C would delete the temp
+# file but never actually stop the script. Exit explicitly (128+signum,
+# the standard convention) so cleanup still runs via the EXIT trap above.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [[ -n "$API_KEY" ]]; then
   # Write the bearer token to a 0600 temp file instead of curl argv, which is
   # visible to other local users via `ps`.
