@@ -121,7 +121,6 @@ func RedactConstants(sql string) (redacted string, ok bool) {
 	return out, true
 }
 
-// deparseNode renders a single statement node back to SQL using the PostgreSQL deparser.
 // hasInvalidParamRef reports whether stmt contains a ParamRef numbered below 1.
 // PostgreSQL positional parameters are 1-indexed; pg_query's grammar parses
 // "$0" anyway, and its deparser renders it as a bare "?" that does not
@@ -136,6 +135,7 @@ func hasInvalidParamRef(stmt *pg_query.Node) bool {
 	return invalid
 }
 
+// deparseNode renders a single statement node back to SQL using the PostgreSQL deparser.
 func deparseNode(node *pg_query.Node) (string, error) {
 	tree := &pg_query.ParseResult{
 		Stmts: []*pg_query.RawStmt{{Stmt: node}},
