@@ -39,6 +39,14 @@ func ExtractReadOnlySQL(sql string) (inner string, wasExplain bool, err error) {
 	if stmt == nil {
 		return "", false, errors.ErrOnlySelectAllowed
 	}
+	if hasInvalidParamRef(stmt) {
+		// $0 (or lower) is never a valid positional parameter — PostgreSQL
+		// parameters are 1-indexed. pg_query's grammar accepts it anyway, and
+		// its deparser then emits a bare "?" for it, which does not re-parse
+		// as SQL. Reject up front rather than hand back text our own deparser
+		// cannot round-trip.
+		return "", false, errors.ErrOnlySelectAllowed
+	}
 
 	if explain := stmt.GetExplainStmt(); explain != nil {
 		if optErr := validateExplainStmtOptions(explain); optErr != nil {
@@ -111,6 +119,20 @@ func RedactConstants(sql string) (redacted string, ok bool) {
 		return "", false
 	}
 	return out, true
+}
+
+// hasInvalidParamRef reports whether stmt contains a ParamRef numbered below 1.
+// PostgreSQL positional parameters are 1-indexed; pg_query's grammar parses
+// "$0" anyway, and its deparser renders it as a bare "?" that does not
+// re-parse as SQL (see the caller).
+func hasInvalidParamRef(stmt *pg_query.Node) bool {
+	invalid := false
+	walkParamRefs(stmt, func(pr *pg_query.ParamRef) {
+		if pr.GetNumber() < 1 {
+			invalid = true
+		}
+	})
+	return invalid
 }
 
 // deparseNode renders a single statement node back to SQL using the PostgreSQL deparser.
