@@ -168,6 +168,48 @@ test.describe("Full UI coverage", () => {
     await expect(page.getByTestId("report-share-panel")).toBeVisible();
   });
 
+  // B-05: a reviewer must be able to paste arbitrary SQL directly on the
+  // Investigate landing page, not just pick a guided demo scenario.
+  test("paste a non-scripted query into the Start from SQL box", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.goto("/investigate");
+    const pastedSql =
+      "SELECT sales_rep, COUNT(*)::int AS n FROM demo.sales WHERE region = 'North' GROUP BY sales_rep ORDER BY n DESC";
+
+    await page.getByPlaceholder("Investigation title (optional)").fill("pw-paste-box");
+    await page.getByPlaceholder("SELECT ... FROM ...").fill(pastedSql);
+    await page.getByRole("button", { name: /Investigate this query/i }).click();
+
+    await expect(page).toHaveURL(/\/investigate\/[0-9a-f-]{36}/i, { timeout: 30_000 });
+    // Sourcery flagged putting hand-typed SQL in the URL (browser history,
+    // referrer headers) as a security concern — the pasted text must travel
+    // via router state, and the final URL (a clean /investigate/<uuid>) must
+    // not carry it as a query string.
+    expect(page.url()).not.toContain("sales_rep");
+    expect(page.url()).not.toContain("?");
+    await expect(page.getByText(/Raw plan analysis/i)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("investigation-verdict")).toBeVisible({ timeout: 30_000 });
+  });
+
+  // A trailing `;` is the single most common copy-paste shape from a SQL
+  // editor or psql — it must be stripped, not rejected.
+  test("Start from SQL box tolerates a trailing semicolon", async ({ page }) => {
+    await page.goto("/investigate");
+    await page.getByPlaceholder("SELECT ... FROM ...").fill("SELECT 1;");
+    await page.getByRole("button", { name: /Investigate this query/i }).click();
+    await expect(page).toHaveURL(/\/investigate\/[0-9a-f-]{36}/i, { timeout: 30_000 });
+  });
+
+  // Multiple statements aren't supported — must be caught locally with a
+  // clear message, not sent to the API to surface a raw 400.
+  test("Start from SQL box rejects a mid-query semicolon locally", async ({ page }) => {
+    await page.goto("/investigate");
+    await page.getByPlaceholder("SELECT ... FROM ...").fill("SELECT 1; SELECT 2");
+    await page.getByRole("button", { name: /Investigate this query/i }).click();
+    await expect(page.getByText(/single statement is supported/i)).toBeVisible();
+    await expect(page).toHaveURL(/\/investigate$/);
+  });
+
   // Dashboards mutations stay admin-only; OIDC E2E users are analysts (403 on POST).
   // Coverage for the list page is in "sidebar navigation reaches every primary page".
 
