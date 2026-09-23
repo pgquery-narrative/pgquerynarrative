@@ -2,6 +2,7 @@ package story
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -331,16 +332,67 @@ func buildCandidates(findings []PlanFindingInput, candidateSQL string, compariso
 			},
 		})
 	}
+	out = append(out, groupedInvestigateHints(findings)...)
+	return out
+}
+
+// maxInvestigateHints caps how many distinct "investigate this" pointers a
+// report surfaces. A 50-partition table with the same problem on every
+// partition produced 50 near-identical hints before this cap — one per
+// occurrence group is enough for an engineer to act on.
+const maxInvestigateHints = 5
+
+// groupedInvestigateHints turns seq_scan / index_candidate findings into
+// report pointers, one per distinct (Category, NodeType) group rather than
+// one per finding — the same partitioned-table problem repeats once per
+// partition, and a report should say that once with a count, not 50 times
+// verbatim. Mirrors the rollup app/queryrunner/diagnosis.go already does for
+// the plan findings panel (rollupIncidental), reimplemented locally since
+// this package takes a flat PlanFindingInput DTO and does not import
+// queryrunner. Not to be confused with investigateHints(category string),
+// the pre-existing per-category verification-hint helper below.
+func groupedInvestigateHints(findings []PlanFindingInput) []CandidateImprovement {
+	type group struct {
+		nodeType    string
+		message     string
+		confidence  string
+		occurrences int
+	}
+	var order []string
+	groups := make(map[string]*group)
 	for _, f := range findings {
-		if f.Category == "seq_scan" || f.Category == "index_candidate" {
-			out = append(out, CandidateImprovement{
-				Kind:           CandidateKindInvestigateHint,
-				ProposedChange: "Investigate index or predicate shape for " + f.NodeType,
-				WhyItMightHelp: f.Message,
-				Confidence:     defaultConfidence(f.Confidence),
-				Verification:   []string{"EXPLAIN before/after", "Result equivalence", "Lock and storage review"},
-			})
+		if f.Category != "seq_scan" && f.Category != "index_candidate" {
+			continue
 		}
+		key := f.Category + "|" + f.NodeType
+		g, ok := groups[key]
+		if !ok {
+			g = &group{nodeType: f.NodeType, message: f.Message, confidence: defaultConfidence(f.Confidence)}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.occurrences++
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return groups[order[i]].occurrences > groups[order[j]].occurrences
+	})
+	if len(order) > maxInvestigateHints {
+		order = order[:maxInvestigateHints]
+	}
+	out := make([]CandidateImprovement, 0, len(order))
+	for _, key := range order {
+		g := groups[key]
+		why := g.message
+		if g.occurrences > 1 {
+			why = fmt.Sprintf("%s (× %d occurrences)", why, g.occurrences)
+		}
+		out = append(out, CandidateImprovement{
+			Kind:           CandidateKindInvestigateHint,
+			ProposedChange: "Investigate index or predicate shape for " + g.nodeType,
+			WhyItMightHelp: why,
+			Confidence:     g.confidence,
+			Verification:   []string{"EXPLAIN before/after", "Result equivalence", "Lock and storage review"},
+		})
 	}
 	return out
 }

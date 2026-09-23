@@ -29,6 +29,92 @@ func TestBuildInvestigationReport(t *testing.T) {
 	}
 }
 
+// A 50-partition scan produces one seq_scan finding per partition — before
+// the B-06 fix, that meant 50 near-identical "Investigate index or predicate
+// shape for Seq Scan" candidate_improvements in the report. Pins that the
+// report instead groups by (Category, NodeType), reports an occurrence count,
+// and caps at maxInvestigateHints distinct groups.
+func TestBuildInvestigationReport_DedupesRepeatedInvestigateHints(t *testing.T) {
+	var findings []PlanFindingInput
+	for i := 0; i < 50; i++ {
+		findings = append(findings, PlanFindingInput{
+			NodeType:   "Seq Scan",
+			Category:   "seq_scan",
+			Confidence: "high",
+			Message:    "Sequential scan on a partition",
+		})
+	}
+	// A distinct group beyond the cap must still be dropped, not silently merged
+	// into the Seq Scan group.
+	for i := 0; i < 2; i++ {
+		findings = append(findings, PlanFindingInput{
+			NodeType:   "Bitmap Heap Scan",
+			Category:   "index_candidate",
+			Confidence: "medium",
+			Message:    "No covering index",
+		})
+	}
+	report, _ := BuildInvestigationReport("t", "SELECT 1", "", "fp", "conn", StatInput{}, findings, nil, InvestigationProvenance{})
+
+	if got := len(report.CandidateImprovements); got > maxInvestigateHints {
+		t.Fatalf("expected at most %d candidate_improvements, got %d", maxInvestigateHints, got)
+	}
+	found := false
+	for _, c := range report.CandidateImprovements {
+		if c.Kind == CandidateKindInvestigateHint && strings.Contains(c.ProposedChange, "Seq Scan") {
+			found = true
+			if !strings.Contains(c.WhyItMightHelp, "× 50 occurrences") {
+				t.Fatalf("expected the Seq Scan group to report 50 occurrences, got: %s", c.WhyItMightHelp)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected one grouped Seq Scan hint, got: %#v", report.CandidateImprovements)
+	}
+}
+
+// More than maxInvestigateHints distinct (Category, NodeType) groups must be capped, and the
+// groups that survive must be the highest-occurrence ones, not the first-seen ones (CodeRabbit
+// flagged this exact gap: the cap had no regression test).
+func TestGroupedInvestigateHints_CapsAndKeepsHighestOccurrenceGroups(t *testing.T) {
+	specs := []struct {
+		nodeType string
+		category string
+		count    int
+	}{
+		{"A", "seq_scan", 3},
+		{"B", "seq_scan", 10},
+		{"C", "seq_scan", 1}, // lowest count: must be dropped by the cap
+		{"D", "index_candidate", 7},
+		{"E", "index_candidate", 2}, // second-lowest count: must be dropped by the cap
+		{"F", "seq_scan", 5},
+		{"G", "index_candidate", 4},
+	}
+	var findings []PlanFindingInput
+	for _, s := range specs {
+		for i := 0; i < s.count; i++ {
+			findings = append(findings, PlanFindingInput{NodeType: s.nodeType, Category: s.category, Message: "m-" + s.nodeType})
+		}
+	}
+
+	out := groupedInvestigateHints(findings)
+	if len(out) != maxInvestigateHints {
+		t.Fatalf("expected exactly %d groups (7 distinct groups > cap), got %d: %#v", maxInvestigateHints, len(out), out)
+	}
+	wantOrder := []string{"B", "D", "F", "G", "A"} // descending occurrence count: 10,7,5,4,3
+	for i, want := range wantOrder {
+		got := out[i].ProposedChange
+		if got != "Investigate index or predicate shape for "+want {
+			t.Fatalf("position %d: got %q, want NodeType %s (order must be by descending occurrence count)", i, got, want)
+		}
+	}
+	for _, o := range out {
+		if strings.HasSuffix(o.ProposedChange, " C") || strings.HasSuffix(o.ProposedChange, " E") {
+			t.Fatalf("the two lowest-occurrence groups must be dropped by the cap, not kept: %#v", o)
+		}
+	}
+}
+
 func TestBuildInvestigationReport_UnverifiedBlocksShipAdvice(t *testing.T) {
 	cmp := &ComparisonInput{
 		Improved:                []string{"Partition pruning"},
