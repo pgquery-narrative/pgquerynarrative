@@ -128,11 +128,15 @@ func selectIsSimpleForUnion(sel *pg_query.SelectStmt) bool {
 	if targetListHasAggregate(sel.TargetList) {
 		return false
 	}
-	// ORDER BY must only reference columns the target list actually produces —
-	// deparsing UNION ALL branches with an ORDER BY on a column absent from
-	// every branch's SELECT list is not valid SQL. A wildcard target list
-	// makes every column available, so it needs no check.
-	if !targetListHasWildcard(sel.TargetList) && sortClauseReferencesMissingColumn(sel.SortClause, sel.TargetList) {
+	// ORDER BY on a UNION ALL result may only be an integer ordinal or an
+	// unqualified output column name — not a qualified reference (the top
+	// level union has no table alias in scope) and not an arbitrary
+	// expression (this rewrite deparses the original SortBy node verbatim
+	// onto the union, it does not rebuild it, so anything we cannot resolve
+	// against the target list must be rejected rather than passed through).
+	// A wildcard target list only widens which unqualified names are
+	// available; it does not make a qualified reference or an expression safe.
+	if sortClauseHasUnresolvableItem(sel.SortClause, sel.TargetList, targetListHasWildcard(sel.TargetList)) {
 		return false
 	}
 	return true
@@ -149,9 +153,15 @@ func selectIsSimpleForUnion(sel *pg_query.SelectStmt) bool {
 var aggregateFuncNames = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true,
 	"array_agg": true, "string_agg": true, "json_agg": true, "jsonb_agg": true,
+	"json_object_agg": true, "jsonb_object_agg": true, "xmlagg": true,
 	"bool_and": true, "bool_or": true, "every": true,
+	"bit_and": true, "bit_or": true, "bit_xor": true,
 	"variance": true, "var_pop": true, "var_samp": true,
 	"stddev": true, "stddev_pop": true, "stddev_samp": true,
+	"corr": true, "covar_pop": true, "covar_samp": true,
+	"regr_avgx": true, "regr_avgy": true, "regr_count": true, "regr_intercept": true,
+	"regr_r2": true, "regr_slope": true, "regr_sxx": true, "regr_sxy": true, "regr_syy": true,
+	"mode": true, "percentile_cont": true, "percentile_disc": true,
 }
 
 func targetListHasAggregate(targets []*pg_query.Node) bool {
@@ -207,6 +217,20 @@ func nodeContainsAggregateCall(n *pg_query.Node) bool {
 	if tc := n.GetTypeCast(); tc != nil {
 		return nodeContainsAggregateCall(tc.Arg)
 	}
+	if ce := n.GetCaseExpr(); ce != nil {
+		if nodeContainsAggregateCall(ce.Arg) || nodeContainsAggregateCall(ce.Defresult) {
+			return true
+		}
+		for _, w := range ce.Args {
+			cw := w.GetCaseWhen()
+			if cw == nil {
+				continue
+			}
+			if nodeContainsAggregateCall(cw.Expr) || nodeContainsAggregateCall(cw.Result) {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -251,7 +275,15 @@ func targetListOutputNames(targets []*pg_query.Node) map[string]bool {
 	return names
 }
 
-func sortClauseReferencesMissingColumn(sortClause []*pg_query.Node, targets []*pg_query.Node) bool {
+// sortClauseHasUnresolvableItem reports whether any ORDER BY item is not
+// safe to deparse verbatim onto the UNION ALL result: PostgreSQL accepts
+// only an integer ordinal or an unqualified output column name there. A
+// qualified reference (the union has no table alias in scope) or any other
+// expression (this rewrite does not resolve or rebuild the sort item, it
+// keeps the original node) is rejected outright, regardless of wildcard;
+// an unqualified column reference is checked against the target list's
+// output names unless hasWildcard (SELECT * makes every column available).
+func sortClauseHasUnresolvableItem(sortClause []*pg_query.Node, targets []*pg_query.Node, hasWildcard bool) bool {
 	if len(sortClause) == 0 {
 		return false
 	}
@@ -261,15 +293,21 @@ func sortClauseReferencesMissingColumn(sortClause []*pg_query.Node, targets []*p
 		if sb == nil {
 			continue
 		}
+		if ac := sb.Node.GetAConst(); ac != nil && ac.GetIval() != nil {
+			continue // an ordinal position, e.g. ORDER BY 1 — always safe
+		}
+		cr := sb.Node.GetColumnRef()
+		if cr == nil {
+			return true // an expression we do not resolve, e.g. ORDER BY date + 1
+		}
+		if len(cr.Fields) > 1 {
+			return true // qualified, e.g. ORDER BY t.date — no alias in scope after UNION
+		}
 		name := columnRefName(sb.Node)
-		if name == "" {
-			// Not a plain column reference (an ordinal position, or an
-			// expression) — leave it alone rather than guess.
+		if hasWildcard {
 			continue
 		}
-		parts := strings.Split(name, ".")
-		unqualified := strings.ToLower(parts[len(parts)-1])
-		if !available[unqualified] {
+		if !available[strings.ToLower(name)] {
 			return true
 		}
 	}

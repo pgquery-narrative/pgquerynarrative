@@ -162,6 +162,72 @@ func TestSuggestRewrites_OrOrderBySelectedColumnStillRewrites(t *testing.T) {
 	}
 }
 
+// ORDER BY an expression (not a plain column reference) is deparsed verbatim
+// onto the UNION ALL result by this rewrite — it is never resolved or
+// rebuilt — so if the expression touches a column absent from the target
+// list (here, only `id` is selected), the result does not parse
+// ("column date does not exist"). Confirmed by actually running the
+// generated SQL: it fails with exactly that error.
+func TestSuggestRewrites_OrOrderByExpressionSkipped(t *testing.T) {
+	sql := `SELECT id FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics' ORDER BY date + 1`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("an ORDER BY expression this rewrite cannot resolve must not be rewritten, got %#v", cands)
+	}
+}
+
+// A qualified ORDER BY reference (`demo.sales.date`) fails after the rewrite
+// even when the referenced column IS selected: the UNION ALL result has no
+// table alias in scope, so PostgreSQL rejects the qualifier ("missing
+// FROM-clause entry"). Confirmed by actually running the generated SQL.
+func TestSuggestRewrites_OrOrderByQualifiedColumnSkipped(t *testing.T) {
+	sql := `SELECT id, date FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics' ORDER BY demo.sales.date`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("a qualified ORDER BY reference must not be rewritten (no alias in scope after UNION), got %#v", cands)
+	}
+}
+
+// A wildcard target list makes every column name available, but it does not
+// make a qualified ORDER BY reference safe — the union still has no table
+// alias in scope. This must stay declined even with SELECT *.
+func TestSuggestRewrites_OrOrderByQualifiedColumnSkippedEvenWithWildcard(t *testing.T) {
+	sql := `SELECT * FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics' ORDER BY demo.sales.date`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("a qualified ORDER BY reference must not be rewritten even with a wildcard target list, got %#v", cands)
+	}
+}
+
+// An ordinal ORDER BY position (`ORDER BY 2`) is always safe to deparse onto
+// a UNION ALL result regardless of column names or aliasing, and must still
+// rewrite normally.
+func TestSuggestRewrites_OrOrderByOrdinalStillRewrites(t *testing.T) {
+	sql := `SELECT id, date FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics' ORDER BY 2`
+	c := mustFindCategory(t, SuggestRewrites(sql, nil), "or_to_union")
+	got := normalizeSQL(c.SQL)
+	if !strings.Contains(got, "union all") || !strings.Contains(got, "order by 2") {
+		t.Fatalf("expected UNION ALL with ORDER BY 2 preserved, got: %s", c.SQL)
+	}
+}
+
+// An aggregate hidden inside a CASE expression must be caught the same way a
+// bare aggregate call is (B-03): splitting the OR into UNION ALL branches
+// would give each branch its own COUNT(*) instead of one combined count.
+func TestSuggestRewrites_OrAggregateInsideCaseSkipped(t *testing.T) {
+	sql := `SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics'`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("an aggregate inside a CASE expression must not be split across UNION ALL branches, got %#v", cands)
+	}
+}
+
+// bit_and is a real PostgreSQL aggregate that was missing from the name
+// allowlist; without it, this query would be split the same wrong way as
+// the SUM/COUNT cases in TestSuggestRewrites_OrAggregateNoGroupBySkipped.
+func TestSuggestRewrites_OrAggregateBitAndSkipped(t *testing.T) {
+	sql := `SELECT bit_and(id) FROM demo.sales WHERE region = 'North' OR product_category = 'Electronics'`
+	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
+		t.Fatalf("bit_and is an aggregate and must not be split across UNION ALL branches, got %#v", cands)
+	}
+}
+
 func TestSuggestRewrites_OrComplexLeafSkipped(t *testing.T) {
 	sql := `SELECT id, date, region, product_category FROM demo.sales WHERE region = 'North' OR product_category LIKE 'Elec%'`
 	if cands := SuggestRewrites(sql, nil); len(cands) != 0 {
