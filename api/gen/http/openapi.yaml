@@ -3348,6 +3348,9 @@ definitions:
         type: array
         items:
           $ref: '#/definitions/RewriteCandidate'
+      decline_reason:
+        type: string
+        description: 'Set when candidates is empty: why the rewriter found nothing to propose'
     required:
       - candidates
   RunQueryPayload:

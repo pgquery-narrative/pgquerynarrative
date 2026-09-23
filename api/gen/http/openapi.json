@@ -2138,6 +2138,10 @@
             "$ref": "#/definitions/RewriteCandidate"
           },
           "type": "array"
+        },
+        "decline_reason": {
+          "description": "Set when candidates is empty: why the rewriter found nothing to propose",
+          "type": "string"
         }
       },
       "required": [

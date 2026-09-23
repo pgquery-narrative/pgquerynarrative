@@ -227,7 +227,7 @@ export const api = {
     }),
 
   suggestInvestigationRewrite: (id: string) =>
-    request<{ candidates: RewriteCandidate[] }>(`/investigations/${id}/suggest-rewrite`, {
+    request<{ candidates: RewriteCandidate[]; decline_reason?: string }>(`/investigations/${id}/suggest-rewrite`, {
       method: "POST",
     }),
 

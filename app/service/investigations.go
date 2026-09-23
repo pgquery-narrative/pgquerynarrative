@@ -522,6 +522,10 @@ func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *inv
 		}
 		out.Candidates = append(out.Candidates, cand)
 	}
+	if len(out.Candidates) == 0 {
+		reason := queryrunner.DeclineReason
+		out.DeclineReason = &reason
+	}
 	return out, nil
 }
 

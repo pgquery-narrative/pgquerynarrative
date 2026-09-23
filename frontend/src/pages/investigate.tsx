@@ -141,16 +141,14 @@ export default function InvestigatePage() {
       const top = items[0];
       if (!top?.sql) {
         setSuggestedCandidates([]);
-        // Say what is supported, and that declining is a normal outcome: the
-        // rewriter only fires on patterns it can prove equivalent, so "nothing
-        // offered" usually means the query is not one of these shapes — not
-        // that the query is fine.
+        // Declining is a normal outcome, not a failure: the rewriter only
+        // fires on patterns it can prove equivalent. decline_reason comes
+        // from the server (app/queryrunner.DeclineReason) so this message
+        // stays in sync with the patterns the engine actually attempts —
+        // it is not duplicated here by hand.
         setError(
-          "No rewrite offered. The rewriter only proposes transforms it can prove preserve results, " +
-            "so most queries get nothing back. It looks for: a function wrapping a filtered column " +
-            "(DATE_TRUNC / EXTRACT / to_char / ::date / COALESCE over a date), numeric and text casts on " +
-            "a compared column, OR across columns → UNION ALL, IN / NOT IN → EXISTS, and " +
-            "LEFT JOIN … IS NULL → NOT EXISTS. The plan findings above still apply.",
+          res.decline_reason ||
+            "No rewrite offered. The plan findings above still apply.",
         );
         setSuggestRationale("");
         return;

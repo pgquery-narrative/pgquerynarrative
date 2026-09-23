@@ -252,6 +252,7 @@ var RewriteCandidate = Type("RewriteCandidate", func() {
 // RewriteSuggestionList is the result of suggest_rewrite.
 var RewriteSuggestionList = Type("RewriteSuggestionList", func() {
 	Attribute("candidates", ArrayOf(RewriteCandidate))
+	Attribute("decline_reason", String, "Set when candidates is empty: why the rewriter found nothing to propose")
 	Required("candidates")
 })
 
