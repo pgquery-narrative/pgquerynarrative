@@ -23,3 +23,13 @@ func TestClassifyRunError_KnownValidationErrors(t *testing.T) {
 		t.Fatalf("msg = %q", msg)
 	}
 }
+
+func TestClassifyRunError_SyntaxError(t *testing.T) {
+	kind, msg := ClassifyRunError(apperrors.ErrSyntaxError)
+	if kind != RunErrorValidation {
+		t.Fatalf("kind = %v, want validation", kind)
+	}
+	if msg != apperrors.ErrSyntaxError.Error() {
+		t.Fatalf("msg = %q, want the syntax-error sentinel, not a generic/policy message", msg)
+	}
+}
