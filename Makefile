@@ -14,6 +14,23 @@ MIGRATE_GO_IMAGE ?= golang:1.26-alpine
 GOMODCACHE ?= $(HOME)/.gomodcache
 export GOMODCACHE
 
+# macOS Xcode's command-line linker fails cgo builds (pg_query_go needs cgo)
+# with "tapi error: malformed file" against certain SDK versions unless
+# SDKROOT points at Xcode's own SDK rather than the Command Line Tools one.
+# Set automatically so `make build`/`build-pqn`/`build-mcp` work without
+# every contributor discovering and exporting this by hand; a value already
+# in the environment is left alone, and this is a no-op off Darwin or when
+# xcodebuild is unavailable (Command Line Tools only, or not installed).
+ifeq ($(shell uname -s),Darwin)
+ifeq ($(origin SDKROOT),undefined)
+DETECTED_SDKROOT := $(shell xcodebuild -version -sdk macosx Path 2>/dev/null)
+ifneq ($(DETECTED_SDKROOT),)
+SDKROOT := $(DETECTED_SDKROOT)
+export SDKROOT
+endif
+endif
+endif
+
 DB_URL ?= postgres://pgquerynarrative_app:pgquerynarrative_app@localhost:5432/pgquerynarrative?sslmode=disable
 
 # Row count for `make seed-large` / `make seed-large-docker`. Override: ROWS=5000000
