@@ -301,6 +301,35 @@ func walkColumnRefs(m proto.Message, fn func(*pg_query.ColumnRef)) {
 	})
 }
 
+// walkParamRefs visits every ParamRef reachable from m via protobuf
+// reflection, the same traversal walkColumnRefs above uses.
+func walkParamRefs(m proto.Message, fn func(*pg_query.ParamRef)) {
+	if m == nil {
+		return
+	}
+	if pr, ok := m.(*pg_query.ParamRef); ok {
+		fn(pr)
+		return
+	}
+	m.ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		if fd.Kind() != protoreflect.MessageKind && fd.Kind() != protoreflect.GroupKind {
+			return true
+		}
+		if fd.IsMap() {
+			return true
+		}
+		if fd.IsList() {
+			l := v.List()
+			for i := 0; i < l.Len(); i++ {
+				walkParamRefs(l.Get(i).Message().Interface(), fn)
+			}
+			return true
+		}
+		walkParamRefs(v.Message().Interface(), fn)
+		return true
+	})
+}
+
 func cloneNode(n *pg_query.Node) *pg_query.Node {
 	if n == nil {
 		return nil
