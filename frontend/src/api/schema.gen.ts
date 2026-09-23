@@ -547,6 +547,7 @@ export interface RewriteRequestBody {
 
 export interface RewriteSuggestionList {
   candidates: RewriteCandidate[];
+  decline_reason?: string;
 }
 
 export interface RunQueryPayload {

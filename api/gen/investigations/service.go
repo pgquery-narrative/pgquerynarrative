@@ -428,6 +428,8 @@ type RewriteCandidate struct {
 // suggest_rewrite method.
 type RewriteSuggestionList struct {
 	Candidates []*RewriteCandidate
+	// Set when candidates is empty: why the rewriter found nothing to propose
+	DeclineReason *string
 }
 
 type StatSnapshot struct {
