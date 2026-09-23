@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,12 @@ export default function InvestigatePage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  // Pasted SQL arrives via router state (see startFromPastedSql below), not a
+  // ?sql= query param — a hand-typed query may carry sensitive literals that
+  // must not land in the URL bar, browser history, or referrer headers the
+  // way a query string would.
+  const location = useLocation();
+  const pastedState = location.state as { sql?: string; title?: string } | null;
   const [investigation, setInvestigation] = useState<Investigation | null>(null);
   const [loading, setLoading] = useState(!!id);
   const [error, setError] = useState("");
@@ -72,8 +78,8 @@ export default function InvestigatePage() {
       void load(id, searchParams.get("candidate") || undefined);
       return;
     }
-    const sql = searchParams.get("sql");
-    const title = searchParams.get("title") || "Query Investigation";
+    const sql = pastedState?.sql || searchParams.get("sql");
+    const title = pastedState?.sql ? pastedState.title || "Query Investigation" : searchParams.get("title") || "Query Investigation";
     if (sql) {
       setActionLoading("create");
       const calls = searchParams.get("calls");
@@ -103,7 +109,7 @@ export default function InvestigatePage() {
           setActionLoading("");
         });
     }
-  }, [id, searchParams, load, navigate]);
+  }, [id, searchParams, load, navigate, pastedState]);
 
   const addCandidate = async () => {
     if (!investigation || !candidateSql.trim()) return;
@@ -266,7 +272,7 @@ export default function InvestigatePage() {
     setTimeout(() => candidateRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
   };
 
-  if (!id && !searchParams.get("sql")) {
+  if (!id && !searchParams.get("sql") && !pastedState?.sql) {
     return <InvestigateLanding />;
   }
 
@@ -719,6 +725,7 @@ function InvestigateLanding() {
   const [loading, setLoading] = useState(true);
   const [pastedTitle, setPastedTitle] = useState("");
   const [pastedSql, setPastedSql] = useState("");
+  const [pasteError, setPasteError] = useState("");
 
   useEffect(() => {
     Promise.allSettled([api.getDemoScenarios(), api.getRegressions(5)]).then(([s, r]) => {
@@ -753,15 +760,40 @@ function InvestigateLanding() {
     navigate(`/investigate?${params.toString()}`);
   };
 
-  // Same navigate-to-create path startDemo and Query Stats already use —
-  // InvestigatePage's mount effect does the actual createInvestigation call.
+  // InvestigatePage's mount effect does the actual createInvestigation call,
+  // same as it does for startDemo/Query Stats' ?sql= path — but via router
+  // state instead of a query string (see the comment on navigate below).
   const startFromPastedSql = () => {
+    setPasteError("");
     if (!pastedSql.trim()) return;
-    const params = new URLSearchParams({
-      title: pastedTitle.trim() || "Query investigation",
-      sql: pastedSql.trim(),
-    });
-    navigate(`/investigate?${params.toString()}`);
+    const title = pastedTitle.trim() || "Query investigation";
+    // The create API rejects any semicolon except one optional trailing one
+    // (stacked statements aren't allowed) — strip a single trailing `;` (and
+    // surrounding whitespace) the way a copy-paste from a SQL editor or psql
+    // almost always has, so that common case doesn't round-trip to a raw API
+    // error. A semicolon anywhere else still means multiple statements, which
+    // genuinely isn't supported — surface that locally instead of navigating.
+    const sql = pastedSql.trim().replace(/;\s*$/, "");
+    if (title.length > 200) {
+      setPasteError(`Title is ${title.length} characters; the limit is 200.`);
+      return;
+    }
+    if (sql.length === 0) {
+      setPasteError("SQL cannot be empty.");
+      return;
+    }
+    if (sql.length > 10000) {
+      setPasteError(`SQL is ${sql.length} characters; the limit is 10,000.`);
+      return;
+    }
+    if (sql.includes(";")) {
+      setPasteError("Only a single statement is supported — remove the semicolon(s) separating multiple statements.");
+      return;
+    }
+    // Router state, not a ?sql= query string — hand-typed SQL may carry
+    // sensitive literals that must not land in the URL bar, browser
+    // history, or referrer headers.
+    navigate("/investigate", { state: { title, sql } });
   };
 
   return (
@@ -867,6 +899,7 @@ function InvestigateLanding() {
             value={pastedSql}
             onChange={(e) => setPastedSql(e.target.value)}
           />
+          {pasteError && <p className="text-sm text-destructive">{pasteError}</p>}
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={startFromPastedSql} disabled={!pastedSql.trim()}>
               <Search className="h-4 w-4" /> Investigate this query
