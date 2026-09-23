@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
@@ -169,6 +170,17 @@ func Main(args []string, stdout, stderr io.Writer, getenv func(string) string, c
 		return 1
 	}
 	fail := func(err error) int {
+		// Every command (doctor, top, plan, run, investigate, ...) routes its
+		// first query through here, so this is the one place that needs to
+		// catch "the pqn extension isn't installed on this database" and say
+		// so, rather than handing back Postgres's raw SQLSTATE 3F000 text.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "3F000" && strings.Contains(pgErr.Message, "pqn_api") {
+			fmt.Fprintln(stderr, "pqn: the pqn extension is not installed on this database.")
+			fmt.Fprintln(stderr, "     Run: make install-pqn-extension   (then, as a superuser: CREATE EXTENSION pqn; SELECT pqn_api.init();)")
+			fmt.Fprintln(stderr, "     See docs/getting-started/pqn-extension.md for the full quick start.")
+			return 1
+		}
 		fmt.Fprintln(stderr, "pqn:", err)
 		return 1
 	}

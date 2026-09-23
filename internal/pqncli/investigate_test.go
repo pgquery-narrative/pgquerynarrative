@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
 )
 
@@ -33,6 +34,7 @@ type fakeBackend struct {
 	measured   int
 	proved     int
 	extra      []queryrunner.PlanFinding // findings added to whatever the plan yields
+	doctorErr  error
 }
 
 func (f *fakeBackend) HasReplica() bool { return f.replica }
@@ -76,8 +78,13 @@ func (f *fakeBackend) Prove(context.Context, int64, string, string, string) (*Pr
 }
 func (f *fakeBackend) Investigations(context.Context, int) ([]Investigation, error) { return nil, nil }
 func (f *fakeBackend) Evidence(context.Context, int64) ([]EvidenceRow, error)       { return nil, nil }
-func (f *fakeBackend) Doctor(context.Context) ([]DoctorRow, error)                  { return nil, nil }
-func (f *fakeBackend) Close()                                                       {}
+func (f *fakeBackend) Doctor(context.Context) ([]DoctorRow, error) {
+	if f.doctorErr != nil {
+		return nil, f.doctorErr
+	}
+	return nil, nil
+}
+func (f *fakeBackend) Close() {}
 
 func validator() *queryrunner.Validator { return queryrunner.NewValidator(nil, 100000) }
 
@@ -321,6 +328,37 @@ func TestMainCommands(t *testing.T) {
 	}
 	if code, _, errs := run("prove", "--before", dayQuery); code != 1 || !strings.Contains(errs, "--after") {
 		t.Errorf("prove without --after: %d %q", code, errs)
+	}
+}
+
+func TestMissingExtensionGetsAFriendlyMessage(t *testing.T) {
+	env := func(string) string { return "" }
+	run := func(doctorErr error, args ...string) (int, string, string) {
+		be := &fakeBackend{doctorErr: doctorErr}
+		connect := func(context.Context, string, string) (Backend, error) { return be, nil }
+		var out, errb bytes.Buffer
+		code := Main(args, &out, &errb, env, connect)
+		return code, out.String(), errb.String()
+	}
+
+	missing := &pgconn.PgError{Code: "3F000", Message: `schema "pqn_api" does not exist`}
+	if code, _, errs := run(missing, "doctor"); code != 1 || !strings.Contains(errs, "make install-pqn-extension") {
+		t.Errorf("missing extension: %d %q, want the install-pqn-extension pointer", code, errs)
+	}
+	if _, _, errs := run(missing, "doctor"); strings.Contains(errs, "SQLSTATE") {
+		t.Errorf("missing extension should not leak the raw SQLSTATE: %q", errs)
+	}
+
+	// A same-code error unrelated to pqn_api (e.g. a different missing schema) must stay raw.
+	otherSchema := &pgconn.PgError{Code: "3F000", Message: `schema "some_other_schema" does not exist`}
+	if code, _, errs := run(otherSchema, "doctor"); code != 1 || strings.Contains(errs, "install-pqn-extension") {
+		t.Errorf("unrelated 3F000: %d %q, should not get the pqn-specific message", code, errs)
+	}
+
+	// A different error code must also stay raw, even if it mentions pqn_api.
+	otherCode := &pgconn.PgError{Code: "42501", Message: `permission denied for schema pqn_api`}
+	if code, _, errs := run(otherCode, "doctor"); code != 1 || strings.Contains(errs, "install-pqn-extension") {
+		t.Errorf("non-3F000 error: %d %q, should not get the pqn-specific message", code, errs)
 	}
 }
 
