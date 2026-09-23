@@ -1,0 +1,32 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Append",
+      "Total Cost": 42000.0,
+      "Plan Rows": 3600000,
+      "Subplans Removed": 0,
+      "Plans": [
+        {
+          "Node Type": "Append",
+          "Parent Relationship": "Member",
+          "Total Cost": 3500.0,
+          "Plan Rows": 300000,
+          "Plans": [
+            {"Node Type": "Seq Scan", "Relation Name": "sales_2024_q1_a", "Schema": "demo", "Total Cost": 1750.0, "Plan Rows": 150000, "Filter": "(region = 'North'::text)"},
+            {"Node Type": "Seq Scan", "Relation Name": "sales_2024_q1_b", "Schema": "demo", "Total Cost": 1750.0, "Plan Rows": 150000, "Filter": "(region = 'North'::text)"}
+          ]
+        },
+        {
+          "Node Type": "Append",
+          "Parent Relationship": "Member",
+          "Total Cost": 3500.0,
+          "Plan Rows": 300000,
+          "Plans": [
+            {"Node Type": "Seq Scan", "Relation Name": "sales_2024_q2_a", "Schema": "demo", "Total Cost": 1750.0, "Plan Rows": 150000, "Filter": "(date >= '2024-01-01'::date)"},
+            {"Node Type": "Seq Scan", "Relation Name": "sales_2024_q2_b", "Schema": "demo", "Total Cost": 1750.0, "Plan Rows": 150000, "Filter": "(date >= '2024-01-01'::date)"}
+          ]
+        }
+      ]
+    }
+  }
+]

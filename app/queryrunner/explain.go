@@ -34,6 +34,23 @@ type PlanFinding struct {
 	// finding, populated during catalog enrichment when the relation's index
 	// definitions are available. Nil until enriched.
 	IndexAdvice *IndexAdvice
+	// PartitionsScanned is the Append/Merge Append child count for a
+	// CategoryPartitionPruning finding (0 for every other category). EXPLAIN
+	// never reports how many sibling partitions the planner pruned at plan
+	// time, so catalog enrichment cross-checks this against the parent
+	// table's true partition count before deciding the finding is real.
+	PartitionsScanned int
+	// FilterColumns is the union of columns referenced by every Append/
+	// Merge Append child's Filter, for a CategoryPartitionPruning finding
+	// only (nil for every other category — this is deliberately separate
+	// from RelatedColumns, which would make buildIndexAdvice propose an
+	// index from it). A child filtering on some other column (not the
+	// partition key) still carries a Filter, so scanning every partition
+	// without pruning does not by itself mean the partition-key predicate
+	// is missing or non-sargable — catalog enrichment cross-checks this
+	// against the parent's actual partition key columns before deciding
+	// the finding is real.
+	FilterColumns []string
 }
 
 // Plan finding categories.

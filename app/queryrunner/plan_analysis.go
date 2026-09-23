@@ -121,25 +121,114 @@ func detectPlanSignals(node map[string]interface{}, nodeType, schema, relation s
 	}
 
 	// Partition pruning report on Append/Merge Append nodes.
+	//
+	// EXPLAIN never reports how many sibling partitions the planner pruned at
+	// plan time — only executor-time "Subplans Removed", which stays 0 for the
+	// common case of a constant, non-sargable predicate decided entirely by the
+	// planner before execution starts. So a low child count here can mean either
+	// "pruning already worked" (e.g. 3 of 50 partitions, correctly narrowed) or
+	// "the table only has a few partitions" — that ambiguity can only be
+	// resolved against the catalog's true partition count, which happens during
+	// enrichExplainFindings (see explain_catalog.go); this layer only filters
+	// out the case it can decide on its own: when no child scan carries a
+	// Filter, there is no predicate on the partition key to evaluate at all
+	// (an unfiltered scan, e.g. SELECT COUNT(*) FROM t, not a pruning failure).
 	if nodeType == "Append" || nodeType == "Merge Append" {
 		children, _ := node["Plans"].([]interface{})
-		scanned := float64(len(children))
 		removed, hasRemoved := asFloat64(node["Subplans Removed"])
-		if scanned >= 3 && (!hasRemoved || removed == 0) {
+		leaf := collectAppendLeafInfo(children)
+		// Multi-level partitioning represents each top-level partition as its
+		// own nested Append, so the true scanned-partition count is the leaf
+		// scan count collectAppendLeafInfo found, not len(children) (which
+		// would undercount to the number of top-level partitions only).
+		scanned := float64(leaf.leafCount)
+		if scanned >= 3 && len(leaf.filterColumns) > 0 && (!hasRemoved || removed == 0) {
 			confidence := "medium"
 			if scanned >= 8 {
 				confidence = "high"
 			}
-			out = append(out, base(CategoryPartitionPruning, confidence,
+			f := base(CategoryPartitionPruning, confidence,
 				fmt.Sprintf("%s scans %.0f partitions with no pruning — predicate on the partition key is missing or non-sargable (e.g. DATE_TRUNC on the key)", nodeType, scanned),
 				[]string{
 					fmt.Sprintf("Subplans Removed=%.0f", removed),
 					fmt.Sprintf("child subplans=%.0f", scanned),
-				}))
+				})
+			// Append/Merge Append carry no relation of their own — base() left
+			// Schema/Relation empty since their children scan different physical
+			// partitions (inferSingleTableRelation bails whenever it sees more
+			// than one). Attribute this finding to one representative child
+			// partition so catalog enrichment can resolve the parent and compare
+			// scanned against its true partition count.
+			f.Schema = leaf.schema
+			f.Relation = leaf.relation
+			f.PartitionsScanned = int(scanned)
+			f.FilterColumns = leaf.filterColumns
+			out = append(out, f)
 		}
 	}
 
 	return out
+}
+
+// appendLeafInfo summarizes what an Append/Merge Append's leaf scans reveal:
+// a representative relation to attribute the finding to, and the union of
+// columns referenced by every leaf's Filter (used to tell "no predicate on
+// the partition key" apart from "a predicate on some other column, which
+// still can't be pruned by but isn't a partition-pruning problem").
+type appendLeafInfo struct {
+	schema        string
+	relation      string
+	filterColumns []string
+	// leafCount is the true number of leaf scans found, including through
+	// nested Append/Merge Append descents — the real scanned-partition count
+	// for multi-level partitioning, where len(children) at the top level
+	// would only count top-level partitions.
+	leafCount int
+}
+
+// collectAppendLeafInfo walks an Append/Merge Append's children, descending
+// into any child that is itself an Append/Merge Append (multi-level
+// partitioning presents each top-level partition as a nested Append rather
+// than a leaf scan) so a leaf relation and filter columns are still found.
+func collectAppendLeafInfo(children []interface{}) appendLeafInfo {
+	var info appendLeafInfo
+	seenCols := map[string]bool{}
+	addCols := func(cols []string) {
+		for _, c := range cols {
+			if !seenCols[c] {
+				seenCols[c] = true
+				info.filterColumns = append(info.filterColumns, c)
+			}
+		}
+	}
+	var walk func(nodes []interface{})
+	walk = func(nodes []interface{}) {
+		for _, c := range nodes {
+			cm, ok := c.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if f, _ := cm["Filter"].(string); f != "" {
+				addCols(extractFilterColumns(f))
+			}
+			if r, _ := cm["Relation Name"].(string); r != "" {
+				info.leafCount++
+				if info.relation == "" {
+					info.relation = r
+					info.schema, _ = cm["Schema"].(string)
+				}
+				continue
+			}
+			// No relation of its own — a nested Append/Merge Append (or any
+			// other intermediate node, e.g. BitmapOr) standing in for a
+			// top-level partition. Descend into its own children.
+			if nested, ok := cm["Plans"].([]interface{}); ok {
+				walk(nested)
+			}
+		}
+	}
+	walk(children)
+	return info
 }
 
 // seqScanEvidence collects the raw plan numbers backing a seq-scan or high-cost finding.

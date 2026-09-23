@@ -55,6 +55,69 @@ func TestPlanSignalFixtures(t *testing.T) {
 	}
 }
 
+// TestPlanSignalFixtures_NoCategory pins deliberate non-findings: shapes that
+// look superficially like a signal but must not fire one. Regression coverage
+// for the B-01 false positive where an unfiltered Append (e.g.
+// SELECT COUNT(*) FROM t with no WHERE clause) was reported as "partition
+// pruning defeated" even though there is no predicate to prune with.
+func TestPlanSignalFixtures_NoCategory(t *testing.T) {
+	tests := []struct {
+		fixture    string
+		wantAbsent string
+	}{
+		{fixture: "partition_unfiltered_scan.json", wantAbsent: CategoryPartitionPruning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fixture, func(t *testing.T) {
+			_, findings, _, err := parseExplainTuple(loadExplainFixture(t, tt.fixture))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, f := range findings {
+				if f.Category == tt.wantAbsent {
+					t.Fatalf("expected no %q finding on an unfiltered scan, got: %+v", tt.wantAbsent, f)
+				}
+			}
+		})
+	}
+}
+
+// TestPlanSignalFixtures_NestedAppendCountsLeaves pins a false negative
+// Sourcery flagged: multi-level partitioning presents each top-level
+// partition as its own nested Append node, not a leaf scan. The outer
+// Append here has only 2 direct children (each itself an Append), so a
+// naive len(children) count would read as 2 (below the >=3 threshold) and
+// silently drop a real 4-partition, no-pruning finding. Recursing into
+// nested Append/Merge Append nodes must find the true leaf count (4) and
+// collect filter columns from both levels.
+func TestPlanSignalFixtures_NestedAppendCountsLeaves(t *testing.T) {
+	_, findings, _, err := parseExplainTuple(loadExplainFixture(t, "partition_nested_append.json"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var found *PlanFinding
+	for i := range findings {
+		if findings[i].Category == CategoryPartitionPruning {
+			found = &findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected a partition_pruning finding from the nested Append's 4 true leaves, got: %+v", findings)
+	}
+	if found.PartitionsScanned != 4 {
+		t.Errorf("PartitionsScanned = %d, want 4 (the true leaf count, not len(children)=2)", found.PartitionsScanned)
+	}
+	wantCols := map[string]bool{"region": true, "date": true}
+	if len(found.FilterColumns) != len(wantCols) {
+		t.Fatalf("FilterColumns = %v, want columns from both nested branches: %v", found.FilterColumns, wantCols)
+	}
+	for _, c := range found.FilterColumns {
+		if !wantCols[c] {
+			t.Errorf("unexpected filter column %q in %v", c, found.FilterColumns)
+		}
+	}
+}
+
 // TestPlanSignalEvidence ensures findings carry raw plan metrics as evidence.
 func TestPlanSignalEvidence(t *testing.T) {
 	_, findings, _, err := parseExplainTuple(loadExplainFixture(t, "cardinality_misestimate.json"))
