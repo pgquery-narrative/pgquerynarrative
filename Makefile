@@ -22,8 +22,13 @@ export GOMODCACHE
 # in the environment is left alone, and this is a no-op off Darwin or when
 # xcodebuild is unavailable (Command Line Tools only, or not installed).
 ifeq ($(shell uname -s),Darwin)
-SDKROOT ?= $(shell xcodebuild -version -sdk macosx Path 2>/dev/null)
+ifeq ($(origin SDKROOT),undefined)
+DETECTED_SDKROOT := $(shell xcodebuild -version -sdk macosx Path 2>/dev/null)
+ifneq ($(DETECTED_SDKROOT),)
+SDKROOT := $(DETECTED_SDKROOT)
 export SDKROOT
+endif
+endif
 endif
 
 DB_URL ?= postgres://pgquerynarrative_app:pgquerynarrative_app@localhost:5432/pgquerynarrative?sslmode=disable
