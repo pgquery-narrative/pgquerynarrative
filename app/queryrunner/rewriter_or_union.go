@@ -120,7 +120,198 @@ func selectIsSimpleForUnion(sel *pg_query.SelectStmt) bool {
 			return false
 		}
 	}
+	// A single-row (or per-group) aggregate produces one row per UNION ALL
+	// branch instead of one row combining all matched rows, so splitting the
+	// OR into branches changes the result (e.g. SUM(x) WHERE a=1 OR b=2 becomes
+	// two partial sums instead of one total). GROUP BY is already rejected
+	// above; this additionally rejects an aggregate with no GROUP BY.
+	if targetListHasAggregate(sel.TargetList) {
+		return false
+	}
+	// ORDER BY on a UNION ALL result may only be an integer ordinal or an
+	// unqualified output column name — not a qualified reference (the top
+	// level union has no table alias in scope) and not an arbitrary
+	// expression (this rewrite deparses the original SortBy node verbatim
+	// onto the union, it does not rebuild it, so anything we cannot resolve
+	// against the target list must be rejected rather than passed through).
+	// A wildcard target list only widens which unqualified names are
+	// available; it does not make a qualified reference or an expression safe.
+	if sortClauseHasUnresolvableItem(sel.SortClause, sel.TargetList, targetListHasWildcard(sel.TargetList)) {
+		return false
+	}
 	return true
+}
+
+// aggregateFuncNames are the built-in PostgreSQL aggregates worth guarding
+// against here. The parser does not know at parse time whether a bare
+// function call is an aggregate (that is resolved against the catalog), so
+// this is a name allowlist rather than a structural check — AggStar alone
+// only covers COUNT(*). False negatives (an aggregate not in this list) fail
+// safe: equivalence verification still catches a resulting wrong rewrite
+// before it ships (see the compare-plans guardrail), this list just keeps the
+// rewriter from proposing the wrong shape in the common cases.
+var aggregateFuncNames = map[string]bool{
+	"count": true, "sum": true, "avg": true, "min": true, "max": true,
+	"array_agg": true, "string_agg": true, "json_agg": true, "jsonb_agg": true,
+	"json_object_agg": true, "jsonb_object_agg": true, "xmlagg": true,
+	"bool_and": true, "bool_or": true, "every": true,
+	"bit_and": true, "bit_or": true, "bit_xor": true,
+	"variance": true, "var_pop": true, "var_samp": true,
+	"stddev": true, "stddev_pop": true, "stddev_samp": true,
+	"corr": true, "covar_pop": true, "covar_samp": true,
+	"regr_avgx": true, "regr_avgy": true, "regr_count": true, "regr_intercept": true,
+	"regr_r2": true, "regr_slope": true, "regr_sxx": true, "regr_sxy": true, "regr_syy": true,
+	"mode": true, "percentile_cont": true, "percentile_disc": true,
+}
+
+func targetListHasAggregate(targets []*pg_query.Node) bool {
+	for _, t := range targets {
+		rt := t.GetResTarget()
+		if rt == nil {
+			continue
+		}
+		if nodeContainsAggregateCall(rt.Val) {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeContainsAggregateCall(n *pg_query.Node) bool {
+	if n == nil {
+		return false
+	}
+	if fc := n.GetFuncCall(); fc != nil {
+		if fc.AggStar {
+			return true
+		}
+		for _, part := range fc.Funcname {
+			if name, ok := stringNodeValue(part); ok && aggregateFuncNames[strings.ToLower(name)] {
+				return true
+			}
+		}
+		for _, arg := range fc.Args {
+			if nodeContainsAggregateCall(arg) {
+				return true
+			}
+		}
+		return false
+	}
+	if ae := n.GetAExpr(); ae != nil {
+		return nodeContainsAggregateCall(ae.Lexpr) || nodeContainsAggregateCall(ae.Rexpr)
+	}
+	if be := n.GetBoolExpr(); be != nil {
+		for _, arg := range be.Args {
+			if nodeContainsAggregateCall(arg) {
+				return true
+			}
+		}
+	}
+	if ce := n.GetCoalesceExpr(); ce != nil {
+		for _, arg := range ce.Args {
+			if nodeContainsAggregateCall(arg) {
+				return true
+			}
+		}
+	}
+	if tc := n.GetTypeCast(); tc != nil {
+		return nodeContainsAggregateCall(tc.Arg)
+	}
+	if ce := n.GetCaseExpr(); ce != nil {
+		if nodeContainsAggregateCall(ce.Arg) || nodeContainsAggregateCall(ce.Defresult) {
+			return true
+		}
+		for _, w := range ce.Args {
+			cw := w.GetCaseWhen()
+			if cw == nil {
+				continue
+			}
+			if nodeContainsAggregateCall(cw.Expr) || nodeContainsAggregateCall(cw.Result) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func targetListHasWildcard(targets []*pg_query.Node) bool {
+	for _, t := range targets {
+		rt := t.GetResTarget()
+		if rt == nil {
+			continue
+		}
+		if cr := rt.Val.GetColumnRef(); cr != nil {
+			for _, f := range cr.Fields {
+				if f.GetAStar() != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// targetListOutputNames returns the set of column names this target list
+// produces under ORDER BY resolution rules: an explicit alias, or a bare
+// column reference's own (unqualified) name. A target with neither (e.g. an
+// unaliased function call) contributes nothing — conservatively correct,
+// since Postgres would give it an implicit name we cannot cheaply reproduce.
+func targetListOutputNames(targets []*pg_query.Node) map[string]bool {
+	names := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		rt := t.GetResTarget()
+		if rt == nil {
+			continue
+		}
+		if rt.Name != "" {
+			names[strings.ToLower(rt.Name)] = true
+			continue
+		}
+		if name := columnRefName(rt.Val); name != "" {
+			parts := strings.Split(name, ".")
+			names[strings.ToLower(parts[len(parts)-1])] = true
+		}
+	}
+	return names
+}
+
+// sortClauseHasUnresolvableItem reports whether any ORDER BY item is not
+// safe to deparse verbatim onto the UNION ALL result: PostgreSQL accepts
+// only an integer ordinal or an unqualified output column name there. A
+// qualified reference (the union has no table alias in scope) or any other
+// expression (this rewrite does not resolve or rebuild the sort item, it
+// keeps the original node) is rejected outright, regardless of wildcard;
+// an unqualified column reference is checked against the target list's
+// output names unless hasWildcard (SELECT * makes every column available).
+func sortClauseHasUnresolvableItem(sortClause []*pg_query.Node, targets []*pg_query.Node, hasWildcard bool) bool {
+	if len(sortClause) == 0 {
+		return false
+	}
+	available := targetListOutputNames(targets)
+	for _, s := range sortClause {
+		sb := s.GetSortBy()
+		if sb == nil {
+			continue
+		}
+		if ac := sb.Node.GetAConst(); ac != nil && ac.GetIval() != nil {
+			continue // an ordinal position, e.g. ORDER BY 1 — always safe
+		}
+		cr := sb.Node.GetColumnRef()
+		if cr == nil {
+			return true // an expression we do not resolve, e.g. ORDER BY date + 1
+		}
+		if len(cr.Fields) > 1 {
+			return true // qualified, e.g. ORDER BY t.date — no alias in scope after UNION
+		}
+		name := columnRefName(sb.Node)
+		if hasWildcard {
+			continue
+		}
+		if !available[strings.ToLower(name)] {
+			return true
+		}
+	}
+	return false
 }
 
 func factorOr(where *pg_query.Node) (shared *pg_query.Node, leaves []*pg_query.Node) {
