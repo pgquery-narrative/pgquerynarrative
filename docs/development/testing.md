@@ -17,7 +17,7 @@ and CI are the source of truth here — where a `make` target runs more than a s
 | Helm StrictMode | `make helm-strict-check` | Renders the chart and checks production gates without a cluster |
 | Frontend unit | `make test-frontend` | `cd frontend && npm test` (Vitest) |
 | Frontend typecheck / lint | `cd frontend && npm run typecheck` / `npm run lint` | |
-| Browser E2E | `make test-playwright` | Playwright, no OIDC. `make test-playwright-oidc` runs the OIDC-flow variant |
+| Browser E2E | `make test-playwright` | Full Playwright suite (smoke, csp, full-ui, oidc, schedules, shares, critical-path). `make test-playwright-oidc` is a kept alias for the same target |
 | Release/image smoke | CI only: `Release build smoke`, `Docker image smoke` | Not a local `make` target — see `.github/workflows/ci.yml` and `release.yml` |
 | `pqn` extension | `make verify-pqn-extension` | Throwaway PostgreSQL primary and hot standby: ownership, `PUBLIC`, analyst limits, the ledger, a real 1.0 → 1.1 upgrade. `PG_IMAGE=postgres:16` (or 17, 18) picks the version. Needs Docker |
 | `pqn` tool | `make verify-pqn-cli` | The tool against a slow-query lab: `top`, `investigate`, a wrong rewrite is `Different`, the limits hold. Needs Docker |

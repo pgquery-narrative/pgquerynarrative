@@ -273,13 +273,16 @@ test-e2e:
 	@echo "🧪 Running E2E tests..."
 	DOCKER_API_VERSION=1.44 $(GO) test ./test/e2e/... -v
 
+# Full suite (smoke, csp, full-ui, oidc, schedules, shares, critical-path) — the
+# Investigate-flow coverage (full-ui.spec.ts) lives only in this suite, so a
+# smoke-only default would silently never exercise it. PLAYWRIGHT_OIDC=1 also
+# starts the mock IdP so oidc.spec.ts can run.
 test-playwright:
 	@chmod +x ./tools/e2e/run-playwright.sh
-	@PLAYWRIGHT_OIDC=0 ./tools/e2e/run-playwright.sh
-
-test-playwright-oidc:
-	@chmod +x ./tools/e2e/run-playwright.sh
 	@PLAYWRIGHT_OIDC=1 ./tools/e2e/run-playwright.sh
+
+# Alias kept for anyone scripting the old name; identical to test-playwright.
+test-playwright-oidc: test-playwright
 
 test-load-smoke:
 	@chmod +x ./test/load/smoke.sh
