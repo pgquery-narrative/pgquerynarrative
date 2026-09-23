@@ -284,15 +284,8 @@ func BuildSuggestRewritePayload(investigationsSuggestRewriteID string) (*investi
 
 // BuildRankCandidatesPayload builds the payload for the investigations
 // rank_candidates endpoint from CLI flags.
-func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investigationsRankCandidatesID string) (*investigations.RankCandidatesPayload, error) {
+func BuildRankCandidatesPayload(investigationsRankCandidatesID string, investigationsRankCandidatesAnalyze string) (*investigations.RankCandidatesPayload, error) {
 	var err error
-	var body RankCandidatesRequestBody
-	{
-		err = json.Unmarshal([]byte(investigationsRankCandidatesBody), &body)
-		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false\n   }'")
-		}
-	}
 	var id string
 	{
 		id = investigationsRankCandidatesID
@@ -301,16 +294,18 @@ func BuildRankCandidatesPayload(investigationsRankCandidatesBody string, investi
 			return nil, err
 		}
 	}
-	v := &investigations.RankCandidatesPayload{
-		Analyze: body.Analyze,
-	}
+	var analyze bool
 	{
-		var zero bool
-		if v.Analyze == zero {
-			v.Analyze = false
+		if investigationsRankCandidatesAnalyze != "" {
+			analyze, err = strconv.ParseBool(investigationsRankCandidatesAnalyze)
+			if err != nil {
+				return nil, fmt.Errorf("invalid value for analyze, must be BOOL")
+			}
 		}
 	}
+	v := &investigations.RankCandidatesPayload{}
 	v.ID = id
+	v.Analyze = analyze
 
 	return v, nil
 }

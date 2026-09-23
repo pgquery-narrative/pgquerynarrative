@@ -231,9 +231,9 @@ func ParseEndpoint(
 		investigationsSuggestRewriteFlags  = flag.NewFlagSet("suggest-rewrite", flag.ExitOnError)
 		investigationsSuggestRewriteIDFlag = investigationsSuggestRewriteFlags.String("id", "REQUIRED", "")
 
-		investigationsRankCandidatesFlags    = flag.NewFlagSet("rank-candidates", flag.ExitOnError)
-		investigationsRankCandidatesBodyFlag = investigationsRankCandidatesFlags.String("body", "REQUIRED", "")
-		investigationsRankCandidatesIDFlag   = investigationsRankCandidatesFlags.String("id", "REQUIRED", "")
+		investigationsRankCandidatesFlags       = flag.NewFlagSet("rank-candidates", flag.ExitOnError)
+		investigationsRankCandidatesIDFlag      = investigationsRankCandidatesFlags.String("id", "REQUIRED", "")
+		investigationsRankCandidatesAnalyzeFlag = investigationsRankCandidatesFlags.String("analyze", "", "")
 
 		investigationsGenerateReportFlags                 = flag.NewFlagSet("generate-report", flag.ExitOnError)
 		investigationsGenerateReportIDFlag                = investigationsGenerateReportFlags.String("id", "REQUIRED", "")
@@ -756,7 +756,7 @@ func ParseEndpoint(
 				data, err = investigationsc.BuildSuggestRewritePayload(*investigationsSuggestRewriteIDFlag)
 			case "rank-candidates":
 				endpoint = c.RankCandidates()
-				data, err = investigationsc.BuildRankCandidatesPayload(*investigationsRankCandidatesBodyFlag, *investigationsRankCandidatesIDFlag)
+				data, err = investigationsc.BuildRankCandidatesPayload(*investigationsRankCandidatesIDFlag, *investigationsRankCandidatesAnalyzeFlag)
 			case "generate-report":
 				endpoint = c.GenerateReport()
 				data, err = investigationsc.BuildGenerateReportPayload(*investigationsGenerateReportIDFlag, *investigationsGenerateReportAcceptSampleMatchFlag)
@@ -1771,8 +1771,8 @@ func investigationsSuggestRewriteUsage() {
 func investigationsRankCandidatesUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] investigations rank-candidates", os.Args[0])
-	fmt.Fprint(os.Stderr, " -body JSON")
 	fmt.Fprint(os.Stderr, " -id STRING")
+	fmt.Fprint(os.Stderr, " -analyze BOOL")
 	fmt.Fprintln(os.Stderr)
 
 	// Description
@@ -1780,12 +1780,12 @@ func investigationsRankCandidatesUsage() {
 	fmt.Fprintln(os.Stderr, `Generate rewrite and index-DDL candidates, dry-EXPLAIN rewrites, project index cost (hypopg or honest heuristic), and rank by cost/partitions`)
 
 	// Flags list
-	fmt.Fprintln(os.Stderr, `    -body JSON: `)
 	fmt.Fprintln(os.Stderr, `    -id STRING: `)
+	fmt.Fprintln(os.Stderr, `    -analyze BOOL: `)
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations rank-candidates --body '{\n      \"analyze\": false\n   }' --id \"73c1e23c-d46c-47f6-a13c-313982122f2e\"")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "investigations rank-candidates --id \"73c1f33f-3910-49a6-99e2-3cd46c57f621\" --analyze true")
 }
 
 func investigationsGenerateReportUsage() {

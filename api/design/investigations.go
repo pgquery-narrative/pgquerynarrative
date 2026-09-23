@@ -138,6 +138,14 @@ var _ = Service("investigations", func() {
 		Error("validation_error", ValidationError)
 		HTTP(func() {
 			POST("/api/v1/investigations/{id}/rank-candidates")
+			// Carried as a query parameter, not a body attribute: every other
+			// attribute here defaults to id, which the path template already
+			// binds — leaving analyze bodyless meant this endpoint 400'd on a
+			// body-less POST (goa's missing_payload) even though every field is
+			// optional. Same fix as /report's accept_sample_match.
+			Params(func() {
+				Param("analyze")
+			})
 			Response(StatusOK)
 			Response(StatusNotFound, "not_found")
 			Response(StatusBadRequest, "validation_error")

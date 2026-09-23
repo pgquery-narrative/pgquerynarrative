@@ -563,32 +563,28 @@ func EncodeRankCandidatesResponse(encoder func(context.Context, http.ResponseWri
 func DecodeRankCandidatesRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.RankCandidatesPayload, error) {
 	return func(r *http.Request) (*investigations.RankCandidatesPayload, error) {
 		var (
-			body RankCandidatesRequestBody
-			err  error
-		)
-		err = decoder(r).Decode(&body)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil, goa.MissingPayloadError()
-			}
-			var gerr *goa.ServiceError
-			if errors.As(err, &gerr) {
-				return nil, gerr
-			}
-			return nil, goa.DecodePayloadError(err.Error())
-		}
-
-		var (
-			id string
+			id      string
+			analyze bool
+			err     error
 
 			params = mux.Vars(r)
 		)
 		id = params["id"]
 		err = goa.MergeErrors(err, goa.ValidateFormat("id", id, goa.FormatUUID))
+		{
+			analyzeRaw := r.URL.Query().Get("analyze")
+			if analyzeRaw != "" {
+				v, err2 := strconv.ParseBool(analyzeRaw)
+				if err2 != nil {
+					err = goa.MergeErrors(err, goa.InvalidFieldTypeError("analyze", analyzeRaw, "boolean"))
+				}
+				analyze = v
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
-		payload := NewRankCandidatesPayload(&body, id)
+		payload := NewRankCandidatesPayload(id, analyze)
 
 		return payload, nil
 	}

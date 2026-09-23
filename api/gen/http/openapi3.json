@@ -1700,16 +1700,6 @@
         ],
         "type": "object"
       },
-      "RankCandidatesRequestBody": {
-        "properties": {
-          "analyze": {
-            "default": false,
-            "description": "When true, dry-EXPLAIN uses ANALYZE for timing (slower)",
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
       "RankedCandidate": {
         "properties": {
           "category": {
@@ -3756,6 +3746,17 @@
         "operationId": "investigations#rank_candidates",
         "parameters": [
           {
+            "allowEmptyValue": true,
+            "description": "When true, dry-EXPLAIN uses ANALYZE for timing (slower)",
+            "in": "query",
+            "name": "analyze",
+            "schema": {
+              "default": false,
+              "description": "When true, dry-EXPLAIN uses ANALYZE for timing (slower)",
+              "type": "boolean"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -3765,16 +3766,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RankCandidatesRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {

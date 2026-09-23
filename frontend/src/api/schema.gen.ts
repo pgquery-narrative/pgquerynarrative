@@ -430,10 +430,6 @@ export interface QuerySuggestion {
   title: string;
 }
 
-export interface RankCandidatesRequestBody {
-  analyze?: boolean;
-}
-
 export interface RankedCandidate {
   category?: string;
   confidence?: string;
