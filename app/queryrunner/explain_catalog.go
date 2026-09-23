@@ -125,12 +125,12 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 			         SELECT pn.nspname FROM pg_inherits pi
 			         JOIN pg_class pc ON pc.oid = pi.inhparent
 			         JOIN pg_namespace pn ON pn.oid = pc.relnamespace
-			         WHERE pi.inhrelid = c.oid
+			         WHERE pi.inhrelid = c.oid AND pc.relkind = 'p'
 			       ), ''),
 			       COALESCE((
 			         SELECT pc.relname FROM pg_inherits pi
 			         JOIN pg_class pc ON pc.oid = pi.inhparent
-			         WHERE pi.inhrelid = c.oid
+			         WHERE pi.inhrelid = c.oid AND pc.relkind = 'p'
 			       ), '')
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -634,10 +634,11 @@ func buildIndexAdvice(f PlanFinding, st tableCatalogStats) *IndexAdvice {
 	// CollectIndexDDLCandidates' exact-string dedup, a wall of near-duplicate
 	// candidates for a partitioned table.
 	ddlSchema, ddlRelation := f.Schema, f.Relation
-	if st.ParentRelation != "" {
+	isPartitionParent := st.ParentRelation != ""
+	if isPartitionParent {
 		ddlSchema, ddlRelation = st.ParentSchema, st.ParentRelation
 	}
-	advice.CandidateDDL = draftCandidateDDL(ddlSchema, ddlRelation, cols)
+	advice.CandidateDDL = draftCandidateDDL(ddlSchema, ddlRelation, cols, isPartitionParent)
 	return advice
 }
 
@@ -909,7 +910,15 @@ func draftDropDDL(indexName, reason string) string {
 // review only, covering cols on schema.relation. It is never executed by this
 // codebase — callers must treat it as a suggestion requiring human judgment
 // about lock contention, replication lag, and available disk headroom.
-func draftCandidateDDL(schema, relation string, cols []string) string {
+// draftCandidateDDL drafts a CREATE INDEX statement for expert review.
+// PostgreSQL rejects CREATE INDEX CONCURRENTLY directly on a partitioned
+// table ("cannot create index on partitioned table ... concurrently") —
+// confirmed live. isPartitionParent drops CONCURRENTLY in that case; plain
+// CREATE INDEX on a partitioned table still builds (and attaches) an index
+// on every partition, it just does so non-concurrently, one partition at a
+// time — real, runnable DDL, just with the usual non-concurrent locking
+// caveat the comment below already calls out for review.
+func draftCandidateDDL(schema, relation string, cols []string, isPartitionParent bool) string {
 	if relation == "" || hasExpressionColumn(cols) || len(cols) == 0 {
 		return ""
 	}
@@ -922,9 +931,15 @@ func draftCandidateDDL(schema, relation string, cols []string) string {
 		table = quoteIdent(schema) + "." + table
 	}
 	idxName := "idx_" + relation + "_" + strings.Join(cols, "_")
+	concurrently := "CONCURRENTLY "
+	note := "Verify on staging/a replica, check for lock contention, and confirm write/storage cost first."
+	if isPartitionParent {
+		concurrently = ""
+		note = "This builds the index on every partition, one at a time (PostgreSQL does not support CONCURRENTLY on a partitioned table) — each partition briefly locks while its index builds. Verify on staging/a replica and confirm write/storage cost first."
+	}
 	return fmt.Sprintf(
-		"-- CANDIDATE for expert review only — do not auto-apply. Verify on staging/a replica, check for lock contention, and confirm write/storage cost first.\nCREATE INDEX CONCURRENTLY %s ON %s (%s);",
-		quoteIdent(idxName), table, strings.Join(quotedCols, ", "),
+		"-- CANDIDATE for expert review only — do not auto-apply. %s\nCREATE INDEX %s%s ON %s (%s);",
+		note, concurrently, quoteIdent(idxName), table, strings.Join(quotedCols, ", "),
 	)
 }
 
