@@ -197,7 +197,7 @@ var GenerateReportPayload = Type("GenerateReportPayload", func() {
 	Attribute("sql", String, func() {
 		MinLength(1)
 		MaxLength(10000)
-		Pattern("^[^;]+$")
+		Pattern("^[^;]+;*\\s*$")
 	})
 	Attribute("saved_query_id", String, func() {
 		Format(FormatUUID)

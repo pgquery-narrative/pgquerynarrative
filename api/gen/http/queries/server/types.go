@@ -891,7 +891,7 @@ func ValidateRunRequestBody(body *RunRequestBody) (err error) {
 		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
 	}
 	if body.SQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+;*\\s*$"))
 	}
 	if body.SQL != nil {
 		if utf8.RuneCountInString(*body.SQL) < 1 {
@@ -923,7 +923,7 @@ func ValidateExplainPlanRequestBody(body *ExplainPlanRequestBody) (err error) {
 		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
 	}
 	if body.SQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", *body.SQL, "^[^;]+;*\\s*$"))
 	}
 	if body.SQL != nil {
 		if utf8.RuneCountInString(*body.SQL) < 1 {
@@ -948,7 +948,7 @@ func ValidateComparePlansRequestBody(body *ComparePlansRequestBody) (err error) 
 		err = goa.MergeErrors(err, goa.MissingFieldError("after_sql", "body"))
 	}
 	if body.BeforeSQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", *body.BeforeSQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", *body.BeforeSQL, "^[^;]+;*\\s*$"))
 	}
 	if body.BeforeSQL != nil {
 		if utf8.RuneCountInString(*body.BeforeSQL) < 1 {
@@ -961,7 +961,7 @@ func ValidateComparePlansRequestBody(body *ComparePlansRequestBody) (err error) 
 		}
 	}
 	if body.AfterSQL != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.after_sql", *body.AfterSQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.after_sql", *body.AfterSQL, "^[^;]+;*\\s*$"))
 	}
 	if body.AfterSQL != nil {
 		if utf8.RuneCountInString(*body.AfterSQL) < 1 {

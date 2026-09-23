@@ -27,7 +27,7 @@ func BuildRunPayload(queriesRunBody string) (*queries.RunQueryPayload, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"connection_id\": \"Vel dolor qui adipisci nihil rerum consequatur.\",\n      \"limit\": 330,\n      \"sql\": \"2n\"\n   }'")
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
 		}
@@ -119,7 +119,7 @@ func BuildExplainPlanPayload(queriesExplainPlanBody string) (*queries.ExplainQue
 		if err != nil {
 			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": false,\n      \"connection_id\": \"Ea non quam minus.\",\n      \"sql\": \"tz9\"\n   }'")
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
 		}
@@ -155,14 +155,14 @@ func BuildComparePlansPayload(queriesComparePlansBody string) (*queries.CompareP
 		if err != nil {
 			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"after_sql\": \"jec\",\n      \"analyze\": true,\n      \"before_sql\": \"a\",\n      \"binds\": [\n         \"Rerum laudantium iusto.\",\n         \"Excepturi cumque culpa omnis quam.\"\n      ],\n      \"connection_id\": \"Sed et at perspiciatis vitae.\",\n      \"timing_runs\": 2,\n      \"verify_results\": true\n   }'")
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", body.BeforeSQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.before_sql", body.BeforeSQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.BeforeSQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.before_sql", body.BeforeSQL, utf8.RuneCountInString(body.BeforeSQL), 1, true))
 		}
 		if utf8.RuneCountInString(body.BeforeSQL) > 10000 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.before_sql", body.BeforeSQL, utf8.RuneCountInString(body.BeforeSQL), 10000, false))
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.after_sql", body.AfterSQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.after_sql", body.AfterSQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.AfterSQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.after_sql", body.AfterSQL, utf8.RuneCountInString(body.AfterSQL), 1, true))
 		}

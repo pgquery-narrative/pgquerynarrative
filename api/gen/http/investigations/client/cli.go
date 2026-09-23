@@ -33,7 +33,7 @@ func BuildCreatePayload(investigationsCreateBody string) (*investigations.Create
 		if utf8.RuneCountInString(body.Title) > 200 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.title", body.Title, utf8.RuneCountInString(body.Title), 200, false))
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.sql", body.SQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.SQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.sql", body.SQL, utf8.RuneCountInString(body.SQL), 1, true))
 		}
@@ -163,7 +163,7 @@ func BuildAddCandidatePayload(investigationsAddCandidateBody string, investigati
 		if err != nil {
 			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analyze\": true,\n      \"binds\": [\n         \"Et soluta nostrum qui in quo.\",\n         \"Laborum aut.\",\n         \"Omnis nostrum modi.\",\n         \"Repudiandae velit.\"\n      ],\n      \"candidate_sql\": \"mi2\",\n      \"timing_runs\": 2,\n      \"verify_results\": true\n   }'")
 		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+$"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_sql", body.CandidateSQL, "^[^;]+;*\\s*$"))
 		if utf8.RuneCountInString(body.CandidateSQL) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.candidate_sql", body.CandidateSQL, utf8.RuneCountInString(body.CandidateSQL), 1, true))
 		}
