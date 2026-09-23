@@ -3,11 +3,16 @@ package queryrunner
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// partitionKeyIdentRe extracts bare identifier tokens from a
+// pg_get_partkeydef() column list, e.g. "date" out of "RANGE (date)".
+var partitionKeyIdentRe = regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*`)
 
 type tableCatalogStats struct {
 	EstimatedRows   int64
@@ -17,6 +22,18 @@ type tableCatalogStats struct {
 	Indexes         []IndexDefinition
 	LastAnalyze     *time.Time
 	LastAutoanalyze *time.Time
+	// TotalPartitions is the sibling count of this relation's partition parent
+	// (0 when the relation is not itself a partition). Used to tell a
+	// partition_pruning finding's PartitionsScanned apart from a table that
+	// simply has few partitions — see enrichExplainFindings.
+	TotalPartitions int
+	// PartitionKeyColumns are the parent's partition key column names
+	// (normalized, unqualified; empty when the relation is not a partition).
+	// A partition_pruning finding is only real when at least one of the
+	// scanned leaves' FilterColumns is one of these — a filter on some other
+	// column still scans every partition, but there was never a predicate on
+	// the partition key to prune with.
+	PartitionKeyColumns []string
 }
 
 // smallTableRowThreshold is the row count below which index recommendations
@@ -75,6 +92,7 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 	stats := make(map[relKey]tableCatalogStats, len(keys))
 	for k := range keys {
 		var row tableCatalogStats
+		var partKeyDef *string
 		err := pool.QueryRow(ctx, `
 			SELECT COALESCE(
 			         NULLIF((
@@ -89,14 +107,23 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 			       COALESCE(pg_total_relation_size(c.oid), 0),
 			       (SELECT COUNT(*)::int FROM pg_index i WHERE i.indrelid = c.oid AND i.indisvalid),
 			       s.last_analyze,
-			       s.last_autoanalyze
+			       s.last_autoanalyze,
+			       COALESCE((
+			         SELECT COUNT(*)::int FROM pg_inherits sib
+			         WHERE sib.inhparent = (SELECT self.inhparent FROM pg_inherits self WHERE self.inhrelid = c.oid)
+			       ), 0),
+			       (SELECT pg_get_partkeydef(self.inhparent) FROM pg_inherits self WHERE self.inhrelid = c.oid)
 			FROM pg_class c
 			JOIN pg_namespace n ON n.oid = c.relnamespace
 			LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
 			WHERE n.nspname = $1 AND c.relname = $2
-		`, k.schema, k.name).Scan(&row.EstimatedRows, &row.TotalBytes, &row.IndexCount, &row.LastAnalyze, &row.LastAutoanalyze)
+		`, k.schema, k.name).Scan(&row.EstimatedRows, &row.TotalBytes, &row.IndexCount, &row.LastAnalyze, &row.LastAutoanalyze,
+			&row.TotalPartitions, &partKeyDef)
 		if err != nil {
 			continue
+		}
+		if partKeyDef != nil {
+			row.PartitionKeyColumns = parsePartitionKeyColumns(*partKeyDef)
 		}
 		indexes, err := fetchIndexDefinitions(ctx, pool, k.schema, k.name)
 		if err == nil {
@@ -110,6 +137,7 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 
 	out := make([]PlanFinding, len(findings))
 	copy(out, findings)
+	drop := make([]bool, len(out))
 	for i := range out {
 		if out[i].Relation == "" {
 			continue
@@ -125,9 +153,22 @@ func (r *Runner) enrichExplainFindings(ctx context.Context, findings []PlanFindi
 		if !ok {
 			continue
 		}
+		if out[i].Category == CategoryPartitionPruning && partitionPruningAlreadyWorked(out[i], st) {
+			drop[i] = true
+			continue
+		}
 		out[i] = applyCatalogContext(out[i], st)
 		out[i].IndexAdvice = buildIndexAdvice(out[i], st)
 		out[i] = promoteIndexCandidateFinding(out[i])
+	}
+	if anyDropped(drop) {
+		kept := out[:0]
+		for i, f := range out {
+			if !drop[i] {
+				kept = append(kept, f)
+			}
+		}
+		out = kept
 	}
 
 	// Beyond per-node enrichment, surface health issues with the *existing*
@@ -247,6 +288,85 @@ func fetchIndexDefinitions(ctx context.Context, pool *pgxpool.Pool, schema, tabl
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+// partitionPruningAlreadyWorked reports whether a CategoryPartitionPruning
+// finding is a false positive, for either of two independent reasons:
+//
+//  1. No leaf's Filter touched the partition key at all. A filter on some
+//     other column still scans every partition (nothing else could prune
+//     it), but that is not a partition-key predicate failing to prune —
+//     there was never a partition-key predicate to begin with.
+//  2. The Append's child count is close enough to the table's true
+//     partition count that plan-time pruning already cut the scan down
+//     (e.g. 3 of 50 partitions) — EXPLAIN itself has no way to report
+//     plan-time pruning (see the comment on the finding in
+//     plan_analysis.go). A scanned count at or below half the true total is
+//     treated as real pruning; anything higher (up to and including
+//     "scanned every partition") is a genuine failure.
+func partitionPruningAlreadyWorked(f PlanFinding, st tableCatalogStats) bool {
+	if len(st.PartitionKeyColumns) > 0 && !anyColumnMatches(f.FilterColumns, st.PartitionKeyColumns) {
+		return true
+	}
+	if f.PartitionsScanned <= 0 || st.TotalPartitions <= 0 {
+		return false
+	}
+	return f.PartitionsScanned*2 <= st.TotalPartitions
+}
+
+func anyColumnMatches(cols, targets []string) bool {
+	want := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		want[t] = true
+	}
+	for _, c := range cols {
+		if want[c] {
+			return true
+		}
+	}
+	return false
+}
+
+// partitionKeyStrategyWords are the partition strategies pg_get_partkeydef
+// prefixes its column list with (e.g. "RANGE (date)") — excluded from the
+// extracted column set alongside the general SQL stopwords.
+var partitionKeyStrategyWords = map[string]bool{"range": true, "list": true, "hash": true}
+
+// parsePartitionKeyColumns extracts column names from a pg_get_partkeydef
+// result such as "RANGE (date)" or "RANGE (date, region)". Best-effort for
+// an expression partition key (e.g. "RANGE (date_trunc('month', date))"): it
+// pulls every identifier out of the parenthesized list rather than resolving
+// the expression, which only risks under-dropping a rare expression-key
+// false positive, never mis-flagging a real one — the intersection check in
+// partitionPruningAlreadyWorked only needs one shared name to keep a finding.
+func parsePartitionKeyColumns(def string) []string {
+	open := strings.Index(def, "(")
+	close := strings.LastIndex(def, ")")
+	if open < 0 || close < 0 || close <= open {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range partitionKeyIdentRe.FindAllString(def[open+1:close], -1) {
+		name := strings.ToLower(m)
+		if name == "" || sqlFilterStopwords[name] || partitionKeyStrategyWords[name] {
+			continue
+		}
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func anyDropped(drop []bool) bool {
+	for _, d := range drop {
+		if d {
+			return true
+		}
+	}
+	return false
 }
 
 func applyCatalogContext(f PlanFinding, st tableCatalogStats) PlanFinding {
