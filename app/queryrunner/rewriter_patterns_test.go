@@ -441,6 +441,28 @@ func TestSuggestRewrites_CastDateInequality(t *testing.T) {
 	}
 }
 
+// DeclineReason is the single source of truth for why SuggestRewrites found
+// nothing (surfaced by both the API's decline_reason and the Investigate
+// UI), so its claims about which patterns rewrite must stay true. Sourcery
+// flagged it omitting date_part and narrowing COALESCE to date columns when
+// SuggestRewrites' own doc comment (and this file's other tests) show both
+// rewriting generally. Pin the two cases live, and pin the wording.
+func TestDeclineReason_MatchesSupportedPatterns(t *testing.T) {
+	if !strings.Contains(DeclineReason, "date_part") {
+		t.Errorf("DeclineReason omits date_part, which SuggestRewrites supports: %q", DeclineReason)
+	}
+	if strings.Contains(DeclineReason, "COALESCE over a date") || strings.Contains(DeclineReason, "COALESCE over") {
+		t.Errorf("DeclineReason must not narrow COALESCE to date columns — it also rewrites text columns: %q", DeclineReason)
+	}
+
+	if cands := SuggestRewrites(`SELECT 1 FROM demo.sales WHERE date_part('year', date) = 2025`, nil); len(cands) == 0 {
+		t.Fatal("date_part must actually rewrite — DeclineReason claims it does")
+	}
+	if cands := SuggestRewrites(`SELECT 1 FROM demo.sales WHERE COALESCE(region, 'Unknown') = 'North'`, nil); len(cands) == 0 {
+		t.Fatal("COALESCE on a non-date (text) column must actually rewrite — DeclineReason claims it does")
+	}
+}
+
 func mustFindCategory(t *testing.T, cands []RewriteCandidate, category string) RewriteCandidate {
 	t.Helper()
 	for _, c := range cands {

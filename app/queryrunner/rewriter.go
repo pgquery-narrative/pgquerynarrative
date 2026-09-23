@@ -29,9 +29,10 @@ type RewriteCandidate struct {
 // permanent limitation (no catalog access to confirm a cast is a no-op), not a
 // pattern this function tries and fails.
 const DeclineReason = "No rewrite offered. The rewriter only proposes transforms it can prove preserve results, " +
-	"so most queries get nothing back. It looks for: a function wrapping a filtered column " +
-	"(DATE_TRUNC / EXTRACT / to_char / ::date / COALESCE over a date), OR across columns → UNION ALL, " +
-	"IN / NOT IN → EXISTS, and LEFT JOIN … IS NULL → NOT EXISTS. The plan findings above still apply."
+	"so most queries get nothing back. It looks for: a function wrapping a filtered date column " +
+	"(DATE_TRUNC / EXTRACT / date_part / to_char / ::date), COALESCE(col, default) = const, " +
+	"OR across columns → UNION ALL, IN / NOT IN → EXISTS, and LEFT JOIN … IS NULL → NOT EXISTS. " +
+	"The plan findings above still apply."
 
 // SuggestRewrites analyzes sql (and optional plan findings) and returns
 // candidate rewrites. Supported patterns:
