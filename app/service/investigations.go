@@ -1097,16 +1097,13 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		}
 
 		if !equivalenceIsShippable(status) {
-			msg := "result equivalence was not verified — re-run Compare plans with result verification until status is VerifiedEqual before generating a shippable report"
-			switch status {
-			case EquivalenceDifferent:
-				msg = "result equivalence is Different — reconcile the candidate rewrite before generating a shippable report"
-			case EquivalenceNotRequested:
-				msg = "result equivalence was not checked — re-run Compare plans with result verification enabled before generating a shippable report"
+			var notes *string
+			if inv.Comparison != nil {
+				notes = inv.Comparison.ResultEquivalenceNotes
 			}
 			return nil, &investigations.ValidationError{
 				Name:    "validation_error",
-				Message: msg,
+				Message: equivalenceNotShippableMessage(status, notes),
 				Code:    strPtr("EQUIVALENCE_NOT_EQUAL"),
 			}
 		}
@@ -1262,6 +1259,32 @@ func equivalenceStatusFromComparison(cmp *investigations.ComparePlansResult) str
 // sampled evidence is a human decision, not a default.
 func equivalenceIsShippable(status string) bool {
 	return status == EquivalenceVerifiedEqual || status == EquivalenceSampleMatch
+}
+
+// equivalenceNotShippableMessage builds the report-generation error message
+// for a non-shippable equivalence status. "Re-run Compare plans" is only
+// useful advice when the cause is transient (nondeterministic sample
+// ordering, a timeout) — a candidate that failed with a real Postgres error
+// (division by zero, a type mismatch, a missing column) fails identically on
+// every re-run, so an Unverified status whose notes say the *candidate*
+// query hit one points at fixing the candidate SQL instead. compareResultEquivalence
+// also produces a distinct "sample run failed on original SQL" note when the
+// baseline fails instead — that's not the candidate's fault, and a combined
+// "before_err=... after_err=..." note can't attribute the failure to either
+// side, so both cases fall through to the generic retry advice rather than
+// guessing which one to blame.
+func equivalenceNotShippableMessage(status string, notes *string) string {
+	switch status {
+	case EquivalenceDifferent:
+		return "result equivalence is Different — reconcile the candidate rewrite before generating a shippable report"
+	case EquivalenceNotRequested:
+		return "result equivalence was not checked — re-run Compare plans with result verification enabled before generating a shippable report"
+	case EquivalenceUnverified:
+		if notes != nil && strings.Contains(*notes, "candidate SQL") && strings.Contains(*notes, "ERROR:") {
+			return "result equivalence could not be verified — the candidate SQL failed with a database error (see the comparison notes); fix the candidate, not just re-run the comparison, before generating a shippable report"
+		}
+	}
+	return "result equivalence was not verified — re-run Compare plans with result verification until status is VerifiedEqual before generating a shippable report"
 }
 
 func normalizeInvestigationError(err error) error {
