@@ -705,10 +705,9 @@ func EncodeRankCandidatesRequest(encoder func(*http.Request) goahttp.Encoder) fu
 		if !ok {
 			return goahttp.ErrInvalidType("investigations", "rank_candidates", "*investigations.RankCandidatesPayload", v)
 		}
-		body := NewRankCandidatesRequestBody(p)
-		if err := encoder(req).Encode(&body); err != nil {
-			return goahttp.ErrEncodingError("investigations", "rank_candidates", err)
-		}
+		values := req.URL.Query()
+		values.Add("analyze", fmt.Sprintf("%v", p.Analyze))
+		req.URL.RawQuery = values.Encode()
 		return nil
 	}
 }

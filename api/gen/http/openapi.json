@@ -1203,17 +1203,6 @@
       "title": "InvestigationsCreateFromRegressionRequestBody",
       "type": "object"
     },
-    "InvestigationsRankCandidatesRequestBody": {
-      "properties": {
-        "analyze": {
-          "default": false,
-          "description": "When true, dry-EXPLAIN uses ANALYZE for timing (slower)",
-          "type": "boolean"
-        }
-      },
-      "title": "InvestigationsRankCandidatesRequestBody",
-      "type": "object"
-    },
     "LLMError": {
       "properties": {
         "code": {
@@ -3898,19 +3887,19 @@
         "operationId": "investigations#rank_candidates",
         "parameters": [
           {
+            "default": false,
+            "description": "When true, dry-EXPLAIN uses ANALYZE for timing (slower)",
+            "in": "query",
+            "name": "analyze",
+            "required": false,
+            "type": "boolean"
+          },
+          {
             "format": "uuid",
             "in": "path",
             "name": "id",
             "required": true,
             "type": "string"
-          },
-          {
-            "in": "body",
-            "name": "rank_candidates_request_body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/InvestigationsRankCandidatesRequestBody"
-            }
           }
         ],
         "responses": {

@@ -62,13 +62,6 @@ type UpdateFixRequestBody struct {
 	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
 }
 
-// RankCandidatesRequestBody is the type of the "investigations" service
-// "rank_candidates" endpoint HTTP request body.
-type RankCandidatesRequestBody struct {
-	// When true, dry-EXPLAIN uses ANALYZE for timing (slower)
-	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
-}
-
 // CreateResponseBody is the type of the "investigations" service "create"
 // endpoint HTTP response body.
 type CreateResponseBody struct {
@@ -781,21 +774,6 @@ func NewUpdateFixRequestBody(p *investigations.UpdateFixPayload) *UpdateFixReque
 	body := &UpdateFixRequestBody{
 		FixStatus:    p.FixStatus,
 		FixReference: p.FixReference,
-	}
-	return body
-}
-
-// NewRankCandidatesRequestBody builds the HTTP request body from the payload
-// of the "rank_candidates" endpoint of the "investigations" service.
-func NewRankCandidatesRequestBody(p *investigations.RankCandidatesPayload) *RankCandidatesRequestBody {
-	body := &RankCandidatesRequestBody{
-		Analyze: p.Analyze,
-	}
-	{
-		var zero bool
-		if body.Analyze == zero {
-			body.Analyze = false
-		}
 	}
 	return body
 }
