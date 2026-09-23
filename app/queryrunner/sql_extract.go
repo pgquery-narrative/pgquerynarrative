@@ -29,7 +29,7 @@ func ExtractReadOnlySQL(sql string) (inner string, wasExplain bool, err error) {
 
 	result, parseErr := pg_query.Parse(trimmed)
 	if parseErr != nil {
-		return "", false, errors.ErrOnlySelectAllowed
+		return "", false, errors.ErrSyntaxError
 	}
 	if len(result.Stmts) != 1 {
 		return "", false, errors.ErrMultipleStatements

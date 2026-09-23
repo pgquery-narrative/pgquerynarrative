@@ -36,6 +36,7 @@ func SanitizeAPIError(err error, fallback string) string {
 	for _, sentinel := range []error{
 		apperrors.ErrQueryTooLong,
 		apperrors.ErrOnlySelectAllowed,
+		apperrors.ErrSyntaxError,
 		apperrors.ErrDisallowedKeyword,
 		apperrors.ErrSchemaNotAllowed,
 		apperrors.ErrUnqualifiedTable,

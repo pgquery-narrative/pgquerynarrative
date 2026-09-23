@@ -99,6 +99,21 @@ func TestExtractReadOnlySQL(t *testing.T) {
 			sql:     "SELECT 1; SELECT 2",
 			wantErr: apperrors.ErrMultipleStatements,
 		},
+		// CodeRabbit: ExtractReadOnlySQL's own pg_query.Parse call site had no
+		// direct test for a genuine parse failure — Validator.Validate's tests
+		// don't exercise this function, so a regression back to
+		// ErrOnlySelectAllowed here would go undetected.
+		{
+			name:    "syntax error rejected",
+			sql:     "SELCT * FRM demo.sales WHERE",
+			wantErr: apperrors.ErrSyntaxError,
+		},
+		{
+			name:        "explain of a genuine parse failure rejected",
+			sql:         "EXPLAIN DROP TABLE demo.sales",
+			wantExplain: false, // never reaches the EXPLAIN-wrapper check — parse fails first
+			wantErr:     apperrors.ErrSyntaxError,
+		},
 	}
 
 	for _, tt := range tests {

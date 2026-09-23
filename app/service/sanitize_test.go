@@ -40,3 +40,16 @@ func TestSanitizeAPIError_SchemaNotAllowed(t *testing.T) {
 		t.Fatalf("expected schema sentinel, got %q", got)
 	}
 }
+
+// SF-08's whole point is that a typo surfaces its own message rather than
+// falling back to a generic one that reads like a policy rejection — pin
+// that the allowlist addition actually does that.
+func TestSanitizeAPIError_SyntaxError(t *testing.T) {
+	got := SanitizeAPIError(apperrors.ErrSyntaxError, "fallback")
+	if got != apperrors.ErrSyntaxError.Error() {
+		t.Fatalf("expected syntax-error sentinel, got %q", got)
+	}
+	if got == apperrors.ErrOnlySelectAllowed.Error() {
+		t.Fatal("a syntax error must not fall back to the disallowed-statement message")
+	}
+}

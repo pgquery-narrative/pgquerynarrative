@@ -31,6 +31,7 @@ func ClassifyRunError(err error) (RunErrorKind, string) {
 	for _, sentinel := range []error{
 		apperrors.ErrQueryTooLong,
 		apperrors.ErrOnlySelectAllowed,
+		apperrors.ErrSyntaxError,
 		apperrors.ErrDisallowedKeyword,
 		apperrors.ErrSchemaNotAllowed,
 		apperrors.ErrUnqualifiedTable,
@@ -71,6 +72,8 @@ func sanitizeValidationMessage(msg string) string {
 			return apperrors.ErrQueryTooLong.Error()
 		case strings.Contains(inner, apperrors.ErrOnlySelectAllowed.Error()):
 			return apperrors.ErrOnlySelectAllowed.Error()
+		case strings.Contains(inner, apperrors.ErrSyntaxError.Error()):
+			return apperrors.ErrSyntaxError.Error()
 		case strings.Contains(inner, apperrors.ErrDisallowedKeyword.Error()):
 			return apperrors.ErrDisallowedKeyword.Error()
 		case strings.Contains(inner, apperrors.ErrSchemaNotAllowed.Error()):

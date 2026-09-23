@@ -34,7 +34,13 @@ func TestValidator(t *testing.T) {
 		{"explain_analyze_option", "EXPLAIN (ANALYZE) SELECT * FROM demo.sales", errors.ErrExplainOptionsNotAllowed},
 		{"explain_format_text", "EXPLAIN (FORMAT TEXT) SELECT * FROM demo.sales", errors.ErrExplainOptionsNotAllowed},
 		{"explain_non_select", "EXPLAIN DELETE FROM demo.sales", errors.ErrOnlySelectAllowed},
-		{"explain_drop", "EXPLAIN DROP TABLE demo.sales", errors.ErrOnlySelectAllowed},
+		// EXPLAIN's own grammar does not accept DROP (only SELECT/INSERT/UPDATE/
+		// DELETE/MERGE/VALUES/EXECUTE/CREATE TABLE AS/CREATE MATERIALIZED VIEW),
+		// so this is a genuine parse failure, not a read-only-policy rejection.
+		{"explain_drop", "EXPLAIN DROP TABLE demo.sales", errors.ErrSyntaxError},
+		// A typo, not a disallowed statement — must not read as if the query
+		// was understood and rejected on policy grounds.
+		{"syntax_typo", "SELCT * FRM demo.sales WHERE", errors.ErrSyntaxError},
 		{"empty_query", "", errors.ErrOnlySelectAllowed},
 		{"whitespace_only", "   \n\t  ", errors.ErrOnlySelectAllowed},
 		{"comment_only", "-- nothing here", errors.ErrOnlySelectAllowed},

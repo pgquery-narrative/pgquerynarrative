@@ -14,9 +14,15 @@ var (
 	// This prevents DoS attacks through extremely long queries.
 	ErrQueryTooLong = errors.New("query exceeds maximum length")
 
-	// ErrOnlySelectAllowed indicates the query is not a SELECT or WITH statement.
-	// Only read-only queries are allowed for security.
+	// ErrOnlySelectAllowed indicates the query parsed but is not a SELECT or
+	// WITH statement. Only read-only queries are allowed for security.
 	ErrOnlySelectAllowed = errors.New("only SELECT statements are allowed")
+
+	// ErrSyntaxError indicates the query does not parse as SQL at all — a typo
+	// or malformed statement, not a read-only-policy rejection. Kept distinct
+	// from ErrOnlySelectAllowed so "SELCT * FRM t" gets a message about the
+	// typo, not one that reads like the query was understood and rejected.
+	ErrSyntaxError = errors.New("query does not parse as valid SQL")
 
 	// ErrDisallowedKeyword indicates the query contains dangerous keywords.
 	// Keywords like INSERT, UPDATE, DELETE, DROP, etc. are not allowed.
