@@ -59,7 +59,10 @@ inference. Others: `llama-3.1-8b-instant`. 429s and transient server errors
 Every cloud provider also honors `LLM_BASE_URL` as a host override (for an
 OpenAI/Anthropic/Gemini/Groq-compatible proxy or gateway); leaving it unset,
 or set to the Ollama default `http://localhost:11434`, uses the provider's
-real API host.
+real API host. An override must be `https://`: the client sends the API key
+as a request header, and `Validate` rejects a plain `http://` override for a
+cloud provider at startup rather than putting that key on the wire in
+cleartext.
 
 ## Data egress and privacy
 

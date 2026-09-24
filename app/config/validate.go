@@ -68,6 +68,9 @@ func (c Config) Validate() error {
 	if IsCloudLLMProvider(c.LLM.Provider) && c.LLM.SendRowData && c.LLM.MaxSampleRows > 3 {
 		return fmt.Errorf("LLM_MAX_SAMPLE_ROWS must be <= 3 for cloud providers when LLM_SEND_ROW_DATA=true")
 	}
+	if override := CloudBaseURLOverride(c.LLM.BaseURL); IsCloudLLMProvider(c.LLM.Provider) && override != "" && !strings.HasPrefix(override, "https://") {
+		return fmt.Errorf("LLM_BASE_URL %q must use https:// for cloud provider %q; the provider API key is sent in a request header, which a plain http:// URL would expose in cleartext", override, c.LLM.Provider)
+	}
 	if !ratelimit.ValidFailureMode(c.Security.RateLimitFailureMode) {
 		return fmt.Errorf("SECURITY_RATE_LIMIT_FAILURE_MODE must be one of: open, closed, local_fallback")
 	}

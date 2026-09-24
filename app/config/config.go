@@ -605,6 +605,33 @@ func IsCloudLLMProvider(provider string) bool {
 	}
 }
 
+// ollamaDefaultBaseURL is LLM_BASE_URL's fallback (see Load), and
+// ollamaShippedBaseURLs also covers the other Ollama hosts this repo's own
+// templates set LLM_BASE_URL to (docker-compose.yml, .env.example,
+// deploy/docker/docker-compose.yml). A cloud provider only honors
+// LLM_BASE_URL as a real override when it isn't one of these; otherwise a
+// deployment that switches LLM_PROVIDER to a cloud provider while leaving
+// one of those templates' LLM_BASE_URL in place would silently redirect
+// cloud API calls at a local Ollama host instead of using the provider's
+// own default.
+const ollamaDefaultBaseURL = "http://localhost:11434"
+
+var ollamaShippedBaseURLs = map[string]bool{
+	ollamaDefaultBaseURL:                true,
+	"http://ollama:11434":               true,
+	"http://host.docker.internal:11434": true,
+}
+
+// CloudBaseURLOverride returns baseURL when it looks like a deliberate
+// override for a cloud LLM provider, and "" otherwise (telling the caller to
+// use that provider's own default host).
+func CloudBaseURLOverride(baseURL string) string {
+	if baseURL == "" || ollamaShippedBaseURLs[baseURL] {
+		return ""
+	}
+	return baseURL
+}
+
 // ValidLLMProvider reports whether provider is a value newLLMClient actually
 // dispatches on. An unrecognized value falls back to Ollama silently at
 // construction time, so this is checked separately at config load to fail

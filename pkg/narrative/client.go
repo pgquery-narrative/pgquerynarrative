@@ -317,43 +317,18 @@ func (c *Client) SchedulesRunner() *service.SchedulesService {
 	return c.schedulesService
 }
 
-// ollamaDefaultBaseURL is the fallback LLM_BASE_URL applies (app/config/config.go)
-// regardless of which provider is configured, since the two settings share one
-// env var. A cloud provider only honors LLM_BASE_URL when it differs from every
-// Ollama-shaped default this repo itself ships (app/config.go's own default,
-// plus the docker-compose.yml, deploy/docker/docker-compose.yml, and
-// .env.example defaults) — otherwise switching LLM_PROVIDER to a cloud
-// provider while leaving one of those templates' LLM_BASE_URL in place would
-// silently point the cloud client at an Ollama host instead of its real API.
-const ollamaDefaultBaseURL = "http://localhost:11434"
-
-var ollamaShippedBaseURLs = map[string]bool{
-	ollamaDefaultBaseURL:                true,
-	"http://ollama:11434":               true, // docker-compose.yml, .env.example
-	"http://host.docker.internal:11434": true, // deploy/docker/docker-compose.yml
-}
-
-// cloudBaseURLOverride returns baseURL when it looks like a deliberate override
-// for a cloud provider, or "" (meaning: use the provider's own default host).
-func cloudBaseURLOverride(baseURL string) string {
-	if baseURL == "" || ollamaShippedBaseURLs[baseURL] {
-		return ""
-	}
-	return baseURL
-}
-
 func newLLMClient(cfg LLMConfig) llm.Client {
 	switch cfg.Provider {
 	case "ollama":
 		return llm.NewOllamaClient(cfg.BaseURL, cfg.Model)
 	case "gemini":
-		return llm.NewGeminiClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
+		return llm.NewGeminiClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	case "claude":
-		return llm.NewClaudeClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
+		return llm.NewClaudeClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	case "openai":
-		return llm.NewOpenAIClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
+		return llm.NewOpenAIClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	case "groq":
-		return llm.NewGroqClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
+		return llm.NewGroqClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	default:
 		return llm.NewOllamaClient(cfg.BaseURL, cfg.Model)
 	}
