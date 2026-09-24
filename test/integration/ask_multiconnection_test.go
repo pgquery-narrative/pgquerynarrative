@@ -110,6 +110,7 @@ func TestAskMultiConnection_ValidatesAgainstRequestedConnection(t *testing.T) {
 
 	reportsSvc := service.NewReportsServiceMultiConnection(appDB, runners, "default", llmClient, config.MetricsConfig{}, nil, nil)
 	askSvc := service.NewAskServiceMultiConnection(appDB, loaders, llmClient, defaultValidator, reportsSvc, "default")
+	askSvc.SetLLMGovernance(nil, nil, true) // fixedSQLLLM isn't ollama; this test exercises connection scoping, not governance
 
 	reqCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "test", OrgID: auth.DefaultOrganizationID, Role: auth.RoleAdmin})
 	connB := "conn_b"

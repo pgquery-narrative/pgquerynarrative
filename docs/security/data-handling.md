@@ -95,16 +95,25 @@ audit trail is a direct database connection with sufficient PostgreSQL
 privileges, governed entirely by the role grants above, not by an application
 role/permission check.
 
-Audit rows carry the client's `User-Agent` string and IP address (see
-[Client IP address](#client-ip-address) below), but never SQL text, row
-values, or LLM prompt/response content: `details` is a JSON field of
-event-specific metadata (ids, decisions), not query content. A handful of
-other headers are read elsewhere (`Accept` for content negotiation, `Origin`
-for CORS, `X-Request-ID` for correlation), but only for that immediate
-routing decision; none of their values are written into a log or audit
-record. Application (not audit) logs additionally record a request id,
-either client-supplied via `X-Request-ID` or generated per request, purely
-for correlating log lines to one request; it is not itself sensitive.
+Audit rows written directly from HTTP middleware — API-request logging,
+authentication failures, rate-limit rejections — carry the client's
+`User-Agent` string and IP address (see
+[Client IP address](#client-ip-address) below), because that middleware has
+the request in hand. Audit rows written from service-layer code instead —
+admin actions, viewing raw SQL, share create/revoke, other high-risk-attempt
+recording — do not carry either field: those code paths only receive a
+request-scoped principal, not the underlying HTTP request, and nothing
+threads IP/User-Agent through to them. No audit row of either kind ever
+carries SQL text, row values, or LLM prompt/response content: `details` is a
+JSON field of event-specific metadata (ids, decisions), not query content.
+
+A handful of other headers are read elsewhere (`Accept` for content
+negotiation, `Origin` for CORS, `X-Request-ID` for correlation), but only for
+that immediate routing decision; none of their values are written into the
+audit trail. The one exception is outside the audit trail: application (not
+audit) logs record a request id, either client-supplied via `X-Request-ID` or
+generated per request, purely for correlating log lines to one request; it is
+not itself sensitive.
 
 ## Client IP address
 
