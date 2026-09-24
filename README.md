@@ -208,7 +208,7 @@ Open **http://localhost:8080**:
 5. **Compare plans** with result verification on, and confirm equivalence is **VerifiedEqual**
 6. **Generate report**
 
-The demo seeds ~300k rows across 49 monthly partitions — enough that the
+The demo seeds ~300k rows across 50 monthly partitions — enough that the
 before/after difference is real rather than timing noise. For the 10M-row figures in
 the [case study](docs/examples/query-optimization.md), run **`make demo-bootstrap`**
 first (or `make seed-large-docker` on an existing stack), then repeat from step 2.
