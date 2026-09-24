@@ -43,7 +43,7 @@ flowchart TB
 
 Every client except the embedded Go client and `pqn` goes through the HTTP server and the same
 middleware. The MCP server and the PostgreSQL extension are thin HTTP clients of the REST
-API — neither contains query logic. The embedded client (`pkg/narrative`) constructs the
+API; neither contains query logic. The embedded client (`pkg/narrative`) constructs the
 same services in-process. The separate `pqn` extension and its terminal tool talk to PostgreSQL
 directly and involve no server (see [PostgreSQL extensions](integrations/postgres-extension.md)).
 
@@ -53,7 +53,7 @@ directly and involve no server (see [PostgreSQL extensions](integrations/postgre
 |---|---|---|
 | Holds | The `app` schema: organizations, users, API keys, sessions, saved queries, reports, investigations, regression snapshots and alerts, schedules, audit log, embeddings; `schema_migrations` | Your data, in the schemas you allowlist |
 | Reached through | One app pool (`DATABASE_HOST`/`DATABASE_NAME`, `DATABASE_USER`), wrapped so every transaction sets the organization | One read-only pool per connection (`default`, `DATABASE_CONNECTIONS_JSON` entries, per-organization secrets) |
-| Written by PgQueryNarrative | Yes — that is its job | No. The runtime role cannot write; the only session-level change is a `SET LOCAL transaction_read_only = off` inside the HypoPG projection transaction, which creates hypothetical indexes only and resets them |
+| Written by PgQueryNarrative | Yes, that is its job | No. The runtime role cannot write; the only session-level change is a `SET LOCAL transaction_read_only = off` inside the HypoPG projection transaction, which creates hypothetical indexes only and resets them |
 
 The `default` connection is derived from `DATABASE_HOST`/`DATABASE_PORT`/`DATABASE_NAME`
 with the read-only credentials, so out of the box both are **the same PostgreSQL
@@ -81,10 +81,10 @@ What executes on the analytical database for each operation:
 | EXPLAIN | `POST /queries/explain` | No | validate → `EXPLAIN (SETTINGS, FORMAT JSON)` in a read-only transaction → findings, `evidence_mode=estimated` |
 | EXPLAIN ANALYZE | same, `"analyze": true` | **Yes** | requires `SECURITY_EXPLAIN_ANALYZE_ENABLED` and the connection's `analyze` permission → `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, FORMAT JSON)` |
 | Create investigation | `POST /investigations` | Only if `analyze` (falls back to estimate-only on error) | EXPLAIN → findings stored in metadata |
-| Suggest rewrite | `POST /investigations/{id}/suggest-rewrite` | No — parse tree only | AST rules over source SQL and stored findings |
+| Suggest rewrite | `POST /investigations/{id}/suggest-rewrite` | No, parse tree only | AST rules over source SQL and stored findings |
 | Rank candidates | `POST /investigations/{id}/rank-candidates` | No (dry EXPLAIN); HypoPG creates hypothetical indexes only | EXPLAIN baseline and each rewrite; index DDL projected with HypoPG or a labelled heuristic |
 | Compare | `POST /queries/explain/compare`, `POST /investigations/{id}/candidate` | Only under ANALYZE or `verify_results` | two plans → metrics/diff; optional `timing_runs` |
-| Result verification | `verify_results: true` on the above | **Yes** — 2 aggregate queries, or 4 on the fallback path | requires the connection's `query` permission |
+| Result verification | `verify_results: true` on the above | **Yes**, 2 aggregate queries, or 4 on the fallback path | requires the connection's `query` permission |
 | Investigation report | `POST /investigations/{id}/report` | No | equivalence gate → deterministic template → stored |
 | Workbench report | `POST /reports/generate` | **Yes** | run query → metrics → LLM narrative (deterministic fallback) → stored |
 
@@ -131,11 +131,11 @@ stateDiagram-v2
   open --> comparing: candidate compared
   comparing --> comparing: another candidate
   comparing --> complete: report generated
-  open --> complete: report generated (no comparison — no equivalence claim)
+  open --> complete: report generated (no comparison, no equivalence claim)
   complete --> comparing: new candidate
 ```
 
-Statuses are not guarded transitions — adding a candidate to a completed investigation
+Statuses are not guarded transitions; adding a candidate to a completed investigation
 moves it back to `comparing`. The fix lifecycle is tracked separately (below).
 
 ## Regression detection and applied fixes
@@ -197,6 +197,6 @@ Started by `cmd/server` at boot:
 | Schedule runner | `SCHEDULE_RUNNER_ENABLED` | `SCHEDULE_RUNNER_INTERVAL` (1m) | `FOR UPDATE SKIP LOCKED` claims, 5-minute leases with heartbeat and expired-lease recovery |
 | Webhook retry | with the schedule runner | backoff 30s doubling to 30m, 5 attempts, then dead-letter | `SKIP LOCKED` outbox claims |
 | EXPLAIN snapshot retention | always | every 6h | Deletes older than `SECURITY_EXPLAIN_SNAPSHOT_RETENTION_DAYS` (90; 0 keeps forever) |
-| Rate-limit bucket cleanup | distributed (PostgreSQL) limiter | every 10m | — |
-| LLM budget reservation cleanup | always | every 5m | — |
+| Rate-limit bucket cleanup | distributed (PostgreSQL) limiter | every 10m | - |
+| LLM budget reservation cleanup | always | every 5m | - |
 | Buffered audit writer | `SECURITY_AUDIT_MODE=buffered` | queue of 1,000, replay every 30s | `SKIP LOCKED` replay |

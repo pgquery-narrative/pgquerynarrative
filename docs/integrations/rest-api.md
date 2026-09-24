@@ -1,7 +1,7 @@
 # REST API
 
 Full endpoint-by-endpoint contract: [API reference](../reference/api.md) and
-[API errors](../reference/api-errors.md) — generated from, and checked against, the
+[API errors](../reference/api-errors.md), generated from, and checked against, the
 Goa design and the running routes. This page covers auth, the flagship flow with
 runnable curl, and the OpenAPI spec.
 
@@ -13,7 +13,7 @@ All bodies are JSON.
 When `SECURITY_AUTH_ENABLED=true`, most `/api/*` routes (and `/metrics` and the
 non-shared report export routes) require one of:
 
-- `Authorization: Bearer <SECURITY_API_KEY>` (dev; rejected in production — use a hash)
+- `Authorization: Bearer <SECURITY_API_KEY>` (dev; rejected in production, use a hash)
 - `Authorization: Bearer <key>` checked against `SECURITY_API_KEY_HASH` or
   `SECURITY_API_KEYS_JSON` (managed keys, with role and scope)
 - A session cookie (browser OIDC login)
@@ -21,7 +21,7 @@ non-shared report export routes) require one of:
 
 `/health`, `/ready`, `/ready/connections`, `/version` and
 `GET /reports/shared/{token}` are never protected. Roles (`admin`, `analyst`,
-`viewer`) gate which write paths a caller may use — see
+`viewer`) gate which write paths a caller may use, see
 [Authentication and roles](../security/authentication.md). Rate limiting
 (`SECURITY_RATE_LIMIT_RPM`) returns 429.
 
@@ -44,7 +44,7 @@ endpoint, which injects date literals from the live data range:
 # 0) Problem SQL with a date that is actually in the seeded range
 SQL=$(curl -s http://localhost:8080/api/v1/demo/scenarios | jq -r '.items[0].sql')
 
-# 1) Create — returns id, plan evidence, findings
+# 1) Create: returns id, plan evidence, findings
 INV=$(curl -s -X POST http://localhost:8080/api/v1/investigations \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg sql "$SQL" '{title: "Slow dashboard query", sql: $sql}')")
@@ -63,7 +63,7 @@ curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/candidate" \
   -d "$(jq -n --arg sql "$REWRITE" '{candidate_sql: $sql, analyze: true, verify_results: true}')" \
   | jq '{status, equivalence: .comparison.result_equivalence_status, metrics: .comparison.metrics}'
 
-# 4) Engineering report — requires VerifiedEqual, or SampleMatch + accept_sample_match=true
+# 4) Engineering report: requires VerifiedEqual, or SampleMatch + accept_sample_match=true
 curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/report" \
   -H "Content-Type: application/json" -d "{}" | jq '{status, report_id}'
 ```
@@ -72,11 +72,12 @@ See [Verify result equivalence](../workflows/verify-results.md) for what
 `result_equivalence_status` values mean and when the report call above needs
 `?accept_sample_match=true` instead.
 
-Optional: rank rewrite + index-DDL candidates with dry EXPLAIN:
+Optional: rank rewrite + index-DDL candidates with dry EXPLAIN. `analyze` is a query
+parameter, not a body field; setting it in the JSON body has no effect and the
+default (`false`) applies:
 
 ```bash
-curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/rank-candidates" \
-  -H "Content-Type: application/json" -d '{"analyze": false}' \
+curl -s -X POST "http://localhost:8080/api/v1/investigations/${ID}/rank-candidates?analyze=true" \
   | jq '{candidates: [.candidates[]? | {sql, rationale, total_cost, partitions_scanned}], recommendation}'
 ```
 
@@ -115,7 +116,7 @@ curl -s -X POST http://localhost:8080/api/v1/queries/run \
 ```
 
 Response includes `columns`, `rows`, `row_count`, `execution_time_ms` (this field
-**does** exist on run/candidate results — it's only the EXPLAIN response that
+**does** exist on run/candidate results; it's only the EXPLAIN response that
 doesn't have it), optional `chart_suggestions` and `period_comparison`.
 
 ```bash
@@ -125,7 +126,7 @@ curl -s -X POST http://localhost:8080/api/v1/queries/explain \
   | jq '{evidence_mode, planning_time_ms, seq_scans: ([.findings[] | select(.is_seq_scan)] | length)}'
 ```
 
-Set `"analyze": true` for `EXPLAIN (ANALYZE, FORMAT JSON)` — only when the server
+Set `"analyze": true` for `EXPLAIN (ANALYZE, FORMAT JSON)`, only when the server
 allows it (`SECURITY_EXPLAIN_ANALYZE_ENABLED`). Field meanings:
 [Evidence and status vocabulary](../reference/evidence.md#timing-fields).
 
@@ -150,7 +151,7 @@ curl -s http://localhost:8080/api/v1/connections
 
 ## See also
 
-- [API reference](../reference/api.md) — every route, request and response shape
+- [API reference](../reference/api.md): every route, request and response shape
 - [API errors](../reference/api-errors.md)
 - [Connect your PostgreSQL](../getting-started/connect-postgres.md)
 - [Docs overview](../index.md)

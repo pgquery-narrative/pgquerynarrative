@@ -172,6 +172,8 @@ jobs:
             cp -R app/db/migrations "$pkg/app/db/migrations"
             cp .env.example "$pkg/config/pgquerynarrative.env.example"
             cp tools/docker/entrypoint.sh "$pkg/bin/entrypoint.sh"
+            cp LICENSE NOTICE "$pkg/"
+            mkdir -p "$pkg/web/fonts" && cp web/fonts/LICENSE "$pkg/web/fonts/LICENSE"
             chmod +x "$pkg/bin/pgquerynarrative-server" "$pkg/bin/pgquerynarrative-mcp" "$pkg/bin/migrate" "$pkg/bin/entrypoint.sh" "$pkg/bin/pqn" "$pkg/pqn-extension/install.sh"
             tar -C packages -czf "bin/pgquerynarrative-${VERSION}-${target}.tar.gz" "pgquerynarrative-${VERSION}-${target}"
           done
@@ -198,6 +200,9 @@ jobs:
             test -f "$pkg/frontend/dist/index.html"
             test -d "$pkg/app/db/migrations"
             test -f "$pkg/config/pgquerynarrative.env.example"
+            test -f "$pkg/LICENSE"
+            test -f "$pkg/NOTICE"
+            test -f "$pkg/web/fonts/LICENSE"
             # migrate is cross-compiled per target platform; only exec it on linux/amd64 (the runner's own platform).
             if [ "$target" = "pgquerynarrative-${VERSION}-linux-amd64" ]; then
               "$pkg/bin/migrate" --help

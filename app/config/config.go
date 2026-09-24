@@ -264,7 +264,7 @@ func Load() Config {
 			ConnectionAllowlistRequired:     getEnvBool("SECURITY_CONNECTION_ALLOWLIST_REQUIRED", StrictMode()),
 		},
 		LLM: LLMConfig{
-			Provider:                    getEnv("LLM_PROVIDER", "ollama"),
+			Provider:                    strings.ToLower(strings.TrimSpace(getEnv("LLM_PROVIDER", "ollama"))),
 			Model:                       getEnv("LLM_MODEL", "llama3.2"),
 			APIKey:                      getEnv("LLM_API_KEY", ""),
 			BaseURL:                     getEnv("LLM_BASE_URL", "http://localhost:11434"),
@@ -602,5 +602,47 @@ func IsCloudLLMProvider(provider string) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+// ollamaDefaultBaseURL is LLM_BASE_URL's fallback (see Load), and
+// ollamaShippedBaseURLs also covers the other Ollama hosts this repo's own
+// templates set LLM_BASE_URL to (docker-compose.yml, .env.example,
+// deploy/docker/docker-compose.yml). A cloud provider only honors
+// LLM_BASE_URL as a real override when it isn't one of these; otherwise a
+// deployment that switches LLM_PROVIDER to a cloud provider while leaving
+// one of those templates' LLM_BASE_URL in place would silently redirect
+// cloud API calls at a local Ollama host instead of using the provider's
+// own default.
+const ollamaDefaultBaseURL = "http://localhost:11434"
+
+var ollamaShippedBaseURLs = map[string]bool{
+	ollamaDefaultBaseURL:                true,
+	"http://ollama:11434":               true,
+	"http://host.docker.internal:11434": true,
+}
+
+// CloudBaseURLOverride returns baseURL when it looks like a deliberate
+// override for a cloud LLM provider, and "" otherwise (telling the caller to
+// use that provider's own default host).
+func CloudBaseURLOverride(baseURL string) string {
+	if baseURL == "" || ollamaShippedBaseURLs[baseURL] {
+		return ""
+	}
+	return baseURL
+}
+
+// ValidLLMProvider reports whether provider is a value newLLMClient actually
+// dispatches on. An unrecognized value falls back to Ollama silently at
+// construction time, so this is checked separately at config load to fail
+// fast instead of quietly running the wrong provider. Empty is valid and
+// means Ollama, matching IsCloudLLMProvider's treatment of "" and Load's
+// LLM_PROVIDER default.
+func ValidLLMProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama", "gemini", "claude", "openai", "groq", "":
+		return true
+	default:
+		return false
 	}
 }

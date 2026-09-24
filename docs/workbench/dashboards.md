@@ -1,6 +1,6 @@
 # Dashboards
 
-Simple widget dashboards built from saved queries and reports — CRUD plus a
+Simple widget dashboards built from saved queries and reports: CRUD plus a
 resolve step that fetches each widget's live data in one call.
 
 | Method | Path | Purpose |

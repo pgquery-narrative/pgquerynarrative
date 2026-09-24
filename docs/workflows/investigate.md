@@ -14,7 +14,7 @@ flowchart LR
 
 ## 1. Connect PostgreSQL
 
-Point a connection at the database that runs the slow query — the demo dataset, or
+Point a connection at the database that runs the slow query, the demo dataset, or
 your own via [Connect your PostgreSQL](../getting-started/connect-postgres.md). Every
 step below can target a non-default connection with `connection_id`; see
 [Multiple connections](connections.md).
@@ -34,7 +34,7 @@ than failing the request.
 
 ## 3. Inspect plan findings
 
-`GET /api/v1/investigations/{id}` returns `explain.findings` — see
+`GET /api/v1/investigations/{id}` returns `explain.findings`, see
 [Understand plan findings](plan-findings.md) for what each finding kind means and
 why planner cost is not a time.
 
@@ -62,7 +62,7 @@ SQL. See [Compare plans](compare.md).
 
 Add `"verify_results": true` to the candidate call above. This **executes both
 queries** and requires the `query` permission on the connection. Read
-[Verify result equivalence](verify-results.md) — it is the page that determines
+[Verify result equivalence](verify-results.md); it is the page that determines
 whether a report can be generated at all.
 
 ## 7. Generate the report
@@ -73,7 +73,7 @@ curl -s -X POST http://localhost:8080/api/v1/investigations/{id}/report -d '{}'
 
 No LLM involved: this is a deterministic template built from the stored evidence.
 Once a candidate has been compared, generating a report requires equivalence
-`VerifiedEqual`, or `SampleMatch` with `?accept_sample_match=true` — see the gate
+`VerifiedEqual`, or `SampleMatch` with `?accept_sample_match=true`, see the gate
 rules on [Verify result equivalence](verify-results.md#the-report-gate). An
 investigation with **no** comparison at all can still get a report; it simply carries
 no equivalence claim.
@@ -88,11 +88,11 @@ no equivalence claim.
 | Rank candidates (dry EXPLAIN) | No; HypoPG creates a hypothetical index only |
 | Candidate / compare (no `analyze`, no `verify_results`) | No |
 | Candidate / compare (`analyze: true`) | Yes, `timing_runs` times per side |
-| Candidate / compare (`verify_results: true`) | Yes — 2 queries, or 4 on the fallback path |
+| Candidate / compare (`verify_results: true`) | Yes, 2 queries, or 4 on the fallback path |
 | Report | No |
 
 ## See also
 
 [Concepts](../concepts.md) · [REST API](../integrations/rest-api.md) ·
-[Architecture — request paths](../architecture.md#request-paths) ·
+[Architecture: request paths](../architecture.md#request-paths) ·
 [`pqn`](../getting-started/pqn-extension.md), the same investigation from a terminal against your database, with no PgQueryNarrative server

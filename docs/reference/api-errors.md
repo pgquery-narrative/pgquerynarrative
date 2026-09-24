@@ -16,21 +16,21 @@ checked by `make docs-contract-check` against every `strPtr("CODE")` literal in
 | `CONNECTION_FORBIDDEN` | 400 | The organization lacks the required action on that connection | Grant the action via `/admin/connection-permissions`, or check `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` |
 | `ENCRYPTION_ERROR` | 400 | Sealing SQL at rest failed (a data-encryption-key problem) | Check `SECURITY_DATA_ENCRYPTION_KEY`/`SECURITY_SESSION_SECRET` |
 | `STORAGE_ERROR` | 400 | A schedule (or similar) failed to persist | Check metadata database health |
-| `SHARE_LINKS_DISABLED` | — | `POST /reports/share` called with `SECURITY_SHARE_LINKS_ENABLED=false` | Enable sharing, or don't call this endpoint |
+| `SHARE_LINKS_DISABLED` | - | `POST /reports/share` called with `SECURITY_SHARE_LINKS_ENABLED=false` | Enable sharing, or don't call this endpoint |
 | `EQUIVALENCE_SAMPLE_ONLY` | 400 | Report requested with equivalence `SampleMatch` and no `accept_sample_match=true` | Add `?accept_sample_match=true`, understanding it marks the report `results_sampled` |
-| `EQUIVALENCE_NOT_EQUAL` | 400 | Report requested with equivalence `Different`, `Unverified`, or `NotRequested` | Re-run verification, or investigate why results differ — see [Verify result equivalence](../workflows/verify-results.md) |
+| `EQUIVALENCE_NOT_EQUAL` | 400 | Report requested with equivalence `Different`, `Unverified`, or `NotRequested` | Re-run verification, or investigate why results differ, see [Verify result equivalence](../workflows/verify-results.md) |
 | `NOT_FOUND` | 404 | The id doesn't exist (investigation, report, dashboard, schedule, run, share link, regression alert) | Check the id |
-| `LLM_ERROR` | 500 | The LLM call failed, or returned no usable SQL/narrative | Check [LLM providers](../integrations/llm.md) — provider, model, key, connectivity |
+| `LLM_ERROR` | 500 | The LLM call failed, or returned no usable SQL/narrative | Check [LLM providers](../integrations/llm.md): provider, model, key, connectivity |
 | `SCHEMA_ERROR` | 500 | Ask/chat couldn't load the schema needed to build a prompt | Check the connection's `schema` permission and reachability |
 | `REPORT_ERROR` | 500 | Ask/chat's report step failed | Check LLM and metadata database health |
 | `SESSION_ERROR` | 500 | Preparing, persisting, or loading a chat session failed | Retry; check metadata database health |
 | `UNAUTHORIZED` | 401 | Missing or invalid credentials | Add a valid `Authorization` header or session |
-| `FORBIDDEN` | 403 | Authenticated, but the role doesn't allow this method on this path | Use a role with sufficient permission — see [Authentication and roles](../security/authentication.md) |
+| `FORBIDDEN` | 403 | Authenticated, but the role doesn't allow this method on this path | Use a role with sufficient permission, see [Authentication and roles](../security/authentication.md) |
 | `RATE_LIMIT_EXCEEDED` | 429 | `SECURITY_RATE_LIMIT_RPM` exceeded for this client | Back off and retry |
 
 A request that fails Goa's own payload decoding or validation (a missing required
 field, a bad enum value) returns Goa's standard error shape, which does not carry a
-`code` field — treat any 4xx without a recognized `code` as a request-shape problem
+`code` field; treat any 4xx without a recognized `code` as a request-shape problem
 and check the field constraints on the relevant [API](api.md) entry.
 
 ## See also

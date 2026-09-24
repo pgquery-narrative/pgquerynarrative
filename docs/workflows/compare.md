@@ -1,7 +1,7 @@
 # Compare plans
 
 Two independent checks live under "compare": a **plan** comparison, and an optional
-**result** comparison. Keep them separate — a better plan does not by itself mean
+**result** comparison. Keep them separate: a better plan does not by itself mean
 the query still returns the same rows.
 
 Two entry points, same payload shape: `POST /queries/explain/compare` (standalone,
@@ -18,10 +18,10 @@ curl -s -X POST http://localhost:8080/api/v1/queries/explain/compare \
 
 Plans both queries (no execution), and returns:
 
-- `before` / `after` — full `ExplainQueryResult` for each side
-- `metrics` — a table of before/after/change rows, each with an optional `caveat`
+- `before` / `after`: full `ExplainQueryResult` for each side
+- `metrics`: a table of before/after/change rows, each with an optional `caveat`
   ("planner cost is an estimate in arbitrary units, not a time")
-- `diff` — plan nodes removed, added, and structural improvements detected (e.g.
+- `diff`: plan nodes removed, added, and structural improvements detected (e.g.
   fewer partitions scanned)
 
 Requires the connection's `explain` permission.
@@ -42,17 +42,17 @@ permission; forbidden in production StrictMode. It adds real timings
 Runs each side under ANALYZE up to 5 times (default 1) and reports the **median**
 and the observed **min/max spread**, instead of a single sample. When the spread is
 as large as the gap between the two medians, the comparison says so rather than
-claiming a speedup — a claimed improvement should not rest on one lucky run.
+claiming a speedup; a claimed improvement should not rest on one lucky run.
 `timing_runs` only has an effect when `analyze` is true; it does nothing on a plain
 plan comparison.
 
 ## Result verification (separate, opt-in)
 
 Add `"verify_results": true` to **execute** both queries and check whether they
-return the same rows. This is a distinct switch from `analyze` — you can ANALYZE
+return the same rows. This is a distinct switch from `analyze`: you can ANALYZE
 without verifying, and verify without ANALYZE. It requires the connection's `query`
 permission in addition to `explain`/`analyze`. Full semantics, states, and the
-report gate: [Verify result equivalence](verify-results.md) — read it before
+report gate: [Verify result equivalence](verify-results.md), read it before
 treating a result as checked.
 
 ## Bind values

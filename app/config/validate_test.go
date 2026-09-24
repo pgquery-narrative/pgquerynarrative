@@ -12,6 +12,46 @@ func TestValidate_AuthRequiresKey(t *testing.T) {
 	}
 }
 
+// Regression: an unrecognized LLM_PROVIDER used to fall through to Ollama
+// silently at client construction (pkg/narrative.newLLMClient's default
+// case), so a typo like "cluade" quietly ran the local model instead of the
+// cloud provider the operator intended. Validate must reject it instead.
+func TestValidate_RejectsUnrecognizedLLMProvider(t *testing.T) {
+	cfg := Config{
+		Security: SecurityConfig{AuthEnabled: false, AllowInsecureNoAuth: true},
+		LLM:      LLMConfig{Provider: "cluade"},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for an unrecognized LLM_PROVIDER value")
+	}
+}
+
+// Regression: LLM_BASE_URL flows straight into the cloud provider clients,
+// which send the API key as a request header (x-api-key, x-goog-api-key,
+// Authorization). A plain http:// override would put that key on the wire in
+// cleartext. Validate must reject it; the Ollama-shaped defaults this repo
+// ships (see CloudBaseURLOverride) are not real overrides and must pass.
+func TestValidate_RejectsPlaintextCloudBaseURL(t *testing.T) {
+	cfg := Config{
+		Security: SecurityConfig{AuthEnabled: false, AllowInsecureNoAuth: true},
+		LLM:      LLMConfig{Provider: "claude", AllowExternalData: true, BaseURL: "http://proxy.internal/v1"},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for a non-https LLM_BASE_URL override on a cloud provider")
+	}
+
+	cfg.LLM.BaseURL = "https://proxy.internal/v1"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("https override should be accepted: %v", err)
+	}
+
+	cfg.LLM.BaseURL = "http://localhost:11434" // shipped Ollama default, not a real override
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("shipped Ollama-default LLM_BASE_URL should not be treated as a cloud override: %v", err)
+	}
+}
+
 func TestValidate_AuthDisabledRequiresInsecureOptIn(t *testing.T) {
 	cfg := Config{Security: SecurityConfig{AuthEnabled: false, AllowInsecureNoAuth: false}}
 	if err := cfg.Validate(); err == nil {

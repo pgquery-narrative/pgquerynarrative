@@ -11,7 +11,7 @@
   </defs>
   <rect width="1080" height="420" fill="url(#bg)" rx="16"/>
   <text x="540" y="42" text-anchor="middle" fill="#e2e8f0" font-family="system-ui,sans-serif" font-size="22" font-weight="700">Query Investigation</text>
-  <text x="540" y="68" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="13">PostgreSQL evidence — system-proposed rewrite — verified report</text>
+  <text x="540" y="68" text-anchor="middle" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="13">PostgreSQL evidence, system-proposed rewrite, verified report</text>
 
   <!-- Steps -->
   <g font-family="ui-monospace,monospace" font-size="11">

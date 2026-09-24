@@ -46,7 +46,7 @@ make seed-large ROWS=5000000 # custom count
 
 Small dev seed: `make seed` inserts **300,000** rows with dates spread over the
 last 365 days (`CURRENT_DATE - random() * 365`, [`tools/db/seed.sql`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/tools/db/seed.sql)).
-It appends — running it twice gives 600,000 rows. `make demo` uses this seed.
+It appends; running it twice gives 600,000 rows. `make demo` uses this seed.
 
 Both seeds are **rolling windows ending today**, so examples must not hard-code
 calendar dates. Use `GET /api/v1/demo/scenarios`, which injects date literals
@@ -101,7 +101,7 @@ curl -sS -X POST http://localhost:8080/api/v1/queries/explain \
 
 `demo.sales` is a `PARTITION BY RANGE (date)` table (migration
 `000018_partition_demo_sales`). Columns are unchanged from the original demo
-table, except the primary key is now `(id, date)` — a partitioned table must
+table, except the primary key is now `(id, date)`, a partitioned table must
 include the partition key in every unique/primary key.
 
 - **Partition granularity:** one partition per month.
@@ -136,7 +136,7 @@ Declared on the parent (propagate to all partitions):
 > by `product_category` filtered by `region`). This leaves a real before/after to
 > demonstrate in the [query optimization case study](query-optimization.md).
 
-> **Case study:** [Verified rewrite](02-verified-rewrite.md) —
+> **Case study:** [Verified rewrite](02-verified-rewrite.md):
 > a `DATE_TRUNC`-wrapped filter on the partition key forces a 49-partition
 > scan; the AST rewrite engine unwraps it and verifies row-for-row equivalence
 > over the full result set (a fingerprint, not a proof) before calling it safe.
@@ -166,7 +166,7 @@ docker compose exec -T postgres psql -U pgquerynarrative_app -d pgquerynarrative
 SELECT count(*) FROM demo.sales;
 
 -- Total size (heap + indexes across all partitions).
--- The parent relfilenode is empty on partitioned tables — pg_total_relation_size('demo.sales') returns 0.
+-- The parent relfilenode is empty on partitioned tables: pg_total_relation_size('demo.sales') returns 0.
 SELECT pg_size_pretty(SUM(pg_total_relation_size(c.oid))) AS total_all_partitions
 FROM pg_inherits i
 JOIN pg_class c   ON c.oid = i.inhrelid
@@ -204,7 +204,7 @@ GROUP BY product_category;
 ```
 
 Expect `Subplans Removed: 34` (or similar) and scans of only the recent monthly
-partitions with data — not all 49.
+partitions with data, not all 49.
 
 ### Results (verified 2026-06-08)
 
@@ -213,7 +213,7 @@ partitions with data — not all 49.
 | Rows seeded | 10,008,000 | `make seed-large-docker` (`ROWS=10000000` default) |
 | Seed load time | ~3m 33s total (~203s `INSERT` + ~10s `ANALYZE`) | Docker `postgres:16-alpine`, 2G memory limit |
 | Total size (sum of partitions) | 1,672 MB | Parent `pg_total_relation_size('demo.sales')` = 0 bytes (expected) |
-| Largest partition size | `sales_2024_12` — 71 MB | Same seed run |
+| Largest partition size | `sales_2024_12`, 71 MB | Same seed run |
 | Total index size | 678 MB | Sum of `pg_indexes_size` across partitions |
 | Partition pruning (2-month agg) | **Subplans Removed: 34** of 49; 3 partitions with rows (`2026_04`–`2026_06`) | `EXPLAIN (ANALYZE, BUFFERS)` query above |
 | Postgres version / memory | PostgreSQL 16.14 (aarch64), container limit 2G | `docker-compose.yml` `deploy.resources.limits.memory` |

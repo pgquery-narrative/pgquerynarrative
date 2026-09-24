@@ -104,8 +104,7 @@ func (s *ReportsService) generateReport(ctx context.Context, payload *reports.Ge
 		var errGen error
 		narrative, errGen = s.generator.Generate(ctx, payload.SQL, columnNames, queryResult.Rows, calcMetrics, similarContext)
 		if errGen != nil {
-			llmMsg := errGen.Error()
-			apilog.LLMError(llmMsg)
+			apilog.LLMError(SanitizeAPIError(errGen, "LLM narrative generation failed"))
 			narrative = buildMetricsNarrative(queryResult.RowCount, calcMetrics)
 		}
 	}

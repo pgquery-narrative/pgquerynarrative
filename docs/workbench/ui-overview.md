@@ -7,12 +7,12 @@ and served from `/` by the same server that serves the API.
 ## Flagship: Query Investigation
 
 1. **Investigate** (or **Start guided demo** from the landing workspace)
-2. Open a scenario (e.g. **Slow dashboard query**) or paste SQL — scenarios ship
+2. Open a scenario (e.g. **Slow dashboard query**) or paste SQL; scenarios ship
    problem SQL only, never a prefilled rewrite
 3. Review **findings** from the execution plan
 4. **Suggest rewrite** or **Rank candidates** for a system-proposed candidate
 5. **Compare plans** and confirm equivalence
-6. **Generate report** — a template engineering report, not an LLM narrative
+6. **Generate report**: a template engineering report, not an LLM narrative
 
 Concepts behind each step: [Concepts](../concepts.md); the task guides: [Investigate a
 slow query](../workflows/investigate.md) onward.
@@ -37,7 +37,7 @@ slow query](../workflows/investigate.md) onward.
 
 | Type | Where | LLM? |
 |---|---|---|
-| **Investigation report** | Investigate → Generate report | No — a deterministic template from plan metrics and SQL |
+| **Investigation report** | Investigate → Generate report | No, a deterministic template from plan metrics and SQL |
 | **Workbench report** | Query runner or Ask → Generate report | Uses the configured LLM, with a deterministic fallback if it fails |
 
 More: [Reports and sharing](reports.md).

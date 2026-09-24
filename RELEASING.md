@@ -32,10 +32,11 @@ Items map to the 12-PR remediation plan. Update this table as PRs land.
 | 11 | Docs-strict CI, mkdocs config, codegen stabilization | #21, #22 | Merged (#163) |
 | 12 | Single deployment model, branch protection, this file | #23, #18, #25 | Merged (#157) |
 
-**A tag requires every row above to read "Merged".** As of 2026-09-06 every row does, so the
-gate is satisfied for `v2.1.0`. Leave this table in place: it is the record of which review
-items a given version actually contains, and the next review will add rows rather than
-replace them.
+**A tag requires every row above to read "Merged".** As of 2026-09-06 every row does. This gate
+did not exist before the 2026-09 review, so it constrains `v2.1.0` onward (`v1.0.0` and `v2.0.0`
+predate it); every release since has satisfied it. Leave this table in place: it is the record
+of which review items a given version actually contains, and the next review will add rows
+rather than replace them.
 
 ## Pre-tag checklist
 
@@ -59,7 +60,7 @@ Run from a clean tree on an up-to-date `main`.
 
    ```bash
    go build ./... && go vet ./... && gofmt -s -l .
-   make test-unit   # not a bare `go test ./app/... ./pkg/...` — see docs/development/testing.md
+   make test-unit   # not a bare `go test ./app/... ./pkg/...`, see docs/development/testing.md
    ```
 
 4. **Integration tests** (Docker required)
@@ -74,7 +75,7 @@ Run from a clean tree on an up-to-date `main`.
    make migrate-cycle-docker
    ```
 
-   Also confirm `db.RequiredMigrationVersion` equals the highest migration number — a new
+   Also confirm `db.RequiredMigrationVersion` equals the highest migration number: a new
    migration that does not bump it is not required at startup, and the roundtrip test's
    tip-version assertion will fail.
 
@@ -90,7 +91,7 @@ Run from a clean tree on an up-to-date `main`.
    cd frontend && npm ci && npm run test && npm run build
    ```
 
-8. **CI is green on the exact commit being tagged** — every check in
+8. **CI is green on the exact commit being tagged**, every check in
    [branch protection](docs/project/branch-protection.md), not merely the required subset.
 
 9. **Image builds and serves the UI**
@@ -102,7 +103,7 @@ Run from a clean tree on an up-to-date `main`.
    The image must contain `/app/frontend/dist`; a release image that serves an empty UI is
    the failure the [single deployment model](deploy/README.md) exists to prevent.
 
-10. **Changelog** — move `changelog/unreleased.md` entries into
+10. **Changelog**: move `changelog/unreleased.md` entries into
     `changelog/released/<version>.md`, run `make changelog`, commit.
 
     `CHANGELOG.md` is **generated**: `tools/changelog/build.sh` concatenates
@@ -124,7 +125,7 @@ Check what actually changed before picking a number:
 # Public surface of the embeddable client
 git diff v<previous>..main -- pkg/narrative/
 
-# Fields removed from any API type — the usual source of an unplanned break
+# Fields removed from any API type: the usual source of an unplanned break
 git show v<previous>:api/gen/queries/service.go > /tmp/old.go
 diff <(awk '/^type [A-Za-z]+ struct/{t=$2} /^\t[A-Z]/{print t"."$1}' /tmp/old.go | sort -u) \
      <(awk '/^type [A-Za-z]+ struct/{t=$2} /^\t[A-Z]/{print t"."$1}' api/gen/queries/service.go | sort -u)
@@ -159,7 +160,7 @@ cosigns `ghcr.io/pgquery-narrative/pgquerynarrative:<version>` from the root `Do
 
 - Verify the published image serves the UI: run it against a migrated database (or the
   release-smoke Postgres compose the CI job uses) and check `curl -f http://localhost:8080/health`
-  and that `/` returns the SPA — the entrypoint waits for Postgres and execs the server, so
+  and that `/` returns the SPA. The entrypoint waits for Postgres and execs the server, so
   `docker run ... --help` does not work (the entrypoint ignores arguments).
 - Verify the signature: `cosign verify ghcr.io/pgquery-narrative/pgquerynarrative:<version> ...`
 - Confirm the GitHub Release lists binaries and `checksums.txt`.
@@ -167,5 +168,5 @@ cosigns `ghcr.io/pgquery-narrative/pgquerynarrative:<version>` from the root `Do
 ## If a release must be pulled
 
 Do not delete the tag. Cut a new patch version with the fix and mark the bad release as
-deprecated in the GitHub Release notes — consumers may already have pulled the image
+deprecated in the GitHub Release notes: consumers may already have pulled the image
 digest, and a deleted tag makes their build unreproducible rather than merely outdated.

@@ -21,16 +21,16 @@ Common issues, then incident runbooks for production. See also
 |---|---|
 | PostgreSQL connection refused | Docker: `make start-docker`. Local: start Postgres, then `make start-local` |
 | Role does not exist / permission denied | `make db-init` then `make migrate`; if `demo.sales` denied, grant `SELECT` to the readonly role |
-| `/ready` returns 503 "schema migration version N < required" | The database is behind — run migrations. See [Migrations, upgrades, backup](upgrades.md) |
-| `/ready` returns 503 "dirty at version N" | A prior migration failed partway — inspect it, fix by hand, then `migrate force <version>` before `up` |
-| Fresh database: "permission denied to create extension" at migration 000019 | No `DATABASE_MIGRATION_USER` set — see [Database roles](../security/database-roles.md) |
-| `CONNECTION_NOT_FOUND` on a `connection_id` you expected to work | The id isn't configured. It fails closed rather than silently falling back — see [Multiple connections](../workflows/connections.md#resolving-connection_id) |
+| `/ready` returns 503 "schema migration version N < required" | The database is behind, run migrations. See [Migrations, upgrades, backup](upgrades.md) |
+| `/ready` returns 503 "dirty at version N" | A prior migration failed partway; inspect it, fix by hand, then `migrate force <version>` before `up` |
+| Fresh database: "permission denied to create extension" at migration 000019 | No `DATABASE_MIGRATION_USER` set, see [Database roles](../security/database-roles.md) |
+| `CONNECTION_NOT_FOUND` on a `connection_id` you expected to work | The id isn't configured. It fails closed rather than silently falling back, see [Multiple connections](../workflows/connections.md#resolving-connection_id) |
 
 ## Reports and LLM {#reports-and-llm}
 
 | Issue | Solution |
 |---|---|
-| Failed to parse narrative JSON | LLM output may be truncated — ensure Ollama is running and the model is pulled |
+| Failed to parse narrative JSON | LLM output may be truncated; ensure Ollama is running and the model is pulled |
 | Report generation fails or times out | Check `LLM_BASE_URL`/`LLM_PROVIDER`/`LLM_MODEL`/`LLM_API_KEY`; Docker + host Ollama needs `LLM_BASE_URL=http://host.docker.internal:11434` |
 | Cloud provider call rejected before any request | `LLM_ALLOW_EXTERNAL_DATA` is not `true` |
 
@@ -40,8 +40,8 @@ For the `pqn` extension, see [Troubleshooting installation and setup](../getting
 
 | Issue | Solution |
 |---|---|
-| `CREATE EXTENSION pgquerynarrative` fails | Copy the files first — `make install-extension` (local) or `make install-extension-docker` (Docker). See [PostgreSQL extension](../integrations/postgres-extension.md) |
-| Functions return `{"status":"pending",...}` | The `http` extension wasn't installed **before** `pgquerynarrative` — install it, then re-run the extension's SQL |
+| `CREATE EXTENSION pgquerynarrative` fails | Copy the files first: `make install-extension` (local) or `make install-extension-docker` (Docker). See [PostgreSQL extension](../integrations/postgres-extension.md) |
+| Functions return `{"status":"pending",...}` | The `http` extension wasn't installed **before** `pgquerynarrative`; install it, then re-run the extension's SQL |
 | Functions raise `permission denied for function pgquerynarrative_...` | Version 1.1 withholds `EXECUTE` from `PUBLIC`. As the extension owner run `SELECT pgquerynarrative_grant_access('role');` |
 | Functions raise `PgQueryNarrative API error: 401` | The server has auth enabled. Call `SELECT pgquerynarrative_set_api_key('...')` in that session first |
 
@@ -50,13 +50,13 @@ For the `pqn` extension, see [Troubleshooting installation and setup](../getting
 ## Alert runbooks
 
 Anchors below are linked directly from `deploy/prometheus/alerts.yml`'s
-`runbook` annotation — keep the `{#id}` on each heading stable even if the
+`runbook` annotation: keep the `{#id}` on each heading stable even if the
 heading text changes.
 
 ### HTTP 5xx spike {#http-5xx-spike}
 
 `PgqnHighHTTPErrorRate`: `pgqn_http_errors_total` / `pgqn_http_requests_total` > 5%
-for 10 minutes. Check recent deploys first (a bad config or image — see
+for 10 minutes. Check recent deploys first (a bad config or image, see
 [Rollback](upgrades.md#rollback)), then application logs for the specific failing
 route and its error.
 
@@ -114,7 +114,7 @@ it's back, `/ready` should return 200 without a restart.
 **Symptoms:** one entry in `GET /ready/connections` shows `"ready": false`; queries
 against that `connection_id` fail while others succeed.
 
-**Actions:** `/ready` itself stays 200 — only the app metadata pool gates it — so
+**Actions:** `/ready` itself stays 200, only the app metadata pool gates it, so
 this can go unnoticed without checking `/ready/connections` directly. Confirm the
 target database, credentials, and network path for that specific connection.
 
@@ -123,7 +123,7 @@ target database, credentials, and network path for that specific connection.
 **Symptoms:** `/ready` 503 citing a version below `RequiredMigrationVersion`.
 
 **Actions:** run migrations for the deployed version (`make migrate` /
-`make migrate-docker`, or your migration Job) — see
+`make migrate-docker`, or your migration Job), see
 [Migrations, upgrades, backup](upgrades.md).
 
 ### Dirty migration
@@ -140,7 +140,7 @@ again. Never `force` past a migration whose effects you haven't verified.
 
 **Actions:** confirm `SECURITY_OIDC_ISSUER`, `SECURITY_OIDC_AUDIENCE`,
 `SECURITY_OIDC_JWKS_URL` (if set) and `SECURITY_OIDC_REDIRECT_URL` match the IdP's
-registration exactly — an empty `SECURITY_OIDC_REDIRECT_URL` is treated as unset and
+registration exactly; an empty `SECURITY_OIDC_REDIRECT_URL` is treated as unset and
 defaults to `http://localhost:8080/auth/callback`, which is never right for a real
 deployment. See [Authentication and roles](../security/authentication.md).
 
@@ -151,7 +151,7 @@ reports unauthenticated.
 
 **Actions:** confirm `SECURITY_SESSION_SECRET` hasn't changed (rotating it
 invalidates every existing session) and that `SECURITY_SESSION_TTL` matches
-expectations. Under StrictMode, session cookies are `Secure` — a login over plain
+expectations. Under StrictMode, session cookies are `Secure`; a login over plain
 HTTP behind a misconfigured proxy will silently fail to persist.
 
 ### Encryption-key / configuration problems
@@ -159,7 +159,7 @@ HTTP behind a misconfigured proxy will silently fail to persist.
 **Symptoms:** the process refuses to start with a `SECURITY_DATA_ENCRYPTION_KEY` or
 `SECURITY_SESSION_SECRET` error; a config error at boot in general.
 
-**Actions:** the message names the exact requirement — see
+**Actions:** the message names the exact requirement, see
 [Production configuration](production.md) for the full checklist `config.Validate()`
 enforces, so you can fix the actual variable rather than trial-and-error.
 
@@ -178,7 +178,7 @@ connection permissions) start failing with an audit error, with the metadata dat
 otherwise healthy. If they fail right after an upgrade, confirm migration `000058` has run
 (`/ready` reports the schema version): without it the database rejects those event types.
 
-**Actions:** this is `SECURITY_AUDIT_MODE=required` doing its job — these
+**Actions:** this is `SECURITY_AUDIT_MODE=required` doing its job: these
 high-risk actions are refused rather than left unaudited when the audit write
 itself fails. Fix the underlying write failure (metadata pool health, disk space);
 do not switch to `best_effort` in production to make the symptom go away. See
@@ -189,7 +189,7 @@ do not switch to `best_effort` in production to make the symptom go away. See
 **Symptoms:** a spike in `pgqn_rate_limit_storage_failures_total`; requests start
 failing (mode `closed`) or start bypassing limits (mode `local_fallback`).
 
-**Actions:** check the metadata database — the distributed limiter is
+**Actions:** check the metadata database; the distributed limiter is
 PostgreSQL-backed. `SECURITY_RATE_LIMIT_FAILURE_MODE=closed` (required whenever auth
 is enabled) means a backend outage here also blocks legitimate requests; that is the
 intended trade-off over failing open. Restore the database, or switch to
@@ -201,7 +201,7 @@ intended trade-off over failing open. Restore the database, or switch to
 schedule stops running.
 
 **Actions:** `GET /schedules/{id}/runs` shows recent run status and errors. A lease
-that a crashed replica held is recovered automatically on the next poll — a
+that a crashed replica held is recovered automatically on the next poll; a
 schedule stuck for longer than a few lease intervals (5 minutes each) usually means
 the query itself is failing, not the runner. Retry a specific run with
 `POST /schedule-runs/{run_id}/retry`.
@@ -214,7 +214,7 @@ the query itself is failing, not the runner. Retry a specific run with
 **Actions:** `GET /webhook-deliveries` lists attempts and failure reasons. A
 rejection (as opposed to a delivery failure) usually means the destination host
 isn't in `SECURITY_WEBHOOK_ALLOWED_HOSTS`, or resolves to a private/loopback address
-the SSRF guard blocks — see [Schedules and webhooks](../workbench/schedules.md#webhook-delivery).
+the SSRF guard blocks, see [Schedules and webhooks](../workbench/schedules.md#webhook-delivery).
 A delivery failure after 5 retries dead-letters; investigate the receiving endpoint.
 
 ### Regression poller problems
@@ -225,7 +225,7 @@ alert never resolves.
 **Actions:** confirm `REGRESSION_POLLER_ENABLED` and
 `SECURITY_STAT_STATEMENTS_ENABLED` are both true, and that `pg_stat_statements` is
 actually installed and tracking on the analytical database. A query needs at least
-3 baseline polling intervals before it's eligible to alert at all — a poller
+3 baseline polling intervals before it's eligible to alert at all; a poller
 restarted recently will look quiet for a while by design. On a connection whose read-only
 role is shared by several organizations the poller deliberately does nothing and logs
 `skipping connection`: give each organization its own read-only credentials. See

@@ -98,14 +98,6 @@ func (g *GovernedEmbedder) SetTimeout(d time.Duration) {
 	}
 }
 
-// SetMaxConcurrency overrides the in-flight embedding call limit (default 8). n <= 0 is ignored.
-func (g *GovernedEmbedder) SetMaxConcurrency(n int) {
-	if g == nil || n <= 0 {
-		return
-	}
-	g.sem = make(chan struct{}, n)
-}
-
 // SetExpectedDimension pins the vector dimension that Embed must return, rejecting any
 // response of a different size. dim <= 0 clears the pin so the next successful call
 // re-establishes it from its own output.

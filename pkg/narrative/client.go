@@ -322,13 +322,13 @@ func newLLMClient(cfg LLMConfig) llm.Client {
 	case "ollama":
 		return llm.NewOllamaClient(cfg.BaseURL, cfg.Model)
 	case "gemini":
-		return llm.NewGeminiClient(cfg.APIKey, cfg.Model)
+		return llm.NewGeminiClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	case "claude":
-		return llm.NewClaudeClient(cfg.APIKey, cfg.Model)
+		return llm.NewClaudeClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	case "openai":
-		return llm.NewOpenAIClient(cfg.APIKey, cfg.Model)
+		return llm.NewOpenAIClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	case "groq":
-		return llm.NewGroqClient(cfg.APIKey, cfg.Model)
+		return llm.NewGroqClient(cfg.APIKey, cfg.Model, appconfig.CloudBaseURLOverride(cfg.BaseURL))
 	default:
 		return llm.NewOllamaClient(cfg.BaseURL, cfg.Model)
 	}
