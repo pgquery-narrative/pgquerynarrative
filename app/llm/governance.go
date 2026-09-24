@@ -89,18 +89,6 @@ func EvaluateGovernance(in GovernanceInput) GovernanceResult {
 	return GovernanceResult{Allowed: true, Decision: decision, DataClasses: classes}
 }
 
-// ClassifyPromptOptions returns data classes implied by prompt construction options.
-func ClassifyPromptOptions(opts PromptOptions, hasRows bool) []DataClass {
-	in := GovernanceInput{
-		Provider:    "ollama",
-		SendRowData: opts.SendRowData,
-		AllowCloud:  true,
-		RedactPII:   opts.RedactPII,
-		HasRows:     hasRows,
-	}
-	return EvaluateGovernance(in).DataClasses
-}
-
 // FormatDataClasses returns a comma-separated label for audit storage.
 func FormatDataClasses(classes []DataClass) []string {
 	out := make([]string, 0, len(classes))

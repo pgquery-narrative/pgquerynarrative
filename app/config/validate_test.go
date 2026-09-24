@@ -12,6 +12,21 @@ func TestValidate_AuthRequiresKey(t *testing.T) {
 	}
 }
 
+// Regression: an unrecognized LLM_PROVIDER used to fall through to Ollama
+// silently at client construction (pkg/narrative.newLLMClient's default
+// case), so a typo like "cluade" quietly ran the local model instead of the
+// cloud provider the operator intended. Validate must reject it instead.
+func TestValidate_RejectsUnrecognizedLLMProvider(t *testing.T) {
+	cfg := Config{
+		Security: SecurityConfig{AuthEnabled: false, AllowInsecureNoAuth: true},
+		LLM:      LLMConfig{Provider: "cluade"},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for an unrecognized LLM_PROVIDER value")
+	}
+}
+
 func TestValidate_AuthDisabledRequiresInsecureOptIn(t *testing.T) {
 	cfg := Config{Security: SecurityConfig{AuthEnabled: false, AllowInsecureNoAuth: false}}
 	if err := cfg.Validate(); err == nil {

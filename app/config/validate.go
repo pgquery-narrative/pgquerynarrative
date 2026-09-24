@@ -59,6 +59,9 @@ func (c Config) Validate() error {
 	if len(c.Security.APIKey) > 0 && len(c.Security.APIKey) < 16 {
 		return fmt.Errorf("SECURITY_API_KEY must be at least 16 characters")
 	}
+	if !ValidLLMProvider(c.LLM.Provider) {
+		return fmt.Errorf("LLM_PROVIDER %q is not recognized; use one of: ollama, gemini, claude, openai, groq", c.LLM.Provider)
+	}
 	if IsCloudLLMProvider(c.LLM.Provider) && !c.LLM.AllowExternalData {
 		return fmt.Errorf("cloud LLM provider %q requires LLM_ALLOW_EXTERNAL_DATA=true", c.LLM.Provider)
 	}

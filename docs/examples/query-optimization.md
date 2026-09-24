@@ -13,7 +13,7 @@ memory. Dataset: **10,008,000 rows**, **1,672 MB** heap across partitions (see
 ## Problem
 
 A dashboard widget asks: *“Total revenue by product category for the North
-region.”* The SQL is a simple aggregation with no date predicate — every
+region.”* The SQL is a simple aggregation with no date predicate: every
 partition that holds data must be scanned:
 
 ```sql
@@ -56,13 +56,13 @@ filtered columns (see [REST API examples](../integrations/rest-api.md) and
 
 **Existing indexes** (on parent, propagated to partitions):
 
-- `idx_sales_date` — `(date)`
-- `idx_sales_category` — `(product_category)`
-- `idx_sales_region` — `(region)`
+- `idx_sales_date`: `(date)`
+- `idx_sales_category`: `(product_category)`
+- `idx_sales_region`: `(region)`
 
 The `region` index alone is not enough: Postgres uses a **Bitmap Index Scan**
 on `region`, then a **Bitmap Heap Scan** to fetch `product_category` and
-`total_amount` from the heap — millions of heap pages across ~25 populated
+`total_amount` from the heap: millions of heap pages across ~25 populated
 partitions.
 
 ---
@@ -122,9 +122,9 @@ ANALYZE demo.sales;
 
 **Why this shape:**
 
-- `(region, product_category)` — equality on `region`, then category values are
+- `(region, product_category)`: equality on `region`, then category values are
   colocated for cheap partial aggregation per partition.
-- `INCLUDE (total_amount)` — covering index; enables **Index Only Scan** with
+- `INCLUDE (total_amount)`: covering index; enables **Index Only Scan** with
   `Heap Fetches: 0` when the visibility map is fresh (true after `ANALYZE`).
 
 On a partitioned table, the index is declared on the **parent** and PostgreSQL
@@ -162,7 +162,7 @@ Execution Time: 144.963 ms
 | **Estimated root cost** | 153,487 | 48,225 | −69% planner cost |
 
 First run after index creation (partially cold cache): **171 ms**, 7,156 buffer
-reads — still a **6.7×** improvement over the baseline.
+reads, still a **6.7×** improvement over the baseline.
 
 ---
 
@@ -181,7 +181,7 @@ reads — still a **6.7×** improvement over the baseline.
 
 ### 1. Rely on `idx_sales_region` only
 
-Already in place. The planner uses it, but only to find matching heap tuples —
+Already in place. The planner uses it, but only to find matching heap tuples:
 every row still needs a heap fetch for `product_category` and `total_amount`.
 Measured: 1145 ms. **Rejected:** insufficient for this access pattern.
 
@@ -208,7 +208,7 @@ GROUP BY product_category;
 ```
 
 On this dataset, partition pruning removes 34 of 49 subplans
-(`Subplans Removed: 34` — see [Demo dataset](dataset.md)). That is the
+(`Subplans Removed: 34`, see [Demo dataset](dataset.md)). That is the
 right tool when the **business question is time-bounded**, but it does not
 answer “all-time North totals.” **Rejected for this query:** changes semantics.
 
@@ -282,14 +282,14 @@ high-cost `Gather Merge` nodes).
 
 ## Takeaways
 
-1. **Match the index to the query shape** — filter columns first, then group-by
+1. **Match the index to the query shape**: filter columns first, then group-by
    keys; `INCLUDE` payload columns needed for aggregates.
-2. **Covering indexes buy index-only scans** — especially valuable on large,
+2. **Covering indexes buy index-only scans**: especially valuable on large,
    partitioned tables where heap fetches multiply across children.
-3. **Partitioning and indexing solve different problems** — monthly range
+3. **Partitioning and indexing solve different problems**: monthly range
    partitions excel at *time-bounded* queries; global dimension rollups still
    need the right btree.
-4. **Measure with `EXPLAIN (ANALYZE, BUFFERS)`** — execution time and buffer
+4. **Measure with `EXPLAIN (ANALYZE, BUFFERS)`**: execution time and buffer
    reads tell you whether you eliminated heap I/O, not just changed the plan
    diagram.
 

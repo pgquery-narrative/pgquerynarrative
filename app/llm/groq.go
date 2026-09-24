@@ -14,20 +14,26 @@ const groqBaseURL = "https://api.groq.com/openai/v1"
 
 // GroqClient calls the Groq OpenAI-compatible Chat Completions API for text generation.
 type GroqClient struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey  string
+	model   string
+	baseURL string
+	client  *http.Client
 }
 
 // NewGroqClient returns a client for the Groq API.
 // apiKey is the Groq API key (from LLM_API_KEY). model is the model name (e.g. llama-3.3-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768).
-func NewGroqClient(apiKey, model string) *GroqClient {
+// baseURL overrides the API host (LLM_BASE_URL); empty uses the default Groq host.
+func NewGroqClient(apiKey, model, baseURL string) *GroqClient {
 	if model == "" {
 		model = "llama-3.3-70b-versatile"
 	}
+	if baseURL == "" {
+		baseURL = groqBaseURL
+	}
 	return &GroqClient{
-		apiKey: apiKey,
-		model:  model,
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: baseURL,
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -69,7 +75,7 @@ func (c *GroqClient) GenerateMessages(ctx context.Context, messages []ChatMessag
 		return GenerationResult{}, fmt.Errorf("groq: empty messages")
 	}
 
-	url := groqBaseURL + "/chat/completions"
+	url := c.baseURL + "/chat/completions"
 
 	payload := map[string]interface{}{
 		"model":       c.model,
@@ -94,7 +100,16 @@ func (c *GroqClient) GenerateMessages(ctx context.Context, messages []ChatMessag
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return GenerationResult{}, fmt.Errorf("groq: request: %w", err)
+			lastErr = fmt.Errorf("groq: request: %w", err)
+			if attempt < groqMaxRetries-1 {
+				select {
+				case <-ctx.Done():
+					return GenerationResult{}, ctx.Err()
+				case <-time.After(groqRetryDelay):
+				}
+				continue
+			}
+			return GenerationResult{}, lastErr
 		}
 
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // #nosec G104 -- best-effort error-body read; empty body on failure just yields a less detailed error message.
@@ -129,7 +144,7 @@ func (c *GroqClient) GenerateMessages(ctx context.Context, messages []ChatMessag
 
 		lastErr = fmt.Errorf("groq API error: %d - %s", resp.StatusCode, string(body))
 
-		if resp.StatusCode == 429 && attempt < groqMaxRetries-1 {
+		if (resp.StatusCode == 429 || resp.StatusCode >= 500) && attempt < groqMaxRetries-1 {
 			select {
 			case <-ctx.Done():
 				return GenerationResult{}, ctx.Err()

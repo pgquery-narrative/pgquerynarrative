@@ -192,7 +192,7 @@ func (s *AskService) Ask(ctx context.Context, payload *suggestions.AskPayload) (
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "LLM did not return any SQL", Code: strPtr("LLM_ERROR")}
 	}
 
-	runner, err := s.connectionResolver.runnerFor(nil)
+	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
 	if err != nil {
 		return nil, askConnectionNotFoundError(err)
 	}
@@ -252,7 +252,12 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	schemaText := llm.FormatSchemaForNL2SQL(schemaResult)
 	prompt := llm.BuildNL2SQLPrompt(question, schemaText)
 	if historyCtx != "" {
-		prompt += "\n\nConversation context:\n" + historyCtx + "\nUse this context to refine the next SQL."
+		// historyCtx holds prior turns' questions and generated SQL from
+		// app.ask_messages: untrusted, conversation-derived content, redacted
+		// and marked the same way SQL/rows/RAG context are elsewhere in this
+		// package (app/llm/prompt.go), not concatenated in raw.
+		sanitizedHistory := llm.SanitizeRAGContext(historyCtx)
+		prompt += "\n\nConversation context:\n" + llm.WrapUntrusted("CONVERSATION_HISTORY", sanitizedHistory) + "\nUse this context to refine the next SQL."
 	}
 	response, err := s.invokeLLM(ctx, "nl2sql", prompt, question)
 	if err != nil {
@@ -262,7 +267,7 @@ func (s *AskService) Chat(ctx context.Context, payload *suggestions.ChatPayload)
 	if sqlText == "" {
 		return nil, &suggestions.LLMError{Name: "llm_error", Message: "LLM did not return any SQL", Code: strPtr("LLM_ERROR")}
 	}
-	runner, err := s.connectionResolver.runnerFor(nil)
+	runner, err := s.connectionResolver.runnerFor(payload.ConnectionID)
 	if err != nil {
 		return nil, askConnectionNotFoundError(err)
 	}
@@ -425,7 +430,7 @@ func (s *AskService) buildFollowUps(ctx context.Context, history []*suggestions.
 	b.WriteString("Suggest 3 short follow-up analytics questions for this conversation.\n")
 	b.WriteString("Return one question per line, no numbering.\n\n")
 	b.WriteString("Conversation:\n")
-	b.WriteString(summarizeChatHistory(history))
+	b.WriteString(llm.WrapUntrusted("CONVERSATION_HISTORY", llm.SanitizeRAGContext(summarizeChatHistory(history))))
 	raw, err := s.invokeLLM(ctx, "follow_up_questions", b.String(), latestQuestion)
 	if err != nil {
 		return defaultFollowUps(latestQuestion)

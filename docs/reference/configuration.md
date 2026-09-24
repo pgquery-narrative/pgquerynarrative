@@ -2,16 +2,16 @@
 
 PgQueryNarrative is configured entirely by **environment variables**; there is no
 config file. Every variable below is read in `app/config/config.go` (or, where
-noted, outside `Load()`) — this page is checked against that file by
+noted, outside `Load()`); this page is checked against that file by
 `make docs-contract-check` on every change. Boolean variables use Go's
 `strconv.ParseBool`: `1`/`t`/`T`/`TRUE`/`true`/`True` and `0`/`f`/`F`/`FALSE`/`false`/`False`
-only — not `yes`/`on`. An unparseable or empty value silently falls back to the
+only, not `yes`/`on`. An unparseable or empty value silently falls back to the
 default for every variable type.
 
 **Production StrictMode** (`APP_ENV=production`/`prod`, or `SECURITY_STRICT=true`)
 enforces a large additional set of restrictions, listed together in
 [Production configuration](../operate/production.md) rather than repeated per row
-here — this page states each variable's ordinary default and behavior.
+here; this page states each variable's ordinary default and behavior.
 
 ## Loading config
 
@@ -62,13 +62,13 @@ here — this page states each variable's ordinary default and behavior.
 | `QUERY_MAX_RESULT_BYTES` | `10485760` (10 MiB) | Approximate max materialized result size before `QUERY_RESULT_TOO_LARGE`. Must be > 0 in production |
 | `QUERY_MAX_CELL_BYTES` | `1048576` (1 MiB) | Approximate max size for one cell. Must be > 0 in production |
 | `QUERY_MAX_COLUMNS` | `100` | Max columns in a result. Must be > 0 in production |
-| `DATABASE_ALLOWED_SCHEMAS` | `demo` | Comma-separated schema allowlist. Never `app`, `pg_catalog`, `information_schema`, `pg_toast*` — always rejected. Must be non-empty and exclude `public` in production |
+| `DATABASE_ALLOWED_SCHEMAS` | `demo` | Comma-separated schema allowlist. Never `app`, `pg_catalog`, `information_schema`, `pg_toast*`, always rejected. Must be non-empty and exclude `public` in production |
 | `DATABASE_DEFAULT_CONNECTION_ID` | `default` | Connection used when `connection_id` is omitted or blank. If this id isn't among the configured connections, the first configured connection is used instead |
-| `DATABASE_CONNECTIONS_JSON` | empty | JSON array of additional read-only connections — see [below](#multiple-database-connections) |
+| `DATABASE_CONNECTIONS_JSON` | empty | JSON array of additional read-only connections, see [below](#multiple-database-connections) |
 
 ### Migration identity (outside `Load()`) {#migration-identity}
 
-Read directly by the container entrypoint, not by the Go config loader — unset
+Read directly by the container entrypoint, not by the Go config loader; unset
 again before the server process starts:
 
 | Variable | Default | Description |
@@ -82,7 +82,7 @@ again before the server process starts:
 Under production StrictMode, if `DATABASE_MIGRATION_USER` equals `DATABASE_USER` and
 no `DATABASE_MIGRATION_URL` is set, the entrypoint **refuses to start** rather than
 run migrations as a role that can't finish them. See
-[Deployment — migration identity](../operate/deployment.md#migration-identity).
+[Deployment: migration identity](../operate/deployment.md#migration-identity).
 
 ### Multiple database connections {#multiple-database-connections}
 
@@ -93,7 +93,7 @@ single metadata database configured above. `DATABASE_CONNECTIONS_JSON` adds
 Each array entry is matched to Go struct field names **case-insensitively**
 (camelCase, e.g. `readOnlyUser`, works; there are no JSON tags, and snake_case keys
 are silently dropped). Durations (`queryTimeout`, `lockTimeout`, `idleTxTimeout`)
-must be given as **integer nanoseconds**, not duration strings — `"queryTimeout":
+must be given as **integer nanoseconds**, not duration strings: `"queryTimeout":
 "30s"` fails to parse and, because the whole variable is parsed as one JSON value,
 **the entire `DATABASE_CONNECTIONS_JSON` is ignored** (only the `default` connection
 loads); check the server log for `config: ignoring DATABASE_CONNECTIONS_JSON: ...`
@@ -124,7 +124,7 @@ export DATABASE_CONNECTIONS_JSON='[
 ]'
 ```
 
-Requests choose a connection with `connection_id` — see
+Requests choose a connection with `connection_id`, see
 [Multiple connections](../workflows/connections.md) for resolution rules
 (unknown id fails with `CONNECTION_NOT_FOUND`, it does not fall back silently).
 
@@ -135,8 +135,8 @@ Requests choose a connection with `connection_id` — see
 | Variable | Default | Description |
 |---|---|---|
 | `SECURITY_AUTH_ENABLED` | `false` | Requires Bearer/session/OIDC on `/api/*`, `/metrics`, and the non-shared report export routes. Must be `true` in production |
-| `SECURITY_ALLOW_INSECURE_NO_AUTH` | `false` | Required (`true`) when auth is off — explicit opt-in for open local/dev access. Forbidden in production |
-| `SECURITY_API_KEY` | empty | Plaintext bearer token. ≥16 chars if set. Forbidden in production — use the hash below |
+| `SECURITY_ALLOW_INSECURE_NO_AUTH` | `false` | Required (`true`) when auth is off, explicit opt-in for open local/dev access. Forbidden in production |
+| `SECURITY_API_KEY` | empty | Plaintext bearer token. ≥16 chars if set. Forbidden in production, use the hash below |
 | `SECURITY_API_KEY_HASH` | empty | SHA-256 hex of the bearer token, compared in constant time |
 | `SECURITY_API_KEYS_JSON` | empty | JSON array of managed keys (`key_hash`, `id`, `role`, `scopes`, `expires_at`, `revoked`). `role` is required, `expires_at` must be RFC 3339, and any mistake stops startup ([details](../security/authentication.md)). Must use `key_hash`, not plaintext `key`, in production |
 | `SECURITY_TRUSTED_PROXIES` | empty | Comma-separated CIDRs trusted to set forwarded-for headers for per-IP rate limiting |
@@ -195,7 +195,7 @@ or `SECURITY_OIDC_ISSUER` is required whenever auth is enabled.
 | `SECURITY_OIDC_JWKS_URL` | empty | JWKS endpoint override, when it differs from IdP discovery |
 | `SECURITY_OIDC_CLIENT_ID` | empty | OAuth2/OIDC client ID |
 | `SECURITY_OIDC_CLIENT_SECRET` | empty | OIDC client secret (omit for public clients) |
-| `SECURITY_OIDC_REDIRECT_URL` | `http://localhost:8080/auth/callback` | Callback URL registered at the IdP. An empty string counts as unset and falls back to the localhost default — set this explicitly for any real deployment |
+| `SECURITY_OIDC_REDIRECT_URL` | `http://localhost:8080/auth/callback` | Callback URL registered at the IdP. An empty string counts as unset and falls back to the localhost default; set this explicitly for any real deployment |
 | `SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG` | **`false`** | Auto-provision default-org membership on first OIDC login. **Forbidden (must stay `false`) in production** |
 
 ### Schedules and webhooks
@@ -206,7 +206,7 @@ or `SECURITY_OIDC_ISSUER` is required whenever auth is enabled.
 | `SCHEDULE_RUNNER_INTERVAL` | `1m` | Poll interval for due schedules |
 | `SCHEDULE_DURABLE_LEASES` | `true` | Must stay `true` when the runner is enabled in production |
 | `SECURITY_WEBHOOK_SIGNING_SECRET` | empty | HMAC secret for `X-PGQN-Signature`. ≥16 chars, not a placeholder, required when the runner is enabled in production |
-| `SECURITY_WEBHOOK_ALLOWED_HOSTS` | empty | Comma-separated webhook destination hosts. **Empty fails closed** — no webhook fires. Required when the runner is enabled in production |
+| `SECURITY_WEBHOOK_ALLOWED_HOSTS` | empty | Comma-separated webhook destination hosts. **Empty fails closed**: no webhook fires. Required when the runner is enabled in production |
 
 ### Regression poller
 
@@ -260,7 +260,7 @@ See [Semantic search (pgvector)](../integrations/semantic-search.md).
 
 ## MCP {#mcp}
 
-Not part of `Load()` — the MCP server is a separate binary reading its own
+Not part of `Load()`; the MCP server is a separate binary reading its own
 environment. See [MCP server](../integrations/mcp.md#what-it-is) for the full list
 (`PGQUERYNARRATIVE_URL`, `PGQUERYNARRATIVE_API_KEY`).
 
@@ -294,7 +294,7 @@ Out-of-range values are clamped at load, never rejected.
 ## Production
 
 See [Production configuration](../operate/production.md) for the complete list of
-StrictMode requirements — it is generated from the same validation function this
+StrictMode requirements; it is generated from the same validation function this
 page's defaults come from, so treat that page as the authoritative gate and this
 page as the variable dictionary.
 

@@ -5,7 +5,7 @@ What stands between a user-supplied string and the analytical database.
 ## Parse-tree validation
 
 Every statement is parsed with `pg_query` (PostgreSQL's own parser) and walked as a
-tree — not matched with regular expressions or keyword blocklists.
+tree, not matched with regular expressions or keyword blocklists.
 
 - **Exactly one statement.** A second statement (`; DROP TABLE …`) is rejected before
   either runs.
@@ -13,7 +13,7 @@ tree — not matched with regular expressions or keyword blocklists.
   Any write, DDL, or utility node anywhere in the tree is rejected, including inside
   a CTE.
 - **`SELECT ... INTO`** and **`FOR UPDATE`/`FOR SHARE`** locking clauses are rejected
-  explicitly — a read-only transaction alone wouldn't stop the first, and the second
+  explicitly: a read-only transaction alone wouldn't stop the first, and the second
   would hold row locks on a pooled connection past the request.
 - A length limit (`maxQueryLength`, bytes) is enforced before parsing.
 
@@ -22,12 +22,12 @@ tree — not matched with regular expressions or keyword blocklists.
 Table references, and schema-qualified functions/operators/types, must resolve to a
 schema in `DATABASE_ALLOWED_SCHEMAS` (default `demo`). `app`, `public` (in
 production), `pg_catalog`, `information_schema` and `pg_toast*` can never be
-allowlisted — the config loader rejects them at startup, not at query time.
+allowlisted; the config loader rejects them at startup, not at query time.
 
 ## Function policy
 
 A read-only transaction stops writes, but does not make every `SELECT` expression
-side-effect free — so the validator applies its own policy on top of it:
+side-effect free, so the validator applies its own policy on top of it:
 
 | Category | Policy | Why |
 |---|---|---|
@@ -46,7 +46,7 @@ side-effect free — so the validator applies its own policy on top of it:
 Volatility (`STABLE`/`VOLATILE`/`IMMUTABLE`) is deliberately not the test:
 `VOLATILE` covers `random()` and `now()`, which are harmless here, while some
 `STABLE` functions still reach outside the session. This check is enforced by the
-application in addition to — never instead of — the read-only transaction and the
+application in addition to (never instead of) the read-only transaction and the
 role's own grants; review `EXECUTE` privileges on the read-only role directly, since
 the validator cannot revoke what the role was granted.
 
@@ -76,7 +76,7 @@ Plain `EXPLAIN` never executes the query. `EXPLAIN ANALYZE` does, and is gated b
   ANALYZE cannot be smuggled in through the SQL text even when the flag is off
 
 Result verification (`verify_results`) is a separate switch with its own permission
-(`query`) — see [Verify result equivalence](../workflows/verify-results.md).
+(`query`), see [Verify result equivalence](../workflows/verify-results.md).
 
 ## See also
 

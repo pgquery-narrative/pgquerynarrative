@@ -5,7 +5,7 @@ text with an external model (Ollama `nomic-embed-text` by default), stores vecto
 and runs **k-nearest-neighbor** search with the **pgvector** extension when available.
 
 This is a **Postgres depth** feature: similarity ranking happens in the database via
-`embedding_vector <=> $query` (cosine distance) on an **HNSW** index—not in application memory.
+`embedding_vector <=> $query` (cosine distance) on an **HNSW** index, not in application memory.
 
 ## End-to-end flow (saved queries)
 
@@ -22,10 +22,10 @@ This is a **Postgres depth** feature: similarity ranking happens in the database
                                         LIMIT k  (Postgres k-NN)
 ```
 
-1. **Save** — `POST /api/v1/queries/saved` persists SQL in `app.saved_queries`.
-2. **Embed** — `app/service/queries.go` calls `Embedder.Embed(name + description + sql)` and
+1. **Save**: `POST /api/v1/queries/saved` persists SQL in `app.saved_queries`.
+2. **Embed**: `app/service/queries.go` calls `Embedder.Embed(name + description + sql)` and
    `embedding.Store.Upsert` → `app.query_embeddings` (JSONB + optional `vector(768)`).
-3. **Search** — `GET /api/v1/suggestions/similar?text=…` embeds the search text, then
+3. **Search**: `GET /api/v1/suggestions/similar?text=…` embeds the search text, then
    `Store.FindSimilar` runs pgvector SQL (or in-memory cosine fallback if extension/column missing).
 
 Reports follow the same pattern via `app.report_embeddings` and `GET /api/v1/reports/similar`.
@@ -42,7 +42,7 @@ Reports follow the same pattern via `app.report_embeddings` and `GET /api/v1/rep
 
 ## Enabling pgvector
 
-`vector` does **not** need `shared_preload_libraries`—only `CREATE EXTENSION`.
+`vector` does **not** need `shared_preload_libraries`, only `CREATE EXTENSION`.
 
 ### Docker
 
@@ -129,6 +129,6 @@ New saves always attempt both JSONB and `vector(768)`; upsert falls back to JSON
 
 ## See also
 
-- [REST API](rest-api.md) — curl for `/suggestions/similar`
-- [Configuration](../reference/configuration.md#embeddings) — Embeddings variables
+- [REST API](rest-api.md): curl for `/suggestions/similar`
+- [Configuration](../reference/configuration.md#embeddings): Embeddings variables
 - [Troubleshooting](../operate/troubleshooting.md)

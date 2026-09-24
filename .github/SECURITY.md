@@ -8,7 +8,7 @@ receives security fixes; there are no long-term support branches.
 | Version | Supported |
 | ------- | --------- |
 | 2.2.x   | Yes |
-| 2.1.x   | No — upgrade to 2.2.x |
+| 2.1.x   | No, upgrade to 2.2.x |
 | 2.0.x   | No |
 | 1.x     | No |
 
@@ -48,7 +48,7 @@ actively exploited, say so in the first line and it will be prioritised.
 These are the properties the project intends to hold. A reproducible break in any
 of them is a vulnerability, and worth reporting.
 
-- **Analytical queries are read-only, enforced by database privilege** — not by an
+- **Analytical queries are read-only, enforced by database privilege**, not by an
   application flag. The querying role cannot `INSERT`, `UPDATE`, `DELETE` or run
   DDL, and that holds even when `transaction_read_only` is lifted, which index
   cost projection requires for hypopg. `tools/db/verify_security.sh` asserts this
@@ -64,16 +64,16 @@ of them is a vulnerability, and worth reporting.
 - **Query results are not sent to an external LLM unless explicitly configured.**
   The investigation loop runs with no model at all.
 - **PgQueryNarrative never automatically applies a proposed rewrite, index, or DDL
-  to the analytical target database.** Its own metadata — investigations, reports,
-  audit records, migrations — is written by the application as part of its normal
+  to the analytical target database.** Its own metadata (investigations, reports,
+  audit records, migrations) is written by the application as part of its normal
   operation; that is a different thing from acting on your data.
 
-## Known limits — not vulnerabilities
+## Known limits (not vulnerabilities)
 
 - **`APP_ENV=demo` fabricates workspace KPIs** so the demo has something to show
   against an empty database. It is off by default and gated in one place
   (`app/service/workspace.go`). Never enable it where the numbers will be acted on.
-- **Reports may contain query results** — whatever your SQL selected. Treat a
+- **Reports may contain query results**, whatever your SQL selected. Treat a
   generated report, and especially a share link, as being as sensitive as the data
   behind it.
 - **The `app` schema stores SQL text.** With a data encryption key configured it is
@@ -104,7 +104,7 @@ or host root.
 - Security headers (CSP, frame denial, etc.)
 - **StrictMode** (`APP_ENV=production` / `SECURITY_STRICT=true`): process refuses to start on unsafe config; Helm chart fails install on placeholder secrets
 - Open-admin disabled unless `SECURITY_ALLOW_INSECURE_NO_AUTH=true` (forbidden in production)
-- Default query schema allowlist is `demo` only; `app`, `pg_catalog` and `information_schema` can never be allowlisted; readonly role cannot read `app.*`. Unqualified and `pg_catalog`/`information_schema` *functions* not on the deny-list are still callable — see [Query execution safety](https://pgquery-narrative.github.io/pgquerynarrative/security/query-safety/)
+- Default query schema allowlist is `demo` only; `app`, `pg_catalog` and `information_schema` can never be allowlisted; readonly role cannot read `app.*`. Unqualified and `pg_catalog`/`information_schema` *functions* not on the deny-list are still callable, see [Query execution safety](https://pgquery-narrative.github.io/pgquerynarrative/security/query-safety/)
 - Root `docker-compose.yml` is localhost-bound local/dev only; production-shaped compose lives under `deploy/docker/` (both build the same root `Dockerfile`)
 - Webhook hostname allowlist is **required** (empty fails closed); NetworkPolicy + HSTS (when HTTPS) in deploy templates
 - Query/EXPLAIN errors do not embed Postgres driver detail; SQL at-rest seal fails closed when a key is configured

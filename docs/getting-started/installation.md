@@ -1,25 +1,25 @@
 # Installation
 
-Prerequisites and run methods: Docker (recommended) or a local build from source.
-
-**First time?** Prefer [Quick start](quickstart.md) (`make demo`). Use this page for
-prerequisite detail, a from-source build, or wiring that isn't the guided demo.
-Connecting a real database: [Connect your PostgreSQL](connect-postgres.md).
+Prerequisites and run methods: Docker, a release binary, or a local build from
+source. For a first run, [Quick start](quickstart.md) (`make demo`) is shorter; use
+this page for prerequisite detail, a from-source build, or wiring that isn't the
+guided demo. Connecting a real database: [Connect your PostgreSQL](connect-postgres.md).
 
 ## Prerequisites
 
 | Context | Requirements |
 |---|---|
 | **Docker run** | Docker and Docker Compose. No Go or PostgreSQL on the host. |
-| **Local build & run** | Go 1.26+, PostgreSQL 16+ (or Docker for the database only), and CGO (`pg_query_go` is a cgo library — a C toolchain is required). |
+| **Local build & run** | Go 1.26+, PostgreSQL 16+ (or Docker for the database only), and CGO (`pg_query_go` is a cgo library, a C toolchain is required). |
 | **Full web UI from source** | Node.js and npm to build the [React SPA](../development/setup.md). |
 
-Optional narratives need an LLM — [LLM providers](../integrations/llm.md). The
+Optional narratives need an LLM, see [LLM providers](../integrations/llm.md). The
 investigation loop (findings, candidates, compare, report) works without one.
 
-## Docker (recommended)
+## Docker
 
-Guided demo (Postgres + app + seed):
+The default path for local evaluation; builds the image from source, no
+pre-built pull needed. Guided demo (Postgres + app + seed):
 
 ```bash
 git clone https://github.com/pgquery-narrative/pgquerynarrative.git
@@ -41,6 +41,68 @@ make start-docker
 
 For a production-shaped image and Compose overlay, see
 [Deployment – Docker](../operate/deployment.md#docker).
+
+### Pre-built image
+
+```bash
+VERSION=<version>
+docker pull ghcr.io/pgquery-narrative/pgquerynarrative:${VERSION}
+```
+
+Images are published with an SBOM and signed with cosign:
+
+```bash
+cosign verify ghcr.io/pgquery-narrative/pgquerynarrative:${VERSION} \
+  --certificate-identity-regexp 'https://github.com/pgquery-narrative/pgquerynarrative/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+One image carries the API and the built UI. It needs a PostgreSQL to talk to, and on
+a fresh database it needs `DATABASE_MIGRATION_USER`/`DATABASE_MIGRATION_PASSWORD` set
+to a role that may create extensions and alter roles; the runtime query role cannot.
+
+## Binary
+
+Download the archive for your platform from the
+[latest release](https://github.com/pgquery-narrative/pgquerynarrative/releases/latest):
+`linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`. No Docker or Go
+required. Verify the checksum before extracting:
+
+```bash
+tar -xzf pgquerynarrative-<version>-linux-amd64.tar.gz
+cd pgquerynarrative-<version>-linux-amd64
+sha256sum -c ../checksums.txt --ignore-missing
+```
+
+Each archive, `checksums.txt`, and the SBOM are signed with cosign (Sigstore v0.3
+bundles; **cosign v3 or newer required**, cosign v2 rejects them with `bundle does
+not contain cert for verification`):
+
+```bash
+cosign verify-blob pgquerynarrative-<version>-linux-amd64.tar.gz \
+  --bundle pgquerynarrative-<version>-linux-amd64.tar.gz.cosign.bundle \
+  --certificate-identity-regexp 'https://github.com/pgquery-narrative/pgquerynarrative/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The archive is self-contained, no clone required: `bin/pgquerynarrative-server`,
+`bin/pgquerynarrative-mcp`, `bin/migrate`, `bin/pqn` (the [pqn](pqn-installation.md)
+terminal tool), the `pqn-extension/` PostgreSQL extension files and installer, the
+built UI (`frontend/dist/`), migrations (`app/db/migrations/`), and
+`config/pgquerynarrative.env.example`.
+
+```bash
+cp config/pgquerynarrative.env.example .env   # then edit the DATABASE_* values
+
+# Migrations create extensions and ALTER ROLE, so they need a role that may do
+# both, not the runtime query role, which deliberately cannot.
+./bin/migrate -path app/db/migrations -database "$MIGRATION_DATABASE_URL" up
+./bin/pgquerynarrative-server
+```
+
+App: **http://localhost:8080**. See [Verify](#verify) below, and
+[Supported versions and limits](../reference/versions-limits.md#release-platforms)
+for the full platform matrix and signing details.
 
 ## Local (from source)
 
@@ -70,7 +132,7 @@ For a production-shaped image and Compose overlay, see
    ```
 
    Migrations create extensions (`pg_stat_statements`, `vector`, `hypopg`) and run
-   `ALTER ROLE`, so they need a privileged role — see
+   `ALTER ROLE`, so they need a privileged role, see
    [Database roles](../security/database-roles.md).
 
 4. **Run:** `make run` or `./bin/server`. App: **http://localhost:8080**. Verbose

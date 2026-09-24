@@ -6,7 +6,7 @@ The vocabulary behind the UI and the API. Exact field values are listed in
 
 ## What problem this solves
 
-Teams usually know a query is slow — a dashboard, `pg_stat_statements`, a complaint —
+Teams usually know a query is slow (a dashboard, `pg_stat_statements`, a complaint)
 but lack a repeatable path from **symptom → plan evidence → candidate fix → checked
 result → shareable write-up**. Pasting SQL into a chatbot skips the database's own
 evidence. PgQueryNarrative keeps every step grounded in what PostgreSQL reports.
@@ -43,7 +43,7 @@ matters most is whether anything ran:
 | `evidence_mode` | `estimated` | `observed` (when PostgreSQL reported an execution time) |
 | Costs | Planner estimates, arbitrary units | Planner estimates, arbitrary units |
 | Times and actual rows | None | Measured, for this one run |
-| Allowed by default | Yes | No — `SECURITY_EXPLAIN_ANALYZE_ENABLED=true` and the connection's `analyze` permission |
+| Allowed by default | Yes | No, `SECURITY_EXPLAIN_ANALYZE_ENABLED=true` and the connection's `analyze` permission |
 
 **Planner cost is not time.** It is an estimate in arbitrary units and is not
 proportional to runtime, so it is never reported as a speed multiple. Only ANALYZE
@@ -68,7 +68,7 @@ plans; it does not check results. Details: [Suggest and rank candidates](workflo
 
 **Compare** plans the source and candidate SQL side by side (and executes them under
 ANALYZE when allowed) and reports metric deltas and structural plan changes.
-"Better plan" means PostgreSQL's plan changed in the expected way — not that anything
+"Better plan" means PostgreSQL's plan changed in the expected way, not that anything
 preferred the new SQL.
 
 **Result verification** is separate and opt-in (`verify_results`). It executes both
@@ -102,10 +102,10 @@ With `pg_stat_statements` available, a background poller snapshots statement
 statistics per connection, computes per-interval deltas, compares them to a baseline,
 and raises regression alerts. An alert is an **entry point** into the same investigation
 loop. When a fix is marked `applied`, the poller later marks it `confirmed` or
-`regressed` from measured statistics — those two states cannot be set by hand.
+`regressed` from measured statistics; those two states cannot be set by hand.
 See [Regressions and applied fixes](workflows/regressions.md). On the default demo the
 inbox is empty unless real statistics exist; `APP_ENV=demo` seeds sample alerts and
-fabricated workspace KPIs — never enable it where the numbers matter.
+fabricated workspace KPIs; never enable it where the numbers matter.
 
 ## Connections, schemas and organizations
 

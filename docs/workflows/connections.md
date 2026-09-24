@@ -7,7 +7,7 @@ analytical data source.
 
 Out of the box there is one connection, `default`, built from `DATABASE_HOST`,
 `DATABASE_PORT`, `DATABASE_NAME` and the readonly credentials. Its id is whatever
-`DATABASE_DEFAULT_CONNECTION_ID` names (default `default`) — if that id isn't among
+`DATABASE_DEFAULT_CONNECTION_ID` names (default `default`); if that id isn't among
 the configured connections, the app falls back to the first one instead of erroring,
 since this is a startup configuration issue, not a per-request one.
 
@@ -24,7 +24,7 @@ organizations, per-organization connection secrets managed via the admin API. Se
 | An unknown, non-empty id | **400 `CONNECTION_NOT_FOUND`** |
 
 There is no silent fallback to a different database for a request that names an
-unknown connection — it fails closed, so a typo in `connection_id` cannot
+unknown connection: it fails closed, so a typo in `connection_id` cannot
 accidentally run against the wrong data source.
 
 ## Connection permissions
@@ -32,7 +32,7 @@ accidentally run against the wrong data source.
 Each connection grants a subset of actions to a given organization: `query`,
 `explain`, `analyze`, `schema`, `report`, `schedule`, `stats`, `ask`. If an
 organization has **no** rows for a connection at all, every action is allowed by
-default — unless `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` is set (its default is on
+default, unless `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` is set (its default is on
 under production StrictMode), in which case an unassigned connection is denied
 outright. If the organization has any assignment for the connection, only the
 actions explicitly granted apply; platform/tenant admins bypass the check. A request
@@ -51,7 +51,7 @@ missing the required action fails with **400 `CONNECTION_FORBIDDEN`**.
 
 ## Readiness per connection
 
-`GET /ready/connections` reports each configured pool's readiness independently —
+`GET /ready/connections` reports each configured pool's readiness independently:
 name, role, whether it's initialized (per-organization pools are created lazily on
 first use), and any connection error. It always returns 200; it's a diagnostic view,
 not a liveness gate. `GET /ready` itself only checks the app metadata pool and the

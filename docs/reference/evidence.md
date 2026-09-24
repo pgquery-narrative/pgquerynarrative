@@ -9,7 +9,7 @@ explanation lives on the linked workflow pages; this page is the lookup table.
 
 | Value | Meaning |
 |---|---|
-| `VerifiedEqual` | Every row of both results contributed to a full-result, order-independent fingerprint, and the fingerprints matched — or the fallback path ran, both sides were ≤ 1,000 rows, and every row matched |
+| `VerifiedEqual` | Every row of both results contributed to a full-result, order-independent fingerprint, and the fingerprints matched, or the fallback path ran, both sides were ≤ 1,000 rows, and every row matched |
 | `SampleMatch` | Full-result fingerprinting could not run; row counts matched and a bounded, deterministic sample of up to 1,000 rows matched |
 | `Different` | Row counts, fingerprints, or the sample disagree |
 | `Unverified` | The check could not complete (error, timeout, unsupported shape). Never a mismatch |
@@ -28,9 +28,9 @@ results):
 | `evidence_mode` | Always | `estimated` (plain EXPLAIN) or `observed` (ANALYZE reported a non-zero execution time) |
 | `planning_time_ms` | Always | PostgreSQL's own planning time |
 | `server_execution_time_ms` | ANALYZE only | PostgreSQL's own execution time for that run |
-| `request_wall_time_ms` | Always | Server-measured network + planning + (under ANALYZE) execution time — not a substitute for `server_execution_time_ms` |
+| `request_wall_time_ms` | Always | Server-measured network + planning + (under ANALYZE) execution time, not a substitute for `server_execution_time_ms` |
 
-**There is no `execution_time_ms` field on an EXPLAIN result** — it was removed in
+**There is no `execution_time_ms` field on an EXPLAIN result**: it was removed in
 `v2.1.0` in favor of the fields above. It legitimately still exists on
 `RunQueryResult` (from `/queries/run`) and on ranked-candidate results
 (`rank-candidates`), where it means the same thing it always did: wall time for
@@ -70,7 +70,7 @@ Details: [Understand plan findings](../workflows/plan-findings.md).
 | `in_to_exists` / `not_in_to_exists` | `IN`/`NOT IN (SELECT ...)` → `EXISTS`/`NOT EXISTS` |
 | `left_join_antijoin_to_not_exists` | `LEFT JOIN ... WHERE right.col IS NULL` → `NOT EXISTS` |
 
-`implicit_cast` (numeric/text casts on a compared column) was removed — casts are no
+`implicit_cast` (numeric/text casts on a compared column) was removed: casts are no
 longer rewritten. See [Suggest and rank candidates](../workflows/candidates.md).
 
 ## Index-DDL projection method
@@ -78,20 +78,20 @@ longer rewritten. See [Suggest and rank candidates](../workflows/candidates.md).
 | Value | Meaning |
 |---|---|
 | `hypopg` | Cost projected via a real hypothetical index (HypoPG installed + grants present) |
-| `heuristic` | Baseline cost × 0.3, labelled for review only — never ranked as if it were a real projection |
+| `heuristic` | Baseline cost × 0.3, labelled for review only, never ranked as if it were a real projection |
 | `unavailable` | Neither could run |
 
 ## Investigation status
 
 `analyzing` → `open` → `comparing` → `complete` (adding a new candidate to a
 `complete` investigation moves it back to `comparing`). See
-[Architecture — investigation lifecycle](../architecture.md#investigation-lifecycle).
+[Architecture: investigation lifecycle](../architecture.md#investigation-lifecycle).
 
 ## Fix status
 
 `proposed`, `verified`, `applied`, `confirmed`, `regressed`, `abandoned`.
 `confirmed` and `regressed` can only be set by the regression poller, from measured
-statistics, for a fix linked to a regression alert — never through the API. See
+statistics, for a fix linked to a regression alert, never through the API. See
 [Regressions and applied fixes](../workflows/regressions.md#fix-lifecycle).
 
 ## Regression impact tiers

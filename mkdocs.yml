@@ -1,5 +1,5 @@
 site_name: PgQueryNarrative
-site_description: PostgreSQL query investigation — plan findings, proposed rewrites, measured compare, result verification and evidence-backed reports.
+site_description: PostgreSQL query investigation, plan findings, proposed rewrites, measured compare, result verification and evidence-backed reports.
 
 # The canonical address of the published documentation, used for canonical tags
 # and sitemap.xml. Deployed by .github/workflows/docs.yml on every push to main
@@ -105,11 +105,11 @@ extra:
   generator: false
 
 # Ordered by what a reader needs next: learn the model, run it, investigate,
-# integrate, secure, operate, look things up, then change the code.
+# integrate, secure and operate, look things up, then change the code.
 # tools/docscheck fails the build if a page under docs/ is missing from here.
 nav:
   - Overview:
-      - What is PgQueryNarrative?: index.md
+      - PgQueryNarrative: index.md
       - Concepts: concepts.md
       - Architecture: architecture.md
       - Trust model: trust-model.md
@@ -119,7 +119,7 @@ nav:
       - Connect your PostgreSQL: getting-started/connect-postgres.md
       - "Quick start: pqn (extension)": getting-started/pqn-extension.md
       - Install the pqn extension: getting-started/pqn-installation.md
-  - Core workflows:
+  - Query investigation:
       - Investigate a slow query: workflows/investigate.md
       - Understand plan findings: workflows/plan-findings.md
       - Suggest and rank candidates: workflows/candidates.md
@@ -127,7 +127,6 @@ nav:
       - Verify result equivalence: workflows/verify-results.md
       - Regressions and applied fixes: workflows/regressions.md
       - Multiple connections: workflows/connections.md
-  - Workbench:
       - UI overview: workbench/ui-overview.md
       - Reports and sharing: workbench/reports.md
       - Dashboards: workbench/dashboards.md
@@ -139,13 +138,12 @@ nav:
       - Embedded Go: integrations/embedded-go.md
       - LLM providers: integrations/llm.md
       - Semantic search (pgvector): integrations/semantic-search.md
-  - Security & access:
+  - Security and operations:
       - Database roles: security/database-roles.md
       - Query execution safety: security/query-safety.md
       - Authentication and roles: security/authentication.md
       - Organizations and tenancy: security/tenancy.md
       - Data handling: security/data-handling.md
-  - Deploy & operate:
       - Deployment: operate/deployment.md
       - Production configuration: operate/production.md
       - Health and monitoring: operate/monitoring.md

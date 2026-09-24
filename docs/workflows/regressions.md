@@ -2,7 +2,7 @@
 
 With `pg_stat_statements` available, PgQueryNarrative can notice a query getting
 worse over time and turn that into an investigation. This page covers detection
-through to the system confirming — or contradicting — a fix.
+through to the system confirming, or contradicting, a fix.
 
 ## Snapshot collection and baseline
 
@@ -11,7 +11,7 @@ A background poller (`REGRESSION_POLLER_ENABLED` and
 is enabled) runs every `REGRESSION_POLLER_INTERVAL` (default 15m), once per
 organization × connection that has the `stats` permission on that connection. It
 takes a PostgreSQL advisory lock per (org, connection) so replicas of the server
-don't double-poll — there is no separate leader election.
+don't double-poll; there is no separate leader election.
 
 It skips a connection whose read-only role is shared by more than one organization
 (logging one line): `pg_stat_statements` is kept per role, so polling would copy every
@@ -36,7 +36,7 @@ An alert fires when, relative to baseline:
 
 Impact tier: **critical** at ≥ `REGRESSION_CRITICAL_THRESHOLD_PCT` (200), **high** at
 ≥ `REGRESSION_HIGH_THRESHOLD_PCT` (100), otherwise **medium**. There is at most one
-open alert per (organization, connection, `queryid`) — a second detection updates
+open alert per (organization, connection, `queryid`); a second detection updates
 the existing alert rather than creating a duplicate. An alert auto-resolves once the
 mean change drops back to half the threshold, and acknowledgement is cleared
 automatically if impact later escalates.
@@ -56,7 +56,7 @@ investigation: [Investigate a slow query](investigate.md).
 
 `GET /workspace/regressions` lists the inbox; `POST /workspace/regressions/{id}/acknowledge`
 marks one seen. On the default `make demo` seed, the inbox is empty unless real
-`pg_stat_statements` activity exists — set `APP_ENV=demo` for seeded demo alerts, and
+`pg_stat_statements` activity exists; set `APP_ENV=demo` for seeded demo alerts, and
 never in an environment where the numbers are acted on.
 
 ## Fix lifecycle
@@ -69,8 +69,8 @@ stateDiagram-v2
   verified --> applied
   verified --> proposed
   verified --> abandoned
-  applied --> confirmed: poller — mean ≤ 0.80 × baseline
-  applied --> regressed: poller — >72h and mean ≥ 0.95 × baseline
+  applied --> confirmed: poller, mean ≤ 0.80 × baseline
+  applied --> regressed: poller, >72h and mean ≥ 0.95 × baseline
   applied --> abandoned
   confirmed --> applied
   regressed --> applied
@@ -79,7 +79,7 @@ stateDiagram-v2
 
 `POST /investigations/{id}/fix` moves a fix between `proposed`, `verified`,
 `applied` and `abandoned`. **`confirmed` and `regressed` cannot be set through the
-API** — they are measurements, written only by the poller, and only for
+API**: they are measurements, written only by the poller, and only for
 investigations linked to a regression alert. Moving a fix to `applied` snapshots a
 baseline for later comparison: the latest interval mean for the linked query, or the
 raw snapshot mean if no interval baseline exists yet.
@@ -88,9 +88,9 @@ After that, on each poll the poller checks that connection's fixes marked `appli
 mean latency at or below 80% of the applied-time baseline moves the fix to
 `confirmed`; more than 72 hours since apply with the mean still at or above 95% of
 baseline moves it to `regressed`. A fix applied to an investigation with no linked
-regression alert stays `applied` indefinitely — there is no measurement path for it.
+regression alert stays `applied` indefinitely; there is no measurement path for it.
 
 ## See also
 
-[Architecture — regression detection](../architecture.md#regression-detection-and-applied-fixes) ·
+[Architecture: regression detection](../architecture.md#regression-detection-and-applied-fixes) ·
 [Investigate a slow query](investigate.md) · [Multiple connections](connections.md)

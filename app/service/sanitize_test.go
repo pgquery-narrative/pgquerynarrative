@@ -34,6 +34,21 @@ func TestSanitizeAPIError_Sentinel(t *testing.T) {
 	}
 }
 
+// Regression: raw LLM provider error bodies (claude/openai/gemini/groq/ollama
+// all format failures as "<provider> API error: <code> - <body>") must not
+// reach the client or a log line verbatim, since the body can carry
+// rate-limit, account, or model detail from the provider.
+func TestSanitizeAPIError_ScrubsLLMProviderErrorBody(t *testing.T) {
+	err := errors.New(`claude API error: 401 - {"error":{"type":"authentication_error","message":"org_01a2b3 revoked"}}`)
+	got := SanitizeAPIError(err, "fallback")
+	if got != "fallback" {
+		t.Fatalf("expected fallback for a raw provider error body, got %q", got)
+	}
+	if strings.Contains(got, "org_01a2b3") {
+		t.Fatalf("leaked provider account detail: %q", got)
+	}
+}
+
 func TestSanitizeAPIError_SchemaNotAllowed(t *testing.T) {
 	got := SanitizeAPIError(apperrors.ErrSchemaNotAllowed, "fallback")
 	if got != apperrors.ErrSchemaNotAllowed.Error() {

@@ -604,3 +604,18 @@ func IsCloudLLMProvider(provider string) bool {
 		return true
 	}
 }
+
+// ValidLLMProvider reports whether provider is a value newLLMClient actually
+// dispatches on. An unrecognized value falls back to Ollama silently at
+// construction time, so this is checked separately at config load to fail
+// fast instead of quietly running the wrong provider. Empty is valid and
+// means Ollama, matching IsCloudLLMProvider's treatment of "" and Load's
+// LLM_PROVIDER default.
+func ValidLLMProvider(provider string) bool {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama", "gemini", "claude", "openai", "groq", "":
+		return true
+	default:
+		return false
+	}
+}

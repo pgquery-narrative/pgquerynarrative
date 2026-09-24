@@ -6,11 +6,13 @@ import (
 )
 
 // GovernedClient bundles a raw provider Client with the audit store, budget
-// store, and external-data policy it must honor on every call. It exists so
-// callers (ReportsService, AskService, story.Generator, ...) can hold a single
-// value wired once at construction time instead of three separate fields
-// (audit store, budget store, allow-cloud flag) plus the raw client — see
-// app/service.GovernedAI for the narrow interface this satisfies.
+// store, and external-data policy it must honor on every call, so a caller
+// can hold one value wired once at construction time instead of three
+// separate fields (audit store, budget store, allow-cloud flag) plus the raw
+// client. See app/service.GovernedAI for the narrow interface this satisfies.
+// As of this writing, ReportsService, AskService, and story.Generator do not
+// use GovernedClient: each still holds the raw client plus its own three
+// fields and calls InvokeWithBudget directly from its own wrapper method.
 //
 // GovernedClient is safe for concurrent use; all state is immutable after
 // construction via NewGovernedClient.

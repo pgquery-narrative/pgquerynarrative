@@ -3,7 +3,7 @@
 ## Whether auth is required at all
 
 `SECURITY_AUTH_ENABLED=false` requires an explicit
-`SECURITY_ALLOW_INSECURE_NO_AUTH=true` — an opt-in for local/dev open access, and
+`SECURITY_ALLOW_INSECURE_NO_AUTH=true`, an opt-in for local/dev open access, and
 one that's rejected outright under production StrictMode. With auth off, requests
 run as an implicit admin principal.
 
@@ -11,7 +11,7 @@ run as an implicit admin principal.
 
 | Method | How | Notes |
 |---|---|---|
-| Static API key | `Authorization: Bearer <SECURITY_API_KEY>` | Plaintext; rejected in production — use a hash instead |
+| Static API key | `Authorization: Bearer <SECURITY_API_KEY>` | Plaintext; rejected in production, use a hash instead |
 | Hashed API key | `SECURITY_API_KEY_HASH` (unsalted SHA-256 hex) | Compared in constant time |
 | Managed keys | `SECURITY_API_KEYS_JSON`, or `POST /admin/api-keys` | Each carries a role, scopes (`admin`/`write`/`read`), an optional expiry, and can be revoked (`POST /admin/api-keys/{id}/revoke`) without touching the others |
 | Session cookie | Browser login via OIDC | HttpOnly, `Secure` under StrictMode, `SECURITY_SESSION_TTL` (default 8h) |
@@ -43,7 +43,7 @@ with any other role (`read-only`, `guest`) is refused. Where a role is read from
 provider, an unrecognised or missing value becomes `viewer`, the least privilege, and a stored
 membership always overrides the token's claim.
 
-`GET /reports/shared/{token}` is reachable by any role (including no auth at all) —
+`GET /reports/shared/{token}` is reachable by any role (including no auth at all),
 it is the one intentionally public read path.
 
 ## Admin routes
@@ -54,10 +54,10 @@ it is the one intentionally public read path.
 | `/admin/organizations` | Platform admin |
 | `/admin/memberships` | Tenant admin or above |
 | `/admin/connection-assignments`, `/admin/connection-permissions`, `/admin/connection-secrets` | Tenant admin or above |
-| `/me`, `/me/organizations`, `/me/organization` | Any authenticated user — view/switch their own memberships |
+| `/me`, `/me/organizations`, `/me/organization` | Any authenticated user, view/switch their own memberships |
 
 These are hand-registered HTTP routes (`cmd/server/admin_api.go`, `me_api.go`), not
-part of the Goa/OpenAPI surface — see [API reference](../reference/api.md#manual-routes)
+part of the Goa/OpenAPI surface, see [API reference](../reference/api.md#manual-routes)
 for the full classification.
 
 ## OIDC and organization membership
@@ -66,7 +66,7 @@ for the full classification.
   `/auth/refresh`, `/auth/session`), registered only when
   `SECURITY_OIDC_ISSUER`/`_CLIENT_ID` are set.
 - **`SECURITY_OIDC_AUTO_JOIN_DEFAULT_ORG` defaults to `false`**, and is **forbidden**
-  (must stay `false`) under production StrictMode — a first-time OIDC login gets no
+  (must stay `false`) under production StrictMode; a first-time OIDC login gets no
   organization membership unless one is provisioned explicitly via the admin API.
   When it is enabled outside production, a first login is auto-joined to the default
   organization as a viewer.
@@ -82,7 +82,7 @@ for the full classification.
 distributed (PostgreSQL-backed) implementation
 (`SECURITY_RATE_LIMIT_DISTRIBUTED`). Failure mode
 (`SECURITY_RATE_LIMIT_FAILURE_MODE`: `open`/`closed`/`local_fallback`) controls what
-happens if the distributed backend is unreachable — `open` is refused whenever auth
+happens if the distributed backend is unreachable: `open` is refused whenever auth
 is enabled, and under production StrictMode the distributed limiter itself is
 required once rate limiting is on. See
 [Health and monitoring](../operate/monitoring.md) for the metric and alert names, and

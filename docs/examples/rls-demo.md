@@ -3,7 +3,7 @@
 !!! warning "This is not PgQueryNarrative's tenant isolation"
     This page demonstrates PostgreSQL row-level security on the **demo analytical
     table** with a role the application never uses. PgQueryNarrative's own
-    organization isolation is a different mechanism — RLS on the `app` metadata
+    organization isolation is a different mechanism: RLS on the `app` metadata
     schema keyed on `app.current_org_id`, plus per-organization connection
     assignments. See [Organizations and tenancy](../security/tenancy.md).
 
@@ -12,7 +12,7 @@ Migration `000021_sales_rls_demo` enables **row-level security** on the partitio
 rep session sees only its own rows when connected as `pgquerynarrative_sales_rep`
 and `app.current_rep` is set.
 
-The **read-only API path is unchanged** — `POST /api/v1/queries/run`,
+The **read-only API path is unchanged**: `POST /api/v1/queries/run`,
 `/queries/explain`, and `GET /queries/stats` still use `pgquerynarrative_readonly`,
 which has a permissive `USING (true)` policy on `demo.sales`.
 
@@ -22,9 +22,9 @@ which has a permissive `USING (true)` policy on `demo.sales`.
 
 | Role | Used by | `demo.sales` visibility |
 |------|---------|-------------------------|
-| `pgquerynarrative_readonly` | API query pool — run, explain, stats | All rows (policy `sales_select_api_readonly`) |
+| `pgquerynarrative_readonly` | API query pool: run, explain, stats | All rows (policy `sales_select_api_readonly`) |
 | `pgquerynarrative_sales_rep` | Manual `psql` demo only (not wired to the app) | Rows where `sales_rep = current_setting('app.current_rep', true)` |
-| `pgquerynarrative_app` | App metadata pool — saved queries, reports, embeddings | Owner bypasses RLS (migrations, seed) |
+| `pgquerynarrative_app` | App metadata pool: saved queries, reports, embeddings | Owner bypasses RLS (migrations, seed) |
 | `postgres` | `make migrate-docker`, admin | Superuser |
 
 Seed data assigns reps from `['A. Lee','B. Singh','C. Patel','D. Kim','E. Garcia']`
@@ -35,7 +35,7 @@ Seed data assigns reps from `['A. Lee','B. Singh','C. Patel','D. Kim','E. Garcia
 ## Policies (on parent `demo.sales`; applies to all partitions)
 
 ```sql
--- API read-only path — full visibility
+-- API read-only path: full visibility
 CREATE POLICY sales_select_api_readonly ON demo.sales
     FOR SELECT TO pgquerynarrative_readonly USING (true);
 
@@ -62,14 +62,14 @@ make seed-large-docker # optional; needs reps in demo.sales
 
 ## Two-session verify (rep A vs rep B → disjoint results)
 
-**Session A** — only `A. Lee`:
+**Session A**, only `A. Lee`:
 
 ```bash
 docker compose exec -T postgres psql -U pgquerynarrative_sales_rep -d pgquerynarrative \
   -c "SET app.current_rep = 'A. Lee'; SELECT DISTINCT sales_rep FROM demo.sales ORDER BY 1;"
 ```
 
-**Session B** — only `B. Singh`:
+**Session B**, only `B. Singh`:
 
 ```bash
 docker compose exec -T postgres psql -U pgquerynarrative_sales_rep -d pgquerynarrative \

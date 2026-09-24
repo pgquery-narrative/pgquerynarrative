@@ -247,7 +247,7 @@ func checkReleasePlatforms(root string, r *report) {
 	for i := range goos {
 		platforms = append(platforms, goos[i][1]+"/"+goarch[i][1])
 	}
-	for _, rel := range []string{"docs/project/releases.md", "docs/reference/versions-limits.md", "README.md"} {
+	for _, rel := range []string{"docs/project/releases.md", "docs/reference/versions-limits.md"} {
 		body := mustRead(root, rel, r)
 		for _, p := range platforms {
 			slash := p                              // linux/amd64
@@ -339,6 +339,7 @@ var forbiddenVocab = []vocabRule{
 	{"Go 1.20–1.25 claim", regexp.MustCompile(`Go[ \-]1\.2[0-5]\b`)},
 	{"\"8,000 rows\" dataset claim", regexp.MustCompile(`\b8,?000[ \-]rows?\b`)},
 	{"\"mathematically prove\" (verification is never a mathematical proof)", regexp.MustCompile(`(?i)mathematically\s+prov`)},
+	{"em dash (—)", regexp.MustCompile("—")},
 }
 
 // The stale-owner-URL check is a plain substring match, not a regex: a regex

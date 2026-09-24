@@ -21,12 +21,8 @@ type InvokeOptions struct {
 	Budget *BudgetStore
 }
 
-// Invoke evaluates governance policy, budgets, audits the attempt, and calls the LLM provider.
-func Invoke(ctx context.Context, client Client, audit *AuditStore, operation string, in GovernanceInput, prompt string) (string, error) {
-	return InvokeWithBudget(ctx, client, InvokeOptions{Audit: audit}, operation, in, prompt)
-}
-
-// InvokeWithBudget is like Invoke but enforces optional daily/monthly token
+// InvokeWithBudget evaluates governance policy, budgets, audits the attempt,
+// and calls the LLM provider. It enforces optional daily/monthly token
 // and cost budgets. Budget enforcement is atomic: tokens are reserved
 // (prompt estimate + max output allowance) before the provider call via
 // BudgetStore.Reserve, reconciled to actual usage on success, and released
