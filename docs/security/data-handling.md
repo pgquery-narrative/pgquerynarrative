@@ -95,13 +95,13 @@ audit trail is a direct database connection with sufficient PostgreSQL
 privileges, governed entirely by the role grants above, not by an application
 role/permission check.
 
-Audit rows written directly from HTTP middleware — API-request logging,
-authentication failures, rate-limit rejections — carry the client's
+Audit rows written directly from HTTP middleware (API-request logging,
+authentication failures, rate-limit rejections) carry the client's
 `User-Agent` string and IP address (see
 [Client IP address](#client-ip-address) below), because that middleware has
-the request in hand. Audit rows written from service-layer code instead —
-admin actions, viewing raw SQL, share create/revoke, other high-risk-attempt
-recording — do not carry either field: those code paths only receive a
+the request in hand. Audit rows written from service-layer code instead
+(admin actions, viewing raw SQL, share create/revoke, other high-risk-attempt
+recording) do not carry either field: those code paths only receive a
 request-scoped principal, not the underlying HTTP request, and nothing
 threads IP/User-Agent through to them. No audit row of either kind ever
 carries SQL text, row values, or LLM prompt/response content: `details` is a

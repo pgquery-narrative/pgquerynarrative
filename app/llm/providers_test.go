@@ -15,7 +15,7 @@ func TestOpenAI_UsesBaseURLOverride(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`))
 	}))
 	defer srv.Close()
 
@@ -39,10 +39,10 @@ func TestOpenAI_RetriesOn5xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if atomic.AddInt32(&calls, 1) == 1 {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"error":"temporary"}`))
+			_, _ = w.Write([]byte(`{"error":"temporary"}`))
 			return
 		}
-		w.Write([]byte(`{"choices":[{"message":{"content":"ok after retry"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok after retry"}}]}`))
 	}))
 	defer srv.Close()
 
@@ -68,7 +68,7 @@ func TestOpenAI_RetriesOn5xx(t *testing.T) {
 // candidate with an empty-string part was returned as a silent success.
 func TestGemini_EmptyTextIsAnError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":""}]}}]}`))
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":""}]}}]}`))
 	}))
 	defer srv.Close()
 
