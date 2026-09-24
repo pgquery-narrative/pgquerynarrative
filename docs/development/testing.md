@@ -1,35 +1,35 @@
 # Testing
 
 Canonical commands, then a QA matrix for the guarantees this product makes. Makefile
-and CI are the source of truth here — where a `make` target runs more than a single
+and CI are the source of truth here: where a `make` target runs more than a single
 `go test` command, this page says so rather than presenting them as equivalent.
 
 ## Canonical commands
 
 | What | Command | Notes |
 |---|---|---|
-| Unit | `make test-unit` | Runs `go test` across a specific package list (`test/unit/...`, `app/auth`, `app/queryrunner`, `app/service`, `app/security`, `app/llm`, `app/audit`, `app/story`, `cmd/server`, `pkg/narrative`, `app/embedding`, `app/config`, `app/metrics`, `web`) — **not** a bare `go test ./...`, which would miss in-package tests these packages hold alongside their code |
+| Unit | `make test-unit` | Runs `go test` across a specific package list (`test/unit/...`, `app/auth`, `app/queryrunner`, `app/service`, `app/security`, `app/llm`, `app/audit`, `app/story`, `cmd/server`, `pkg/narrative`, `app/embedding`, `app/config`, `app/metrics`, `web`), **not** a bare `go test ./...`, which would miss in-package tests these packages hold alongside their code |
 | Integration | `make test-integration` | `test/integration/...`, real Postgres via testcontainers. Needs Docker |
 | E2E | `make test-e2e` | `test/e2e/...`, full HTTP API against real Postgres |
 | Everything above | `make test` | = `test-unit` + `test-integration` |
 | Migration cycle | `make migrate-cycle-docker` | up → down -all → up, proves migrations reversible |
-| DB security | `make db-security-verify-docker` | `tools/db/verify_security.sh` — the read-only boundary |
+| DB security | `make db-security-verify-docker` | `tools/db/verify_security.sh`: the read-only boundary |
 | Helm StrictMode | `make helm-strict-check` | Renders the chart and checks production gates without a cluster |
 | Frontend unit | `make test-frontend` | `cd frontend && npm test` (Vitest) |
 | Frontend typecheck / lint | `cd frontend && npm run typecheck` / `npm run lint` | |
 | Browser E2E | `make test-playwright` | Full Playwright suite (smoke, csp, full-ui, oidc, schedules, shares, critical-path). `make test-playwright-oidc` is a kept alias for the same target |
-| Release/image smoke | CI only: `Release build smoke`, `Docker image smoke` | Not a local `make` target — see `.github/workflows/ci.yml` and `release.yml` |
+| Release/image smoke | CI only: `Release build smoke`, `Docker image smoke` | Not a local `make` target, see `.github/workflows/ci.yml` and `release.yml` |
 | `pqn` extension | `make verify-pqn-extension` | Throwaway PostgreSQL primary and hot standby: ownership, `PUBLIC`, analyst limits, the ledger, a real 1.0 → 1.1 upgrade. `PG_IMAGE=postgres:16` (or 17, 18) picks the version. Needs Docker |
 | `pqn` tool | `make verify-pqn-cli` | The tool against a slow-query lab: `top`, `investigate`, a wrong rewrite is `Different`, the limits hold. Needs Docker |
 | REST-calling extension | `make verify-extension` | Upgrade path, `PUBLIC` grants, the URL lock, the API key. Needs Docker |
 | `pqn` docs | `make verify-pqn-docs` | Runs the `bash` blocks of the pqn quick start and installation guide as written. Needs Docker |
 | `pqn` pitch | `make verify-pqn-pitch` | The core pitch against independent oracles on a 17-million-row database: every proposal, wrong rewrites, time zones, concurrent writes, limits, access, the ledger. About five minutes and 2 GB of disk. Needs Docker and Python 3 |
 | Docs | `make docs-check` | `mkdocs build --strict` |
-| Docs contract | `make docs-contract-check` | Config/API/error/vocabulary/link checks against the code — see `tools/docscheck` |
+| Docs contract | `make docs-contract-check` | Config/API/error/vocabulary/link checks against the code, see `tools/docscheck` |
 | External links | `make docs-links` | lychee, needs network |
 
 `go test ./test/unit/... ./cmd/server/... ./pkg/narrative/... -v` covers most of
-`test-unit` but omits the in-package suites in `app/auth`, `app/queryrunner`, etc. —
+`test-unit` but omits the in-package suites in `app/auth`, `app/queryrunner`, etc.;
 use `make test-unit` for the real coverage set, or run a single package directly:
 
 ```bash
@@ -55,7 +55,7 @@ go test ./test/unit/app/service/... -run TestBuildPerfSuggestions_LimitApplied -
 | `test/integration` | Query runner and rewrite equivalence against real Postgres, investigation candidates, regression detection/poller/multiconnection, schedule multi-replica, migration roundtrip, audit modes, multi-org security, OIDC staging, managed-key authorization, embeddings, pilot acceptance |
 | `test/e2e` | Full HTTP API: queries, schema, suggestions, reports |
 
-## QA matrix — product guarantees
+## QA matrix: product guarantees
 
 | Guarantee | Where it's tested |
 |---|---|
@@ -73,7 +73,7 @@ go test ./test/unit/app/service/... -run TestBuildPerfSuggestions_LimitApplied -
 
 ## Manual checks
 
-**Auth, rate limiting, audit** — start with security enabled to actually exercise
+**Auth, rate limiting, audit**: start with security enabled to actually exercise
 them (defaults are off):
 
 ```bash
@@ -89,7 +89,7 @@ for i in $(seq 8); do curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization
 
 Audit log: `psql -d pgquerynarrative -c "SELECT event_type, details, user_id FROM app.audit_logs ORDER BY created_at DESC LIMIT 10;"`
 
-**Analytics** — run a time-series query (`tools/db/testing-queries.sql`), confirm
+**Analytics**: run a time-series query (`tools/db/testing-queries.sql`), confirm
 `metrics.time_series.<measure>` includes a forecast and confidence interval, and
 that a query with ≥ 2 numeric measures and ≥ 10 rows produces `metrics.correlations`.
 Automated coverage: `test/unit/app/metrics`.

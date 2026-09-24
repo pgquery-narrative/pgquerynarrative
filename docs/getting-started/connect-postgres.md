@@ -1,7 +1,7 @@
 # Connect your PostgreSQL
 
-Point PgQueryNarrative at **your** database — usually a replica or a reporting
-database — through a dedicated read-only role. For the bundled demo dataset, use
+Point PgQueryNarrative at **your** database, usually a replica or a reporting
+database, through a dedicated read-only role. For the bundled demo dataset, use
 [Quick start](quickstart.md) instead.
 
 Read [Trust model](../trust-model.md) and [Database roles](../security/database-roles.md)
@@ -31,12 +31,12 @@ Minimum environment for the **default** connection (full list:
 [Configuration reference](../reference/configuration.md)):
 
 ```bash
-# App metadata DB (investigations, saved queries, reports, orgs) — can be the Compose Postgres
+# App metadata DB (investigations, saved queries, reports, orgs); can be the Compose Postgres
 DATABASE_HOST=...
 DATABASE_USER=pgquerynarrative_app
 DATABASE_PASSWORD=...
 
-# Analytical queries — your replica + readonly role
+# Analytical queries: your replica + readonly role
 DATABASE_READONLY_USER=pqn_readonly
 DATABASE_READONLY_PASSWORD=...
 DATABASE_ALLOWED_SCHEMAS=reporting
@@ -45,14 +45,14 @@ QUERY_TIMEOUT=30s
 
 For **additional** analytical sources beside `default`, set `DATABASE_CONNECTIONS_JSON`
 (a JSON array of connection objects, camelCase keys, durations as integer
-nanoseconds — see [Configuration – multiple connections](../reference/configuration.md#multiple-database-connections))
+nanoseconds, see [Configuration – multiple connections](../reference/configuration.md#multiple-database-connections))
 and pass `connection_id` in the API/UI/MCP. See
 [Multiple connections](../workflows/connections.md).
 
 ## 3. Allowlist only what investigators need
 
 `DATABASE_ALLOWED_SCHEMAS` is a hard allowlist enforced in the query validator.
-Start narrow — one reporting schema or a curated set of views. `app`, `public` (in
+Start narrow: one reporting schema or a curated set of views. `app`, `public` (in
 production), `pg_catalog`, `information_schema` and `pg_toast*` can never be
 allowlisted; the config loader rejects them outright.
 
@@ -88,4 +88,4 @@ Leaving laptop demo mode: [Production configuration](../operate/production.md) a
 - [Configuration](../reference/configuration.md)
 - [Installation](installation.md)
 - [REST API](../integrations/rest-api.md)
-- [Install the pqn extension](pqn-installation.md) — the alternative that runs inside your database, with no PgQueryNarrative server
+- [Install the pqn extension](pqn-installation.md): the alternative that runs inside your database, with no PgQueryNarrative server

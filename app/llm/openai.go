@@ -14,20 +14,26 @@ const openaiBaseURL = "https://api.openai.com/v1"
 
 // OpenAIClient calls the OpenAI Chat Completions API for text generation (GPT).
 type OpenAIClient struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey  string
+	model   string
+	baseURL string
+	client  *http.Client
 }
 
 // NewOpenAIClient returns a client for the OpenAI API.
 // apiKey is the OpenAI API key (from LLM_API_KEY). model is the model name (e.g. gpt-4o, gpt-4o-mini, gpt-4-turbo).
-func NewOpenAIClient(apiKey, model string) *OpenAIClient {
+// baseURL overrides the API host (LLM_BASE_URL); empty uses the default OpenAI host.
+func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
+	if baseURL == "" {
+		baseURL = openaiBaseURL
+	}
 	return &OpenAIClient{
-		apiKey: apiKey,
-		model:  model,
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: baseURL,
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -69,7 +75,7 @@ func (c *OpenAIClient) GenerateMessages(ctx context.Context, messages []ChatMess
 		return GenerationResult{}, fmt.Errorf("openai: empty messages")
 	}
 
-	url := openaiBaseURL + "/chat/completions"
+	url := c.baseURL + "/chat/completions"
 
 	payload := map[string]interface{}{
 		"model":       c.model,
@@ -94,7 +100,16 @@ func (c *OpenAIClient) GenerateMessages(ctx context.Context, messages []ChatMess
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return GenerationResult{}, fmt.Errorf("openai: request: %w", err)
+			lastErr = fmt.Errorf("openai: request: %w", err)
+			if attempt < openaiMaxRetries-1 {
+				select {
+				case <-ctx.Done():
+					return GenerationResult{}, ctx.Err()
+				case <-time.After(openaiRetryDelay):
+				}
+				continue
+			}
+			return GenerationResult{}, lastErr
 		}
 
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024)) // #nosec G104 -- best-effort error-body read; empty body on failure just yields a less detailed error message.
@@ -129,7 +144,7 @@ func (c *OpenAIClient) GenerateMessages(ctx context.Context, messages []ChatMess
 
 		lastErr = fmt.Errorf("openai API error: %d - %s", resp.StatusCode, string(body))
 
-		if resp.StatusCode == 429 && attempt < openaiMaxRetries-1 {
+		if (resp.StatusCode == 429 || resp.StatusCode >= 500) && attempt < openaiMaxRetries-1 {
 			select {
 			case <-ctx.Done():
 				return GenerationResult{}, ctx.Err()

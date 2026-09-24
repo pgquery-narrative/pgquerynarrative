@@ -34,7 +34,7 @@ git clone https://github.com/pgquery-narrative/pgquerynarrative.git
 cd pgquerynarrative
 ```
 
-Note: the Go module path stays `github.com/pgquerynarrative/pgquerynarrative` — only
+Note: the Go module path stays `github.com/pgquerynarrative/pgquerynarrative`, only
 the GitHub organization (used for clone/browser URLs) is `pgquery-narrative`. Do not
 rewrite Go import paths to match.
 
@@ -110,10 +110,26 @@ Then create a PR on GitHub with:
 - Update README if needed
 - Add/update godoc comments
 - Update the matching [reference page](https://pgquery-narrative.github.io/pgquerynarrative/reference/api/)
-  in the same change for a config default, API route, or error code you touched —
-  see [Change workflows](https://pgquery-narrative.github.io/pgquerynarrative/development/change-workflows/);
+  in the same change for a config default, API route, or error code you touched,
+  see [Change workflows](https://pgquery-narrative.github.io/pgquerynarrative/development/change-workflows/).
   `make docs-contract-check` fails a PR that misses this
 - Include examples for new features
+
+Previewing docs locally: `make docs` builds the Docker-based MkDocs image and serves
+it at <http://127.0.0.1:8000> with the repository bind-mounted, so edits under `docs/`
+show up on a page refresh. No local Python or MkDocs install is required. Before
+committing a documentation change, run:
+
+```bash
+make docs-check          # mkdocs build --strict; fails on broken nav/links/build errors
+make docs-contract-check # facts the docs state that the code decides (versions, config
+                          # defaults, API surface, error codes, forbidden vocabulary)
+make docs-links          # external link check (requires network access)
+```
+
+`make verify-pqn-docs` additionally executes the `pqn` extension quick start exactly as
+written in `docs/getting-started/pqn-extension.md`; run it when touching that page or
+the extension itself.
 
 
 ## Pull Request Process
@@ -135,7 +151,7 @@ Then create a PR on GitHub with:
 
 ## Review Process
 
-- Maintainers will review within 48 hours
+- Maintainers review pull requests as time allows; there is no fixed SLA
 - Address review comments promptly
 - Be open to feedback and suggestions
 - Keep PRs focused and reasonably sized

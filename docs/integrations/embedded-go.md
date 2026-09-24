@@ -5,8 +5,8 @@ directly, or mount its HTTP endpoints on your own router. Configuration matches 
 [standalone server](../getting-started/installation.md); see
 [Configuration](../reference/configuration.md).
 
-The Go module path is intentionally unchanged —
-`github.com/pgquerynarrative/pgquerynarrative` — even though the GitHub
+The Go module path is intentionally unchanged:
+`github.com/pgquerynarrative/pgquerynarrative`, even though the GitHub
 organization is `pgquery-narrative`. Import paths below are correct as written.
 
 ## Library usage
@@ -51,7 +51,7 @@ Package: [`pkg/narrative/middleware`](https://github.com/pgquery-narrative/pgque
 For auth and rate-limit parity with the standalone server, build a
 `narrativemw.SecurityConfig` from your `auth.Authenticator`, session manager, audit
 store and rate limiter, then use `MountChiSecured` (Chi) or wrap individual handlers
-with `WrapSecured` (Gin, Echo — there is no secured mount helper for those two).
+with `WrapSecured` (Gin, Echo; there is no secured mount helper for those two).
 
 Mounted routes (with prefix `/api`; use `""` to mount at root):
 
@@ -71,4 +71,4 @@ Mounted routes (with prefix `/api`; use `""` to mount at root):
 ## See also
 
 [Configuration](../reference/configuration.md) · [REST API](rest-api.md) ·
-[Releases and versioning](../project/releases.md#pkgnarrative-api-stability) — what's stable here
+[Releases and versioning](../project/releases.md#pkgnarrative-api-stability): what's stable here

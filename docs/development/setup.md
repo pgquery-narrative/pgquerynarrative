@@ -9,7 +9,7 @@ Build, test, and contribute to PgQueryNarrative. See also
 | Requirement | Purpose |
 |---|---|
 | Go 1.26+, CGO toolchain | Build the server and run tests (`pg_query_go` is a cgo library) |
-| PostgreSQL 16+, or Docker | Database — query execution, migrations, seed |
+| PostgreSQL 16+, or Docker | Database: query execution, migrations, seed |
 | Git, Make | Clone and run targets |
 | Node.js 22+, npm | Build the React SPA in `frontend/` |
 
@@ -45,10 +45,10 @@ rebuild).
 1. Branch: `git checkout -b feature/name`
 2. Code, test (`make test`), lint (`make lint`), format (`make fmt`)
 3. Commit: [Conventional Commits](https://www.conventionalcommits.org/) (`feat: ...`, `fix: ...`)
-4. After changing `api/design/*.go`: `make generate` (Goa codegen — see
+4. After changing `api/design/*.go`: `make generate` (Goa codegen, see
    [Repository architecture](repository.md#code-generation))
 5. Changed a public config default, API shape, or error code? Update the matching
-   [Reference](../reference/configuration.md) page in the same change — see
+   [Reference](../reference/configuration.md) page in the same change, see
    [Change workflows](change-workflows.md); `make docs-contract-check` enforces it
 
 **Migrations:** add `00000N_name.up.sql` and `.down.sql` in `app/db/migrations/`;

@@ -317,18 +317,34 @@ func (c *Client) SchedulesRunner() *service.SchedulesService {
 	return c.schedulesService
 }
 
+// ollamaDefaultBaseURL is the fallback LLM_BASE_URL applies (app/config/config.go)
+// regardless of which provider is configured, since the two settings share one
+// env var. A cloud provider only honors LLM_BASE_URL when it differs from that
+// Ollama-shaped default; otherwise "not set for Ollama" would silently redirect
+// every cloud provider to localhost instead of its real API host.
+const ollamaDefaultBaseURL = "http://localhost:11434"
+
+// cloudBaseURLOverride returns baseURL when it looks like a deliberate override
+// for a cloud provider, or "" (meaning: use the provider's own default host).
+func cloudBaseURLOverride(baseURL string) string {
+	if baseURL == "" || baseURL == ollamaDefaultBaseURL {
+		return ""
+	}
+	return baseURL
+}
+
 func newLLMClient(cfg LLMConfig) llm.Client {
 	switch cfg.Provider {
 	case "ollama":
 		return llm.NewOllamaClient(cfg.BaseURL, cfg.Model)
 	case "gemini":
-		return llm.NewGeminiClient(cfg.APIKey, cfg.Model)
+		return llm.NewGeminiClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
 	case "claude":
-		return llm.NewClaudeClient(cfg.APIKey, cfg.Model)
+		return llm.NewClaudeClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
 	case "openai":
-		return llm.NewOpenAIClient(cfg.APIKey, cfg.Model)
+		return llm.NewOpenAIClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
 	case "groq":
-		return llm.NewGroqClient(cfg.APIKey, cfg.Model)
+		return llm.NewGroqClient(cfg.APIKey, cfg.Model, cloudBaseURLOverride(cfg.BaseURL))
 	default:
 		return llm.NewOllamaClient(cfg.BaseURL, cfg.Model)
 	}

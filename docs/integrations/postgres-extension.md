@@ -19,12 +19,15 @@ Both are verified by scripts that start a throwaway PostgreSQL: `make verify-ext
 2. In `psql`, in your database:
 
    ```sql
-   -- Optional but required for real API calls — without it the functions
+   -- Optional but required for real API calls; without it the functions
    -- return a "pending" stub instead of calling the service. See below.
    CREATE EXTENSION http;
 
    CREATE EXTENSION pgquerynarrative;
    ```
+
+   The extension's `default_version` is **1.1**, so a fresh install lands there
+   directly, with both `.sql` files present, no separate upgrade step needed.
 
 **Full Docker setup** (start Postgres, init, migrate, install the extension files,
 `CREATE EXTENSION`, seed):
@@ -42,6 +45,21 @@ and re-run `CREATE EXTENSION pgquerynarrative;`.
 `ALTER EXTENSION pgquerynarrative UPDATE;`. Version 1.1 removes `EXECUTE` from
 `PUBLIC`, so **every role that used the functions loses access until you grant it**
 (next section).
+
+## Uninstall
+
+`DROP EXTENSION pgquerynarrative;` removes the functions and
+`pgquerynarrative_config` (the stored API URL and session settings): the table is
+created by the extension's SQL script, so it is an extension member and is dropped
+with it. Run it as the role that owns the extension:
+
+```sql
+DROP EXTENSION pgquerynarrative;
+```
+
+This does not touch the `http` extension or any role. Access was granted with
+`pgquerynarrative_grant_access`/`pgquerynarrative_revoke_access` on existing roles,
+not extension-owned roles, so there is nothing else to clean up.
 
 ## Granting access
 
@@ -86,13 +104,13 @@ type keys, or pass the key from a client that does not log it.
 
 | Function | Calls | Notes |
 |---|---|---|
-| `pgquerynarrative_set_api_url(url TEXT) RETURNS void` | — | Stores the URL. Owner only |
-| `pgquerynarrative_get_api_url() RETURNS TEXT` | — | Reads it, or the default |
-| `pgquerynarrative_set_api_key(api_key TEXT) RETURNS void` | — | Sets this session's API key |
-| `pgquerynarrative_grant_access(to_role NAME)` / `pgquerynarrative_revoke_access(from_role NAME)` | — | Grant or withdraw the user-callable functions. Owner only |
-| `pgquerynarrative_run_query(query_sql TEXT, row_limit INTEGER DEFAULT 100) RETURNS JSON` | `POST /api/v1/queries/run` | Read-only query. There is no `connection_id` parameter — always the default connection |
-| `pgquerynarrative_generate_report(query_sql TEXT) RETURNS JSON` | `POST /api/v1/reports/generate` | Workbench narrative report. Uses the LLM when configured, with a deterministic metrics fallback if it fails — the LLM is not strictly required |
-| `pgquerynarrative_list_saved(query_limit INTEGER DEFAULT 50, query_offset INTEGER DEFAULT 0) RETURNS JSON` | `GET /api/v1/queries/saved` | — |
+| `pgquerynarrative_set_api_url(url TEXT) RETURNS void` | - | Stores the URL. Owner only |
+| `pgquerynarrative_get_api_url() RETURNS TEXT` | - | Reads it, or the default |
+| `pgquerynarrative_set_api_key(api_key TEXT) RETURNS void` | - | Sets this session's API key |
+| `pgquerynarrative_grant_access(to_role NAME)` / `pgquerynarrative_revoke_access(from_role NAME)` | - | Grant or withdraw the user-callable functions. Owner only |
+| `pgquerynarrative_run_query(query_sql TEXT, row_limit INTEGER DEFAULT 100) RETURNS JSON` | `POST /api/v1/queries/run` | Read-only query. There is no `connection_id` parameter, always the default connection |
+| `pgquerynarrative_generate_report(query_sql TEXT) RETURNS JSON` | `POST /api/v1/reports/generate` | Workbench narrative report. Uses the LLM when configured, with a deterministic metrics fallback if it fails; the LLM is not strictly required |
+| `pgquerynarrative_list_saved(query_limit INTEGER DEFAULT 50, query_offset INTEGER DEFAULT 0) RETURNS JSON` | `GET /api/v1/queries/saved` | - |
 
 `EXECUTE` on every function is withheld from `PUBLIC` and granted per role with `pgquerynarrative_grant_access`.
 
@@ -144,6 +162,6 @@ and lets PostgreSQL do the authentication.
 
 ## See also
 
-[REST API](rest-api.md) — the endpoints the extension calls ·
+[REST API](rest-api.md): the endpoints the extension calls ·
 [Configuration](../reference/configuration.md) ·
 [Troubleshooting](../operate/troubleshooting.md)

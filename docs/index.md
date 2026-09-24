@@ -1,9 +1,8 @@
-# What is PgQueryNarrative?
+# PgQueryNarrative
 
-**PgQueryNarrative is a PostgreSQL investigation workbench: it takes an expensive
-query, shows what the planner is doing, proposes a rewrite or index from the query's
-own parse tree, measures the change, checks that the rewrite returns the same rows,
-and writes the evidence up as an engineering report.**
+PgQueryNarrative investigates PostgreSQL queries: it shows plan findings, proposes a
+rewrite or index from the query's own parse tree, compares the plans, verifies that
+the result rows match, and writes the evidence up as a report.
 
 ```mermaid
 flowchart LR
@@ -14,46 +13,57 @@ flowchart LR
   E --> F[Engineering report]
 ```
 
-It is not an autonomous optimizer. It proposes; a person reviews and applies. It
-never applies a proposed rewrite, index or DDL to the database you point it at, and
-it runs your SQL through a dedicated read-only role. The investigation loop needs no
-LLM; an optional LLM adds natural-language Ask and narrative reports on top.
+It does not apply a rewrite, index, or DDL statement to the database it investigates;
+a person reviews and applies the change. User SQL runs through a dedicated read-only
+role. See [Concepts](concepts.md) for vocabulary, [Architecture](architecture.md) for
+the system map, and [Trust model](trust-model.md) for the security boundaries.
 
-## Where to start
+## Getting started
 
-| You are… | Start with | Then |
-|---|---|---|
-| **Evaluating it** | [Quick start](getting-started/quickstart.md) — `make demo`, guided investigation | [Concepts](concepts.md) |
-| **Investigating a real query** | [Connect your PostgreSQL](getting-started/connect-postgres.md) | [Investigate a slow query](workflows/investigate.md) |
-| **Working from a terminal, with only PostgreSQL** | [Quick start: pqn](getting-started/pqn-extension.md) | [Install the pqn extension](getting-started/pqn-installation.md) |
-| **A DBA reviewing access** | [Trust model](trust-model.md) | [Database roles](security/database-roles.md) · [Query execution safety](security/query-safety.md) |
-| **Deploying it** | [Deployment](operate/deployment.md) | [Production configuration](operate/production.md) · [Health and monitoring](operate/monitoring.md) |
-| **Integrating with it** | [REST API](integrations/rest-api.md) | [API reference](reference/api.md) · [MCP server](integrations/mcp.md) · [PostgreSQL extensions](integrations/postgres-extension.md) |
-| **Contributing** | [Development setup](development/setup.md) | [Repository architecture](development/repository.md) · [Testing](development/testing.md) |
+- [Quick start](getting-started/quickstart.md)
+- [Installation](getting-started/installation.md)
+- [Connect your PostgreSQL](getting-started/connect-postgres.md)
+- [pqn: run from a terminal, no server](getting-started/pqn-extension.md)
 
-## How the documentation is organised
+## Query investigation
 
-| Section | Answers |
-|---|---|
-| **Overview** | What the product is, its vocabulary, how it is built, what it will and will not do. [Architecture](architecture.md) is the system map. |
-| **Getting started** | Running it: the demo, installation, pointing it at your own database, or installing the [`pqn` extension](getting-started/pqn-installation.md) to work from a terminal. |
-| **Core workflows** | Task guides for the investigation loop — findings, candidates, compare, [result verification](workflows/verify-results.md), regressions and applied fixes, multiple connections. |
-| **Workbench** | The UI surfaces around the loop: reports and sharing, dashboards, schedules and webhooks. |
-| **Integrations** | Calling it from elsewhere: REST, MCP, SQL (the extensions), Go (embedded), LLM providers, pgvector. |
-| **Security & access** | Roles, the SQL validator, authentication, organization isolation, data handling. |
-| **Deploy & operate** | Docker/Kubernetes/Helm, production settings, probes and metrics, migrations and upgrades, runbooks. |
-| **Reference** | Lookup tables checked against the code: [configuration](reference/configuration.md), [API](reference/api.md), [errors](reference/api-errors.md), [status vocabulary](reference/evidence.md), [CLI](reference/cli.md), [`pqn`](reference/pqn.md), versions and limits. |
-| **Development** | Repository layout, code generation, tests, and how to change the API, configuration or rewrite rules safely. |
-| **Examples** | The measured case study, the demo dataset, and the demo-data RLS walkthrough. |
-| **Project** | Releases, versioning, branch protection, contributing and the security policy. |
+- [Investigate a slow query](workflows/investigate.md)
+- [Understand plan findings](workflows/plan-findings.md)
+- [Suggest and rank candidates](workflows/candidates.md)
+- [Compare plans](workflows/compare.md)
+- [Verify result equivalence](workflows/verify-results.md)
+- [Regressions and applied fixes](workflows/regressions.md)
 
-Reference pages are mechanically checked: `make docs-contract-check` fails when a
-configuration variable, API operation, error code, release platform or the Go version
-in the docs disagrees with the code.
+## Security and operations
+
+- [Database roles](security/database-roles.md)
+- [Query execution safety](security/query-safety.md)
+- [Deployment](operate/deployment.md)
+- [Production configuration](operate/production.md)
+
+## Integrations
+
+- [REST API](integrations/rest-api.md)
+- [MCP server](integrations/mcp.md)
+- [PostgreSQL extensions](integrations/postgres-extension.md)
+- [LLM providers](integrations/llm.md)
+
+## Development
+
+- [Setup](development/setup.md)
+- [Repository architecture](development/repository.md)
+- [Testing](development/testing.md)
+
+## Reference
+
+Checked against the code by `make docs-contract-check`:
+[configuration](reference/configuration.md), [API](reference/api.md),
+[API errors](reference/api-errors.md), [status vocabulary](reference/evidence.md),
+[CLI](reference/cli.md), [pqn](reference/pqn.md),
+[versions and limits](reference/versions-limits.md).
 
 ## Local preview
 
 ```bash
-make docs        # http://127.0.0.1:8000
-make docs-check  # the strict build CI runs
+make docs   # http://127.0.0.1:8000
 ```

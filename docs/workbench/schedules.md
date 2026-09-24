@@ -13,7 +13,7 @@ SECURITY_WEBHOOK_SIGNING_SECRET=...  # required for webhook destinations in prod
 ```
 
 Off by default. In production StrictMode, enabling it also requires the webhook
-allowlist and signing secret above — see [Production configuration](../operate/production.md).
+allowlist and signing secret above, see [Production configuration](../operate/production.md).
 
 ## Creating a schedule
 
@@ -30,7 +30,7 @@ curl -s -X POST http://localhost:8080/api/v1/schedules \
   }'
 ```
 
-- `interval_expr` uses the `@every <duration>` format (e.g. `@every 6h`) — not cron.
+- `interval_expr` uses the `@every <duration>` format (e.g. `@every 6h`), not cron.
 - `destination_type` is `webhook` or `log` (`log` writes the run result to the
   application log instead of delivering anywhere; useful for testing a schedule
   without exposing a URL).
@@ -51,16 +51,16 @@ next poll, so running more than one server instance does not double-fire a sched
 Deliveries are queued in an outbox table and claimed the same `SKIP LOCKED` way.
 Each attempt:
 
-- Requires the destination host to be in `SECURITY_WEBHOOK_ALLOWED_HOSTS` — an empty
+- Requires the destination host to be in `SECURITY_WEBHOOK_ALLOWED_HOSTS`; an empty
   allowlist fails closed, so no webhook fires until you set one.
 - Is sent over **HTTPS only**, to port 443 or 8443, with the resolved IP re-checked
   at dial time and private/reserved ranges blocked (SSRF protection). No redirects
   are followed and no proxy is used.
-- Carries `X-PGQN-Delivery-ID`, `X-PGQN-Timestamp`, and — when
-  `SECURITY_WEBHOOK_SIGNING_SECRET` is set — `X-PGQN-Signature`, an HMAC-SHA256 over
+- Carries `X-PGQN-Delivery-ID`, `X-PGQN-Timestamp`, and, when
+  `SECURITY_WEBHOOK_SIGNING_SECRET` is set, `X-PGQN-Signature`, an HMAC-SHA256 over
   the timestamp, delivery ID and body. Verify all three on the receiving end.
 - The delivery ID is derived only from the schedule run's ID, so regenerating the
-  same run's report never produces a second, differently-IDed delivery — safe to
+  same run's report never produces a second, differently-IDed delivery; safe to
   retry deduplication on it.
 
 Failed deliveries retry with backoff starting at 30 seconds, doubling up to a 30
@@ -68,7 +68,7 @@ minute cap, for up to 5 attempts, then move to a dead letter for manual triage
 (`GET /webhook-deliveries`). Metrics: `pgqn_webhook_deliveries_total`,
 `pgqn_webhook_failures_total`, `pgqn_webhook_dead_letters_total`,
 `pgqn_webhook_rejections_total` (an allowlist or SSRF rejection). Alerts:
-`PgqnWebhookFailures`, `PgqnWebhookDeadLetters` — see [Health and monitoring](../operate/monitoring.md).
+`PgqnWebhookFailures`, `PgqnWebhookDeadLetters`, see [Health and monitoring](../operate/monitoring.md).
 
 ## See also
 

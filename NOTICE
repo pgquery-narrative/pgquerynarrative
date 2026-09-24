@@ -1,0 +1,9 @@
+PgQueryNarrative is licensed under the MIT License (see LICENSE).
+
+This distribution includes the following third-party material:
+
+Go fonts (Go-Regular.ttf, Go-Bold.ttf, Go-Mono.ttf)
+  Copyright (c) 2016 Bigelow & Holmes Inc. All rights reserved.
+  BSD-3-Clause-style license. Full text: web/fonts/LICENSE.
+  Compiled into the server binary (web/pdf_fonts.go) to render PDF report
+  exports.

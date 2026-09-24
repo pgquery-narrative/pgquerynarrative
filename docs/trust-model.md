@@ -17,7 +17,7 @@ Public multi-tenant SaaS and "paste production credentials into a chatbot" are n
 
 | Guarantee | Enforced by |
 |---|---|
-| User SQL is a single read-only statement | Parse-tree validation — only `SELECT`/`WITH`, or `EXPLAIN (FORMAT JSON)` of one; DML, DDL, utility statements, `SELECT … INTO` and row locks are rejected. [Query execution safety](security/query-safety.md) |
+| User SQL is a single read-only statement | Parse-tree validation: only `SELECT`/`WITH`, or `EXPLAIN (FORMAT JSON)` of one; DML, DDL, utility statements, `SELECT … INTO` and row locks are rejected. [Query execution safety](security/query-safety.md) |
 | User SQL cannot write, even if validation failed | A read-only transaction **and** a role with no write or DDL privileges, verified in CI by `tools/db/verify_security.sh`. [Database roles](security/database-roles.md) |
 | User SQL stays inside the schemas you allow | `DATABASE_ALLOWED_SCHEMAS` (default `demo`) for table references and schema-qualified functions, operators and types. `app`, `pg_catalog`, `information_schema` and `pg_toast` can never be allowlisted |
 | Side-effecting functions are refused | A named deny-list (advisory locks, `set_config`, `pg_sleep`, file and large-object access, sequence mutation, backend/WAL control, `dblink`, `query_to_xml`, `pg_notify`, stats reset). Unqualified and `pg_catalog`/`information_schema` functions not on the list are allowed |
@@ -35,7 +35,7 @@ Public multi-tenant SaaS and "paste production credentials into a chatbot" are n
 - Let user SQL read tables outside the allowlist, including the `app` metadata schema
 - Take session-scoped locks or change session settings through user SQL
 - Apply any proposed change to your database, or mark a fix `confirmed` without measured statistics
-- Replace a DBA's judgement — findings, rewrites and rankings are recommendations for review
+- Replace a DBA's judgement; findings, rewrites and rankings are recommendations for review
 
 It does write its **own** metadata (investigations, reports, snapshots, audit records,
 alert state), and migrations change the schema they own. Those writes go to the
@@ -57,7 +57,7 @@ If the read-only role is a superuser or can write, you have defeated the model.
 | Mode | Schemas | Intent |
 |---|---|---|
 | Guided demo | `demo` (optionally `opendata`) | Reproducible partition-pruning story |
-| Your PostgreSQL | Schemas you allowlist, with grants you give the read-only role | Real investigations — see [Connect your PostgreSQL](getting-started/connect-postgres.md) |
+| Your PostgreSQL | Schemas you allowlist, with grants you give the read-only role | Real investigations, see [Connect your PostgreSQL](getting-started/connect-postgres.md) |
 
 `APP_ENV=demo` fabricates workspace KPIs and seeds demo regression alerts. Never enable it
 where the numbers will be acted on.
@@ -65,8 +65,8 @@ where the numbers will be acted on.
 ## Seeing the configured state
 
 The workbench **Security & Trust** page (`GET /api/v1/trust?connection_id=…`) reports the
-hardening actually in effect for a connection — read-only role, allowlist, ANALYZE policy,
-StrictMode expectations — so operators can confirm what is enabled rather than assume it.
+hardening actually in effect for a connection: read-only role, allowlist, ANALYZE policy,
+StrictMode expectations, so operators can confirm what is enabled rather than assume it.
 
 ## See also
 

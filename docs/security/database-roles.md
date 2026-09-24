@@ -9,27 +9,27 @@ Three identities, deliberately unequal in power.
 | **Read-only** (`DATABASE_READONLY_USER`, or per connection) | `DATABASE_READONLY_USER`/`_PASSWORD`, or `readOnlyUser` in `DATABASE_CONNECTIONS_JSON` / per-org secrets | Every user-supplied statement: run, EXPLAIN, ANALYZE, compare, result verification, `pg_stat_statements` reads | Server process, one pool per connection |
 
 If the read-only role is a superuser, or can write, or shares a password with the app
-role, the model is defeated — use a real read-only grant set in production.
+role, the model is defeated; use a real read-only grant set in production.
 
 ## What each role can and cannot do
 
 - **Migration role** may `CREATE EXTENSION` and `ALTER ROLE`. It has no other special
   status; it is used for exactly one command and then discarded.
 - **App role** has ordinary DML on `app.*` (except `app.audit_logs`, which it can only insert into and read) and is subject to the same row-level
-  security as everyone else at the SQL level — the application enforces isolation by
+  security as everyone else at the SQL level; the application enforces isolation by
   setting `app.current_org_id` per transaction (see
   [Organizations and tenancy](tenancy.md)), not by bypassing RLS.
 - **Read-only role** has every privilege on the `app` schema and on `public`
   explicitly revoked (`infra/postgres-init/00-init.sql`, migration `000043`), plus
   default privileges revoked so future tables in those schemas aren't accidentally
-  exposed. It has `USAGE`/`SELECT` on the schemas you allowlist, and nothing else —
+  exposed. It has `USAGE`/`SELECT` on the schemas you allowlist, and nothing else:
   the schema allowlist enforced in the application (`DATABASE_ALLOWED_SCHEMAS`) is a
   second, independent layer on top of these grants, not a substitute for them.
 
 The one place a read-only pool briefly gains write capability is the HypoPG index
 projection, which runs `SET LOCAL transaction_read_only = off` inside a single
 transaction to create a **hypothetical** index (`hypopg_create_index`), then resets
-it and rolls back — nothing is committed to your schema.
+it and rolls back; nothing is committed to your schema.
 
 PostgreSQL lets a role change its own stored defaults (`ALTER ROLE … RESET statement_timeout`, and
 so on) whenever it holds a read-write transaction, and nothing can prevent that. So the application
@@ -48,7 +48,7 @@ StrictMode the entrypoint instead **refuses to start** with that same condition,
 rather than leaving the schema half-migrated. Set `DATABASE_MIGRATION_USER` /
 `DATABASE_MIGRATION_PASSWORD` (or `DATABASE_MIGRATION_URL`) to a role that may create
 extensions and alter roles before first start. Against an already-migrated database,
-the fallback is harmless — `migrate up` is a no-op.
+the fallback is harmless: `migrate up` is a no-op.
 
 ## Verifying the boundary
 
@@ -67,6 +67,6 @@ session flag lifted first, so the result depends on the role's privileges and no
 ## See also
 
 [Trust model](../trust-model.md) · [Query execution safety](query-safety.md) ·
-[Architecture — database identities](../architecture.md#database-identities) ·
+[Architecture: database identities](../architecture.md#database-identities) ·
 [Deployment](../operate/deployment.md) ·
 [Install the pqn extension](../getting-started/pqn-installation.md#install-without-a-superuser) and the [pqn reference](../reference/pqn.md#roles-and-tables) (the roles of extension mode)

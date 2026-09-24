@@ -48,11 +48,14 @@ type ScheduleRunner interface {
 }
 
 // GovernedAI invokes an LLM under audit, budget, and external-data governance
-// policy. It is the narrow seam ReportsService, AskService, and narrative
-// generation depend on so call sites never need direct access to the raw
-// provider client, audit store, or budget store — those are wired once, at
-// construction time (see llm.NewGovernedClient, called only from
-// narrative.NewClient), by whoever builds the GovernedAI.
+// policy. llm.GovernedClient satisfies it, but as of this writing nothing in
+// this codebase constructs one: ReportsService, AskService, and
+// story.Generator each hold a raw llm.Client plus their own audit/budget/
+// allow-cloud fields and independently call llm.InvokeWithBudget from their
+// own invokeLLM/Generate wrappers, which enforces the same governance but
+// duplicates the wiring three times instead of sharing it through this
+// interface. Prefer routing new AI consumers through a real GovernedAI
+// (llm.NewGovernedClient) rather than adding a fourth copy of that pattern.
 type GovernedAI interface {
 	// Invoke evaluates governance policy for gov, checks/reserves budget,
 	// invokes the LLM provider, and records an audit event. operation

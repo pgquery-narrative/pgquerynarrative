@@ -4,13 +4,13 @@
 
 Migrations use [golang-migrate](https://github.com/golang-migrate/migrate) against
 `app/db/migrations/`. The server enforces a **minimum schema version**
-(`db.RequiredMigrationVersion`, currently **60**) at readiness time — not at process
+(`db.RequiredMigrationVersion`, currently **60**) at readiness time, not at process
 start:
 
 - `GET /ready` returns **503** with `schema migration version N < required 60: run
   database migrations` (or `dirty at version N: resolve with migrate force before
   starting`) if the database is behind or the last migration failed partway.
-- The server **process itself still starts and accepts connections** — only
+- The server **process itself still starts and accepts connections**; only
   readiness fails, so a load balancer correctly stops routing to it, but a health
   check that only looks at `/health` will not catch this. Watch `/ready`, not
   `/health`, during a rollout.
@@ -18,9 +18,9 @@ start:
 | Command | Effect |
 |---|---|
 | `make migrate` | Apply pending migrations (uses `DB_URL`, or `LOCAL_DB_URL` for local host Postgres) |
-| `make migrate-force VERSION=N` | Force the tracked version without running SQL — for clearing a dirty state after a manual fix |
+| `make migrate-force VERSION=N` | Force the tracked version without running SQL, for clearing a dirty state after a manual fix |
 | `make migrate-docker` | Apply migrations inside Docker, as `postgres`, against the Compose stack |
-| `make migrate-cycle-docker` | Up, then `down -all`, then up — proves migrations are reversible (CI job `Migration up/down/up`) |
+| `make migrate-cycle-docker` | Up, then `down -all`, then up, proves migrations are reversible (CI job `Migration up/down/up`) |
 | `make db-security-verify-docker` | Runs `tools/db/verify_security.sh` against the Compose stack |
 
 A dirty migration (a prior `up` that failed midway) must be resolved by hand:
@@ -29,7 +29,7 @@ dirty flag before running `up` again.
 
 ## Upgrading
 
-1. Read the release notes for the target version — a bump to
+1. Read the release notes for the target version: a bump to
    `RequiredMigrationVersion` is called out there, with the version range.
 2. Run migrations for the new version **before** starting the new binary
    (`make migrate` / `make migrate-docker`, or your own migration Job).
@@ -37,7 +37,7 @@ dirty flag before running `up` again.
 4. Confirm `GET /ready` is `200` on the new version.
 
 Upgrading from a `2.0.x` install specifically requires running migrations through
-schema version 60 first — the server on a database behind that version will report
+schema version 60 first; the server on a database behind that version will report
 `/ready` as unhealthy rather than boot-loop, but it will not serve traffic correctly
 either.
 
@@ -70,7 +70,7 @@ DATABASE_NAME=pgqn_drill tools/ops/restore.sh /tmp/pgqn.dump
 
 `backup.sh` prefers the host's `pg_dump`, falling back to `docker compose exec
 postgres pg_dump` when Compose is running; it uses `--no-owner --no-acl`, so a
-restore **does not** recreate roles or grants — apply
+restore **does not** recreate roles or grants; apply
 `infra/postgres-init/00-init.sql` (or your own role provisioning) first, then
 restore the data.
 

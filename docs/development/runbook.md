@@ -64,7 +64,7 @@ curl -s -X POST http://localhost:8080/api/v1/queries/run \
 
 Run a time-series query from `tools/db/testing-queries.sql`, confirm
 `metrics.time_series.<measure>` includes `next_period_forecast`,
-`forecast_ci_lower`, `forecast_ci_upper`. Full steps: [Testing — manual checks](testing.md#manual-checks).
+`forecast_ci_lower`, `forecast_ci_upper`. Full steps: [Testing: manual checks](testing.md#manual-checks).
 
 ## Troubleshooting
 

@@ -9,7 +9,6 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
 )
 
-// Generator creates narratives from query results
 type Generator struct {
 	llmClient  llm.Client
 	promptOpts llm.PromptOptions
@@ -18,7 +17,6 @@ type Generator struct {
 	allowCloud bool
 }
 
-// NewGenerator creates a new narrative generator
 func NewGenerator(llmClient llm.Client) *Generator {
 	return &Generator{
 		llmClient:  llmClient,
