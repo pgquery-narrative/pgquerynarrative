@@ -316,7 +316,15 @@ func (s *Store) FindSimilarReports(ctx context.Context, queryEmbedding []float32
 			}
 			out = append(out, r)
 		}
-		return out, rows.Err()
+		// Query() can return a nil error even when pgvector is unavailable: the
+		// initial protocol exchange succeeds, and the real failure (an
+		// unresolvable <=> operator, for example) only surfaces via rows.Err()
+		// once iteration runs. Route that case into the same fallback as a
+		// Query()-time error, instead of returning it as a hard failure.
+		if rowsErr := rows.Err(); rowsErr != nil {
+			return s.findSimilarReportsInMemory(ctx, queryEmbedding, connectionID, limit)
+		}
+		return out, nil
 	}
 	// Fallback: load all and rank in memory, same as FindSimilar when pgvector
 	// is unavailable, so report search degrades the same way query search does
@@ -364,6 +372,14 @@ func (s *Store) findSimilarReportsInMemory(ctx context.Context, queryEmbedding [
 	for _, c := range candidates {
 		var vec []float32
 		if err := json.Unmarshal(c.embeddingJSON, &vec); err != nil {
+			continue
+		}
+		// A dimension mismatch or zero-norm vector (a null/empty stored
+		// embedding, or one written under a different model) makes
+		// cosineSimilarity return 0, indistinguishable from a genuine
+		// orthogonal (low-similarity) match. Exclude it instead of scoring
+		// it as a weak-but-real result.
+		if len(vec) != len(queryEmbedding) || norm(vec) == 0 {
 			continue
 		}
 		score := cosineSimilarity(queryEmbedding, vec)

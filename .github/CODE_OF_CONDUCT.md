@@ -59,13 +59,14 @@ acting as an appointed representative at an online or offline event.
 ## Enforcement
 
 This project does not currently maintain a dedicated conduct-reporting
-inbox. Instances of abusive, harassing, or otherwise unacceptable behavior
-can be reported by opening a private report through
+inbox or a listed maintainer contact. Reporting the offending content through
 [GitHub's reporting tools](https://docs.github.com/en/communities/maintaining-your-safety-on-github/reporting-abuse-or-spam)
-on the offending content, or by contacting the maintainer listed in the
-repository. Reports are handled as confidentially as the reporting channel
-allows; GitHub-side reports are subject to GitHub's own privacy practices,
-not this project's.
+sends the report to GitHub, not to this project's maintainers, and is subject
+to GitHub's own privacy practices, not this project's. For a report that
+needs to reach a project maintainer directly and privately, open a
+[private security advisory](https://github.com/pgquery-narrative/pgquerynarrative/security/advisories/new)
+(visible only to maintainers) even when the report is not a security
+vulnerability; there is currently no other private channel to a maintainer.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

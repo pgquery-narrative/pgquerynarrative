@@ -12,7 +12,7 @@
 PgQueryNarrative's tenancy unit is the **organization**. Every metadata table that
 holds organization-scoped data (investigations, their candidate history and
 linked regression alerts), reports, saved queries, schedules, regression snapshots
-and alerts, and more) has row-level security enabled and forced. That includes the identity
+and alerts, and more has row-level security enabled and forced. That includes the identity
 tables `organization_members` and `oidc_group_org_mappings` and the audit writer's
 `audit_log_buffer` (migration `000060`). Login resolves an identity before an organization
 is chosen, so those two tables have one narrow, read-only exception each: a user's own

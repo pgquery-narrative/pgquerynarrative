@@ -98,6 +98,12 @@ func (c *GroqClient) GenerateMessages(ctx context.Context, messages []ChatMessag
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+		// ponytail: retrying after a transport error here can double-run a
+		// generation; no idempotency-key mechanism is used since Groq's API
+		// does not document reliable support for one on this endpoint.
+		// Accepted: worst case is a duplicate provider call, not an unsafe
+		// action, since the result is still validated before anything acts on
+		// it (see claude.go for the full rationale, identical here).
 		resp, err := c.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("groq: request: %w", err)

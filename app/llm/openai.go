@@ -98,6 +98,12 @@ func (c *OpenAIClient) GenerateMessages(ctx context.Context, messages []ChatMess
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+		// ponytail: retrying after a transport error here can double-run a
+		// generation; no idempotency-key mechanism is used since OpenAI's API
+		// does not document reliable support for one on this endpoint.
+		// Accepted: worst case is a duplicate provider call, not an unsafe
+		// action, since the result is still validated before anything acts on
+		// it (see claude.go for the full rationale, identical here).
 		resp, err := c.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("openai: request: %w", err)

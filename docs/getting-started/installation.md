@@ -45,7 +45,7 @@ For a production-shaped image and Compose overlay, see
 ### Pre-built image
 
 ```bash
-VERSION=<version>
+VERSION=2.2.0   # replace with the release version you want
 docker pull ghcr.io/pgquery-narrative/pgquerynarrative:${VERSION}
 ```
 
@@ -66,12 +66,14 @@ to a role that may create extensions and alter roles; the runtime query role can
 Download the archive for your platform from the
 [latest release](https://github.com/pgquery-narrative/pgquerynarrative/releases/latest):
 `linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`. No Docker or Go
-required. Verify the checksum before extracting:
+required. Download the archive and `checksums.txt` from the same release into one
+directory, then verify the checksum before extracting:
 
 ```bash
-tar -xzf pgquerynarrative-<version>-linux-amd64.tar.gz
-cd pgquerynarrative-<version>-linux-amd64
-sha256sum -c ../checksums.txt --ignore-missing
+VERSION=2.2.0   # replace with the release version you downloaded
+sha256sum -c checksums.txt --ignore-missing
+tar -xzf pgquerynarrative-${VERSION}-linux-amd64.tar.gz
+cd pgquerynarrative-${VERSION}-linux-amd64
 ```
 
 Each archive, `checksums.txt`, and the SBOM are signed with cosign (Sigstore v0.3
@@ -79,8 +81,8 @@ bundles; **cosign v3 or newer required**, cosign v2 rejects them with `bundle do
 not contain cert for verification`):
 
 ```bash
-cosign verify-blob pgquerynarrative-<version>-linux-amd64.tar.gz \
-  --bundle pgquerynarrative-<version>-linux-amd64.tar.gz.cosign.bundle \
+cosign verify-blob pgquerynarrative-${VERSION}-linux-amd64.tar.gz \
+  --bundle pgquerynarrative-${VERSION}-linux-amd64.tar.gz.cosign.bundle \
   --certificate-identity-regexp 'https://github.com/pgquery-narrative/pgquerynarrative/.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

@@ -34,7 +34,16 @@ func NewGeminiClient(apiKey, model, baseURL string) *GeminiClient {
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		// x-goog-api-key is a custom header, not Authorization, so Go's redirect
+		// handling does not strip it on a cross-host redirect. Gemini's API has
+		// no legitimate reason to redirect a POST; refuse to follow one rather
+		// than risk forwarding the key to an unintended host.
+		client: &http.Client{
+			Timeout: 120 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -97,6 +106,12 @@ func (c *GeminiClient) GenerateMessages(ctx context.Context, messages []ChatMess
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("x-goog-api-key", c.apiKey)
+		// ponytail: retrying after a transport error here can double-run a
+		// generation; no idempotency-key mechanism is used since Gemini's API
+		// does not document reliable support for one on this endpoint.
+		// Accepted: worst case is a duplicate provider call, not an unsafe
+		// action, since the result is still validated before anything acts on
+		// it (see claude.go for the full rationale, identical here).
 		resp, err := c.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("gemini: request: %w", err)

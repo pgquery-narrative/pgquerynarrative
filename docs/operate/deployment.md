@@ -124,7 +124,7 @@ Chart: `deploy/helm/pgquerynarrative/`. Chart defaults are **StrictMode-aligned*
 ```bash
 helm install pgqn ./deploy/helm/pgquerynarrative -n pgquerynarrative --create-namespace \
   --set image.repository=ghcr.io/pgquery-narrative/pgquerynarrative \
-  --set image.tag=<version> \
+  --set image.tag="<version>" \
   --set database.host=... \
   --set secret.databasePassword=... \
   --set secret.databaseReadonlyPassword=... \

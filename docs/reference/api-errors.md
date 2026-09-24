@@ -7,7 +7,7 @@ checked by `make docs-contract-check` against every `strPtr("CODE")` literal in
 
 | Code | HTTP | Condition | Likely remediation |
 |---|---|---|---|
-| `VALIDATION_ERROR` | 400 | SQL failed the read-only validator; an illegal fix-status transition; a missing/incomplete field (e.g. `SELECT * INTO`, an unsafe fix transition, a share expiry over 720h, an empty Ask question) | Fix the request per the message; see [Query execution safety](../security/query-safety.md) for the SQL rules |
+| `VALIDATION_ERROR` | 400 | SQL failed the read-only validator; an illegal fix-status transition; a missing/incomplete field (e.g. `SELECT * INTO`, an unsafe fix transition, a share expiry over 8760h, an empty Ask question) | Fix the request per the message; see [Query execution safety](../security/query-safety.md) for the SQL rules |
 | `TIMEOUT_ERROR` | 400 | The query exceeded `QUERY_TIMEOUT` | Simplify the query, raise the timeout, or add an index |
 | `QUERY_RESULT_TOO_LARGE` | 400 | Result exceeded `QUERY_MAX_RESULT_BYTES` | Add a `LIMIT`, narrow columns, or raise the cap |
 | `STAT_STATEMENTS_UNAVAILABLE` | 400 | `pg_stat_statements` is off or unreadable on the target connection | Enable the extension and `SECURITY_STAT_STATEMENTS_ENABLED` |

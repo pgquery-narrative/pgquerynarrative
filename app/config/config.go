@@ -264,7 +264,7 @@ func Load() Config {
 			ConnectionAllowlistRequired:     getEnvBool("SECURITY_CONNECTION_ALLOWLIST_REQUIRED", StrictMode()),
 		},
 		LLM: LLMConfig{
-			Provider:                    getEnv("LLM_PROVIDER", "ollama"),
+			Provider:                    strings.ToLower(strings.TrimSpace(getEnv("LLM_PROVIDER", "ollama"))),
 			Model:                       getEnv("LLM_MODEL", "llama3.2"),
 			APIKey:                      getEnv("LLM_API_KEY", ""),
 			BaseURL:                     getEnv("LLM_BASE_URL", "http://localhost:11434"),

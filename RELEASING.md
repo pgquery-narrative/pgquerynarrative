@@ -32,10 +32,11 @@ Items map to the 12-PR remediation plan. Update this table as PRs land.
 | 11 | Docs-strict CI, mkdocs config, codegen stabilization | #21, #22 | Merged (#163) |
 | 12 | Single deployment model, branch protection, this file | #23, #18, #25 | Merged (#157) |
 
-**A tag requires every row above to read "Merged".** As of 2026-09-06 every row does, so the
-gate has been satisfied for every release through `v2.2.0`. Leave this table in place: it is
-the record of which review items a given version actually contains, and the next review will
-add rows rather than replace them.
+**A tag requires every row above to read "Merged".** As of 2026-09-06 every row does. This gate
+did not exist before the 2026-09 review, so it constrains `v2.1.0` onward (`v1.0.0` and `v2.0.0`
+predate it); every release since has satisfied it. Leave this table in place: it is the record
+of which review items a given version actually contains, and the next review will add rows
+rather than replace them.
 
 ## Pre-tag checklist
 

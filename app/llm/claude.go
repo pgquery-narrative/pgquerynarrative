@@ -35,7 +35,16 @@ func NewClaudeClient(apiKey, model, baseURL string) *ClaudeClient {
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		// x-api-key is a custom header, not Authorization, so Go's redirect
+		// handling does not strip it on a cross-host redirect. Anthropic's API
+		// has no legitimate reason to redirect a POST; refuse to follow one
+		// rather than risk forwarding the key to an unintended host.
+		client: &http.Client{
+			Timeout: 120 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 
@@ -109,6 +118,13 @@ func (c *ClaudeClient) GenerateMessages(ctx context.Context, messages []ChatMess
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("x-api-key", c.apiKey)
 		req.Header.Set("anthropic-version", claudeAPIVersion)
+		// ponytail: a transport error here is ambiguous (the request may have
+		// already reached Anthropic), so a retry can double-run a generation.
+		// No idempotency-key mechanism is used since Anthropic's API does not
+		// document reliable support for one on this endpoint. Accepted because
+		// the worst case is a duplicate provider call (cost), not an unsafe
+		// action: the result still goes through this app's own validation
+		// (e.g. the SQL validator) before anything acts on it.
 		resp, err := c.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("claude: request: %w", err)
