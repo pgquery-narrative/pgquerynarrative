@@ -30,14 +30,14 @@ plain `EXPLAIN`; the ones tied to actual timings and buffers need `EXPLAIN ANALY
 |---|---|---|
 | Executes the query | No | Yes |
 | Rows | Planner's estimate | Estimate **and** actual |
-| Cost | Planner cost (arbitrary units) | Same — ANALYZE does not change cost |
+| Cost | Planner cost (arbitrary units) | Same, ANALYZE does not change cost |
 | Timing | None | `planning_time_ms`, `server_execution_time_ms` |
 | `evidence_mode` | `estimated` | `observed` (once a non-zero execution time is reported) |
 
 **Planner cost is never a time.** It is in arbitrary, engine-internal units and is
 not proportional to wall-clock duration; two plans with a 10× cost difference can
 run in nearly the same time, or the reverse. Only `EXPLAIN ANALYZE` measures
-anything, and one run is one sample — see [Compare plans](compare.md#timing_runs)
+anything, and one run is one sample, see [Compare plans](compare.md#timing_runs)
 for repeated timing.
 
 ## Partitions and pruning
@@ -52,12 +52,12 @@ planner scans every partition and `partition_pruning` fires. This is the shape
 
 `Buffers: shared hit=… read=…` (under `EXPLAIN (ANALYZE, BUFFERS)`) distinguishes a
 plan served from cache (`hit`) from one that reads from disk (`read`). A lower
-planner cost with more disk reads is not automatically a win — it depends on cache
+planner cost with more disk reads is not automatically a win; it depends on cache
 state, which changes between runs.
 
 ## Index advice
 
-`index_candidate` and `index_health` findings feed `IndexAdvice` — suggested DDL,
+`index_candidate` and `index_health` findings feed `IndexAdvice`: suggested DDL,
 labelled for review only, never applied automatically. See
 [Suggest and rank candidates](candidates.md#index-advice-and-hypopg).
 

@@ -18,10 +18,10 @@ This page tracks the Goa design (`api/design/*.go`) and the generated OpenAPI 3 
 | GET | `/investigations` | Query: `limit` (default 20, max 100), `offset` |
 | GET | `/investigations/{id}` | Full investigation: evidence, candidate, comparison |
 | POST | `/investigations/{id}/suggest-rewrite` | AST-based rewrite suggestions. Returns `candidates[]` (`sql`, `rationale`, `category`). No SQL executes |
-| POST | `/investigations/{id}/rank-candidates` | Body: `analyze` (default `false`). Dry-EXPLAINs rewrites and index DDL; returns `baseline`, `candidates[]`, `recommendation` |
+| POST | `/investigations/{id}/rank-candidates` | Query param **`analyze`** (default `false`, not a body field). Dry-EXPLAINs rewrites and index DDL; returns `baseline`, `candidates[]`, `recommendation` |
 | POST | `/investigations/{id}/candidate` | Body: `candidate_sql`, `analyze`, `verify_results`, `binds`. Attaches a candidate, runs compare, optionally verifies results (needs the `query` permission) |
-| POST | `/investigations/{id}/fix` | Body: `fix_status` ∈ `proposed`\|`verified`\|`applied`\|`abandoned` (never `confirmed`/`regressed` — those are system-only), `fix_reference` |
-| POST | `/investigations/{id}/report` | Query param **`accept_sample_match`** (not a body field). Generates a deterministic engineering report; gated by equivalence — see [Verify result equivalence](../workflows/verify-results.md#the-report-gate) |
+| POST | `/investigations/{id}/fix` | Body: `fix_status` ∈ `proposed`\|`verified`\|`applied`\|`abandoned` (never `confirmed`/`regressed`, those are system-only), `fix_reference` |
+| POST | `/investigations/{id}/report` | Query param **`accept_sample_match`** (not a body field). Generates a deterministic engineering report; gated by equivalence, see [Verify result equivalence](../workflows/verify-results.md#the-report-gate) |
 
 ## Workspace
 
@@ -30,7 +30,7 @@ This page tracks the Goa design (`api/design/*.go`) and the generated OpenAPI 3 
 | GET | `/workspace/overview` | Landing summary (stats / attention counts) |
 | GET | `/workspace/regressions` | Query: `limit` (default 10, max 50), `include_acknowledged`. Regression inbox |
 | POST | `/workspace/regressions/{id}/acknowledge` | Acknowledge one alert (204) |
-| GET | `/demo/scenarios` | Guided demo scenarios with date literals computed from the live seed — problem SQL only, no answer-key rewrite |
+| GET | `/demo/scenarios` | Guided demo scenarios with date literals computed from the live seed, problem SQL only, no answer-key rewrite |
 | GET | `/trust` | Query: `connection_id`. Security & Trust snapshot for the UI |
 
 ## Queries
@@ -78,7 +78,7 @@ This page tracks the Goa design (`api/design/*.go`) and the generated OpenAPI 3 
 | GET | `/reports` | Query: `limit`, `offset`, `saved_query_id`, `connection_id` |
 | GET | `/reports/similar` | Query: `text` (required), `connection_id`, `limit` (≤20) |
 | POST | `/reports/rewrite` | Body: `report_id`, `instruction`. LLM-assisted narrative revision |
-| POST | `/reports/share` | Body: `report_id`, `expires_in_hours` (1–8760). Requires `SECURITY_SHARE_LINKS_ENABLED=true` |
+| POST | `/reports/share` | Body: `report_id`, `expires_in_hours` (1–720). Requires `SECURITY_SHARE_LINKS_ENABLED=true` |
 | GET | `/reports/shared/{token}` | **Public, unauthenticated.** View a shared report |
 | GET | `/reports/{report_id}/shares` | List active share links for a report |
 | POST | `/reports/shares/{id}/revoke` | Revoke a share link |
@@ -111,17 +111,17 @@ This page tracks the Goa design (`api/design/*.go`) and the generated OpenAPI 3 
 
 Hand-registered in `cmd/server/*.go`. Classified by who they're for:
 
-### Public — never require authentication
+### Public: never require authentication
 
 | Path | Purpose |
 |---|---|
 | `GET /health` | Liveness |
-| `GET /ready`, `GET /ready/connections` | Readiness — see [Health and monitoring](../operate/monitoring.md) |
+| `GET /ready`, `GET /ready/connections` | Readiness, see [Health and monitoring](../operate/monitoring.md) |
 | `GET /version` | Build version |
 | `GET|POST /auth/login`, `/callback`, `/logout`, `/refresh`, `/auth/session` | Browser OIDC, registered only when OIDC is configured |
 | `GET /reports/shared/{token}`, `GET /web/reports/export/shared/pdf` | Shared-report view (Goa route + web export) |
 
-### Authenticated — any signed-in user
+### Authenticated: any signed-in user
 
 | Path | Purpose |
 |---|---|
@@ -131,7 +131,7 @@ Hand-registered in `cmd/server/*.go`. Classified by who they're for:
 | `GET /web/reports/export`, `/export/pdf`, `/export/md`, `/export/json`, `/export/sql` | Report export in various formats |
 | `GET /metrics` | Requires auth when `SECURITY_AUTH_ENABLED=true` |
 
-### Administrative — tenant admin or platform admin
+### Administrative: tenant admin or platform admin
 
 | Path | Purpose |
 |---|---|
@@ -142,7 +142,7 @@ Hand-registered in `cmd/server/*.go`. Classified by who they're for:
 | `POST|DELETE /api/v1/admin/connection-permissions` | Per-connection actions granted to an org |
 | `GET|POST|DELETE /api/v1/admin/connection-secrets` | Per-organization connection credentials |
 
-### Internal — diagnostics, not a stable contract
+### Internal: diagnostics, not a stable contract
 
 | Path | Purpose |
 |---|---|

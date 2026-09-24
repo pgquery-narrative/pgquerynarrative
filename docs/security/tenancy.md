@@ -10,9 +10,9 @@
 ## What is isolated, and how
 
 PgQueryNarrative's tenancy unit is the **organization**. Every metadata table that
-holds organization-scoped data — investigations (and their candidate history and
+holds organization-scoped data (investigations, their candidate history and
 linked regression alerts), reports, saved queries, schedules, regression snapshots
-and alerts, and more — has row-level security enabled and forced. That includes the identity
+and alerts, and more has row-level security enabled and forced. That includes the identity
 tables `organization_members` and `oidc_group_org_mappings` and the audit writer's
 `audit_log_buffer` (migration `000060`). Login resolves an identity before an organization
 is chosen, so those two tables have one narrow, read-only exception each: a user's own
@@ -32,7 +32,7 @@ organization's rows. The application sets `app.current_org_id` with
 `app.*`, scoped to that transaction only.
 
 The **app role is `NOBYPASSRLS`**, so these policies apply even to the server's own
-connections — isolation does not depend on the application "remembering" to filter
+connections; isolation does not depend on the application "remembering" to filter
 by organization, though services also filter explicitly by `organization_id` as a
 second layer.
 
@@ -45,17 +45,17 @@ different, RLS-exempt role.
 
 ## Analytical database separation
 
-Isolation on the **analytical** side is a different mechanism entirely — there is no
+Isolation on the **analytical** side is a different mechanism entirely: there is no
 RLS requirement for your own database:
 
 - **Connection assignment**: an organization can only use connections explicitly
   assigned to it (or, if `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` is off and the
   organization has no assignments at all, every configured connection).
 - **Per-connection actions**: `query`, `explain`, `analyze`, `schema`, `report`,
-  `schedule`, `stats`, `ask` — granted per (organization, connection). See
+  `schedule`, `stats`, `ask`, granted per (organization, connection). See
   [Multiple connections](../workflows/connections.md#connection-permissions).
 - **Per-organization secrets**: `/admin/connection-secrets` lets an organization
-  supply its own connection DSN (encrypted at rest — see
+  supply its own connection DSN (encrypted at rest, see
   [Data handling](data-handling.md)), so two organizations can point the same
   connection id at genuinely different databases.
 
@@ -75,7 +75,7 @@ An organization with no assignment for a connection, under
 
 ## What this is not
 
-PgQueryNarrative is explicitly **not** a public multi-tenant SaaS product — see
+PgQueryNarrative is explicitly **not** a public multi-tenant SaaS product, see
 [Trust model](../trust-model.md). Organization isolation exists to let one
 internal deployment serve multiple teams without their investigations, reports and
 saved queries leaking into each other, not to safely host untrusted third parties.

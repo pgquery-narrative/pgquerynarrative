@@ -108,6 +108,11 @@ func looksLikeDriverOrInternalDetail(msg string) bool {
 		"stack trace",
 		"runtime error",
 		"goroutine ",
+		// Raw LLM provider HTTP error bodies (claude/openai/gemini/groq/ollama
+		// all format failures as "<provider> API error: <code> - <body>"),
+		// which can carry rate-limit, account, or model detail from the
+		// provider that should not reach an end user or an app log verbatim.
+		"api error:",
 		" /users/",
 		" /home/",
 		"c:\\",

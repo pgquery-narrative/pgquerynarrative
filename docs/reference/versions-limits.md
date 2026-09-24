@@ -3,7 +3,7 @@
 ## PostgreSQL
 
 The root `docker-compose.yml` **builds** its Postgres image from `POSTGRES_IMAGE`
-(default `postgres:16-alpine`) plus HypoPG 1.4.3, rather than pulling a fixed tag —
+(default `postgres:16-alpine`) plus HypoPG 1.4.3, rather than pulling a fixed tag;
 see [Configuration – database](configuration.md#database).
 
 | Major version | Status |
@@ -16,7 +16,7 @@ The separate [`pqn` extension](../getting-started/pqn-installation.md#requiremen
 exercised against 16, 17 and 18 in CI (`make verify-pqn-extension`, `make verify-pqn-image`). The release archives include the `pqn` tool and
 the extension files, and a PostgreSQL image with `pqn` is published per major version ([releases](../project/releases.md)).
 
-`pg_stat_statements`, `hypopg`, and `pgvector` (`vector`) are optional extensions —
+`pg_stat_statements`, `hypopg`, and `pgvector` (`vector`) are optional extensions;
 the application degrades gracefully when any is absent (see
 [Regressions](../workflows/regressions.md), [Suggest and rank candidates](../workflows/candidates.md#index-advice-and-hypopg),
 and [Semantic search](../integrations/semantic-search.md#fallback-behavior)).
@@ -27,7 +27,7 @@ and [Semantic search](../integrations/semantic-search.md#fallback-behavior)).
 |---|---|
 | Go | 1.26 (CI runs the toolchain pinned in `.github/actions/setup-go-cgo`) |
 | Node.js | 22 (frontend build) |
-| CGO | Required — `pg_query_go` is a cgo library; a C toolchain must be available |
+| CGO | Required: `pg_query_go` is a cgo library; a C toolchain must be available |
 
 ## Release platforms
 
@@ -40,8 +40,8 @@ on a tag push:
 
 Each archive (`pgquerynarrative-<version>-<os>-<arch>.tar.gz`) bundles the server, the `pqn` tool and extension files,
 the MCP server, `migrate`, the migration files, the built frontend, the entrypoint
-script, and an example env file — self-contained, no clone required. Every archive,
-plus `checksums.txt` and an SPDX SBOM, is signed with cosign (Sigstore v0.3 bundles —
+script, and an example env file, self-contained, no clone required. Every archive,
+plus `checksums.txt` and an SPDX SBOM, is signed with cosign (Sigstore v0.3 bundles,
 cosign v3+ required to verify). The container image is built and signed the same
 way; there is no separate CLI image. `make build-release` (local) builds only your
 native OS/arch, not the full matrix. Details: [Releases and versioning](../project/releases.md).
@@ -54,10 +54,10 @@ native OS/arch, not the full matrix. Details: [Releases and versioning](../proje
 | Result size | 10 MiB | `QUERY_MAX_RESULT_BYTES` |
 | Cell size | 1 MiB | `QUERY_MAX_CELL_BYTES` |
 | Column count | 100 | `QUERY_MAX_COLUMNS` |
-| SQL length | Bytes, configured at validator construction | — |
+| SQL length | Bytes, configured at validator construction | - |
 | `timing_runs` | 1–5 | Request field |
 | Report `similar` results | ≤ 20 | Request field |
-| Share-link expiry | 1–8,760 hours (1 year) | `expires_in_hours`, default from `SECURITY_SHARE_LINK_DEFAULT_HOURS` |
+| Share-link expiry | 1–720 hours (30 days) | `expires_in_hours`, default from `SECURITY_SHARE_LINK_DEFAULT_HOURS` |
 | Verification fallback sample | 1,000 rows | Not configurable |
 | Request body size | 5 MiB | `SECURITY_MAX_REQUEST_BODY_BYTES` |
 

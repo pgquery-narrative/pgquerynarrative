@@ -40,12 +40,12 @@ use `'\''`.
 ## Known limitations
 
 - **No authentication support.** The CLI sends no `Authorization` header and has no
-  API-key variable — every command fails with 401 once
+  API-key variable; every command fails with 401 once
   `SECURITY_AUTH_ENABLED=true`. Use `curl` with a Bearer token, or the
   [REST API](../integrations/rest-api.md) directly, against an authenticated server.
 - **No `--connection-id` flag.** For a non-default connection, use the REST API with
   `connection_id`, or an [MCP tool](../integrations/mcp.md) that accepts it.
-- **`make cli` always runs in a container** — there is no separate host-binary path
+- **`make cli` always runs in a container**; there is no separate host-binary path
   today, despite `PGQUERYNARRATIVE_API_URL`'s default suggesting one exists.
 
 ## See also

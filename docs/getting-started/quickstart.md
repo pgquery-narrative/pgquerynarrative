@@ -5,7 +5,7 @@ Get a guided investigation running in a few minutes, with the demo dataset.
 ## Prerequisites
 
 - **Docker** and Docker Compose (recommended), or
-- **Local:** PostgreSQL 16+ and Go 1.26+ — see [Installation](installation.md)
+- **Local:** PostgreSQL 16+ and Go 1.26+, see [Installation](installation.md)
 
 ## Guided demo
 
@@ -17,14 +17,14 @@ make demo
 
 `make demo` starts Postgres (with HypoPG), runs migrations, seeds **300,000 rows**
 across 49 monthly partitions of `demo.sales`, starts Ollama and pulls `llama3.2` (so
-Ask works locally), and starts the app — a couple of minutes total.
+Ask works locally), and starts the app: a couple of minutes total.
 
 Open **http://localhost:8080**:
 
 1. Click **Start guided demo**, or open **Investigate**
 2. Choose **Slow dashboard query**
 3. Review the plan findings (e.g. a function-wrapped date blocking partition pruning)
-4. Click **Suggest rewrite** (or **Rank candidates**) — the rewrite is proposed by the
+4. Click **Suggest rewrite** (or **Rank candidates**); the rewrite is proposed by the
    AST engine; guided scenarios ship problem SQL only, never a prefilled answer
 5. Click **Compare plans** with result verification on, and confirm equivalence is
    **VerifiedEqual**

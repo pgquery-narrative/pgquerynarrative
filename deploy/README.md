@@ -6,7 +6,7 @@ PgQueryNarrative ships as a **single container image**: the Go server serves bot
 JSON API and the built React SPA from `frontend/dist`. There is no separate frontend
 container, no sidecar, and no reverse proxy required to serve the UI.
 
-That image is defined by exactly one file — the repository-root [`Dockerfile`](../Dockerfile).
+That image is defined by exactly one file: the repository-root [`Dockerfile`](../Dockerfile).
 Every deployment path below consumes that same image:
 
 | Path | Where | Notes |
@@ -27,7 +27,7 @@ docker build -t pgquerynarrative:dev .
 
 `deploy/docker/` previously carried a second, server-only `Dockerfile` that did **not**
 build the SPA and pinned `goa@latest` instead of the repo's `goa@v3.24.1`. Nothing built
-it — `deploy/docker/docker-compose.yml` already pointed at the root `Dockerfile` — but the
+it (`deploy/docker/docker-compose.yml` already pointed at the root `Dockerfile`), but the
 docs still advertised it as "the production image", so following them produced an image
 whose UI routes served nothing and whose generated API code could drift from the committed
 tree. It has been removed. If you need a server-only variant, add a build target to the root
@@ -35,11 +35,11 @@ tree. It has been removed. If you need a server-only variant, add a build target
 
 ## What the image contains
 
-- `/app/bin/server` — the API + SPA server (`CGO_ENABLED=1`, needed by `pg_query_go`)
-- `/app/bin/migrate` — golang-migrate CLI, used by the entrypoint
-- `/app/frontend/dist` — the built SPA
-- `/app/app/db/migrations` — migration files
-- `/app/tools/db/seed.sql` — optional demo seed, applied only when `PGQUERYNARRATIVE_SEED=true`
+- `/app/bin/server`: the API + SPA server (`CGO_ENABLED=1`, needed by `pg_query_go`)
+- `/app/bin/migrate`: golang-migrate CLI, used by the entrypoint
+- `/app/frontend/dist`: the built SPA
+- `/app/app/db/migrations`: migration files
+- `/app/tools/db/seed.sql`: optional demo seed, applied only when `PGQUERYNARRATIVE_SEED=true`
 
 The entrypoint ([`tools/docker/entrypoint.sh`](../tools/docker/entrypoint.sh)) waits for
 Postgres, runs `migrate up`, optionally seeds, then execs the server. It runs as the
@@ -47,7 +47,7 @@ non-root `appuser` (uid 1000) and listens on `8080`.
 
 ## Related
 
-- [Deployment reference](../docs/operate/deployment.md) — Compose, Kubernetes, and Helm walkthroughs
-- [Migrations, upgrades, backup](../docs/operate/upgrades.md) — upgrade, rollback, backup
-- [Branch protection](../docs/project/branch-protection.md) — required checks on `main`
-- [RELEASING.md](../RELEASING.md) — the gate that must be green before tagging
+- [Deployment reference](../docs/operate/deployment.md): Compose, Kubernetes, and Helm walkthroughs
+- [Migrations, upgrades, backup](../docs/operate/upgrades.md): upgrade, rollback, backup
+- [Branch protection](../docs/project/branch-protection.md): required checks on `main`
+- [RELEASING.md](../RELEASING.md): the gate that must be green before tagging

@@ -48,6 +48,11 @@ type scoredQuery struct {
 	score float64
 }
 
+type scoredReport struct {
+	sim   SimilarReport
+	score float64
+}
+
 // Store persists and retrieves query embeddings for similar-query search and RAG.
 type Store struct {
 	appPool db.DB
@@ -301,17 +306,107 @@ func (s *Store) FindSimilarReports(ctx context.Context, queryEmbedding []float32
 		ORDER BY re.embedding_vector <=> $1::vector(768)
 		LIMIT $3
 	`, vectorLiteral, connectionID, limit)
+	if err == nil {
+		defer rows.Close()
+		out := make([]SimilarReport, 0, limit)
+		for rows.Next() {
+			var r SimilarReport
+			if scanErr := rows.Scan(&r.ReportID, &r.Headline, &r.SQL, &r.ConnectionID, &r.CreatedAt, &r.Similarity); scanErr != nil {
+				return nil, scanErr
+			}
+			out = append(out, r)
+		}
+		// Query() can return a nil error even when pgvector is unavailable: the
+		// initial protocol exchange succeeds, and the real failure (an
+		// unresolvable <=> operator, for example) only surfaces via rows.Err()
+		// once iteration runs. Route that case into the same fallback as a
+		// Query()-time error, instead of returning it as a hard failure.
+		if rowsErr := rows.Err(); rowsErr != nil {
+			return s.findSimilarReportsInMemory(ctx, queryEmbedding, connectionID, limit)
+		}
+		return out, nil
+	}
+	// Fallback: load all and rank in memory, same as FindSimilar when pgvector
+	// is unavailable, so report search degrades the same way query search does
+	// instead of failing outright.
+	return s.findSimilarReportsInMemory(ctx, queryEmbedding, connectionID, limit)
+}
+
+func (s *Store) findSimilarReportsInMemory(ctx context.Context, queryEmbedding []float32, connectionID string, limit int) ([]SimilarReport, error) {
+	rows, err := s.appPool.Query(ctx, `
+		SELECT re.report_id::text, re.embedding, COALESCE(r.narrative_md, ''), r.sql, r.connection_id, r.created_at::text
+		FROM app.report_embeddings re
+		JOIN app.reports r ON r.id = re.report_id
+		WHERE $1 = '' OR r.connection_id = $1
+	`, connectionID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query report embeddings: %w", err)
 	}
 	defer rows.Close()
-	out := make([]SimilarReport, 0, limit)
-	for rows.Next() {
-		var r SimilarReport
-		if scanErr := rows.Scan(&r.ReportID, &r.Headline, &r.SQL, &r.ConnectionID, &r.CreatedAt, &r.Similarity); scanErr != nil {
-			return nil, scanErr
-		}
-		out = append(out, r)
+
+	type row struct {
+		id            string
+		embeddingJSON []byte
+		headline      string
+		sql           string
+		connectionID  string
+		createdAt     string
 	}
-	return out, rows.Err()
+	var candidates []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.embeddingJSON, &r.headline, &r.sql, &r.connectionID, &r.createdAt); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	queryNorm := norm(queryEmbedding)
+	if queryNorm == 0 {
+		return nil, nil
+	}
+	var scoredList []scoredReport
+	for _, c := range candidates {
+		var vec []float32
+		if err := json.Unmarshal(c.embeddingJSON, &vec); err != nil {
+			continue
+		}
+		// A dimension mismatch or zero-norm vector (a null/empty stored
+		// embedding, or one written under a different model) makes
+		// cosineSimilarity return 0, indistinguishable from a genuine
+		// orthogonal (low-similarity) match. Exclude it instead of scoring
+		// it as a weak-but-real result.
+		if len(vec) != len(queryEmbedding) || norm(vec) == 0 {
+			continue
+		}
+		score := cosineSimilarity(queryEmbedding, vec)
+		scoredList = append(scoredList, scoredReport{
+			sim: SimilarReport{
+				ReportID:     c.id,
+				Headline:     c.headline,
+				SQL:          c.sql,
+				ConnectionID: c.connectionID,
+				CreatedAt:    c.createdAt,
+				Similarity:   score,
+			},
+			score: score,
+		})
+	}
+	sortReportsByScoreDesc(scoredList)
+	out := make([]SimilarReport, 0, limit)
+	for i := 0; i < len(scoredList) && i < limit; i++ {
+		out = append(out, scoredList[i].sim)
+	}
+	return out, nil
+}
+
+func sortReportsByScoreDesc(list []scoredReport) {
+	for i := 1; i < len(list); i++ {
+		for j := i; j > 0 && list[j].score > list[j-1].score; j-- {
+			list[j], list[j-1] = list[j-1], list[j]
+		}
+	}
 }

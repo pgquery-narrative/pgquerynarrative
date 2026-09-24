@@ -4,9 +4,9 @@
 
 | Endpoint | Auth | Behavior |
 |---|---|---|
-| `GET /health` | Never protected | Always `200 OK` once the process is up. Liveness only — restart on failure |
+| `GET /health` | Never protected | Always `200 OK` once the process is up. Liveness only, restart on failure |
 | `GET /ready` | Never protected | `200` when the app metadata pool responds and the schema migration version is current and clean; otherwise **503** with the reason (behind schema, or dirty). Add `?format=json` for a per-pool breakdown |
-| `GET /ready/connections` | Never protected | Always `200`. JSON `{"pools": [{"name", "role", "ready", "lazy", "initialized", "error"}]}` for every configured connection — a diagnostic view, not a gate |
+| `GET /ready/connections` | Never protected | Always `200`. JSON `{"pools": [{"name", "role", "ready", "lazy", "initialized", "error"}]}` for every configured connection, a diagnostic view, not a gate |
 | `GET /version` | Never protected | `{"version": "..."}` |
 | `GET /metrics` | Protected when auth is on | JSON `{"version", "pool"}` by default; add `?format=prometheus` (or an `Accept` header naming `text/plain`/`openmetrics`) for Prometheus text exposition |
 
@@ -16,7 +16,7 @@
 | Kubernetes / Helm | `livenessProbe` | `GET /health` |
 | Kubernetes / Helm | `readinessProbe` | `GET /ready` |
 
-**Limitation:** none of these probes check LLM reachability — a workbench report can
+**Limitation:** none of these probes check LLM reachability; a workbench report can
 fail with the app reporting healthy. Watch report error rates separately.
 
 ## Metrics

@@ -18,6 +18,16 @@ const (
 	untrustedDataEnd   = "<<<UNTRUSTED_DATA_END:%s>>>"
 )
 
+// WrapUntrusted wraps database- or conversation-derived content in explicit
+// untrusted-data markers with a label describing its origin, for callers
+// outside this package assembling a prompt segment by hand (e.g. chat
+// history). Callers should redact the content first (SanitizeRAGContext or
+// PrepareSQLForPrompt) the same way every other untrusted segment in this
+// package is redacted before wrapping.
+func WrapUntrusted(label, content string) string {
+	return wrapUntrusted(label, content)
+}
+
 // wrapUntrusted wraps database-derived content in explicit untrusted-data
 // markers with a label describing the content's origin.
 func wrapUntrusted(label, content string) string {
