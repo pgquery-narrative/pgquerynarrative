@@ -182,18 +182,22 @@ func rewriteRationale(kinds, units []string) string {
 		))
 	}
 	switch {
+	// DATE_TRUNC / col::date also match BETWEEN and inequalities (>=, <, ...),
+	// not only "=" — "predicate" here, not "equality", so the rationale is
+	// accurate for those too. EXTRACT/to_char/COALESCE below only ever match
+	// "=", where "equality" is the correct, more specific word.
 	case hasTrunc && hasCast:
 		parts = append(parts, fmt.Sprintf(
-			"unwrap DATE_TRUNC(%s) and column::date equality to sargable range predicates so PostgreSQL can prune partitions and use indexes",
+			"unwrap DATE_TRUNC(%s) and column::date predicates to sargable range predicates so PostgreSQL can prune partitions and use indexes",
 			strings.Join(quoteUnits(units), "/"),
 		))
 	case hasTrunc:
 		parts = append(parts, fmt.Sprintf(
-			"unwrap DATE_TRUNC(%s) equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column",
+			"unwrap a DATE_TRUNC(%s) predicate to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column",
 			strings.Join(quoteUnits(units), "/"),
 		))
 	case hasCast:
-		parts = append(parts, "unwrap column::date / CAST(col AS date) equality to a sargable day-range predicate so PostgreSQL can prune partitions and use indexes on the column")
+		parts = append(parts, "unwrap a column::date / CAST(col AS date) predicate to a sargable day-range predicate so PostgreSQL can prune partitions and use indexes on the column")
 	}
 	if has("extract") {
 		parts = append(parts, "unwrap EXTRACT/date_part equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column")
