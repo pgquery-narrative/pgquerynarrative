@@ -141,8 +141,8 @@ jobs:
           CGO_ENABLED: "1"
         run: |
           go test -coverprofile=coverage.out -covermode=atomic \
-            ./app/queryrunner/... ./app/config/... ./app/auth/... ./app/llm/... \
-            ./app/security/... ./pkg/narrative/... ./cmd/server/... ./test/unit/...
+            ./internal/queryrunner/... ./internal/config/... ./internal/auth/... ./internal/llm/... \
+            ./internal/security/... ./pkg/narrative/... ./cmd/server/... ./test/unit/...
           go tool cover -func=coverage.out | tail -1
           total="$(go tool cover -func=coverage.out | awk '/total:/ {gsub(/%/,"",$3); print $3}')"
           echo "Core package coverage: ${total}%"
@@ -153,14 +153,14 @@ jobs:
         run: |
           set -e
           # Coverage is measured against the package's own code (-coverpkg) while running both
-          # its in-package tests and the corresponding black-box suite under test/unit/app/<pkg>,
+          # its in-package tests and the corresponding black-box suite under test/unit/<pkg>,
           # since most of these packages are tested externally from test/unit.
           check_pkg_coverage() {
             pkg="$1"; floor="$2"
             name="$(basename "$pkg")"
             profile="cov_${name}.out"
-            # Cover the package itself (not test doubles under subdirs like app/auth/mockoidc).
-            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg" "$pkg" "./test/unit/app/$name/..."
+            # Cover the package itself (not test doubles under subdirs like internal/auth/mockoidc).
+            go test -coverprofile="$profile" -covermode=atomic -coverpkg="$pkg" "$pkg" "./test/unit/$name/..."
             pct="$(go tool cover -func="$profile" | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
             echo "$pkg coverage: ${pct}% (floor ${floor}%)"
             awk -v t="$pct" -v f="$floor" -v p="$pkg" 'BEGIN { if (t+0 < f+0) { print "Coverage below floor for " p ": " t "% < " f "%"; exit 1 } }'
@@ -169,23 +169,23 @@ jobs:
           # measured value so an unrelated PR cannot quietly delete coverage, while
           # normal churn does not turn the gate red. Raise a floor when the real
           # number moves up, never lower one to make a build pass.
-          check_pkg_coverage ./app/auth 35
-          check_pkg_coverage ./app/queryrunner 65
-          check_pkg_coverage ./app/security 50
-          # llm has rich unit suite under test/unit/app/llm
-          check_pkg_coverage ./app/llm 30
+          check_pkg_coverage ./internal/auth 35
+          check_pkg_coverage ./internal/queryrunner 65
+          check_pkg_coverage ./internal/security 50
+          # llm has rich unit suite under test/unit/llm
+          check_pkg_coverage ./internal/llm 30
           # metrics: pure numeric primitives in calculator.go + black-box suite
-          check_pkg_coverage ./app/metrics 65
+          check_pkg_coverage ./internal/metrics 65
           # service: integration-heavy; this floor covers the pure decision logic
           # (regression eval, fix transitions, error mapping, API converters,
           # schedule validation, SQL visibility). The DB-backed paths are covered
           # by test/integration, which does not feed this profile.
-          check_pkg_coverage ./app/service 25
+          check_pkg_coverage ./internal/service 25
           # audit package tests are primarily in-package
-          go test -coverprofile=cov_audit.out -covermode=atomic -coverpkg=./app/audit/... ./app/audit/...
+          go test -coverprofile=cov_audit.out -covermode=atomic -coverpkg=./internal/audit/... ./internal/audit/...
           pct="$(go tool cover -func=cov_audit.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')"
-          echo "./app/audit coverage: ${pct}% (floor 45%)"
-          awk -v t="$pct" 'BEGIN { if (t+0 < 45) { print "Coverage below floor for ./app/audit: " t "% < 45%"; exit 1 } }'
+          echo "./internal/audit coverage: ${pct}% (floor 45%)"
+          awk -v t="$pct" 'BEGIN { if (t+0 < 45) { print "Coverage below floor for ./internal/audit: " t "% < 45%"; exit 1 } }'
 
   schedule-multireplica:
     name: Schedule multi-replica
@@ -249,7 +249,7 @@ jobs:
       - name: Run race detector on core packages
         env:
           CGO_ENABLED: "1"
-        run: go test -race ./app/... ./pkg/narrative/... ./cmd/server/...
+        run: go test -race ./internal/... ./pkg/narrative/... ./cmd/server/...
 
   govulncheck:
     name: Go vulnerability scan
@@ -420,12 +420,12 @@ jobs:
           VERSION=smoke
           target=linux-amd64
           pkg="pgquerynarrative-${VERSION}-${target}"
-          mkdir -p "packages/${pkg}/bin" "packages/${pkg}/frontend" "packages/${pkg}/app/db" "packages/${pkg}/config"
+          mkdir -p "packages/${pkg}/bin" "packages/${pkg}/frontend" "packages/${pkg}/internal/db" "packages/${pkg}/config"
           cp pgquerynarrative-server-linux-amd64 "packages/${pkg}/bin/pgquerynarrative-server"
           cp pgquerynarrative-mcp-linux-amd64 "packages/${pkg}/bin/pgquerynarrative-mcp"
           cp pgquerynarrative-migrate-linux-amd64 "packages/${pkg}/bin/migrate"
           cp -R frontend/dist "packages/${pkg}/frontend/dist"
-          cp -R app/db/migrations "packages/${pkg}/app/db/migrations"
+          cp -R internal/db/migrations "packages/${pkg}/internal/db/migrations"
           cp .env.example "packages/${pkg}/config/pgquerynarrative.env.example"
           chmod +x "packages/${pkg}/bin/pgquerynarrative-server" "packages/${pkg}/bin/pgquerynarrative-mcp" "packages/${pkg}/bin/migrate"
           tar -C packages -czf "${pkg}.tar.gz" "${pkg}"
@@ -435,7 +435,7 @@ jobs:
           test -x "/tmp/pgqn-smoke/${pkg}/bin/pgquerynarrative-mcp"
           test -x "/tmp/pgqn-smoke/${pkg}/bin/migrate"
           test -f "/tmp/pgqn-smoke/${pkg}/frontend/dist/index.html"
-          test -d "/tmp/pgqn-smoke/${pkg}/app/db/migrations"
+          test -d "/tmp/pgqn-smoke/${pkg}/internal/db/migrations"
           test -f "/tmp/pgqn-smoke/${pkg}/config/pgquerynarrative.env.example"
           "/tmp/pgqn-smoke/${pkg}/bin/migrate" --help
 
@@ -523,7 +523,7 @@ jobs:
             || { echo "::error::/app/frontend/dist/index.html missing — image does not bundle the SPA"; exit 1; }
           # Files the entrypoint dereferences must exist, or startup fails at runtime.
           docker run --rm --entrypoint sh pgquerynarrative:ci -c \
-            'test -x /app/bin/server && test -x /app/bin/migrate && test -s /app/tools/db/seed.sql && test -d /app/app/db/migrations' \
+            'test -x /app/bin/server && test -x /app/bin/migrate && test -s /app/tools/db/seed.sql && test -d /app/internal/db/migrations' \
             || { echo "::error::image is missing a binary, migrations, or the seed file"; exit 1; }
           # Must not run as root.
           uid="$(docker run --rm --entrypoint sh pgquerynarrative:ci -c 'id -u')"

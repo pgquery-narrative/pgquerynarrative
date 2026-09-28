@@ -108,7 +108,7 @@ Response:
 This is an **AST transform**, not an LLM guess: `pg_query_go` parses the
 real Postgres grammar, and the rewrite is only offered when calendar math on
 the literal can prove the range is exact (see
-[`rewriter.go`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/queryrunner/rewriter.go)).
+[`rewriter.go`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/queryrunner/rewriter.go)).
 The refusal case below shows what happens when it *can't* prove that.
 
 ---
@@ -251,7 +251,7 @@ curl -s -X POST http://localhost:8080/api/v1/investigations/{id}/suggest-rewrite
 
 Empty. It declines rather than guess, because it can't prove the boundary
 alignment the transform depends on
-([`rewriter.go:371-380`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/queryrunner/rewriter.go)).
+([`rewriter.go:371-380`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/queryrunner/rewriter.go)).
 This is the same engineering judgment seen in the earlier case study's
 "correctly says no index helps" moment: restraint as a feature, not a gap.
 
@@ -287,7 +287,7 @@ investigation-report page in the product UI itself (`<pre>` around prose):
 four render paths sharing one field, only two of which got checked in the
 first pass.
 
-**Root cause:** [`app/story/investigation_report.go`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/story/investigation_report.go)'s
+**Root cause:** [`internal/story/investigation_report.go`](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/story/investigation_report.go)'s
 `buildCandidates` builds both kinds of entry into the same list with no
 machine-readable way to tell them apart; every renderer that consumed
 `proposed_change` (Markdown, SQL, PDF, HTML, and the React UI) assumed it
@@ -424,4 +424,4 @@ curl -s -X POST http://localhost:8080/api/v1/investigations/<id>/suggest-rewrite
 
 ---
 
-**See also:** [Demo dataset](dataset.md) · [Query optimization case study](query-optimization.md) · [equivalence.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/service/equivalence.go) · [rewriter.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/queryrunner/rewriter.go) · [investigation_report.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/story/investigation_report.go) · [report_export.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/web/report_export.go) · [pdf.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/web/pdf.go) · [handlers.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/web/handlers.go)
+**See also:** [Demo dataset](dataset.md) · [Query optimization case study](query-optimization.md) · [equivalence.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/service/equivalence.go) · [rewriter.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/queryrunner/rewriter.go) · [investigation_report.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/story/investigation_report.go) · [report_export.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/web/report_export.go) · [pdf.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/web/pdf.go) · [handlers.go](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/web/handlers.go)

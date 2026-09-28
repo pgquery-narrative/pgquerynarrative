@@ -12,15 +12,15 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/security"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/security"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 func setupMigratedPool(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -44,7 +44,7 @@ func setupMigratedPool(t *testing.T) (*pgxpool.Pool, context.Context) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "app", "db", "migrations"))
+	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "internal", "db", "migrations"))
 	if err != nil {
 		t.Fatal(err)
 	}

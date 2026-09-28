@@ -13,8 +13,8 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
-	"github.com/pgquerynarrative/pgquerynarrative/app/format"
-	"github.com/pgquerynarrative/pgquerynarrative/app/story"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/format"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/story"
 )
 
 type Handlers struct {

@@ -245,10 +245,10 @@ func (l *Logger) Errf(format string, args ...interface{}) {
 	l.Err(fmt.Sprintf(format, args...))
 }
 
-// defaultLogger is the package-level logger used by apilog and optional callers.
+// defaultLogger is the package-level logger used by requestlog and optional callers.
 var defaultLogger = Default()
 
-// SetDefault sets the logger used by package-level apilog. Main can call this to use a test buffer.
+// SetDefault sets the logger used by package-level requestlog. Main can call this to use a test buffer.
 func SetDefault(l *Logger) {
 	defaultLogger = l
 }

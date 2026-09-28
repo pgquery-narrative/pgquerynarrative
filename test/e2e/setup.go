@@ -24,15 +24,15 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
-	pkgsuggestions "github.com/pgquerynarrative/pgquerynarrative/app/suggestions"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/catalog"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/llm"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	pkgsuggestions "github.com/pgquerynarrative/pgquerynarrative/internal/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -63,7 +63,7 @@ var _ llm.Client = (*e2eLLM)(nil)
 // Caller must Terminate the container (e.g. in t.Cleanup).
 func StartPostgres(t *testing.T, ctx context.Context) (container *postgres.PostgresContainer, connStr string) {
 	t.Helper()
-	container = testhelpers.RunPostgresContainer(t, ctx)
+	container = helpers.RunPostgresContainer(t, ctx)
 	var err error
 	connStr, err = container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -94,10 +94,10 @@ func WaitPostgres(t *testing.T, ctx context.Context, connStr string) {
 	}
 }
 
-// RunMigrations runs all up migrations from app/db/migrations against connStr.
+// RunMigrations runs all up migrations from internal/db/migrations against connStr.
 func RunMigrations(t *testing.T, connStr string) {
 	t.Helper()
-	absPath, err := filepath.Abs("../../app/db/migrations")
+	absPath, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatalf("migrations path: %v", err)
 	}

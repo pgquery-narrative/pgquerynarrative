@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 )
 
 // Config holds configuration for the narrative client. It can be built from
-// environment (via app/config.Load) or supplied in code for library usage.
+// environment (via internal/config.Load) or supplied in code for library usage.
 type Config struct {
 	// Database holds PostgreSQL connection settings for both read-only and app pools.
 	Database DatabaseConfig

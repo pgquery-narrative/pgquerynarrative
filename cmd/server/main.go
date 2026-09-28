@@ -36,16 +36,16 @@ import (
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/workspace"
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
-	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
-	"github.com/pgquerynarrative/pgquerynarrative/app/observability"
-	"github.com/pgquerynarrative/pgquerynarrative/app/ratelimit"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/llm"
 	"github.com/pgquerynarrative/pgquerynarrative/internal/logger"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/middleware"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/observability"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/ratelimit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	"github.com/pgquerynarrative/pgquerynarrative/web"
 	goahttp "goa.design/goa/v3/http"
@@ -312,8 +312,8 @@ func setupHTTPServer(
 
 	handler := observabilityMiddleware(requestIDMiddleware(requestLoggingMiddleware(combinedMux, appLogger, auditStore, trusted)))
 	handler = maxBodyMiddleware(handler, cfg.Security.MaxRequestBodyBytes)
-	handler = httpmw.AuthMiddleware(handler, authenticator, sessions, auditStore, trusted)
-	handler = httpmw.RateLimitMiddleware(handler, rl, auditStore, trusted, authenticator, sessions, failureMode, config.StrictMode())
+	handler = middleware.AuthMiddleware(handler, authenticator, sessions, auditStore, trusted)
+	handler = middleware.RateLimitMiddleware(handler, rl, auditStore, trusted, authenticator, sessions, failureMode, config.StrictMode())
 	handler = securityHeadersMiddleware(handler)
 	if len(cfg.Server.CORSOrigins) > 0 {
 		handler = corsMiddleware(handler, cfg.Server.CORSOrigins)
@@ -384,8 +384,8 @@ func versionHandler() http.HandlerFunc {
 }
 
 // toPoolMetrics adapts db.NamedPool (used by narrative.Client) to observability.PoolMetric.
-// observability cannot import app/db directly without creating an import cycle
-// (app/db -> app/config -> app/audit -> app/observability), so the conversion lives here.
+// observability cannot import internal/db directly without creating an import cycle
+// (internal/db -> internal/config -> internal/audit -> internal/observability), so the conversion lives here.
 func toPoolMetrics(named []db.NamedPool) []observability.PoolMetric {
 	out := make([]observability.PoolMetric, len(named))
 	for i, n := range named {

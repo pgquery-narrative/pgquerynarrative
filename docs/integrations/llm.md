@@ -111,7 +111,7 @@ MCP is a separate integration, not part of the LLM configuration above:
 | Issue | Action |
 |---|---|
 | Connection refused (Ollama) | Start Ollama (`ollama serve`); Docker: `LLM_BASE_URL=http://host.docker.internal:11434` |
-| Report fails or times out | Check provider, model and API key; see [Troubleshooting](../operate/troubleshooting.md#reports-and-llm) |
+| Report fails or times out | Check provider, model and API key; see [Troubleshooting](../operations/troubleshooting.md#reports-and-llm) |
 | Slow (Ollama) | Use a smaller model; first request per session is slower while the model loads |
 | Cloud call rejected at startup | Set `LLM_ALLOW_EXTERNAL_DATA=true`, or switch to `ollama` |
 

@@ -6,13 +6,13 @@ package main
 import (
 	"os"
 
-	"github.com/pgquerynarrative/pgquerynarrative/internal/pqncli"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/pqn"
 )
 
 // version is set with -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
-	pqncli.Version = version
-	os.Exit(pqncli.Main(os.Args[1:], os.Stdout, os.Stderr, os.Getenv, pqncli.Connect))
+	pqn.Version = version
+	os.Exit(pqn.Main(os.Args[1:], os.Stdout, os.Stderr, os.Getenv, pqn.Connect))
 }

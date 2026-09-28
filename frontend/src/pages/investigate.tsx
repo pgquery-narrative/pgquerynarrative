@@ -143,7 +143,7 @@ export default function InvestigatePage() {
         setSuggestedCandidates([]);
         // Declining is a normal outcome, not a failure: the rewriter only
         // fires on patterns it can prove equivalent. decline_reason comes
-        // from the server (app/queryrunner.DeclineReason) so this message
+        // from the server (internal/queryrunner.DeclineReason) so this message
         // stays in sync with the patterns the engine actually attempts —
         // it is not duplicated here by hand.
         setError(

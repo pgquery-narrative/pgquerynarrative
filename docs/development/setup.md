@@ -36,7 +36,7 @@ go run ./cmd/server
 ```
 
 App: http://localhost:8080. Verbose logging: `LOG_DEBUG=1 make run`. The server
-serves the [API](../reference/api.md), [health/ready](../operate/monitoring.md#health-and-readiness),
+serves the [API](../reference/api.md), [health/ready](../operations/monitoring.md#health-and-readiness),
 report export, and the React SPA (`frontend/dist/`; `make build-frontend` to
 rebuild).
 
@@ -51,7 +51,7 @@ rebuild).
    [Reference](../reference/configuration.md) page in the same change, see
    [Change workflows](change-workflows.md); `make docs-contract-check` enforces it
 
-**Migrations:** add `00000N_name.up.sql` and `.down.sql` in `app/db/migrations/`;
+**Migrations:** add `00000N_name.up.sql` and `.down.sql` in `internal/db/migrations/`;
 test with `make migrate` and `make migrate-cycle-docker`.
 
 ## Commands

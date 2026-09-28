@@ -264,16 +264,16 @@ run:
 test: test-unit test-integration
 
 # In-package tests live alongside the code they cover, so every package holding
-# them has to be listed here. app/service, app/security, app/llm, app/audit and
-# app/story were previously reachable only through the CI coverage step, which
+# them has to be listed here. internal/service, internal/security, internal/llm, internal/audit and
+# internal/story were previously reachable only through the CI coverage step, which
 # meant a failure there surfaced as a confusing coverage error rather than a
 # failed test.
 test-unit:
 	@echo "🧪 Running unit tests..."
-	$(GO) test ./test/unit/... ./app/auth/... ./app/queryrunner/... ./app/service/... \
-		./app/security/... ./app/llm/... ./app/audit/... ./app/story/... \
-		./cmd/server/... ./pkg/narrative/... ./app/embedding/... ./app/config/... \
-		./app/metrics/... ./web/... ./tools/docscheck/... ./internal/pqncli/... -v
+	$(GO) test ./test/unit/... ./internal/auth/... ./internal/queryrunner/... ./internal/service/... \
+		./internal/security/... ./internal/llm/... ./internal/audit/... ./internal/story/... \
+		./cmd/server/... ./pkg/narrative/... ./internal/embedding/... ./internal/config/... \
+		./internal/metrics/... ./web/... ./tools/docs-check/... ./internal/pqn/... -v
 
 # No-op target so "make test-unit # comment" does not fail when shell passes # as a target.
 \#:
@@ -310,8 +310,8 @@ test-frontend:
 	cd frontend && npm ci && npm test
 
 pilot-report:
-	@chmod +x ./tools/ops/pilot_report.sh
-	@./tools/ops/pilot_report.sh
+	@chmod +x ./tools/operations/pilot_report.sh
+	@./tools/operations/pilot_report.sh
 
 # ============================================================================
 # Code quality
@@ -334,8 +334,8 @@ fmt:
 
 # Internal pilot acceptance: migrations, readonly checks, integration suite, build + HTTP smoke.
 pilot-acceptance:
-	@chmod +x ./tools/ops/pilot_acceptance.sh
-	@DOCKER_API_VERSION=1.44 ./tools/ops/pilot_acceptance.sh
+	@chmod +x ./tools/operations/pilot_acceptance.sh
+	@DOCKER_API_VERSION=1.44 ./tools/operations/pilot_acceptance.sh
 
 # One-command guided demo: starts Postgres + app with small seed (no 10M wait).
 demo:
@@ -369,8 +369,8 @@ demo-multi-org:
 
 # Helm chart StrictMode gates (default values fail; ci-values render).
 helm-strict-check:
-	@chmod +x ./tools/ops/helm_strict_check.sh
-	@./tools/ops/helm_strict_check.sh
+	@chmod +x ./tools/operations/helm_strict_check.sh
+	@./tools/operations/helm_strict_check.sh
 
 # ============================================================================
 # Database operations
@@ -432,7 +432,7 @@ migrate-docker: postgres-up
 	@sh ./tools/db/migrate_preflight.sh
 	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default $(MIGRATE_GO_IMAGE) \
 		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) \
-		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up' \
+		-path ./internal/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up' \
 		|| sh ./tools/db/migrate_fail_hint.sh
 	@echo "✅ Migrations applied"
 
@@ -443,7 +443,7 @@ migrate-force-docker: postgres-up
 	@if [ -z "$(VERSION)" ]; then echo "❌ Set VERSION, e.g. make migrate-force-docker VERSION=54"; exit 1; fi
 	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default $(MIGRATE_GO_IMAGE) \
 		sh -c 'apk add --no-cache git && go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) \
-		-path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" force $(VERSION)'
+		-path ./internal/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" force $(VERSION)'
 	@echo "✅ schema_migrations forced to $(VERSION) (dirty flag cleared)"
 
 # Migration reversibility check: up -> down -all -> up via Docker (no host Go required).
@@ -464,9 +464,9 @@ migrate-cycle-docker: postgres-up
 	@$(MAKE) db-init-docker || true
 	@docker run --rm -v "$(CURDIR):/app" -w /app --network pgquerynarrative_default $(MIGRATE_GO_IMAGE) \
 		sh -c 'apk add --no-cache git && \
-		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up && \
-		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" down -all && \
-		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./app/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./internal/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./internal/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" down -all && \
+		go run -tags postgres github.com/golang-migrate/migrate/v4/cmd/migrate@$(MIGRATE_VERSION) -path ./internal/db/migrations -database "$(DOCKER_MIGRATE_DB_URL)" up'
 	@echo "✅ Migration up/down/up cycle passed"
 
 db-security-verify-docker: postgres-up
@@ -553,7 +553,7 @@ db-init-docker:
 local-db-init:
 	@echo "🗄️  Creating database and roles (local PostgreSQL)..."
 	@createdb pgquerynarrative 2>/dev/null || true
-	@psql -d pgquerynarrative -f infra/postgres-init/00-init.sql && echo "✅ Database and roles ready" || (echo "⚠️  Run as PostgreSQL superuser (e.g. your macOS user). If roles exist, run: make migrate seed"; exit 0)
+	@psql -d pgquerynarrative -f postgres/init/00-init.sql && echo "✅ Database and roles ready" || (echo "⚠️  Run as PostgreSQL superuser (e.g. your macOS user). If roles exist, run: make migrate seed"; exit 0)
 
 # ============================================================================
 # Docker Compose commands
@@ -588,7 +588,7 @@ dev-build:
 dev-teardown:
 	@echo "🧹 Tearing down development environment..."
 	docker compose down -v
-	rm -rf infra/data
+	rm -rf postgres/data
 	@echo "✅ Development environment reset complete"
 
 # ============================================================================
@@ -703,10 +703,10 @@ docs-check:
 # default, every configuration variable and literal default, release platforms,
 # every OpenAPI operation, every API error code, forbidden stale vocabulary,
 # links/anchors in the Markdown MkDocs does not build, and nav coverage.
-# Pure Go, no Docker. See tools/docscheck.
+# Pure Go, no Docker. See tools/docs-check.
 docs-contract-check:
 	@echo "📐 Checking documentation against the code..."
-	@$(GO) run ./tools/docscheck
+	@$(GO) run ./tools/docs-check
 
 # External links in README, docs/ and .github/*.md, with the same config CI uses
 # (.lychee.toml). Internal links are covered by docs-check and

@@ -72,13 +72,13 @@ of them is a vulnerability, and worth reporting.
 
 - **`APP_ENV=demo` fabricates workspace KPIs** so the demo has something to show
   against an empty database. It is off by default and gated in one place
-  (`app/service/workspace.go`). Never enable it where the numbers will be acted on.
+  (`internal/service/workspace.go`). Never enable it where the numbers will be acted on.
 - **Reports may contain query results**, whatever your SQL selected. Treat a
   generated report, and especially a share link, as being as sensitive as the data
   behind it.
 - **The `app` schema stores SQL text.** With a data encryption key configured it is
   sealed at rest; without one it is stored in plaintext.
-- **Anything under `app/*` is internal** and outside the `pkg/narrative` SemVer
+- **Anything under `internal/*` is internal** and outside the `pkg/narrative` SemVer
   guarantee. A breaking change there is not a security issue.
 
 ## Scope
@@ -111,7 +111,7 @@ or host root.
 - Rate-limit failure mode cannot be `open` when auth is enabled
 
 ### Production StrictMode (mandatory for company data)
-Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled. Full list: `docs/operate/production.md`. See also `docs/trust-model.md` and `docs/operate/deployment.md`.
+Key gates: auth on, no plaintext API keys, TLS DB modes, non-placeholder passwords, rate-limit failure mode not `open`, audit not `best_effort`, share links / EXPLAIN ANALYZE off, webhook allowlist when schedules enabled. Full list: `docs/operations/production.md`. See also `docs/trust-model.md` and `docs/operations/deployment.md`.
 
 ## Security Scanning
 

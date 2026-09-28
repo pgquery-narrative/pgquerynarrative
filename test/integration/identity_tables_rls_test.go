@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 const (
@@ -56,7 +56,7 @@ func rlsExec(ctx context.Context, pool *pgxpool.Pool, settings map[string]string
 // organization is chosen) still works through its two narrow read-only exceptions.
 func TestIdentityTablesAreIsolatedByRowLevelSecurity(t *testing.T) {
 	admin, connStr, ctx := multiOrgPostgres(t)
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}

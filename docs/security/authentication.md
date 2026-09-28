@@ -85,8 +85,8 @@ distributed (PostgreSQL-backed) implementation
 happens if the distributed backend is unreachable: `open` is refused whenever auth
 is enabled, and under production StrictMode the distributed limiter itself is
 required once rate limiting is on. See
-[Health and monitoring](../operate/monitoring.md) for the metric and alert names, and
-[Troubleshooting](../operate/troubleshooting.md) for what to do when the backend fails.
+[Health and monitoring](../operations/monitoring.md) for the metric and alert names, and
+[Troubleshooting](../operations/troubleshooting.md) for what to do when the backend fails.
 
 ## See also
 

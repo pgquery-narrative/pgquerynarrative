@@ -11,15 +11,15 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestAuditStoreRecord verifies that audit.Store.Record writes entries to app.audit_logs
 // and they can be read back (integration with real Postgres).
 func TestAuditStoreRecord(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -44,7 +44,7 @@ func TestAuditStoreRecord(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
+	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatalf("migrations path: %v", err)
 	}

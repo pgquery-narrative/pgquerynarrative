@@ -10,11 +10,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 const multiOrgDataEncKey = "integration-data-encryption-key-32b!"
@@ -293,7 +293,7 @@ func multiOrgPostgres(t *testing.T) (*pgxpool.Pool, string, context.Context) {
 func multiOrgPools(t *testing.T, admin *pgxpool.Pool, connStr string) (*db.Pools, *auth.OrgConnectionSecretStore, string) {
 	t.Helper()
 	ctx := context.Background()
-	if err := testhelpers.EnsurePostgresRoles(ctx, admin); err != nil {
+	if err := helpers.EnsurePostgresRoles(ctx, admin); err != nil {
 		t.Fatal(err)
 	}
 

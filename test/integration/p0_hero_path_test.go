@@ -12,15 +12,15 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestP0HeroPath_RewriteCompareEquivalence verifies the bulletproof path:
 // paste SQL → SuggestRewrites → dry EXPLAIN both → COUNT(*)+sample equivalence Equal.
 func TestP0HeroPath_RewriteCompareEquivalence(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -29,7 +29,7 @@ func TestP0HeroPath_RewriteCompareEquivalence(t *testing.T) {
 	}
 	waitReady(t, ctx, connStr)
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
+	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatal(err)
 	}

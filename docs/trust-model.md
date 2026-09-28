@@ -70,5 +70,5 @@ StrictMode expectations, so operators can confirm what is enabled rather than as
 
 ## See also
 
-[Architecture](architecture.md) · [Production configuration](operate/production.md) ·
+[Architecture](architecture.md) · [Production configuration](operations/production.md) ·
 [Configuration reference](reference/configuration.md)

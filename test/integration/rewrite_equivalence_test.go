@@ -14,13 +14,13 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/llm"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // equivalenceEnv is a migrated Postgres with the service layer wired on top —
@@ -38,7 +38,7 @@ type equivalenceEnv struct {
 func newEquivalenceEnv(t *testing.T) *equivalenceEnv {
 	t.Helper()
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -47,7 +47,7 @@ func newEquivalenceEnv(t *testing.T) *equivalenceEnv {
 	}
 	waitReady(t, ctx, connStr)
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
+	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatal(err)
 	}

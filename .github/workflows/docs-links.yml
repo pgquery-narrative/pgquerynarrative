@@ -2,7 +2,7 @@ name: Docs external links
 
 # External (http/https) links in README, docs/ and .github/*.md. Internal links
 # and anchors are gated by the `Docs` job in ci.yml (mkdocs --strict +
-# tools/docscheck); this workflow covers what neither can see.
+# tools/docs-check); this workflow covers what neither can see.
 #
 # Deliberately NOT a required check: it is path-filtered (a required check that
 # does not run on a PR blocks that PR forever) and it depends on third-party

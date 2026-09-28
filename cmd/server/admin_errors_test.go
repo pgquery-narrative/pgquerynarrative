@@ -15,15 +15,15 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // The admin write handlers must not hand a database error to the caller: it names constraints,
 // tables and columns.
 func TestAdminWriteHandlersDoNotLeakDatabaseErrors(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -43,7 +43,7 @@ func TestAdminWriteHandlersDoNotLeakDatabaseErrors(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	path, err := filepath.Abs("../../app/db/migrations")
+	path, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatal(err)
 	}

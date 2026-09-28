@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
-	"github.com/pgquerynarrative/pgquerynarrative/app/ratelimit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	servermw "github.com/pgquerynarrative/pgquerynarrative/internal/middleware"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/ratelimit"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 )
 
@@ -28,21 +28,21 @@ type SecurityConfig struct {
 
 // WrapSecured applies the same auth and rate-limit middleware as cmd/server.
 func WrapSecured(next http.Handler, sec SecurityConfig) http.Handler {
-	trusted := httpmw.NewTrustedProxyMatcher(sec.TrustedProxies)
-	h := httpmw.AuthMiddleware(next, sec.Authenticator, sec.Sessions, sec.AuditStore, trusted)
-	return httpmw.RateLimitMiddleware(h, sec.RateLimiter, sec.AuditStore, trusted, sec.Authenticator, sec.Sessions, sec.RateLimitFailureMode, sec.StrictAIFailClosed)
+	trusted := servermw.NewTrustedProxyMatcher(sec.TrustedProxies)
+	h := servermw.AuthMiddleware(next, sec.Authenticator, sec.Sessions, sec.AuditStore, trusted)
+	return servermw.RateLimitMiddleware(h, sec.RateLimiter, sec.AuditStore, trusted, sec.Authenticator, sec.Sessions, sec.RateLimitFailureMode, sec.StrictAIFailClosed)
 }
 
 // MountChiSecured mounts narrative routes under prefix with auth and rate-limit parity to the standalone server.
 func MountChiSecured(r chi.Router, client *narrative.Client, prefix string, sec SecurityConfig) {
 	prefix = normalizePrefix(prefix)
-	trusted := httpmw.NewTrustedProxyMatcher(sec.TrustedProxies)
+	trusted := servermw.NewTrustedProxyMatcher(sec.TrustedProxies)
 	r.Group(func(r chi.Router) {
 		r.Use(func(next http.Handler) http.Handler {
-			return httpmw.AuthMiddleware(next, sec.Authenticator, sec.Sessions, sec.AuditStore, trusted)
+			return servermw.AuthMiddleware(next, sec.Authenticator, sec.Sessions, sec.AuditStore, trusted)
 		})
 		r.Use(func(next http.Handler) http.Handler {
-			return httpmw.RateLimitMiddleware(next, sec.RateLimiter, sec.AuditStore, trusted, sec.Authenticator, sec.Sessions, sec.RateLimitFailureMode, sec.StrictAIFailClosed)
+			return servermw.RateLimitMiddleware(next, sec.RateLimiter, sec.AuditStore, trusted, sec.Authenticator, sec.Sessions, sec.RateLimitFailureMode, sec.StrictAIFailClosed)
 		})
 		if prefix != "" {
 			r.Route(prefix, func(r chi.Router) {

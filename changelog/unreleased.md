@@ -72,6 +72,10 @@ four, plus the lifecycle and deployment gaps found alongside them.
 - **The `pqn` alias in the CLI container's shell (`make cli-shell`) is removed.** `pqn` now
   names the terminal tool for the `pqn` extension, so the alias would have run a different
   program. Use `pgquerynarrative`.
+- **Private Go packages moved from `app/` to `internal/`.** Go now rejects imports of
+  those packages from outside this module. `pkg/narrative` remains the supported library
+  API. Release archives and the container image place migrations at `internal/db/migrations`
+  (previously `app/db/migrations`). The PostgreSQL `app` schema is unchanged.
 
 ### Security
 
@@ -134,7 +138,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
   too. `AuthRequired()` now depends only on the enable switch, so a server with no usable
   key answers `401`, and startup refuses the configuration (see Breaking).
 - **Every route is decided.** The report exports `md`, `json` and `sql` ran as the default
-  organization's admin with no credential, and `app/httpmw` had no tests. Everything under
+  organization's admin with no credential, and `internal/middleware` had no tests. Everything under
   `/web/reports/export` except the shared-link PDF is now authenticated by prefix, and a
   route-matrix test fails when a route `main.go` registers is reachable without a credential
   and is not listed as public.
@@ -361,6 +365,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
 
 ### Documentation
 
+- **Directory names.** `docs/operate` is now `docs/operations` (the old URLs redirect). PostgreSQL extension and init SQL live under `postgres/`. Operations scripts live under `tools/operations/`.
 - **Installing and setting up the `pqn` extension is documented and executed.** A
   [quick start](docs/getting-started/pqn-extension.md) and an
   [installation guide](docs/getting-started/pqn-installation.md) cover the extension files, the
@@ -395,7 +400,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
   of critical defaults, the release platform matrix, every OpenAPI operation,
   every structured error code, forbidden stale vocabulary, and the
   links/anchors in the repo-root Markdown that MkDocs does not build. It runs in
-  the CI `Docs` job and in `make test-unit` (`tools/docscheck`).
+  the CI `Docs` job and in `make test-unit` (`tools/docs-check`).
 - **External links are checked in CI** by a new `docs-links` workflow (lychee,
   pinned), and locally by `make docs-links`. Config in `.lychee.toml`.
 - **`make docs` binds the preview to `127.0.0.1` and drops the TTY assumption**;

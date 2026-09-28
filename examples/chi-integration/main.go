@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	narrativemw "github.com/pgquerynarrative/pgquerynarrative/pkg/narrative/middleware"
 )

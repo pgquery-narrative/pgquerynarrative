@@ -5,7 +5,7 @@ set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PG_CONFIG="${PG_CONFIG:-pg_config}"
-EXT_DIR="$ROOT_DIR/infra/postgres-extension"
+EXT_DIR="$ROOT_DIR/postgres/pgquerynarrative"
 DEST="$($PG_CONFIG --sharedir)/extension"
 
 cp "$EXT_DIR/pgquerynarrative.control" "$DEST/"

@@ -10,8 +10,8 @@ Task-shaped guides for the changes contributors make most often. See
 2. `make generate`. Commit the regenerated `api/gen/` and
    `frontend/src/api/schema.gen.ts` alongside the design change; CI's `Lint` job
    fails if they drift.
-3. Implement the handler in `app/service/`.
-4. Add a unit test (`test/unit/app/service/...`) and, if it touches the database, an
+3. Implement the handler in `internal/service/`.
+4. Add a unit test (`test/unit/service/...`) and, if it touches the database, an
    integration test (`test/integration/...`).
 5. Update [API reference](../reference/api.md) (and
    [API errors](../reference/api-errors.md) for a new error code) in the same
@@ -20,10 +20,10 @@ Task-shaped guides for the changes contributors make most often. See
 
 ## Adding configuration
 
-1. Add the field to the right struct in `app/config/config.go`, read with the
+1. Add the field to the right struct in `internal/config/config.go`, read with the
    matching `getEnv*` helper and a literal default.
 2. If it needs a production restriction, add the check to `Validate()` in
-   `app/config/validate.go` and a test in `validate_test.go`.
+   `internal/config/validate.go` and a test in `validate_test.go`.
 3. Add it to [Configuration reference](../reference/configuration.md), same
    variable name, same literal default, in the same change. `docs-contract-check`
    extracts every `getEnv*` call from `config.go` and fails on a mismatch or an
@@ -33,9 +33,9 @@ Task-shaped guides for the changes contributors make most often. See
 
 ## Adding a migration
 
-1. Add `app/db/migrations/0000N_name.up.sql` and the matching `.down.sql`.
+1. Add `internal/db/migrations/0000N_name.up.sql` and the matching `.down.sql`.
 2. If it changes a guarantee the server depends on at boot, bump
-   `RequiredMigrationVersion` in `app/db/migrations_check.go` to the new highest
+   `RequiredMigrationVersion` in `internal/db/migrations_check.go` to the new highest
    number.
 3. Run `make migrate-cycle-docker` (up → down -all → up) to prove it's reversible;
    CI's `Migration up/down/up` job runs the same check.
@@ -49,7 +49,7 @@ A dedicated guide, because rewrite correctness is a trust boundary:
 
 ## Adding a plan finding
 
-1. Add the detection to `app/queryrunner/plan_analysis.go`, naming the new
+1. Add the detection to `internal/queryrunner/plan_analysis.go`, naming the new
    `node_type` value.
 2. Add it to the table on
    [Evidence and status vocabulary: plan findings](../reference/evidence.md#plan-findings)

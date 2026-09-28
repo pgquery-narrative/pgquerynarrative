@@ -134,7 +134,7 @@ def install_pqn(restart=True):
     # what the user does: files, one restart for pg_stat_statements, CREATE EXTENSION, init
     share = run(["docker", "exec", C, "pg_config", "--sharedir"]).stdout.strip() + "/extension"
     for f in ("pqn.control", "pqn--1.0.sql", "pqn--1.0--1.1.sql"):
-        run(["docker", "cp", f"infra/pqn-extension/{f}", f"{C}:{share}/"])
+        run(["docker", "cp", f"postgres/pqn/{f}", f"{C}:{share}/"])
     if restart:
         psql("ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'")
         run(["docker", "restart", C])

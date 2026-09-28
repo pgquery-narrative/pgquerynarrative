@@ -14,7 +14,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 )
 

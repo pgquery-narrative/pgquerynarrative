@@ -4,8 +4,8 @@ There are two extensions, and they do different things.
 
 | Extension | What it is | Read |
 |---|---|---|
-| `pgquerynarrative` | SQL wrapper functions that call the **running PgQueryNarrative service** over HTTP. An integration layer, not the query engine. Files: `infra/postgres-extension/` | The rest of this page, from [Install](#install) to [Security implications](#security-implications) |
-| `pqn` | Runs **inside your database** and needs no server. A terminal tool finds slow statements, proposes rewrites from their plans, and checks them. Files: `infra/pqn-extension/` | [The `pqn` extension](#the-pqn-extension), then the [Quick start](../getting-started/pqn-extension.md) and [Install the pqn extension](../getting-started/pqn-installation.md) |
+| `pgquerynarrative` | SQL wrapper functions that call the **running PgQueryNarrative service** over HTTP. An integration layer, not the query engine. Files: `postgres/pgquerynarrative/` | The rest of this page, from [Install](#install) to [Security implications](#security-implications) |
+| `pqn` | Runs **inside your database** and needs no server. A terminal tool finds slow statements, proposes rewrites from their plans, and checks them. Files: `postgres/pqn/` | [The `pqn` extension](#the-pqn-extension), then the [Quick start](../getting-started/pqn-extension.md) and [Install the pqn extension](../getting-started/pqn-installation.md) |
 
 Both are verified by scripts that start a throwaway PostgreSQL: `make verify-extension` and `make verify-pqn-extension`.
 
@@ -164,4 +164,4 @@ and lets PostgreSQL do the authentication.
 
 [REST API](rest-api.md): the endpoints the extension calls ·
 [Configuration](../reference/configuration.md) ·
-[Troubleshooting](../operate/troubleshooting.md)
+[Troubleshooting](../operations/troubleshooting.md)

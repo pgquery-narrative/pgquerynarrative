@@ -11,7 +11,7 @@
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-EXT_DIR="$ROOT_DIR/infra/pqn-extension"
+EXT_DIR="$ROOT_DIR/postgres/pqn"
 PQN="${PQN_BIN:-$ROOT_DIR/bin/pqn}"
 PG_IMAGE="${PG_IMAGE:-postgres:18}"
 C="pqn-cli-verify-$$"

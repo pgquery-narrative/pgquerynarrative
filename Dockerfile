@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=go-build /out/server /app/bin/server
 COPY --from=go-build /go/bin/migrate /app/bin/migrate
 COPY --from=frontend-build /frontend/dist /app/frontend/dist
-COPY app/db/migrations /app/app/db/migrations
+COPY internal/db/migrations /app/internal/db/migrations
 COPY LICENSE NOTICE /app/
 COPY web/fonts/LICENSE /app/web/fonts/LICENSE
 # Optional seed data, used only when PGQUERYNARRATIVE_SEED=true (see entrypoint).

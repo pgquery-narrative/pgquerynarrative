@@ -1,7 +1,7 @@
 # Configuration reference
 
 PgQueryNarrative is configured entirely by **environment variables**; there is no
-config file. Every variable below is read in `app/config/config.go` (or, where
+config file. Every variable below is read in `internal/config/config.go` (or, where
 noted, outside `Load()`); this page is checked against that file by
 `make docs-contract-check` on every change. Boolean variables use Go's
 `strconv.ParseBool`: `1`/`t`/`T`/`TRUE`/`true`/`True` and `0`/`f`/`F`/`FALSE`/`false`/`False`
@@ -10,7 +10,7 @@ default for every variable type.
 
 **Production StrictMode** (`APP_ENV=production`/`prod`, or `SECURITY_STRICT=true`)
 enforces a large additional set of restrictions, listed together in
-[Production configuration](../operate/production.md) rather than repeated per row
+[Production configuration](../operations/production.md) rather than repeated per row
 here; this page states each variable's ordinary default and behavior.
 
 ## Loading config
@@ -82,7 +82,7 @@ again before the server process starts:
 Under production StrictMode, if `DATABASE_MIGRATION_USER` equals `DATABASE_USER` and
 no `DATABASE_MIGRATION_URL` is set, the entrypoint **refuses to start** rather than
 run migrations as a role that can't finish them. See
-[Deployment: migration identity](../operate/deployment.md#migration-identity).
+[Deployment: migration identity](../operations/deployment.md#migration-identity).
 
 ### Multiple database connections {#multiple-database-connections}
 
@@ -293,7 +293,7 @@ Out-of-range values are clamped at load, never rejected.
 
 ## Production
 
-See [Production configuration](../operate/production.md) for the complete list of
+See [Production configuration](../operations/production.md) for the complete list of
 StrictMode requirements; it is generated from the same validation function this
 page's defaults come from, so treat that page as the authoritative gate and this
 page as the variable dictionary.
@@ -301,4 +301,4 @@ page as the variable dictionary.
 ## See also
 
 [Installation](../getting-started/installation.md) · [API reference](api.md) ·
-[Deployment](../operate/deployment.md) · [Documentation index](../index.md)
+[Deployment](../operations/deployment.md) · [Documentation index](../index.md)

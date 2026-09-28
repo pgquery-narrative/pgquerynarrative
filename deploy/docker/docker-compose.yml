@@ -7,7 +7,7 @@
 #        docker compose -f deploy/docker/docker-compose.yml --env-file deploy/docker/.env.production up -d --build
 #
 # Postgres is NOT published to the host. Reach the app via 127.0.0.1:8080 only.
-# Prefer Helm/Kubernetes for real company deployments (docs/operate/deployment.md).
+# Prefer Helm/Kubernetes for real company deployments (docs/operations/deployment.md).
 
 name: pgquerynarrative-prod
 
@@ -30,8 +30,8 @@ services:
       - "5432"
     volumes:
       - pgquerynarrative_prod_data:/var/lib/postgresql/data
-      - ../../infra/postgres-init:/docker-entrypoint-initdb.d:ro
-      - ../../infra/postgres-extension:/extension:ro
+      - ../../postgres/init:/docker-entrypoint-initdb.d:ro
+      - ../../postgres/pgquerynarrative:/extension:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\""]
       interval: 5s

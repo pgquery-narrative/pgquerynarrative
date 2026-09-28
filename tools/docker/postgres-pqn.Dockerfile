@@ -13,7 +13,7 @@
 ARG POSTGRES_IMAGE=postgres:18@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
 FROM ${POSTGRES_IMAGE}
 
-COPY infra/pqn-extension/pqn.control infra/pqn-extension/pqn--1.0.sql infra/pqn-extension/pqn--1.0--1.1.sql /tmp/pqn/
+COPY postgres/pqn/pqn.control postgres/pqn/pqn--1.0.sql postgres/pqn/pqn--1.0--1.1.sql /tmp/pqn/
 RUN set -eux; \
     cp /tmp/pqn/pqn.control /tmp/pqn/pqn--*.sql "$(pg_config --sharedir)/extension/"; \
     rm -rf /tmp/pqn; \

@@ -11,7 +11,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	narrativemw "github.com/pgquerynarrative/pgquerynarrative/pkg/narrative/middleware"
 )

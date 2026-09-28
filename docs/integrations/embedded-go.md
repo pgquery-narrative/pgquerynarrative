@@ -14,7 +14,7 @@ organization is `pgquery-narrative`. Import paths below are correct as written.
 ```go
 import (
     "github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
-    "github.com/pgquerynarrative/pgquerynarrative/app/config"
+    "github.com/pgquerynarrative/pgquerynarrative/internal/config"
 )
 
 cfg := narrative.FromAppConfig(config.Load())

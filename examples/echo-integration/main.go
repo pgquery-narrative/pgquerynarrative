@@ -11,7 +11,7 @@ import (
 	"os"
 
 	"github.com/labstack/echo/v4"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	narrativemw "github.com/pgquerynarrative/pgquerynarrative/pkg/narrative/middleware"
 )

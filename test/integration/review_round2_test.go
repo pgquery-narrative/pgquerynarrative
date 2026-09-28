@@ -14,13 +14,13 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/middleware"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // rlsExecCommit is rlsExec that keeps its change, so a test can see what a statement really did.
@@ -45,7 +45,7 @@ func rlsExecCommit(ctx context.Context, pool *pgxpool.Pool, settings map[string]
 // exceptions. A DELETE or UPDATE that reaches a row only through an exception must change nothing.
 func TestLoginLookupExceptionsCannotDeleteOrUpdate(t *testing.T) {
 	admin, connStr, ctx := multiOrgPostgres(t)
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestLoginLookupExceptionsCannotDeleteOrUpdate(t *testing.T) {
 // is disabled.
 func TestScheduleRunnerResolvesItsOwnerUnderRowLevelSecurity(t *testing.T) {
 	admin, connStr, ctx := multiOrgPostgres(t)
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestScheduleRunnerResolvesItsOwnerUnderRowLevelSecurity(t *testing.T) {
 // for the organization), not about what the role is called.
 func TestStatStatementsRefusedOnASharedRoleWhateverItIsCalled(t *testing.T) {
 	admin, connStr, ctx := multiOrgPostgres(t)
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ func TestStatStatementsRefusedOnASharedRoleWhateverItIsCalled(t *testing.T) {
 // lo_get, which the deny-list did not name. The read runs on the analytical role with that privilege held.
 func TestLargeObjectReadsAreDeniedEvenWhenThePrivilegeIsHeld(t *testing.T) {
 	admin, connStr, ctx := multiOrgPostgres(t)
-	if err := testhelpers.EnsurePostgresRoles(ctx, admin); err != nil {
+	if err := helpers.EnsurePostgresRoles(ctx, admin); err != nil {
 		t.Fatal(err)
 	}
 	var oid uint32
@@ -309,7 +309,7 @@ func TestManagedKeysGetTheirOwnRateLimitBucket(t *testing.T) {
 		r.RemoteAddr = "203.0.113.7:4000" // the same NAT for every caller
 		return r
 	}
-	key := func(token string) string { k, _ := httpmw.RateLimitKey(req(token), nil, authn, nil); return k }
+	key := func(token string) string { k, _ := middleware.RateLimitKey(req(token), nil, authn, nil); return k }
 
 	// Authentication is what teaches the limiter a key is real.
 	for _, k := range []*auth.IssuedKey{a, b} {

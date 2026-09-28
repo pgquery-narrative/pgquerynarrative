@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Verify the PostgreSQL extension in infra/postgres-extension against a throwaway PostgreSQL.
+# Verify the PostgreSQL extension in postgres/pgquerynarrative against a throwaway PostgreSQL.
 #
 # Starts its own container (never touches the docker-compose stack), then checks that:
 #   - a fresh 1.1 install and a 1.0 -> 1.1 upgrade end in the same state
@@ -13,7 +13,7 @@
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-EXT_DIR="$ROOT_DIR/infra/postgres-extension"
+EXT_DIR="$ROOT_DIR/postgres/pgquerynarrative"
 PG_IMAGE="${PG_IMAGE:-postgres:16}"
 C="pgqn-ext-verify-$$"
 PASS=0

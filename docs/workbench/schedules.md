@@ -13,7 +13,7 @@ SECURITY_WEBHOOK_SIGNING_SECRET=...  # required for webhook destinations in prod
 ```
 
 Off by default. In production StrictMode, enabling it also requires the webhook
-allowlist and signing secret above, see [Production configuration](../operate/production.md).
+allowlist and signing secret above, see [Production configuration](../operations/production.md).
 
 ## Creating a schedule
 
@@ -68,9 +68,9 @@ minute cap, for up to 5 attempts, then move to a dead letter for manual triage
 (`GET /webhook-deliveries`). Metrics: `pgqn_webhook_deliveries_total`,
 `pgqn_webhook_failures_total`, `pgqn_webhook_dead_letters_total`,
 `pgqn_webhook_rejections_total` (an allowlist or SSRF rejection). Alerts:
-`PgqnWebhookFailures`, `PgqnWebhookDeadLetters`, see [Health and monitoring](../operate/monitoring.md).
+`PgqnWebhookFailures`, `PgqnWebhookDeadLetters`, see [Health and monitoring](../operations/monitoring.md).
 
 ## See also
 
-[Production configuration](../operate/production.md) ·
-[Health and monitoring](../operate/monitoring.md) · [REST API](../integrations/rest-api.md)
+[Production configuration](../operations/production.md) ·
+[Health and monitoring](../operations/monitoring.md) · [REST API](../integrations/rest-api.md)

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
 )
 
 // A role can change its own stored defaults (ALTER ROLE ... RESET) whenever it holds a read-write

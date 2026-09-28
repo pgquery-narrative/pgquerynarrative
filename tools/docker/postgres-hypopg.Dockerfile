@@ -2,7 +2,7 @@
 #
 # hypopg lets the planner cost a hypothetical index without building it, which
 # is what separates a real projection from the labeled heuristic fallback in
-# app/queryrunner/hypopg.go. No base image ships it, so build from source.
+# internal/queryrunner/hypopg.go. No base image ships it, so build from source.
 #
 # Migration 000050 runs CREATE EXTENSION IF NOT EXISTS hypopg and 000051 grants
 # execute rights to the analytical role, so no manual step is needed once the

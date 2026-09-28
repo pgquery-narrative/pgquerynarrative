@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/pgquerynarrative/pgquerynarrative/app/config"
+	appconfig "github.com/pgquerynarrative/pgquerynarrative/internal/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 )
 

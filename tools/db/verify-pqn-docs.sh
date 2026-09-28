@@ -82,7 +82,7 @@ PY
 
 wait_pg() { i=0; until docker exec "$1" psql -U postgres -Atc 'SELECT 1' >/dev/null 2>&1; do i=$((i + 1)); [ "$i" -gt 60 ] && { echo "PostgreSQL did not start" >&2; return 1; }; sleep 1; done; sleep 2; }
 psql() { docker exec -i pqn-install psql -X -q "$@"; }
-cpfiles() { SHARE2="$(docker exec "$1" pg_config --sharedir)/extension"; for f in pqn.control pqn--1.0.sql pqn--1.0--1.1.sql; do docker cp "infra/pqn-extension/$f" "$1:$SHARE2/"; done; }
+cpfiles() { SHARE2="$(docker exec "$1" pg_config --sharedir)/extension"; for f in pqn.control pqn--1.0.sql pqn--1.0--1.1.sql; do docker cp "postgres/pqn/$f" "$1:$SHARE2/"; done; }
 PQN_ROLES="'pqn_owner','pqn_reader','pqn_stats','pqn_ledger','pqn_viewer','pqn_analyst','pqn_admin'"
 
 echo
@@ -157,7 +157,7 @@ wait_pg pqn-dba
 cpfiles pqn-dba
 docker exec pqn-dba psql -X -q -U postgres -d app -c "CREATE ROLE dba LOGIN CREATEROLE" -c "CREATE ROLE inst LOGIN" -c "ALTER DATABASE app OWNER TO dba" -c "GRANT pg_monitor TO dba WITH ADMIN OPTION"
 dq() { docker exec -i pqn-dba psql -X -q -At -U "$1" -d app "${@:2}"; }
-if docker exec -i pqn-dba psql -X -q -U dba -d app -v installer=inst -f - < infra/pqn-extension/pqn-roles.sql >/dev/null 2>&1; then ok "a CREATEROLE DBA runs the role script"; else bad "the role script failed for a CREATEROLE DBA"; fi
+if docker exec -i pqn-dba psql -X -q -U dba -d app -v installer=inst -f - < postgres/pqn/pqn-roles.sql >/dev/null 2>&1; then ok "a CREATEROLE DBA runs the role script"; else bad "the role script failed for a CREATEROLE DBA"; fi
 dq inst -c "CREATE EXTENSION pqn" >/dev/null && dq inst -c "SELECT pqn_api.init()" >/dev/null && ok "an ordinary installer creates and initializes the extension" || bad "the installer could not create the extension"
 dq dba -c "CREATE SCHEMA hr" -c "CREATE TABLE hr.t (a int, b int)" >/dev/null
 [ -z "$(dq dba -c "SELECT pqn_api.expose('hr.t', ARRAY['a'])" 2>&1 | grep -i 'permission denied' || true)" ] && bad "the guide says a DBA needs the grants, but expose worked without them" || ok "without the grants the DBA cannot call expose (permission denied)"

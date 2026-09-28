@@ -79,8 +79,8 @@ compare only once you understand the ANALYZE policy above.
 
 ## 6. Production checklist
 
-Leaving laptop demo mode: [Production configuration](../operate/production.md) and
-[Deployment](../operate/deployment.md).
+Leaving laptop demo mode: [Production configuration](../operations/production.md) and
+[Deployment](../operations/deployment.md).
 
 ## See also
 

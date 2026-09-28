@@ -66,15 +66,20 @@ plugins:
         usage/cli-usage.md: reference/cli.md
         getting-started/llm-setup.md: integrations/llm.md
         getting-started/embedded.md: integrations/embedded-go.md
-        reference/deployment.md: operate/deployment.md
-        reference/operations.md: operate/monitoring.md
-        reference/troubleshooting.md: operate/troubleshooting.md
+        reference/deployment.md: operations/deployment.md
+        reference/operations.md: operations/monitoring.md
+        reference/troubleshooting.md: operations/troubleshooting.md
         reference/postgres-extension.md: integrations/postgres-extension.md
         reference/semantic-search-pgvector.md: integrations/semantic-search.md
         reference/versioning-and-releases.md: project/releases.md
         ops/branch-protection.md: project/branch-protection.md
         ops/rls-demo.md: examples/rls-demo.md
         case-studies/01-query-optimization.md: examples/query-optimization.md
+        operate/deployment.md: operations/deployment.md
+        operate/production.md: operations/production.md
+        operate/monitoring.md: operations/monitoring.md
+        operate/upgrades.md: operations/upgrades.md
+        operate/troubleshooting.md: operations/troubleshooting.md
 
 theme:
   name: material
@@ -106,7 +111,7 @@ extra:
 
 # Ordered by what a reader needs next: learn the model, run it, investigate,
 # integrate, secure and operate, look things up, then change the code.
-# tools/docscheck fails the build if a page under docs/ is missing from here.
+# tools/docs-check fails the build if a page under docs/ is missing from here.
 nav:
   - Overview:
       - PgQueryNarrative: index.md
@@ -144,11 +149,11 @@ nav:
       - Authentication and roles: security/authentication.md
       - Organizations and tenancy: security/tenancy.md
       - Data handling: security/data-handling.md
-      - Deployment: operate/deployment.md
-      - Production configuration: operate/production.md
-      - Health and monitoring: operate/monitoring.md
-      - Migrations, upgrades, backup: operate/upgrades.md
-      - Troubleshooting and runbooks: operate/troubleshooting.md
+      - Deployment: operations/deployment.md
+      - Production configuration: operations/production.md
+      - Health and monitoring: operations/monitoring.md
+      - Migrations, upgrades, backup: operations/upgrades.md
+      - Troubleshooting and runbooks: operations/troubleshooting.md
   - Reference:
       - Configuration: reference/configuration.md
       - API: reference/api.md
@@ -174,5 +179,6 @@ nav:
       - Branch protection: project/branch-protection.md
       - Release gate (RELEASING.md): https://github.com/pgquery-narrative/pgquerynarrative/blob/main/RELEASING.md
       - Contributing: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md
+      - Code of conduct: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CODE_OF_CONDUCT.md
       - Security policy: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/SECURITY.md
       - Changelog: https://github.com/pgquery-narrative/pgquerynarrative/blob/main/CHANGELOG.md

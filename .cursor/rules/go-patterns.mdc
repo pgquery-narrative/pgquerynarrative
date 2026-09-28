@@ -7,7 +7,7 @@ alwaysApply: false
 # Go patterns
 
 - Keep functions small and focused. Add godoc for exported functions and types.
-- Use sentinel errors from `app/errors` (e.g. `ErrQueryTooLong`, `ErrOnlySelectAllowed`) in `app/queryrunner/validator.go` and related code.
-- Service layer (`app/service/`) converts runner/LLM results to Goa types; return `*queries.ValidationError`, `*queries.NotFoundError`, `*reports.LLMError` where the design defines them.
+- Use sentinel errors from `internal/errors` (e.g. `ErrQueryTooLong`, `ErrOnlySelectAllowed`) in `internal/queryrunner/validator.go` and related code.
+- Service layer (`internal/service/`) converts runner/LLM results to Goa types; return `*queries.ValidationError`, `*queries.NotFoundError`, `*reports.LLMError` where the design defines them.
 - Generated code: `api/gen/` and `gen/` are partially generated. Prefer editing design in `api/design/` and running `make generate`; if you patch generated files (e.g. missing validators), apply the same change in both `api/gen/http/reports/client/types.go` and `gen/http/reports/client/types.go` so `go build ./...` succeeds.
 - Web handlers (`web/handlers.go`): Use `template.HTMLEscapeString` for user/content output. Use `strings.Builder` with `Grow()` for larger HTML fragments. Handle `pgtype.Numeric` in `formatValue`.

@@ -13,10 +13,10 @@ import (
 
 	queriesServer "github.com/pgquerynarrative/pgquerynarrative/api/gen/http/queries/server"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
 )
 
 func TestQueriesE2E(t *testing.T) {

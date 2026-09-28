@@ -9,8 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // rowsOf returns every row as text, sorted, so two result sets compare as multisets.
@@ -119,4 +119,4 @@ func reopen(t *testing.T, ctx context.Context, old *pgxpool.Pool) *pgxpool.Pool 
 	return p
 }
 
-var _ = testhelpers.RunPostgresContainer
+var _ = helpers.RunPostgresContainer

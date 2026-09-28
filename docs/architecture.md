@@ -18,10 +18,10 @@ flowchart TB
     MW[HTTP middleware<br/>auth · rate limit · audit · body limit · headers]
     GOA[Goa handlers<br/>api/gen]
     MAN[Manual routes<br/>health · ready · metrics · auth · admin · export]
-    SVC[Domain services<br/>app/service]
-    QR[Query engine<br/>app/queryrunner:<br/>validator · runner · explain · rewriter · hypopg · plan diff]
-    STORY[Reports<br/>app/story]
-    LLM[LLM + embeddings<br/>app/llm · app/embedding]
+    SVC[Domain services<br/>internal/service]
+    QR[Query engine<br/>internal/queryrunner:<br/>validator · runner · explain · rewriter · hypopg · plan diff]
+    STORY[Reports<br/>internal/story]
+    LLM[LLM + embeddings<br/>internal/llm · internal/embedding]
     BG[Background workers]
   end
   EMB[Embedded Go client<br/>pkg/narrative]
@@ -167,7 +167,7 @@ flowchart LR
 
 | Boundary | Enforced by | Page |
 |---|---|---|
-| Only one read-only statement reaches the database | Parse-tree validator (`app/queryrunner/validator.go`): single `SELECT`/`WITH` (or `EXPLAIN (FORMAT JSON)` of one), no DML/DDL/utility nodes, no `SELECT INTO`, no row locks | [Query execution safety](security/query-safety.md) |
+| Only one read-only statement reaches the database | Parse-tree validator (`internal/queryrunner/validator.go`): single `SELECT`/`WITH` (or `EXPLAIN (FORMAT JSON)` of one), no DML/DDL/utility nodes, no `SELECT INTO`, no row locks | [Query execution safety](security/query-safety.md) |
 | No writes even if validation were bypassed | Read-only transaction **and** a role without write privileges; CI runs `tools/db/verify_security.sh` | [Database roles](security/database-roles.md) |
 | Schema and function reach | Schema allowlist for tables and schema-qualified names; deny-list for side-effecting functions | [Query execution safety](security/query-safety.md) |
 | Time and size | `statement_timeout`, lock and idle timeouts, row limit, result/cell/column caps | [Query execution safety](security/query-safety.md) |

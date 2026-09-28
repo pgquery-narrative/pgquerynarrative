@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	suggestionsgen "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
-	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
-	"github.com/pgquerynarrative/pgquerynarrative/app/suggestions"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/catalog"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestCatalogAndSuggestionsIntegration verifies schema (catalog) and query
@@ -22,7 +22,7 @@ import (
 // backend API coverage.
 func TestCatalogAndSuggestionsIntegration(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -51,7 +51,7 @@ func TestCatalogAndSuggestionsIntegration(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
+	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatalf("failed to resolve migrations path: %v", err)
 	}

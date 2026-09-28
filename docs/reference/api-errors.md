@@ -3,7 +3,7 @@
 Every error response is `{"name": "...", "message": "...", "code": "..."}`. `code`
 is what to match on programmatically; `name`/`message` are for humans. This table is
 checked by `make docs-contract-check` against every `strPtr("CODE")` literal in
-`app/service`, plus the three codes emitted directly by the HTTP middleware.
+`internal/service`, plus the three codes emitted directly by the HTTP middleware.
 
 | Code | HTTP | Condition | Likely remediation |
 |---|---|---|---|
