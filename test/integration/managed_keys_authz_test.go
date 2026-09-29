@@ -3,13 +3,9 @@ package integration
 import (
 	"context"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
@@ -44,21 +40,7 @@ func setupMigratedPool(t *testing.T) (*pgxpool.Pool, context.Context) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "internal", "db", "migrations"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatal(err)
-	}
-	srcErr, dbErr := m.Close()
-	if srcErr != nil || dbErr != nil {
-		t.Fatalf("migrate close: %v %v", srcErr, dbErr)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {

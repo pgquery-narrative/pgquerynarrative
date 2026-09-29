@@ -66,9 +66,9 @@ services:
         - path: cmd
           action: sync+restart
           target: /app/cmd
-        - path: app
+        - path: internal
           action: sync+restart
-          target: /app/app
+          target: /app/internal
     environment:
       PGQUERYNARRATIVE_HOST: 0.0.0.0
       PGQUERYNARRATIVE_PORT: 8080

@@ -40,7 +40,7 @@ else
 fi
 
 DIRTY="$(docker compose exec -T postgres psql -U postgres -d pgquerynarrative -tAc 'SELECT dirty FROM schema_migrations LIMIT 1' 2>/dev/null | tr -d '[:space:]' || true)"
-REQUIRED="$(grep 'RequiredMigrationVersion uint' internal/db/migrations_check.go | sed -E 's/.*= ([0-9]+).*/\1/')"
+REQUIRED="$(go run ./tools/operations/print-migration-version 2>/dev/null || true)"
 if [[ "$DIRTY" == "t" ]]; then
   echo "⚠️  schema_migrations dirty; refusing automatic force (required version ${REQUIRED:-unknown}). Resolve manually with migrate force."
   record fail "migrate-docker" "dirty schema_migrations; manual force required (do not auto-force)"

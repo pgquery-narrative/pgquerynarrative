@@ -2,14 +2,10 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
@@ -47,17 +43,7 @@ func newEquivalenceEnv(t *testing.T) *equivalenceEnv {
 	}
 	waitReady(t, ctx, connStr)
 
-	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatalf("migrator: %v", err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate: %v", err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {

@@ -190,12 +190,13 @@ func buildExportHTML(sql, createdAt, bodyHTML string) string {
 </body>
 </html>`))
 	data := struct {
-		Styles  string
+		Styles  template.CSS
 		Created string
 		SQL     string
 		Body    template.HTML
 	}{
-		Styles:  reportExportStyles(),
+		// #nosec G203 -- reportExportStyles is a fixed Go string literal, not user input
+		Styles:  template.CSS(reportExportStyles()),
 		Created: created,
 		SQL:     sqlDisplay,
 		// #nosec G203 -- bodyHTML is built only from template.HTMLEscapeString in FormatReportHTML

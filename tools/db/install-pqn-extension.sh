@@ -6,7 +6,9 @@
 set -e
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$HERE/pqn.control" ]; then
+if [ -n "$PQN_EXT_DIR" ]; then
+  EXT_DIR="$PQN_EXT_DIR"
+elif [ -f "$HERE/pqn.control" ]; then
   EXT_DIR="$HERE"                                   # release archive: the files sit next to this script
 else
   EXT_DIR="$(cd "$HERE/../.." && pwd)/postgres/pqn"   # a clone of the repository

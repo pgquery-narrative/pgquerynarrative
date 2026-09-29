@@ -74,7 +74,10 @@ four, plus the lifecycle and deployment gaps found alongside them.
   program. Use `pgquerynarrative`.
 - **Private Go packages moved from `app/` to `internal/`.** Go now rejects imports of
   those packages from outside this module. `pkg/narrative` remains the supported library
-  API. Release archives and the container image place migrations at `internal/db/migrations`
+  API: `narrative.LoadConfig()` and `narrativemw.NewAuthenticator`/`NewSessionManager`
+  are new, so embedders never need to import `internal/config` or `internal/auth` directly
+  (which this move made impossible) to load config or build a `SecurityConfig`. Release
+  archives and the container image place migrations at `internal/db/migrations`
   (previously `app/db/migrations`). The PostgreSQL `app` schema is unchanged.
 
 ### Security

@@ -2,7 +2,7 @@
 // create a client from config, run a query, optionally generate a report, then close.
 //
 // Prerequisites: PostgreSQL running with app and readonly roles, and (for reports) an LLM.
-// Set DATABASE_* and LLM_* environment variables, or use config.Load() via FromAppConfig.
+// Set DATABASE_* and LLM_* environment variables.
 //
 // Build from repo root: go build -o bin/example-library ./examples/library-usage
 // Run: ./bin/example-library
@@ -14,7 +14,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 )
 
@@ -22,7 +21,7 @@ func main() {
 	ctx := context.Background()
 
 	// Build config from environment (same as the server).
-	cfg := narrative.FromAppConfig(config.Load())
+	cfg := narrative.LoadConfig()
 
 	client, err := narrative.NewClient(ctx, cfg)
 	if err != nil {

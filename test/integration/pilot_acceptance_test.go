@@ -3,13 +3,9 @@ package integration
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -299,17 +295,7 @@ func pilotPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, string) {
 	}
 	waitForPostgres(t, ctx, connStr)
 
-	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatal(err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {

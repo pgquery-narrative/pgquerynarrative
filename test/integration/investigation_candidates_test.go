@@ -2,11 +2,9 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
@@ -30,14 +28,7 @@ func TestInvestigationCandidateHistory(t *testing.T) {
 	}
 	waitReady(t, ctx, connStr)
 
-	migrationsPath, _ := filepath.Abs("../../internal/db/migrations")
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatal(err)
-	}
+	helpers.RunMigrations(t, connStr)
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatal(err)

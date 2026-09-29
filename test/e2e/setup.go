@@ -6,13 +6,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 	goahttp "goa.design/goa/v3/http"
 
@@ -91,31 +87,6 @@ func WaitPostgres(t *testing.T, ctx context.Context, connStr string) {
 			t.Fatalf("postgres not ready after %v: last error %v", postgresWaitTimeout, pingErr)
 		}
 		time.Sleep(postgresPollSleep)
-	}
-}
-
-// RunMigrations runs all up migrations from internal/db/migrations against connStr.
-func RunMigrations(t *testing.T, connStr string) {
-	t.Helper()
-	absPath, err := filepath.Abs("../../internal/db/migrations")
-	if err != nil {
-		t.Fatalf("migrations path: %v", err)
-	}
-	// Enable pgvector so migration 000007_pgvector_embeddings.up.sql can run (E2E uses pgvector/pgvector image).
-	extPool, err := pgxpool.New(context.Background(), connStr)
-	if err != nil {
-		t.Fatalf("pool for extension: %v", err)
-	}
-	_, _ = extPool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS vector")
-	extPool.Close()
-
-	m, err := migrate.New("file://"+absPath, connStr)
-	if err != nil {
-		t.Fatalf("migrate new: %v", err)
-	}
-	defer func() { _, _ = m.Close() }()
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
 	}
 }
 

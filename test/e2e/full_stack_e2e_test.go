@@ -11,6 +11,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
 	schema "github.com/pgquerynarrative/pgquerynarrative/api/gen/schema"
 	suggestions "github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestFullStackE2E runs all API areas against a single Postgres container and one server
@@ -21,7 +22,7 @@ func TestFullStackE2E(t *testing.T) {
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	WaitPostgres(t, ctx, connStr)
-	RunMigrations(t, connStr)
+	helpers.RunMigrations(t, connStr)
 	pool := NewTestPool(t, ctx, connStr)
 	defer pool.Close()
 	SeedDemoSales(t, ctx, pool)

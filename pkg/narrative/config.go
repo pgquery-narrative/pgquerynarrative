@@ -152,6 +152,14 @@ type MetricsConfig struct {
 	MaxTimeSeriesPeriods     int     // Max periods returned for time-series metrics (default 24)
 }
 
+// LoadConfig reads the process environment the same way the standalone server does and
+// returns a ready-to-use Config. Prefer this over FromAppConfig(config.Load()) for embedding:
+// internal/config isn't importable outside this module, so external callers have no other way
+// to build the argument FromAppConfig needs.
+func LoadConfig() Config {
+	return FromAppConfig(config.Load())
+}
+
 // FromAppConfig converts app config into narrative config with default
 // allowed schemas and limits. Use this when building a client from
 // config.Load() in the standalone server.

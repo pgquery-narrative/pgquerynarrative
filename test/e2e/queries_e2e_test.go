@@ -17,6 +17,7 @@ import (
 	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
 	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
 	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 func TestQueriesE2E(t *testing.T) {
@@ -25,7 +26,7 @@ func TestQueriesE2E(t *testing.T) {
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	WaitPostgres(t, ctx, connStr)
-	RunMigrations(t, connStr)
+	helpers.RunMigrations(t, connStr)
 	pool := NewTestPool(t, ctx, connStr)
 	defer pool.Close()
 	SeedDemoSales(t, ctx, pool)

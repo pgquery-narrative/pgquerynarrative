@@ -2,13 +2,9 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/internal/metrics"
@@ -45,17 +41,7 @@ func TestPeriodComparisonSQLMatchesGo_ExampleQuery(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
-	if err != nil {
-		t.Fatalf("migrations path: %v", err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatalf("migrator: %v", err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
