@@ -35,7 +35,7 @@ export DB_URL="postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_N
 # DATABASE_MIGRATION_URL) for a role that may create extensions and alter roles.
 # Falling back to DATABASE_USER keeps existing deployments working, where the
 # schema is already at the required version and `up` is a no-op.
-# Mirror of config.StrictMode() in app/config/validate.go. Keep the two in step:
+# Mirror of config.StrictMode() in internal/config/validate.go. Keep the two in step:
 # APP_ENV of "production"/"prod" (any case), or SECURITY_STRICT parsing as true
 # the way Go's strconv.ParseBool accepts it.
 is_strict_mode() {
@@ -60,7 +60,7 @@ if [ "${PGQUERYNARRATIVE_SKIP_MIGRATIONS:-false}" != "true" ] \
   # surfaces as an opaque mid-migration permission error; refusing to start says
   # exactly what is missing.
   #
-  # This must agree with config.StrictMode() (app/config/validate.go), which is
+  # This must agree with config.StrictMode() (internal/config/validate.go), which is
   # case-insensitive, accepts "prod" as well as "production", and also honours
   # SECURITY_STRICT. Matching only APP_ENV=production exactly would leave every
   # other strict deployment on the old warn-and-continue path.
@@ -78,7 +78,7 @@ fi
 if [ "${PGQUERYNARRATIVE_SKIP_MIGRATIONS:-false}" = "true" ]; then
   echo "PGQUERYNARRATIVE_SKIP_MIGRATIONS=true — not running migrations." >&2
 else
-  /app/bin/migrate -path /app/app/db/migrations -database "${MIGRATE_URL}" up
+  /app/bin/migrate -path /app/internal/db/migrations -database "${MIGRATE_URL}" up
 fi
 
 if [ "${PGQUERYNARRATIVE_SEED:-false}" = "true" ]; then

@@ -5,8 +5,8 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
 	goa "goa.design/goa/v3/pkg"
 )
 

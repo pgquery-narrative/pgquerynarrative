@@ -14,17 +14,18 @@ import (
 
 	investigationsServer "github.com/pgquerynarrative/pgquerynarrative/api/gen/http/investigations/server"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestInvestigationsE2E_CreateFromRegressionConcurrent hits
 // POST /api/v1/investigations/from-regression over real HTTP against a real
 // Postgres, exercising the compare-and-swap alert-to-investigation claim
-// (app/service/investigations.go CreateFromRegression) end to end. Prior to
+// (internal/service/investigations.go CreateFromRegression) end to end. Prior to
 // this test the CAS logic was only unit-tested within package service — never
 // through the HTTP API, and never under real concurrency.
 func TestInvestigationsE2E_CreateFromRegressionConcurrent(t *testing.T) {
@@ -33,7 +34,7 @@ func TestInvestigationsE2E_CreateFromRegressionConcurrent(t *testing.T) {
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	WaitPostgres(t, ctx, connStr)
-	RunMigrations(t, connStr)
+	helpers.RunMigrations(t, connStr)
 	pool := NewTestPool(t, ctx, connStr)
 	defer pool.Close()
 	SeedDemoSales(t, ctx, pool)
@@ -60,7 +61,7 @@ func TestInvestigationsE2E_CreateFromRegressionConcurrent(t *testing.T) {
 
 	// Seed one regression alert directly (the poller's own detection logic is
 	// covered elsewhere; this test is about the claim, not detection). The
-	// test pool connects as the Postgres superuser (testhelpers.RunPostgresContainer),
+	// test pool connects as the Postgres superuser (helpers.RunPostgresContainer),
 	// which bypasses the table's RLS policy, so no SET LOCAL org context is
 	// needed for the raw insert.
 	var alertID string

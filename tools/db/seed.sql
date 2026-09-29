@@ -11,8 +11,8 @@ BEGIN;
 -- second session only proceeds once the first has committed and its own
 -- check correctly sees the now-existing rows.
 -- hashtextextended(..., 0), not hashtext(): matches the advisory-lock key
--- convention already established in app/llm/budget.go and
--- app/service/regression_poller.go (64-bit key space, no implicit cast to
+-- convention already established in internal/llm/budget.go and
+-- internal/service/regression_poller.go (64-bit key space, no implicit cast to
 -- bigint needed).
 SELECT pg_advisory_xact_lock(hashtextextended('pgquerynarrative.demo.sales.seed', 0));
 

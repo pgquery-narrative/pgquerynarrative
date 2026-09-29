@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
-	"github.com/pgquerynarrative/pgquerynarrative/app/story"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/story"
 )
 
 // fetchReport loads the report named by the ?id= query param, or writes an HTTP

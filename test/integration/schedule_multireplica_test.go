@@ -2,26 +2,22 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 func setupSchedulePool(t *testing.T) (*pgxpool.Pool, context.Context) {
 	t.Helper()
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -45,17 +41,7 @@ func setupSchedulePool(t *testing.T) (*pgxpool.Pool, context.Context) {
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatal(err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {

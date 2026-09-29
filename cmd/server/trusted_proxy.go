@@ -3,15 +3,15 @@ package main
 import (
 	"net/http"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/httpmw"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/middleware"
 )
 
-type trustedProxyMatcher = httpmw.TrustedProxyMatcher
+type trustedProxyMatcher = middleware.TrustedProxyMatcher
 
 func newTrustedProxyMatcher(addrs []string) *trustedProxyMatcher {
-	return httpmw.NewTrustedProxyMatcher(addrs)
+	return middleware.NewTrustedProxyMatcher(addrs)
 }
 
 func clientIPFromRequest(r *http.Request, trusted *trustedProxyMatcher) string {
-	return httpmw.ClientIPFromRequest(r, trusted)
+	return middleware.ClientIPFromRequest(r, trusted)
 }

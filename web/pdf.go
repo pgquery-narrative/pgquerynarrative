@@ -12,8 +12,8 @@ import (
 
 	"github.com/jung-kurt/gofpdf/v2"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/story"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/story"
 )
 
 // BuildReportPDF writes a structured PDF report to w. Text is rendered with the

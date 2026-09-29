@@ -13,8 +13,8 @@ import (
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/reports"
-	"github.com/pgquerynarrative/pgquerynarrative/app/format"
-	"github.com/pgquerynarrative/pgquerynarrative/app/story"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/format"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/story"
 )
 
 type Handlers struct {
@@ -190,12 +190,13 @@ func buildExportHTML(sql, createdAt, bodyHTML string) string {
 </body>
 </html>`))
 	data := struct {
-		Styles  string
+		Styles  template.CSS
 		Created string
 		SQL     string
 		Body    template.HTML
 	}{
-		Styles:  reportExportStyles(),
+		// #nosec G203 -- reportExportStyles is a fixed Go string literal, not user input
+		Styles:  template.CSS(reportExportStyles()),
 		Created: created,
 		SQL:     sqlDisplay,
 		// #nosec G203 -- bodyHTML is built only from template.HTMLEscapeString in FormatReportHTML

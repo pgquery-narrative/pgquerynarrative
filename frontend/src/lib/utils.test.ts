@@ -28,7 +28,7 @@ describe("collapseFindings", () => {
   });
 
   it("reports the count for repeats that are not partition-shaped", () => {
-    // Matches FormatCollapsedFinding in app/queryrunner/finding_display.go so the
+    // Matches FormatCollapsedFinding in internal/queryrunner/finding_display.go so the
     // UI and the PDF do not disagree about how often a finding fired.
     const { items } = collapseFindings([
       { category: "sort", message: "High-cost Sort on demo.orders" },

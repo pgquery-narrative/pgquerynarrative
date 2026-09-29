@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
 )
 
 // Config holds configuration for the narrative client. It can be built from
-// environment (via app/config.Load) or supplied in code for library usage.
+// environment (via internal/config.Load) or supplied in code for library usage.
 type Config struct {
 	// Database holds PostgreSQL connection settings for both read-only and app pools.
 	Database DatabaseConfig
@@ -150,6 +150,14 @@ type MetricsConfig struct {
 	MaxSeasonalLag           int     // Max seasonal period to try (default 12)
 	MinPeriodsForSeasonality int     // Min series length for seasonality (default 12)
 	MaxTimeSeriesPeriods     int     // Max periods returned for time-series metrics (default 24)
+}
+
+// LoadConfig reads the process environment the same way the standalone server does and
+// returns a ready-to-use Config. Prefer this over FromAppConfig(config.Load()) for embedding:
+// internal/config isn't importable outside this module, so external callers have no other way
+// to build the argument FromAppConfig needs.
+func LoadConfig() Config {
+	return FromAppConfig(config.Load())
 }
 
 // FromAppConfig converts app config into narrative config with default

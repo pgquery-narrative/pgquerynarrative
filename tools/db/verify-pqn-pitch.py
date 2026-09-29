@@ -38,6 +38,7 @@ C = os.environ.get("PQN_PITCH_CONTAINER", "pqn-pitch-db")
 PORT = os.environ.get("PQN_PITCH_PORT", "5437")
 PG_IMAGE = os.environ.get("PG_IMAGE", "postgres:18")
 PQN = os.environ.get("PQN_BIN", os.path.join(ROOT, "bin", "pqn"))
+EXT_DIR = os.environ.get("PQN_EXT_DIR", os.path.join(ROOT, "postgres", "pqn"))
 DB = "shopdb"
 ORDERS, ITEMS = 5_000_000, 12_000_000
 KEEP = os.environ.get("PQN_PITCH_KEEP") == "1"
@@ -134,7 +135,7 @@ def install_pqn(restart=True):
     # what the user does: files, one restart for pg_stat_statements, CREATE EXTENSION, init
     share = run(["docker", "exec", C, "pg_config", "--sharedir"]).stdout.strip() + "/extension"
     for f in ("pqn.control", "pqn--1.0.sql", "pqn--1.0--1.1.sql"):
-        run(["docker", "cp", f"infra/pqn-extension/{f}", f"{C}:{share}/"])
+        run(["docker", "cp", os.path.join(EXT_DIR, f), f"{C}:{share}/"])
     if restart:
         psql("ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'")
         run(["docker", "restart", C])

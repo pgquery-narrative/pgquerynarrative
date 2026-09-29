@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/queries"
-	apperrors "github.com/pgquerynarrative/pgquerynarrative/app/errors"
+	apperrors "github.com/pgquerynarrative/pgquerynarrative/internal/errors"
 )
 
 // ErrEmptyQuery is an alias kept for backward compatibility; prefer apperrors.ErrEmptyQuery.

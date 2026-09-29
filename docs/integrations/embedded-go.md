@@ -14,10 +14,9 @@ organization is `pgquery-narrative`. Import paths below are correct as written.
 ```go
 import (
     "github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
-    "github.com/pgquerynarrative/pgquerynarrative/app/config"
 )
 
-cfg := narrative.FromAppConfig(config.Load())
+cfg := narrative.LoadConfig()
 client, err := narrative.NewClient(ctx, cfg)
 if err != nil { /* ... */ }
 defer client.Close()
@@ -49,9 +48,20 @@ Package: [`pkg/narrative/middleware`](https://github.com/pgquery-narrative/pgque
 | Echo | `narrativemw.MountEcho(e, client, "/api")` |
 
 For auth and rate-limit parity with the standalone server, build a
-`narrativemw.SecurityConfig` from your `auth.Authenticator`, session manager, audit
-store and rate limiter, then use `MountChiSecured` (Chi) or wrap individual handlers
-with `WrapSecured` (Gin, Echo; there is no secured mount helper for those two).
+`narrativemw.SecurityConfig` using `narrativemw.NewAuthenticator(...)` and
+`narrativemw.NewSessionManager(...)` (the underlying auth types live under `internal/`
+and can't be constructed directly outside this module), plus `client.AuditStore()` and
+your own rate limiter, then use `MountChiSecured` (Chi) or wrap individual handlers
+with `WrapSecured` (Gin, Echo; there is no secured mount helper for those two). Leaving
+`Authenticator` nil disables authentication entirely, so don't skip it.
+
+For multi-tenant deployments, an API key or OIDC principal with no explicit `org_id`
+needs organization membership resolution, and CLI/MCP-issued keys need durable storage;
+both live behind the same `internal/` boundary, so build them with
+`narrativemw.NewMembershipStore(pool, autoJoinDefault)` and
+`narrativemw.NewManagedKeyStore(pool)`, then attach with
+`authenticator.SetMembershipStore(...)` / `.SetManagedKeyStore(...)` before building
+`SecurityConfig`. OIDC-based auth itself still isn't exposed to embedders (see above).
 
 Mounted routes (with prefix `/api`; use `""` to mount at root):
 

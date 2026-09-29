@@ -60,7 +60,7 @@ Run from a clean tree on an up-to-date `main`.
 
    ```bash
    go build ./... && go vet ./... && gofmt -s -l .
-   make test-unit   # not a bare `go test ./app/... ./pkg/...`, see docs/development/testing.md
+   make test-unit   # not a bare `go test ./internal/... ./pkg/...`, see docs/development/testing.md
    ```
 
 4. **Integration tests** (Docker required)
@@ -139,10 +139,10 @@ exactly these terms.
 
 ## Upgrade notes belong in the release
 
-`RequiredMigrationVersion` in `app/db/migrations_check.go` is a **readiness** gate, not a
+`RequiredMigrationVersion` in `internal/db/migrations_check.go` is a **readiness** gate, not a
 startup gate: a server whose database is behind that number still starts and accepts
 connections, but `GET /ready` returns 503 until migrations catch up (see
-`docs/operate/upgrades.md`). Whenever the required version moves, the release notes must say
+`docs/operations/upgrades.md`). Whenever the required version moves, the release notes must say
 so and name the range, or operators discover it as a failed rollout only once something checks
 readiness. `v2.2.0` requires schema version 57, up from 19 at `v2.0.0`.
 

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestPilot_OIDCCorporateFlow validates browser OIDC against a mock corporate IdP (PKCE, token exchange, session).
@@ -19,13 +19,13 @@ func TestPilot_OIDCCorporateFlow(t *testing.T) {
 	admin, connStr := pilotPostgres(t, ctx)
 	defer admin.Close()
 
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer appPool.Close()
 
-	mock, err := testhelpers.NewMockOIDCServer("pgquerynarrative", "staging-client")
+	mock, err := helpers.NewMockOIDCServer("pgquerynarrative", "staging-client")
 	if err != nil {
 		t.Fatal(err)
 	}

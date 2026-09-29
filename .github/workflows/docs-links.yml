@@ -2,7 +2,7 @@ name: Docs external links
 
 # External (http/https) links in README, docs/ and .github/*.md. Internal links
 # and anchors are gated by the `Docs` job in ci.yml (mkdocs --strict +
-# tools/docscheck); this workflow covers what neither can see.
+# tools/docs-check); this workflow covers what neither can see.
 #
 # Deliberately NOT a required check: it is path-filtered (a required check that
 # does not run on a PR blocks that PR forever) and it depends on third-party
@@ -51,8 +51,11 @@ jobs:
       - name: Check links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8
         with:
+          # Source links on main may name files added or moved by this PR.
+          # Check those paths against the tested commit; keep third-party URLs intact.
           args: >-
             --config .lychee.toml --cache --max-cache-age 1d --no-progress
+            --remap '^https://github\.com/pgquery-narrative/pgquerynarrative/(blob|tree)/main/(.*)$ https://github.com/pgquery-narrative/pgquerynarrative/$1/${{ github.sha }}/$2'
             README.md RELEASING.md deploy/README.md '.github/*.md' 'docs/**/*.md'
           fail: true
         env:

@@ -116,7 +116,7 @@ Hand-registered in `cmd/server/*.go`. Classified by who they're for:
 | Path | Purpose |
 |---|---|
 | `GET /health` | Liveness |
-| `GET /ready`, `GET /ready/connections` | Readiness, see [Health and monitoring](../operate/monitoring.md) |
+| `GET /ready`, `GET /ready/connections` | Readiness, see [Health and monitoring](../operations/monitoring.md) |
 | `GET /version` | Build version |
 | `GET|POST /auth/login`, `/callback`, `/logout`, `/refresh`, `/auth/session` | Browser OIDC, registered only when OIDC is configured |
 | `GET /reports/shared/{token}`, `GET /web/reports/export/shared/pdf` | Shared-report view (Goa route + web export) |

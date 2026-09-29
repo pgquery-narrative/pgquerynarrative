@@ -2,7 +2,7 @@
 # Used by `make docs-links` and .github/workflows/docs-links.yml.
 #
 # Scope: only http(s) links. Relative links and anchors are already checked by
-# `mkdocs build --strict` (docs/) and tools/docscheck (README, RELEASING,
+# `mkdocs build --strict` (docs/) and tools/docs-check (README, RELEASING,
 # .github/*.md, deploy/README.md), so lychee is not asked to understand MkDocs'
 # `{#id}` anchors or GitHub's slug rules.
 scheme = ["https", "http"]

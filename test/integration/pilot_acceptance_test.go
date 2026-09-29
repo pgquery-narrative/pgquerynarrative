@@ -3,21 +3,17 @@ package integration
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
-	"github.com/pgquerynarrative/pgquerynarrative/app/security"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/llm"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/security"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestPilot_CrossOrgIDOR verifies org B cannot read org A metadata objects when RLS is active.
@@ -26,7 +22,7 @@ func TestPilot_CrossOrgIDOR(t *testing.T) {
 	admin, connStr := pilotPostgres(t, ctx)
 	defer admin.Close()
 
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +120,7 @@ func TestPilot_ConnectionAllowlistIDOR(t *testing.T) {
 	admin, connStr := pilotPostgres(t, ctx)
 	defer admin.Close()
 
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +174,7 @@ func TestPilot_LLMAuditAndGovernance(t *testing.T) {
 	admin, connStr := pilotPostgres(t, ctx)
 	defer admin.Close()
 
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +248,7 @@ func TestPilot_UserBudgetEnforcement(t *testing.T) {
 	admin, connStr := pilotPostgres(t, ctx)
 	defer admin.Close()
 
-	appPool, err := testhelpers.AppPoolFromAdmin(ctx, admin, connStr)
+	appPool, err := helpers.AppPoolFromAdmin(ctx, admin, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +286,7 @@ func TestPilot_LLMPromptInjectionGovernance(t *testing.T) {
 
 func pilotPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, string) {
 	t.Helper()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -299,23 +295,13 @@ func pilotPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, string) {
 	}
 	waitForPostgres(t, ctx, connStr)
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatal(err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testhelpers.EnsurePostgresRoles(ctx, pool); err != nil {
+	if err := helpers.EnsurePostgresRoles(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
 	return pool, connStr

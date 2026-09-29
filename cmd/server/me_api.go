@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
 )
 
 type meDeps struct {

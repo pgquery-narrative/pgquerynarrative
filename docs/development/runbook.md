@@ -27,7 +27,7 @@ After editing `api/design/*.go`: `make generate`.
 | What | Command |
 |---|---|
 | Unit | `make test-unit` |
-| One package | `go test ./test/unit/app/metrics/... -v` |
+| One package | `go test ./test/unit/metrics/... -v` |
 | Integration (Docker) | `make test-integration` |
 | E2E | `make test-e2e` |
 | Full suite | `make test` |

@@ -38,7 +38,7 @@ tree. It has been removed. If you need a server-only variant, add a build target
 - `/app/bin/server`: the API + SPA server (`CGO_ENABLED=1`, needed by `pg_query_go`)
 - `/app/bin/migrate`: golang-migrate CLI, used by the entrypoint
 - `/app/frontend/dist`: the built SPA
-- `/app/app/db/migrations`: migration files
+- `/app/internal/db/migrations`: migration files
 - `/app/tools/db/seed.sql`: optional demo seed, applied only when `PGQUERYNARRATIVE_SEED=true`
 
 The entrypoint ([`tools/docker/entrypoint.sh`](../tools/docker/entrypoint.sh)) waits for
@@ -47,7 +47,7 @@ non-root `appuser` (uid 1000) and listens on `8080`.
 
 ## Related
 
-- [Deployment reference](../docs/operate/deployment.md): Compose, Kubernetes, and Helm walkthroughs
-- [Migrations, upgrades, backup](../docs/operate/upgrades.md): upgrade, rollback, backup
+- [Deployment reference](../docs/operations/deployment.md): Compose, Kubernetes, and Helm walkthroughs
+- [Migrations, upgrades, backup](../docs/operations/upgrades.md): upgrade, rollback, backup
 - [Branch protection](../docs/project/branch-protection.md): required checks on `main`
 - [RELEASING.md](../RELEASING.md): the gate that must be green before tagging

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
 )
 
 func TestAuditBuffered_PersistAndReplay(t *testing.T) {

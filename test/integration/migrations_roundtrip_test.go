@@ -10,15 +10,15 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // TestMigrationsRoundTrip verifies the latest migration can roll back one step
 // and re-apply without leaving the schema in a dirty state.
 func TestMigrationsRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -27,7 +27,7 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	waitForPostgres(t, ctx, connStr)
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
+	migrationsPath, err := filepath.Abs("../../internal/db/migrations")
 	if err != nil {
 		t.Fatal(err)
 	}

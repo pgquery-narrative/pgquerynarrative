@@ -38,8 +38,8 @@ the system map, and [Trust model](trust-model.md) for the security boundaries.
 
 - [Database roles](security/database-roles.md)
 - [Query execution safety](security/query-safety.md)
-- [Deployment](operate/deployment.md)
-- [Production configuration](operate/production.md)
+- [Deployment](operations/deployment.md)
+- [Production configuration](operations/production.md)
 
 ## Integrations
 
@@ -53,6 +53,10 @@ the system map, and [Trust model](trust-model.md) for the security boundaries.
 - [Setup](development/setup.md)
 - [Repository architecture](development/repository.md)
 - [Testing](development/testing.md)
+
+How to contribute, get help, and report a vulnerability:
+[Contributing](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/CONTRIBUTING.md),
+[Security policy](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/.github/SECURITY.md).
 
 ## Reference
 

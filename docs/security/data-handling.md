@@ -148,4 +148,4 @@ for example), not as a default for a public-facing production build.
 
 [Trust model](../trust-model.md) · [Authentication and roles](authentication.md) ·
 [Configuration reference](../reference/configuration.md#security) ·
-[Health and monitoring](../operate/monitoring.md)
+[Health and monitoring](../operations/monitoring.md)

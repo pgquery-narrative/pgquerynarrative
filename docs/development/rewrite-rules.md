@@ -14,7 +14,7 @@ test.
 2. **Document the semantic assumption the rewrite relies on**, as a code comment
    next to the rule. "This is safe because X" should name the specific PostgreSQL
    behavior being relied on, see the existing comments on the anti-join rule
-   (`app/queryrunner/rewriter_antijoin.go`) for the level of detail expected.
+   (`internal/queryrunner/rewriter_antijoin.go`) for the level of detail expected.
 3. **A PostgreSQL-backed equivalence test**, in `test/integration/`, that runs both
    the original and rewritten SQL against a real database and asserts the same rows
    come back, following the pattern in
@@ -49,7 +49,7 @@ test.
 ## Where the code goes
 
 - A literal-only rule: add a `suggestX(sql, findings) *RewriteCandidate` function
-  and call it from `SuggestRewrites` (`app/queryrunner/rewriter.go`).
+  and call it from `SuggestRewrites` (`internal/queryrunner/rewriter.go`).
 - A sargable-style rule (function-wrapped column comparisons): extend the
   `rewriteFunctionWrapInExpr` dispatch so it also runs inside CTEs and FROM
   subqueries automatically (`rewriter_nested.go` already threads this).

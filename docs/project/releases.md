@@ -59,7 +59,7 @@ The embeddable client follows SemVer for its **documented public** surface:
 | `narrative.SecurityConfig` fields | Stable | New optional fields may appear in minor releases |
 | `pkg/narrative/middleware` mount helpers | Stable | `MountChi`, `MountGin`, `MountEcho`; use `MountChiSecured`/`WrapSecured` for auth parity |
 | Goa-generated types under `api/gen/` | **Unstable** | Regenerated from `api/design/`; depend on `pkg/narrative` client methods, not raw Goa types, where possible |
-| `app/*` packages | **Internal** | No SemVer guarantee; may change without a major `pkg/narrative` bump |
+| `internal/*` packages | **Internal** | No SemVer guarantee; may change without a major `pkg/narrative` bump |
 
 A field removed from a REST response is still a break for anyone generating clients
 from the published OpenAPI spec, even when `pkg/narrative` is untouched; it doesn't
@@ -70,7 +70,7 @@ by itself force a major bump under this table, but it must appear under a
 replacement fields.
 
 `db.RequiredMigrationVersion` is a readiness gate, not a startup gate, see
-[Migrations, upgrades, backup](../operate/upgrades.md). When it moves, release notes
+[Migrations, upgrades, backup](../operations/upgrades.md). When it moves, release notes
 must say so and name the version range.
 
 ## Versioned documentation
@@ -84,4 +84,4 @@ project ever supports more than one line concurrently.
 ## See also
 
 [RELEASING.md](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/RELEASING.md) ·
-[Embedded Go](../integrations/embedded-go.md) · [Migrations, upgrades, backup](../operate/upgrades.md)
+[Embedded Go](../integrations/embedded-go.md) · [Migrations, upgrades, backup](../operations/upgrades.md)

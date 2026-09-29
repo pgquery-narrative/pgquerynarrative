@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
 )
 
 // recordAdminAudit writes a high-risk admin audit entry and fails the request when

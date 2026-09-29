@@ -67,11 +67,22 @@ four, plus the lifecycle and deployment gaps found alongside them.
   connection, and the workspace overview's two workload totals read zero for other users
   there. Give each organization its own read-only credentials to see its own. Single-
   organization installs and organizations with their own credentials are unaffected.
-- **Migrations `000058` to `000060`; the schema gate is now 60.** Run them before the new
+- **Migrations `000058` to `000061`; the schema gate is now 61.** Run them before the new
   binary, or `/ready` reports 503. What they change is under Security.
 - **The `pqn` alias in the CLI container's shell (`make cli-shell`) is removed.** `pqn` now
   names the terminal tool for the `pqn` extension, so the alias would have run a different
   program. Use `pgquerynarrative`.
+- **Private Go packages moved from `app/` to `internal/`.** Go now rejects imports of
+  those packages from outside this module. `pkg/narrative` remains the supported library
+  API: `narrative.LoadConfig()`, `narrativemw.NewAuthenticator`/`NewSessionManager`, and
+  `narrativemw.NewOIDCValidator`/`NewMembershipStore`/`NewManagedKeyStore`/`NewSessionStore`
+  are new, so embedders never need to import `internal/config` or `internal/auth` directly
+  (which this move made impossible) to load config or build a fully-featured
+  `SecurityConfig` — OIDC, organization-membership resolution, managed API keys, and
+  server-side session revocation included. `NewAuthenticator` now takes an OIDC validator
+  parameter (nil to keep API-key-only auth). Release archives and the container image place
+  migrations at `internal/db/migrations` (previously `app/db/migrations`). The PostgreSQL
+  `app` schema is unchanged.
 
 ### Security
 
@@ -134,7 +145,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
   too. `AuthRequired()` now depends only on the enable switch, so a server with no usable
   key answers `401`, and startup refuses the configuration (see Breaking).
 - **Every route is decided.** The report exports `md`, `json` and `sql` ran as the default
-  organization's admin with no credential, and `app/httpmw` had no tests. Everything under
+  organization's admin with no credential, and `internal/middleware` had no tests. Everything under
   `/web/reports/export` except the shared-link PDF is now authenticated by prefix, and a
   route-matrix test fails when a route `main.go` registers is reachable without a credential
   and is not listed as public.
@@ -156,6 +167,14 @@ four, plus the lifecycle and deployment gaps found alongside them.
   `INSERT`, `UPDATE` and `DELETE` have their own policies that name the current organization,
   so a session that set a login lookup could otherwise have deleted a user's memberships in
   other organizations.
+- **Logout now actually revokes the server-side session** (migration `000061`). Migration
+  `000046` granted the application role `EXECUTE` on 5 of the 6 browser-session functions it
+  created, but missed `app.revoke_browser_session(uuid)` — the single-session-by-ID revoke
+  `SessionManager.RevokeCurrent` calls on every logout. That call's error is discarded (a
+  best-effort revoke shouldn't block clearing the cookie), so the missing grant was invisible:
+  logout always appeared to work, but the session row was never actually revoked, leaving a
+  copy of the cookie taken before logout valid until its natural expiry instead of being cut
+  off immediately.
 - **Statement statistics on a shared role are refused by what the connection is, not what the
   role is called.** The check compared the pool's login name with the configured one, so a
   shared role with a non-default name skipped it. It now asks whether the organization has
@@ -361,6 +380,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
 
 ### Documentation
 
+- **Directory names.** `docs/operate` is now `docs/operations` (the old URLs redirect). PostgreSQL extension and init SQL live under `postgres/`. Operations scripts live under `tools/operations/`.
 - **Installing and setting up the `pqn` extension is documented and executed.** A
   [quick start](docs/getting-started/pqn-extension.md) and an
   [installation guide](docs/getting-started/pqn-installation.md) cover the extension files, the
@@ -395,7 +415,7 @@ four, plus the lifecycle and deployment gaps found alongside them.
   of critical defaults, the release platform matrix, every OpenAPI operation,
   every structured error code, forbidden stale vocabulary, and the
   links/anchors in the repo-root Markdown that MkDocs does not build. It runs in
-  the CI `Docs` job and in `make test-unit` (`tools/docscheck`).
+  the CI `Docs` job and in `make test-unit` (`tools/docs-check`).
 - **External links are checked in CI** by a new `docs-links` workflow (lychee,
   pinned), and locally by `make docs-links`. Config in `.lychee.toml`.
 - **`make docs` binds the preview to `127.0.0.1` and drops the TTY assumption**;

@@ -37,10 +37,10 @@ make start-docker
   (PostgreSQL + app), which builds the app image from the root
   [Dockerfile](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/Dockerfile).
 - **Endpoints:** web UI and API at **http://localhost:8080**. Health:
-  [GET /health, GET /ready](../operate/monitoring.md#health-and-readiness).
+  [GET /health, GET /ready](../operations/monitoring.md#health-and-readiness).
 
 For a production-shaped image and Compose overlay, see
-[Deployment – Docker](../operate/deployment.md#docker).
+[Deployment – Docker](../operations/deployment.md#docker).
 
 ### Pre-built image
 
@@ -90,7 +90,7 @@ cosign verify-blob pgquerynarrative-${VERSION}-linux-amd64.tar.gz \
 The archive is self-contained, no clone required: `bin/pgquerynarrative-server`,
 `bin/pgquerynarrative-mcp`, `bin/migrate`, `bin/pqn` (the [pqn](pqn-installation.md)
 terminal tool), the `pqn-extension/` PostgreSQL extension files and installer, the
-built UI (`frontend/dist/`), migrations (`app/db/migrations/`), and
+built UI (`frontend/dist/`), migrations (`internal/db/migrations/`), and
 `config/pgquerynarrative.env.example`.
 
 ```bash
@@ -98,7 +98,7 @@ cp config/pgquerynarrative.env.example .env   # then edit the DATABASE_* values
 
 # Migrations create extensions and ALTER ROLE, so they need a role that may do
 # both, not the runtime query role, which deliberately cannot.
-./bin/migrate -path app/db/migrations -database "$MIGRATION_DATABASE_URL" up
+./bin/migrate -path internal/db/migrations -database "$MIGRATION_DATABASE_URL" up
 ./bin/pgquerynarrative-server
 ```
 
@@ -147,7 +147,7 @@ curl -s http://localhost:8080/ready
 curl -s http://localhost:8080/api/v1/demo/scenarios | head
 ```
 
-See [Health and monitoring](../operate/monitoring.md#health-and-readiness) for every
+See [Health and monitoring](../operations/monitoring.md#health-and-readiness) for every
 probe endpoint.
 
 ## PostgreSQL versions

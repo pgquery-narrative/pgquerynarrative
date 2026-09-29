@@ -2,25 +2,21 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/suggestions"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/catalog"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/catalog"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/llm"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // fixedSQLLLM always returns the same SQL text regardless of prompt, so a test
@@ -34,14 +30,14 @@ func (fixedSQLLLM) Name() string                                       { return 
 // TestAskMultiConnection_ValidatesAgainstRequestedConnection is a regression
 // test for a bug where Ask and Chat validated LLM-generated SQL against the
 // default connection's schema allowlist regardless of which connection_id was
-// requested (app/service/ask.go called connectionResolver.runnerFor(nil)
+// requested (internal/service/ask.go called connectionResolver.runnerFor(nil)
 // instead of runnerFor(payload.ConnectionID)). Two connections are registered
 // against the same database with different allowed schemas; a query that is
 // only valid for the non-default connection must not be rejected by the
 // default connection's policy.
 func TestAskMultiConnection_ValidatesAgainstRequestedConnection(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -66,17 +62,7 @@ func TestAskMultiConnection_ValidatesAgainstRequestedConnection(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
-	if err != nil {
-		t.Fatalf("failed to resolve migrations path: %v", err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatalf("failed to create migrator: %v", err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("failed to run migrations: %v", err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {

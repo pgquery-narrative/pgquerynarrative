@@ -14,4 +14,4 @@ docker compose exec -T postgres psql -U postgres -d postgres -tc \
   "SELECT 1 FROM pg_database WHERE datname='pgquerynarrative'" | grep -q 1 || \
   docker compose exec -T postgres createdb -U postgres pgquerynarrative
 
-docker compose exec -T postgres psql -U postgres -d pgquerynarrative -f - < "$ROOT_DIR/infra/postgres-init/00-init.sql"
+docker compose exec -T postgres psql -U postgres -d pgquerynarrative -f - < "$ROOT_DIR/postgres/init/00-init.sql"

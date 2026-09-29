@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/audit"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/audit"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
 )
 
 type adminDeps struct {

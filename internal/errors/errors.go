@@ -1,0 +1,161 @@
+// Package errors provides centralized error definitions for the application.
+// All application-specific errors are defined here for better organization
+// and easier maintenance.
+package errors
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Query validation errors
+var (
+	// ErrQueryTooLong indicates the query exceeds the maximum allowed length.
+	// This prevents DoS attacks through extremely long queries.
+	ErrQueryTooLong = errors.New("query exceeds maximum length")
+
+	// ErrOnlySelectAllowed indicates the query parsed but is not a SELECT or
+	// WITH statement. Only read-only queries are allowed for security.
+	ErrOnlySelectAllowed = errors.New("only SELECT statements are allowed")
+
+	// ErrSyntaxError indicates the query does not parse as SQL at all — a typo
+	// or malformed statement, not a read-only-policy rejection. Kept distinct
+	// from ErrOnlySelectAllowed so "SELCT * FRM t" gets a message about the
+	// typo, not one that reads like the query was understood and rejected.
+	ErrSyntaxError = errors.New("query does not parse as valid SQL")
+
+	// ErrDisallowedKeyword indicates the query contains dangerous keywords.
+	// Keywords like INSERT, UPDATE, DELETE, DROP, etc. are not allowed.
+	ErrDisallowedKeyword = errors.New("query contains disallowed keywords")
+
+	// ErrSchemaNotAllowed indicates the query references a schema that is not allowed.
+	// This enforces schema-level access control.
+	ErrSchemaNotAllowed = errors.New("query references disallowed schema")
+
+	// ErrUnqualifiedTable indicates a table reference without an explicit schema qualifier.
+	// Unqualified names resolve via search_path and bypass schema allowlists.
+	ErrUnqualifiedTable = errors.New("table references must use an explicit schema (e.g. demo.sales)")
+
+	// ErrMultipleStatements indicates the query contains multiple SQL statements.
+	// Only single-statement queries are allowed for security.
+	ErrMultipleStatements = errors.New("multiple SQL statements are not allowed")
+
+	// ErrFunctionNotAllowed indicates the query calls a function that is denied by
+	// policy. A read-only transaction stops writes, but it does not make every
+	// SELECT expression side-effect free: session advisory locks, session GUC
+	// mutation and server-side file access all run happily inside one.
+	ErrFunctionNotAllowed = errors.New("query calls a function that is not allowed")
+
+	// ErrFunctionSchemaNotAllowed indicates the query calls a schema-qualified
+	// function outside the allowed schemas. Without this, the schema allowlist
+	// governs tables but leaves a function-shaped hole in the same boundary.
+	ErrFunctionSchemaNotAllowed = errors.New("query calls a function in a disallowed schema")
+
+	// ErrSelectIntoNotAllowed indicates a SELECT ... INTO, which creates a table.
+	ErrSelectIntoNotAllowed = errors.New("SELECT ... INTO is not allowed")
+
+	// ErrLockingClauseNotAllowed indicates a row-locking clause (FOR UPDATE/SHARE),
+	// which takes write locks and is not read-only.
+	ErrLockingClauseNotAllowed = errors.New("row locking clauses (FOR UPDATE/SHARE) are not allowed")
+)
+
+// Query execution errors
+var (
+	// ErrQueryTimeout indicates the query execution exceeded the maximum allowed time.
+	// This prevents long-running queries from blocking the system.
+	ErrQueryTimeout = errors.New("query execution timeout: query exceeded the maximum execution time")
+
+	// ErrQueryExecutionFailed indicates the query execution failed for reasons other than timeout.
+	// This is a generic error for database execution failures.
+	ErrQueryExecutionFailed = errors.New("query execution failed")
+
+	// ErrQueryResultTooLarge indicates the query result exceeded configured memory/response limits.
+	ErrQueryResultTooLarge = errors.New("query result too large")
+)
+
+// Database connection errors
+var (
+	// ErrDatabaseConnectionFailed indicates a failure to establish database connection.
+	ErrDatabaseConnectionFailed = errors.New("failed to create database connection")
+
+	// ErrReadOnlyPoolFailed indicates a failure to create the read-only connection pool.
+	ErrReadOnlyPoolFailed = errors.New("failed to create read-only pool")
+
+	// ErrAppPoolFailed indicates a failure to create the application connection pool.
+	ErrAppPoolFailed = errors.New("failed to create app pool")
+
+	// ErrPoolHealthCheckFailed indicates a failure in database pool health check.
+	ErrPoolHealthCheckFailed = errors.New("database pool health check failed")
+)
+
+// LLM/Narrative generation errors
+var (
+	// ErrLLMRequestFailed indicates a failure in LLM API request.
+	ErrLLMRequestFailed = errors.New("LLM request failed")
+
+	// ErrLLMResponseInvalid indicates the LLM response is invalid or malformed.
+	ErrLLMResponseInvalid = errors.New("LLM response is invalid")
+
+	// ErrNarrativeGenerationFailed indicates a failure in narrative generation.
+	ErrNarrativeGenerationFailed = errors.New("narrative generation failed")
+)
+
+// Input validation errors
+var (
+	// ErrEmptyQuery is returned when a query is called with empty or whitespace-only SQL.
+	ErrEmptyQuery = errors.New("query SQL cannot be empty")
+)
+
+// Service layer errors
+var (
+	// ErrSavedQueryNotFound indicates the requested saved query does not exist.
+	ErrSavedQueryNotFound = errors.New("saved query not found")
+
+	// ErrReportNotFound indicates the requested report does not exist.
+	ErrReportNotFound = errors.New("report not found")
+
+	// ErrInvalidQueryLimit indicates the query limit is invalid (negative or too large).
+	ErrInvalidQueryLimit = errors.New("invalid query limit")
+
+	// ErrInvalidStatStatementsOrder indicates an unsupported order_by for pg_stat_statements.
+	ErrInvalidStatStatementsOrder = errors.New("invalid stat_statements order_by")
+
+	// ErrStatStatementsUnavailable indicates pg_stat_statements is not enabled or not readable.
+	ErrStatStatementsUnavailable = errors.New("pg_stat_statements is not available")
+
+	// ErrExplainAnalyzeDisabled indicates EXPLAIN ANALYZE was requested but is disabled by policy.
+	ErrExplainAnalyzeDisabled = errors.New("EXPLAIN ANALYZE is disabled")
+
+	// ErrExplainOptionsNotAllowed indicates the submitted EXPLAIN statement carries
+	// options the server does not accept (e.g. ANALYZE, BUFFERS, or non-JSON formats).
+	// EXPLAIN options are controlled server-side via the explain endpoint parameters.
+	ErrExplainOptionsNotAllowed = errors.New("EXPLAIN options are controlled by the server; submit the plain query and use the explain endpoint parameters")
+
+	// ErrExplainNotRunnable indicates an EXPLAIN statement was submitted to the
+	// regular query execution endpoint, which only executes plain SELECT queries.
+	ErrExplainNotRunnable = errors.New("EXPLAIN statements cannot be executed here; use the explain endpoint")
+
+	// ErrConnectionNotFound indicates a non-empty connection ID that is not configured.
+	ErrConnectionNotFound = errors.New("connection not found")
+
+	// ErrConnectionForbidden indicates the authenticated principal is not authorized
+	// to use the requested connection for the requested action (see internal/auth/connection_authz.go).
+	ErrConnectionForbidden = errors.New("not authorized to use this connection")
+)
+
+// Helper functions for wrapping errors with context. Use %w so callers can use errors.Is/As.
+
+// WrapQueryError wraps a query-related error with additional context.
+func WrapQueryError(err error, ctx string) error {
+	return fmt.Errorf("%s: %w", ctx, err)
+}
+
+// WrapDatabaseError wraps a database-related error with additional context.
+func WrapDatabaseError(err error, operation string) error {
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
+// WrapLLMError wraps an LLM-related error with additional context.
+func WrapLLMError(err error, operation string) error {
+	return fmt.Errorf("%s: %w", operation, err)
+}

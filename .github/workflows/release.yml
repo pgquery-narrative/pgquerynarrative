@@ -160,16 +160,16 @@ jobs:
             migrate="bin/pgquerynarrative-migrate-${target}"
             pqn="bin/pgquerynarrative-pqn-${target}"
             pkg="packages/pgquerynarrative-${VERSION}-${target}"
-            mkdir -p "$pkg/bin" "$pkg/frontend" "$pkg/app/db" "$pkg/config" "$pkg/pqn-extension"
+            mkdir -p "$pkg/bin" "$pkg/frontend" "$pkg/internal/db" "$pkg/config" "$pkg/pqn-extension"
             cp "$server" "$pkg/bin/pgquerynarrative-server"
             cp "$mcp" "$pkg/bin/pgquerynarrative-mcp"
             cp "$migrate" "$pkg/bin/migrate"
             cp "$pqn" "$pkg/bin/pqn"
             # The pqn PostgreSQL extension: copy these into a server (install.sh does it), no clone needed.
-            cp infra/pqn-extension/pqn.control infra/pqn-extension/pqn--*.sql infra/pqn-extension/pqn-roles.sql "$pkg/pqn-extension/"
+            cp postgres/pqn/pqn.control postgres/pqn/pqn--*.sql postgres/pqn/pqn-roles.sql "$pkg/pqn-extension/"
             cp tools/db/install-pqn-extension.sh "$pkg/pqn-extension/install.sh"
             cp -R frontend/dist "$pkg/frontend/dist"
-            cp -R app/db/migrations "$pkg/app/db/migrations"
+            cp -R internal/db/migrations "$pkg/internal/db/migrations"
             cp .env.example "$pkg/config/pgquerynarrative.env.example"
             cp tools/docker/entrypoint.sh "$pkg/bin/entrypoint.sh"
             cp LICENSE NOTICE "$pkg/"
@@ -198,7 +198,7 @@ jobs:
             test -f "$pkg/pqn-extension/pqn-roles.sql"
             test -x "$pkg/pqn-extension/install.sh"
             test -f "$pkg/frontend/dist/index.html"
-            test -d "$pkg/app/db/migrations"
+            test -d "$pkg/internal/db/migrations"
             test -f "$pkg/config/pgquerynarrative.env.example"
             test -f "$pkg/LICENSE"
             test -f "$pkg/NOTICE"
@@ -215,7 +215,7 @@ jobs:
           PKG_DIR="/tmp/pgqn-release-smoke/pgquerynarrative-${VERSION}-linux-amd64/pgquerynarrative-${VERSION}-linux-amd64"
 
           echo "Initializing database roles/schemas..."
-          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d pgquerynarrative -f infra/postgres-init/00-init.sql
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d pgquerynarrative -f postgres/init/00-init.sql
 
           # Migrations run as a role that may create extensions and alter roles;
           # the application role deliberately cannot. This mirrors
@@ -223,7 +223,7 @@ jobs:
           # the app role is what made the first v2.1.0 release attempt fail here.
           echo "Running packaged migrate binary against PostgreSQL service container..."
           MIGRATE_URL="postgres://postgres:postgres@127.0.0.1:5432/pgquerynarrative?sslmode=disable"
-          "$PKG_DIR/bin/migrate" -path "$PKG_DIR/app/db/migrations" -database "$MIGRATE_URL" up
+          "$PKG_DIR/bin/migrate" -path "$PKG_DIR/internal/db/migrations" -database "$MIGRATE_URL" up
 
           echo "Starting packaged server..."
           export DATABASE_HOST=127.0.0.1 DATABASE_PORT=5432

@@ -20,7 +20,7 @@ role, the model is defeated; use a real read-only grant set in production.
   setting `app.current_org_id` per transaction (see
   [Organizations and tenancy](tenancy.md)), not by bypassing RLS.
 - **Read-only role** has every privilege on the `app` schema and on `public`
-  explicitly revoked (`infra/postgres-init/00-init.sql`, migration `000043`), plus
+  explicitly revoked (`postgres/init/00-init.sql`, migration `000043`), plus
   default privileges revoked so future tables in those schemas aren't accidentally
   exposed. It has `USAGE`/`SELECT` on the schemas you allowlist, and nothing else:
   the schema allowlist enforced in the application (`DATABASE_ALLOWED_SCHEMAS`) is a
@@ -68,5 +68,5 @@ session flag lifted first, so the result depends on the role's privileges and no
 
 [Trust model](../trust-model.md) · [Query execution safety](query-safety.md) ·
 [Architecture: database identities](../architecture.md#database-identities) ·
-[Deployment](../operate/deployment.md) ·
+[Deployment](../operations/deployment.md) ·
 [Install the pqn extension](../getting-started/pqn-installation.md#install-without-a-superuser) and the [pqn reference](../reference/pqn.md#roles-and-tables) (the roles of extension mode)

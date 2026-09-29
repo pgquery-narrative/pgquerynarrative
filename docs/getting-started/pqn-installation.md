@@ -61,7 +61,7 @@ DBA takes its extra membership away. The script is `pqn-roles.sql`; read it firs
 
 ```bash
 psql -U postgres -d reports -c "CREATE ROLE pqn_installer LOGIN"
-psql -U postgres -d reports -v installer=pqn_installer -f - < infra/pqn-extension/pqn-roles.sql
+psql -U postgres -d reports -v installer=pqn_installer -f - < postgres/pqn/pqn-roles.sql
 psql -U pqn_installer -d reports -c "CREATE EXTENSION pqn"
 psql -U pqn_installer -d reports -At -c "SELECT pqn_api.init()"
 psql -U postgres -d reports -c "REVOKE pqn_owner, pqn_reader, pqn_stats, pqn_ledger FROM pqn_installer"

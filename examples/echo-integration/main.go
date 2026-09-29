@@ -11,14 +11,13 @@ import (
 	"os"
 
 	"github.com/labstack/echo/v4"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 	narrativemw "github.com/pgquerynarrative/pgquerynarrative/pkg/narrative/middleware"
 )
 
 func main() {
 	ctx := context.Background()
-	cfg := narrative.FromAppConfig(config.Load())
+	cfg := narrative.LoadConfig()
 	client, err := narrative.NewClient(ctx, cfg)
 	if err != nil {
 		panic(err)

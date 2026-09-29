@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth/mockoidc"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth/mockoidc"
 )
 
 func main() {

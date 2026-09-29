@@ -2,27 +2,25 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pgquerynarrative/pgquerynarrative/api/gen/investigations"
-	"github.com/pgquerynarrative/pgquerynarrative/app/auth"
-	"github.com/pgquerynarrative/pgquerynarrative/app/config"
-	"github.com/pgquerynarrative/pgquerynarrative/app/db"
-	"github.com/pgquerynarrative/pgquerynarrative/app/llm"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/app/service"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/auth"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/config"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/db"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/llm"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/service"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 // Every candidate tested for an investigation is kept, not overwritten.
 func TestInvestigationCandidateHistory(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
@@ -30,14 +28,7 @@ func TestInvestigationCandidateHistory(t *testing.T) {
 	}
 	waitReady(t, ctx, connStr)
 
-	migrationsPath, _ := filepath.Abs("../../app/db/migrations")
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatal(err)
-	}
+	helpers.RunMigrations(t, connStr)
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatal(err)

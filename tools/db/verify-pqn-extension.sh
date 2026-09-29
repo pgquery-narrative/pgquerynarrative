@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Verify the "pqn" extension in infra/pqn-extension against throwaway PostgreSQL containers.
+# Verify the "pqn" extension in postgres/pqn against throwaway PostgreSQL containers.
 #
 # Starts its own containers and network (never touches the docker-compose stack), installs the
 # extension as an ordinary non-superuser, and checks that:
@@ -18,7 +18,7 @@
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-EXT_DIR="${PQN_EXT_DIR:-$ROOT_DIR/infra/pqn-extension}"
+EXT_DIR="${PQN_EXT_DIR:-$ROOT_DIR/postgres/pqn}"
 PG_IMAGE="${PG_IMAGE:-postgres:16}"
 ID="$$"
 C="pqn-verify-primary-$ID"

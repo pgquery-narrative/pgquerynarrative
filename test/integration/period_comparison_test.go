@@ -2,25 +2,21 @@ package integration
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/pgquerynarrative/pgquerynarrative/app/metrics"
-	"github.com/pgquerynarrative/pgquerynarrative/app/queryrunner"
-	"github.com/pgquerynarrative/pgquerynarrative/test/testhelpers"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/metrics"
+	"github.com/pgquerynarrative/pgquerynarrative/internal/queryrunner"
+	"github.com/pgquerynarrative/pgquerynarrative/test/helpers"
 )
 
 const exampleMonthlySalesSQL = `SELECT date_trunc('month', date)::date AS month, SUM(total_amount) AS monthly_total, SUM(quantity) AS units_sold FROM demo.sales GROUP BY 1 ORDER BY 1`
 
 func TestPeriodComparisonSQLMatchesGo_ExampleQuery(t *testing.T) {
 	ctx := context.Background()
-	container := testhelpers.RunPostgresContainer(t, ctx)
+	container := helpers.RunPostgresContainer(t, ctx)
 	t.Cleanup(func() { _ = container.Terminate(ctx) })
 
 	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
@@ -45,17 +41,7 @@ func TestPeriodComparisonSQLMatchesGo_ExampleQuery(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	migrationsPath, err := filepath.Abs("../../app/db/migrations")
-	if err != nil {
-		t.Fatalf("migrations path: %v", err)
-	}
-	m, err := migrate.New("file://"+migrationsPath, connStr)
-	if err != nil {
-		t.Fatalf("migrator: %v", err)
-	}
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate up: %v", err)
-	}
+	helpers.RunMigrations(t, connStr)
 
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {

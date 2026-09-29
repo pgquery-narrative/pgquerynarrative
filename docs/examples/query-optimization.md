@@ -295,4 +295,4 @@ high-cost `Gather Merge` nodes).
 
 ---
 
-**See also:** [Demo dataset](dataset.md) · [REST API examples](../integrations/rest-api.md) · [Partition migration](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/app/db/migrations/000018_partition_demo_sales.up.sql)
+**See also:** [Demo dataset](dataset.md) · [REST API examples](../integrations/rest-api.md) · [Partition migration](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/db/migrations/000018_partition_demo_sales.up.sql)

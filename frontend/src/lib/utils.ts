@@ -37,7 +37,7 @@ const ESTIMATED_COST = /\s*\(estimated cost [\d.]+\)\s*/gi;
 // relation when EXPLAIN reports no schema (search_path resolved the table), so a
 // pattern requiring "schema." would leave those messages un-normalized and every
 // month would land in its own group — the collapse would silently never happen.
-// Kept in step with findingPartitionRelationRe in app/queryrunner/finding_display.go,
+// Kept in step with findingPartitionRelationRe in internal/queryrunner/finding_display.go,
 // which renders the same findings into reports and PDFs.
 const PARTITION_RELATION = /\b(?:\w+\.)?\w+_\d{4}_\d{2}\b/g;
 
@@ -88,7 +88,7 @@ export function collapseFindings(findings: PlanFindingLike[]): {
     if (!partitionRefInMessage(message)) {
       // A repeat that is not partition-shaped still repeated. Report the count
       // rather than dropping it, matching FormatCollapsedFinding in
-      // app/queryrunner/finding_display.go so the UI and the PDF agree.
+      // internal/queryrunner/finding_display.go so the UI and the PDF agree.
       return { category: first.category, message: `${message.trim()} (×${group.length} similar)` };
     }
     const norm = normalizePartitionFindingMessage(message);

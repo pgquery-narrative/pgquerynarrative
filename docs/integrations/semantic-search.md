@@ -23,7 +23,7 @@ This is a **Postgres depth** feature: similarity ranking happens in the database
 ```
 
 1. **Save**: `POST /api/v1/queries/saved` persists SQL in `app.saved_queries`.
-2. **Embed**: `app/service/queries.go` calls `Embedder.Embed(name + description + sql)` and
+2. **Embed**: `internal/service/queries.go` calls `Embedder.Embed(name + description + sql)` and
    `embedding.Store.Upsert` → `app.query_embeddings` (JSONB + optional `vector(768)`).
 3. **Search**: `GET /api/v1/suggestions/similar?text=…` embeds the search text, then
    `Store.FindSimilar` runs pgvector SQL (or in-memory cosine fallback if extension/column missing).
@@ -34,9 +34,9 @@ Reports follow the same pattern via `app.report_embeddings` and `GET /api/v1/rep
 
 | Piece | Location |
 |-------|----------|
-| Embed on save | `app/service/queries.go` (`Save`) |
-| pgvector k-NN | `app/embedding/store.go` (`FindSimilar`, `FindSimilarReports`) |
-| Similar API | `app/suggestions/suggestions.go` (`Similar`) |
+| Embed on save | `internal/service/queries.go` (`Save`) |
+| pgvector k-NN | `internal/embedding/store.go` (`FindSimilar`, `FindSimilarReports`) |
+| Similar API | `internal/suggestions/suggestions.go` (`Similar`) |
 | Tables | `000005_query_embeddings`, `000007_pgvector_embeddings`, `000013_report_embeddings`, `000020_pgvector_extension` |
 | UI | Saved Queries (`/saved`) semantic search; Reports (`/reports`) similar search |
 
@@ -131,4 +131,4 @@ New saves always attempt both JSONB and `vector(768)`; upsert falls back to JSON
 
 - [REST API](rest-api.md): curl for `/suggestions/similar`
 - [Configuration](../reference/configuration.md#embeddings): Embeddings variables
-- [Troubleshooting](../operate/troubleshooting.md)
+- [Troubleshooting](../operations/troubleshooting.md)

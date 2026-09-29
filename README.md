@@ -1,47 +1,8 @@
-<p align="center">
-  <img src="docs/assets/logo.png" alt="PgQueryNarrative" width="220">
-</p>
+# PgQueryNarrative
 
-<h1 align="center">PgQueryNarrative</h1>
+PgQueryNarrative investigates PostgreSQL queries. It reads a plan, proposes a bounded rewrite or index from that query's parse tree when one applies, compares the plans, checks that both queries return the same rows, and writes the evidence into a report. A person reviews the change. The tool does not apply it.
 
-<p align="center">
-PgQueryNarrative investigates PostgreSQL queries, proposes bounded changes,<br>
-compares plans, verifies results, and records the evidence.
-</p>
-
-<p align="center">
-  <a href="https://github.com/pgquery-narrative/pgquerynarrative/actions"><img src="https://img.shields.io/github/actions/workflow/status/pgquery-narrative/pgquerynarrative/ci.yml?branch=main&label=CI" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white" alt="Go 1.26+">
-  <img src="https://img.shields.io/badge/PostgreSQL-16%2B-336791?logo=postgresql&logoColor=white" alt="PostgreSQL 16+">
-  <img src="https://img.shields.io/github/license/pgquery-narrative/pgquerynarrative" alt="License MIT">
-  <a href="https://github.com/pgquery-narrative/pgquerynarrative/pkgs/container/pgquerynarrative"><img src="https://img.shields.io/badge/container-ghcr.io-2496ED" alt="Container"></a>
-  <a href="https://github.com/pgquery-narrative/pgquerynarrative/releases"><img src="https://img.shields.io/github/v/release/pgquery-narrative/pgquerynarrative?label=release" alt="Latest release"></a>
-  <a href=".github/SECURITY.md"><img src="https://img.shields.io/badge/security-policy-blue" alt="Security policy"></a>
-</p>
-
-<p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#installation">Installation</a> ·
-  <a href="#documentation">Documentation</a> ·
-  <a href="#security">Security</a>
-</p>
-
----
-
-A slow query gets a plan, a rewrite or index proposed from its own parse tree when
-one applies, a measured before/after comparison, and a check that both queries
-return the same rows. Nothing is applied automatically.
-
-- Plan analysis: seq scans, cost, partition pruning, optional `EXPLAIN ANALYZE`
-- Rewrite engine: a bounded set of parse-tree patterns (`DATE_TRUNC`, `EXTRACT`,
-  `OR` to `UNION ALL`, `IN` to `EXISTS`, and others), not a general optimizer
-- Index advice: suggested DDL, projected with HypoPG when it is installed
-- Result verification: `VerifiedEqual`, `SampleMatch`, `Different`, `Unverified`,
-  `NotRequested`
-- Regression detection from `pg_stat_statements`, with an alert inbox
-- REST API, MCP server, a PostgreSQL extension, and an embeddable Go client
-
-Query -> plan findings -> candidate -> compare -> verification -> report.
+User SQL runs as a dedicated read-only role, separate from the role that migrates the application's own metadata. Vocabulary: [Concepts](docs/concepts.md). System map: [Architecture](docs/architecture.md).
 
 ## Quick start
 
@@ -53,42 +14,82 @@ cd pgquerynarrative
 make demo
 ```
 
-Open http://localhost:8080. Guided walkthrough: [Quick start](docs/getting-started/quickstart.md).
+Open http://localhost:8080. The walkthrough, including what `make demo` starts, is [Quick start](docs/getting-started/quickstart.md).
 
-## Installation
+To use your own database: [Connect your PostgreSQL](docs/getting-started/connect-postgres.md).
 
-PgQueryNarrative runs from a container, a release binary, or a source build. See
-[Installation](docs/getting-started/installation.md) for prerequisites and every
-path, and [Connect your PostgreSQL](docs/getting-started/connect-postgres.md) to
-point it at your own database instead of the demo schema.
+`pqn` is a separate terminal tool. It talks to PostgreSQL directly and does not need this server. Start here: [pqn quick start](docs/getting-started/pqn-extension.md).
+
+## Install
+
+| Goal | Document |
+|---|---|
+| Container, release archive, or source build | [Installation](docs/getting-started/installation.md) |
+| Production deploy | [Deployment](docs/operations/deployment.md), [Production configuration](docs/operations/production.md) |
+| Go, PostgreSQL, and release platforms | [Supported versions and limits](docs/reference/versions-limits.md) |
+| What a release contains | [Releases and versioning](docs/project/releases.md) |
+
+Source builds need Go 1.26, a C toolchain (`pg_query_go` is cgo), and PostgreSQL 16 or later. Published archives and the container image are on the [releases page](https://github.com/pgquery-narrative/pgquerynarrative/releases). The tag procedure is [RELEASING.md](RELEASING.md).
 
 ## Documentation
 
-- [Getting started](docs/getting-started/quickstart.md)
-- [Query investigation](docs/workflows/investigate.md)
-- [Architecture](docs/architecture.md)
-- [Deployment](docs/operate/deployment.md)
-- [Configuration](docs/reference/configuration.md)
-- [Security](docs/trust-model.md)
-- [API](docs/reference/api.md)
-- [Development](docs/development/setup.md)
+Published site: <https://pgquery-narrative.github.io/pgquerynarrative/>.
 
-Full site: <https://pgquery-narrative.github.io/pgquerynarrative/>. Preview locally
-with `make docs` (http://127.0.0.1:8000).
+Local preview: `make docs`, then http://127.0.0.1:8000. Where the files live: [Repository architecture](docs/development/repository.md).
 
-## Contributing
+### Investigate
 
-See [CONTRIBUTING.md](.github/CONTRIBUTING.md).
+- [Investigate a slow query](docs/workflows/investigate.md)
+- [Plan findings](docs/workflows/plan-findings.md)
+- [Candidates](docs/workflows/candidates.md)
+- [Compare plans](docs/workflows/compare.md)
+- [Result verification](docs/workflows/verify-results.md)
+- [Regressions](docs/workflows/regressions.md)
 
-## Security
+Status names (`VerifiedEqual`, `SampleMatch`, and the rest) are defined in [Evidence and status vocabulary](docs/reference/evidence.md).
 
-- User SQL runs through a dedicated read-only PostgreSQL role, separate from the
-  migration identity
-- Proposed rewrites, indexes, and DDL are never applied automatically
-- Cloud LLM row data is off by default
+### Integrate
 
-See [Trust model](docs/trust-model.md) for the full guarantee list and
-[SECURITY.md](.github/SECURITY.md) to report a vulnerability.
+| Surface | Use it for | Document |
+|---|---|---|
+| REST API | HTTP access to the running server | [REST API](docs/integrations/rest-api.md), [API reference](docs/reference/api.md), [API errors](docs/reference/api-errors.md) |
+| CLI | The same API from a shell (`make cli`) | [CLI](docs/reference/cli.md) |
+| MCP server | The same API over MCP | [MCP server](docs/integrations/mcp.md) |
+| `pqn` | Terminal and SQL against PostgreSQL, no server | [Install](docs/getting-started/pqn-installation.md), [reference](docs/reference/pqn.md) |
+| PostgreSQL extension | SQL that calls the REST API | [PostgreSQL extensions](docs/integrations/postgres-extension.md) |
+| Go library | Embed the client or mount its HTTP routes | [Embedded Go](docs/integrations/embedded-go.md) |
+| LLM | Optional narrative text. The investigation loop runs without one | [LLM providers](docs/integrations/llm.md) |
+
+The Go module path is `github.com/pgquerynarrative/pgquerynarrative`. The GitHub repository is `pgquery-narrative/pgquerynarrative`. The supported library package is `pkg/narrative`. Keep import paths on the module path above. `internal/` is private to this module.
+
+Configuration for every surface: [Configuration](docs/reference/configuration.md).
+
+### Security and operations
+
+Guarantees and how each one is enforced: [Trust model](docs/trust-model.md).
+
+- [Database roles](docs/security/database-roles.md)
+- [Query execution safety](docs/security/query-safety.md)
+- [Authentication](docs/security/authentication.md)
+- [Organizations and tenancy](docs/security/tenancy.md)
+- [Data handling](docs/security/data-handling.md)
+- [Health and monitoring](docs/operations/monitoring.md)
+- [Migrations, upgrades, backup](docs/operations/upgrades.md)
+- [Troubleshooting](docs/operations/troubleshooting.md)
+
+Report a vulnerability in private: [SECURITY.md](.github/SECURITY.md).
+
+## Development
+
+- [Setup](docs/development/setup.md)
+- [Testing](docs/development/testing.md)
+- [Change workflows](docs/development/change-workflows.md)
+
+## Project
+
+- [CONTRIBUTING.md](.github/CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 

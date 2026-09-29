@@ -8,7 +8,7 @@ and CI are the source of truth here: where a `make` target runs more than a sing
 
 | What | Command | Notes |
 |---|---|---|
-| Unit | `make test-unit` | Runs `go test` across a specific package list (`test/unit/...`, `app/auth`, `app/queryrunner`, `app/service`, `app/security`, `app/llm`, `app/audit`, `app/story`, `cmd/server`, `pkg/narrative`, `app/embedding`, `app/config`, `app/metrics`, `web`), **not** a bare `go test ./...`, which would miss in-package tests these packages hold alongside their code |
+| Unit | `make test-unit` | Runs `go test` across a specific package list (`test/unit/...`, `internal/auth`, `internal/queryrunner`, `internal/service`, `internal/security`, `internal/llm`, `internal/audit`, `internal/story`, `cmd/server`, `pkg/narrative`, `internal/embedding`, `internal/config`, `internal/metrics`, `web`), **not** a bare `go test ./...`, which would miss in-package tests these packages hold alongside their code |
 | Integration | `make test-integration` | `test/integration/...`, real Postgres via testcontainers. Needs Docker |
 | E2E | `make test-e2e` | `test/e2e/...`, full HTTP API against real Postgres |
 | Everything above | `make test` | = `test-unit` + `test-integration` |
@@ -25,33 +25,33 @@ and CI are the source of truth here: where a `make` target runs more than a sing
 | `pqn` docs | `make verify-pqn-docs` | Runs the `bash` blocks of the pqn quick start and installation guide as written. Needs Docker |
 | `pqn` pitch | `make verify-pqn-pitch` | The core pitch against independent oracles on a 17-million-row database: every proposal, wrong rewrites, time zones, concurrent writes, limits, access, the ledger. About five minutes and 2 GB of disk. Needs Docker and Python 3 |
 | Docs | `make docs-check` | `mkdocs build --strict` |
-| Docs contract | `make docs-contract-check` | Config/API/error/vocabulary/link checks against the code, see `tools/docscheck` |
+| Docs contract | `make docs-contract-check` | Config/API/error/vocabulary/link checks against the code, see `tools/docs-check` |
 | External links | `make docs-links` | lychee, needs network |
 
 `go test ./test/unit/... ./cmd/server/... ./pkg/narrative/... -v` covers most of
-`test-unit` but omits the in-package suites in `app/auth`, `app/queryrunner`, etc.;
+`test-unit` but omits the in-package suites in `internal/auth`, `internal/queryrunner`, etc.;
 use `make test-unit` for the real coverage set, or run a single package directly:
 
 ```bash
-go test ./test/unit/app/queryrunner/... -v
-go test ./test/unit/app/service/... -run TestBuildPerfSuggestions_LimitApplied -v
+go test ./test/unit/queryrunner/... -v
+go test ./test/unit/service/... -run TestBuildPerfSuggestions_LimitApplied -v
 ```
 
 ## Test layout
 
 | Package | What is tested |
 |---|---|
-| `test/unit/app/queryrunner` | SQL validation (schema, SELECT-only, disallowed keywords) |
-| `test/unit/app/catalog` | Schema/catalog loader |
-| `test/unit/app/charts` | Chart suggestions |
-| `test/unit/app/metrics` | Period comparison, trend, anomalies, data quality |
-| `test/unit/app/llm` | Narrative prompt builder |
-| `test/unit/app/story` | Narrative sanitizer |
-| `test/unit/app/service` | Perf suggestions, metrics-to-API conversion |
-| `test/unit/app/suggestions` | Query suggestions (curated, limit) |
-| `test/unit/app/ratelimit`, `app/errors`, `app/db`, `app/auth`, `app/security`, `pkg/narrative` | As named |
+| `test/unit/queryrunner` | SQL validation (schema, SELECT-only, disallowed keywords) |
+| `test/unit/catalog` | Schema/catalog loader |
+| `test/unit/charts` | Chart suggestions |
+| `test/unit/metrics` | Period comparison, trend, anomalies, data quality |
+| `test/unit/llm` | Narrative prompt builder |
+| `test/unit/story` | Narrative sanitizer |
+| `test/unit/service` | Perf suggestions, metrics-to-API conversion |
+| `test/unit/suggestions` | Query suggestions (curated, limit) |
+| `test/unit/ratelimit`, `internal/errors`, `internal/db`, `internal/auth`, `internal/security`, `pkg/narrative` | As named |
 | `test/unit/web` | Report export |
-| `app/queryrunner` (in-package) | Rewrite rules (`rewriter_test.go`, `rewriter_patterns_test.go`, `rewriter_param_test.go`, `rewriter_antijoin_test.go`) |
+| `internal/queryrunner` (in-package) | Rewrite rules (`rewriter_test.go`, `rewriter_patterns_test.go`, `rewriter_param_test.go`, `rewriter_antijoin_test.go`) |
 | `test/integration` | Query runner and rewrite equivalence against real Postgres, investigation candidates, regression detection/poller/multiconnection, schedule multi-replica, migration roundtrip, audit modes, multi-org security, OIDC staging, managed-key authorization, embeddings, pilot acceptance |
 | `test/e2e` | Full HTTP API: queries, schema, suggestions, reports |
 
@@ -60,13 +60,13 @@ go test ./test/unit/app/service/... -run TestBuildPerfSuggestions_LimitApplied -
 | Guarantee | Where it's tested |
 |---|---|
 | Plain `EXPLAIN` never executes the query | `test/integration/p0_hero_path_test.go`, `rewrite_equivalence_test.go` (`TestInvestigationCreate_IsEstimateOnly`) |
-| `EXPLAIN ANALYZE` executes and requires the flag + permission | `test/unit/app/security`, `test/integration/security_hardening_test.go` |
+| `EXPLAIN ANALYZE` executes and requires the flag + permission | `test/unit/security`, `test/integration/security_hardening_test.go` |
 | Result verification requires the `query` permission | `TestComparePlans_VerifyResultsRequiresQueryPermission` |
 | All five equivalence states behave as documented | `test/integration/rewrite_equivalence_test.go` |
-| Rewrite semantics (fail-closed cases) | `app/queryrunner/rewriter_*_test.go`, `rewrite_equivalence_test.go` |
+| Rewrite semantics (fail-closed cases) | `internal/queryrunner/rewriter_*_test.go`, `rewrite_equivalence_test.go` |
 | Cross-organization isolation | `test/integration/multi_org_security_test.go` |
 | Multi-connection regression detection | `test/integration/regression_multiconnection_test.go` |
-| Fix lifecycle transitions | `test/unit/app/service`, `test/integration/investigation_candidates_test.go` |
+| Fix lifecycle transitions | `test/unit/service`, `test/integration/investigation_candidates_test.go` |
 | Schedule runner is safe across replicas | `test/integration/schedule_multireplica_test.go`, CI job `Schedule multi-replica` |
 | Security & Trust endpoint reflects real per-connection state | `test/integration/security_hardening_test.go` |
 | Read-only DB boundary holds at the privilege level | `tools/db/verify_security.sh`, CI job `DB security verify` |
@@ -92,7 +92,7 @@ Audit log: `psql -d pgquerynarrative -c "SELECT event_type, details, user_id FRO
 **Analytics**: run a time-series query (`tools/db/testing-queries.sql`), confirm
 `metrics.time_series.<measure>` includes a forecast and confidence interval, and
 that a query with ≥ 2 numeric measures and ≥ 10 rows produces `metrics.correlations`.
-Automated coverage: `test/unit/app/metrics`.
+Automated coverage: `test/unit/metrics`.
 
 ## See also
 

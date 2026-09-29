@@ -54,7 +54,7 @@ step 2. Optional API smoke test after the stack is up: `make demo-smoke`.
     ```
 
     App: **http://localhost:8080**. Production-oriented images:
-    [Deployment](../operate/deployment.md).
+    [Deployment](../operations/deployment.md).
 
 === "Local app + existing Postgres"
 
@@ -80,4 +80,4 @@ Leaving the `demo` schema: [Connect your PostgreSQL](connect-postgres.md) and
 | UI map | [UI overview](../workbench/ui-overview.md) |
 | API flow | [REST API](../integrations/rest-api.md) |
 | Optional narratives | [LLM providers](../integrations/llm.md) |
-| Deploy | [Deployment](../operate/deployment.md) |
+| Deploy | [Deployment](../operations/deployment.md) |
