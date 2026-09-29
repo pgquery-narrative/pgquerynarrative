@@ -1,4 +1,9 @@
-<img src="docs/assets/symbol.svg" alt="PgQueryNarrative" width="64">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/symbol-white.svg">
+    <img src="docs/assets/symbol.svg" alt="PgQueryNarrative" width="64">
+  </picture>
+</p>
 
 # PgQueryNarrative
 

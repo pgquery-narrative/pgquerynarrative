@@ -83,7 +83,7 @@ plugins:
 
 theme:
   name: material
-  logo: assets/symbol.svg
+  logo: assets/symbol-white.svg
   favicon: assets/favicon.png
   features:
     - navigation.instant
