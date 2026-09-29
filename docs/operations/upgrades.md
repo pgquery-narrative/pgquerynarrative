@@ -4,10 +4,10 @@
 
 Migrations use [golang-migrate](https://github.com/golang-migrate/migrate) against
 `internal/db/migrations/`. The server enforces a **minimum schema version**
-(`db.RequiredMigrationVersion`, currently **60**) at readiness time, not at process
+(`db.RequiredMigrationVersion`, currently **61**) at readiness time, not at process
 start:
 
-- `GET /ready` returns **503** with `schema migration version N < required 60: run
+- `GET /ready` returns **503** with `schema migration version N < required 61: run
   database migrations` (or `dirty at version N: resolve with migrate force before
   starting`) if the database is behind or the last migration failed partway.
 - The server **process itself still starts and accepts connections**; only
