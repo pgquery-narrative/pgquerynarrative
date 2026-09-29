@@ -1,3 +1,5 @@
+<img src="docs/assets/symbol.svg" alt="PgQueryNarrative" width="64">
+
 # PgQueryNarrative
 
 PgQueryNarrative investigates PostgreSQL queries. It reads a plan, proposes a bounded rewrite or index from that query's parse tree when one applies, compares the plans, checks that both queries return the same rows, and writes the evidence into a report. A person reviews the change. The tool does not apply it.
