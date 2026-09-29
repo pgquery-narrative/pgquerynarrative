@@ -85,7 +85,8 @@ export default function Layout() {
         )}
       >
         <div className="flex items-center gap-3 px-4 py-4 border-b border-border/70">
-          <img src="/logo.png" alt="Logo" className="h-8 w-8 flex-shrink-0" />
+          <img src="/symbol.svg" alt="Logo" className="h-8 w-8 flex-shrink-0 dark:hidden" />
+          <img src="/symbol-dark.svg" alt="Logo" className="h-8 w-8 flex-shrink-0 hidden dark:block" />
           {!collapsed && (
             <div className="min-w-0">
               <p className="text-sm font-semibold tracking-tight truncate">PgQueryNarrative</p>
