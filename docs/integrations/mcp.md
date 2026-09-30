@@ -59,6 +59,28 @@ Claude Desktop config path: macOS
 All accept optional `connection_id` where relevant, see
 [Multiple connections](../workflows/connections.md).
 
+## AI-backed tools
+
+Three of the twelve tools call the LLM the server is configured with:
+`ask_question`, `generate_report`, and `explain_sql`. The rest are
+deterministic: schema lookups, saved queries, and `run_query` never touch
+an LLM.
+
+MCP has no LLM configuration of its own. `ask_question` and `generate_report`
+inherit whichever provider and model the running server has configured
+(`LLM_PROVIDER`, `LLM_MODEL`, …); an MCP client can't select or override
+either. The same is true of the governance controls: budgets, PII redaction,
+and the external-data gate for cloud providers all apply to an MCP-triggered
+call exactly as they would to the equivalent REST call, since it's the same
+server code path underneath. See [LLM providers](llm.md) for what's
+configured and how, and note `generate_report`'s deterministic fallback
+(metrics-only narrative) applies here too when the LLM call fails or its
+output can't be trusted.
+
+If the configured LLM is unreachable or the call fails, `ask_question` and
+`explain_sql` return an LLM error; `generate_report` still succeeds via its
+fallback.
+
 ## What is not supported
 
 There are no MCP tools for investigations, EXPLAIN/EXPLAIN ANALYZE, plan compare,
