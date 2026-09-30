@@ -27,12 +27,17 @@ import (
 )
 
 const (
-	defaultBaseURL      = "http://localhost:8080"
-	apiPrefix           = "/api/v1"
-	httpClientTimeout   = 60 * time.Second
-	defaultRunLimit     = 100
-	defaultListLimit    = 20
-	defaultSuggestLimit = 5
+	defaultBaseURL = "http://localhost:8080"
+	apiPrefix      = "/api/v1"
+	// defaultHTTPClientTimeout must comfortably cover generate_report/ask_question
+	// against a local Ollama model: NL2SQL and narrative generation are each
+	// full LLM calls on CPU, observed taking 30-100s depending on model size
+	// and load. Override with PGQUERYNARRATIVE_TIMEOUT_SECONDS for slower
+	// hardware or larger models.
+	defaultHTTPClientTimeout = 180 * time.Second
+	defaultRunLimit          = 100
+	defaultListLimit         = 20
+	defaultSuggestLimit      = 5
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...". Default "dev".
@@ -44,7 +49,15 @@ func main() {
 		baseURL = defaultBaseURL
 	}
 	apiKey := os.Getenv("PGQUERYNARRATIVE_API_KEY")
-	client, err := newAPIClient(baseURL, apiKey)
+	timeout := defaultHTTPClientTimeout
+	if s := os.Getenv("PGQUERYNARRATIVE_TIMEOUT_SECONDS"); s != "" {
+		if secs, err := strconv.Atoi(s); err == nil && secs > 0 {
+			timeout = time.Duration(secs) * time.Second
+		} else {
+			fmt.Fprintf(os.Stderr, "invalid PGQUERYNARRATIVE_TIMEOUT_SECONDS %q, using default %s\n", s, defaultHTTPClientTimeout)
+		}
+	}
+	client, err := newAPIClient(baseURL, apiKey, timeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid PGQUERYNARRATIVE_URL: %v\n", err)
 		os.Exit(1)
@@ -270,7 +283,7 @@ type apiClient struct {
 	http   *http.Client
 }
 
-func newAPIClient(baseURL, apiKey string) (*apiClient, error) {
+func newAPIClient(baseURL, apiKey string, timeout time.Duration) (*apiClient, error) {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
 		return nil, err
@@ -288,7 +301,7 @@ func newAPIClient(baseURL, apiKey string) (*apiClient, error) {
 	return &apiClient{
 		base:   u,
 		apiKey: apiKey,
-		http:   &http.Client{Timeout: httpClientTimeout},
+		http:   &http.Client{Timeout: timeout},
 	}, nil
 }
 
