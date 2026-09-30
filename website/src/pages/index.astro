@@ -59,6 +59,85 @@ const evidence = [
     detail: "The candidate's result rows were checked against the original: a full checksum match, or an explicit bounded sample.",
   },
 ];
+
+// Real output from one run of this repository's own demo dataset (`make demo`,
+// scenario "slow-dashboard"), captured through the running API while writing
+// this page. Not a benchmark suite average — one before/after run of one
+// query. Every caveat here is the product's own output, not marketing copy
+// written around the numbers.
+const example = {
+  before: `SELECT product_category, SUM(total_amount) AS revenue
+FROM demo.sales
+WHERE DATE_TRUNC('month', date) = DATE '2026-08-01'
+GROUP BY product_category
+ORDER BY revenue DESC`,
+  after: `SELECT product_category, sum(total_amount) AS revenue
+FROM demo.sales
+WHERE date >= '2026-08-01'::date AND date < '2026-09-01'::date
+GROUP BY product_category
+ORDER BY revenue DESC`,
+  finding:
+    "Sequential scan across 50 partitions — DATE_TRUNC('month', date) wraps the partition key, so PostgreSQL can't prune and has to scan every partition.",
+  rationale:
+    "Unwrap DATE_TRUNC('month') equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column.",
+  metrics: [
+    {
+      label: "Execution time (median)",
+      before: "47ms (3 runs, 26ms–60ms)",
+      after: "5ms (3 runs, 5ms–6ms)",
+      change: "−88.2%",
+      caveat: "Median of 3 runs each; observed spread up to 35ms, smaller than the 41ms difference between medians.",
+    },
+    {
+      label: "Planner cost (estimate)",
+      before: "8.5k",
+      after: "841.4",
+      change: "−90.1%",
+      caveat: "Arbitrary units, not a time and not a speed multiple. Execution time above is the actual measurement.",
+    },
+    {
+      label: "Partitions scanned",
+      before: "50",
+      after: "1",
+      change: "50 → 1",
+      caveat: null,
+    },
+  ],
+  verification: "VerifiedEqual — 5 rows, matched by an order-independent checksum over every row.",
+};
+
+const comparison = [
+  {
+    row: "Finds plan problems",
+    pgqn: "Parses EXPLAIN output for seq scans, spills, and defeated pruning",
+    manual: "Whatever the reader notices",
+    ai: "Whatever the prompt surfaces",
+  },
+  {
+    row: "Proposes a fix",
+    pgqn: "From the query's own parse tree, against a fixed, auditable rule set",
+    manual: "The engineer writes it",
+    ai: "A language model generates SQL",
+  },
+  {
+    row: "Before/after comparison",
+    pgqn: "EXPLAIN (ANALYZE) run on both sides, reported as a labeled metric table",
+    manual: "Only if someone remembers to run it",
+    ai: "Rarely run automatically",
+  },
+  {
+    row: "Result verification",
+    pgqn: "States VerifiedEqual, SampleMatch, Different, or Unverified — never silent",
+    manual: "Manual, easy to skip",
+    ai: "Usually not checked at all",
+  },
+  {
+    row: "Applies the change",
+    pgqn: "Never — a person decides",
+    manual: "The engineer applies it",
+    ai: "Varies; some tools do",
+  },
+];
 ---
 
 <BaseLayout title={site.name}>
@@ -140,6 +219,91 @@ const evidence = [
 
   <section class="section section-muted">
     <div class="container">
+      <h2 class="section-title">One real investigation, start to finish</h2>
+      <p class="section-lede">
+        Output from one run of this repository's own demo dataset, captured while writing this page. One
+        before/after run of one query, not a benchmark suite average.
+      </p>
+
+      <div class="example-grid">
+        <div class="example-sql">
+          <p class="example-sql-label">Before</p>
+          <pre><code>{example.before}</code></pre>
+          <p class="example-note">{example.finding}</p>
+        </div>
+        <div class="example-sql">
+          <p class="example-sql-label">After</p>
+          <pre><code>{example.after}</code></pre>
+          <p class="example-note">{example.rationale}</p>
+        </div>
+      </div>
+
+      <table class="metrics-table">
+        <thead>
+          <tr>
+            <th scope="col">Evidence</th>
+            <th scope="col">Before</th>
+            <th scope="col">After</th>
+            <th scope="col">Change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            example.metrics.map((m) => (
+              <tr>
+                <th scope="row">
+                  {m.label}
+                  {m.caveat && <span class="caveat">{m.caveat}</span>}
+                </th>
+                <td>{m.before}</td>
+                <td>{m.after}</td>
+                <td class="change">{m.change}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+
+      <p class="verification-badge">
+        <span class="verification-dot" aria-hidden="true"></span>
+        {example.verification}
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Compared to reading EXPLAIN by hand, or an AI SQL assistant</h2>
+      <p class="section-lede">Capability, not a speed claim. None of this is measured against a competing tool.</p>
+      <div class="compare-table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              <th scope="col">PgQueryNarrative</th>
+              <th scope="col">Manual EXPLAIN reading</th>
+              <th scope="col">Generic AI SQL assistant</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              comparison.map((row) => (
+                <tr>
+                  <th scope="row">{row.row}</th>
+                  <td>{row.pgqn}</td>
+                  <td>{row.manual}</td>
+                  <td>{row.ai}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-muted">
+    <div class="container">
       <h2 class="section-title">The actual application</h2>
       <p class="section-lede">Real screenshots from a running instance, not mockups.</p>
       <div class="shot-grid">
@@ -151,6 +315,41 @@ const evidence = [
           <Image src={investigateShot} alt="Investigate page, showing the regression inbox and sample problem queries" width={1440} />
           <figcaption>Investigate: start from a regression, or a pasted query</figcaption>
         </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Open source</h2>
+      <p class="section-lede">
+        PgQueryNarrative is a public, MIT-licensed project. There's no gated core, no CLA, and no paid tier —
+        what's on GitHub is the whole product.
+      </p>
+      <div class="oss-grid">
+        <div class="oss-box">
+          <p class="oss-label">License</p>
+          <p class="oss-value">MIT</p>
+          <p class="oss-detail">
+            <a href={site.licenseUrl} target="_blank" rel="noopener">Read the license</a>
+          </p>
+        </div>
+        <div class="oss-box">
+          <p class="oss-label">Source</p>
+          <p class="oss-value">Public repository</p>
+          <p class="oss-detail">
+            Every rewrite rule, plan-finding check, and report template referenced on this page is in the
+            repository, not held back.
+          </p>
+        </div>
+        <div class="oss-box">
+          <p class="oss-label">Contributing</p>
+          <p class="oss-value">Issues welcome</p>
+          <p class="oss-detail">
+            <a href={site.issuesUrl} target="_blank" rel="noopener">Open an issue</a> for bugs, gaps, or a rewrite pattern
+            you'd want supported.
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -403,5 +602,153 @@ const evidence = [
   .cta-final .cta-row {
     justify-content: center;
     margin-top: 28px;
+  }
+
+  .example-grid {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+  }
+
+  .example-sql-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .example-sql pre {
+    margin: 0;
+    font-size: 0.8125rem;
+  }
+
+  .example-note {
+    margin-top: 10px;
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+
+  .metrics-table,
+  .compare-table {
+    margin-top: 32px;
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 0.9375rem;
+  }
+
+  .metrics-table th,
+  .metrics-table td,
+  .compare-table th,
+  .compare-table td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  .metrics-table tbody tr:last-child th,
+  .metrics-table tbody tr:last-child td,
+  .compare-table tbody tr:last-child th,
+  .compare-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .metrics-table th[scope="row"],
+  .compare-table th[scope="row"] {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .metrics-table .change {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    color: var(--accent-strong);
+  }
+
+  .caveat {
+    display: block;
+    margin-top: 4px;
+    font-weight: 400;
+    font-size: 0.8125rem;
+    color: var(--text-faint);
+  }
+
+  .verification-badge {
+    margin-top: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .verification-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-strong);
+    flex-shrink: 0;
+  }
+
+  .compare-table-wrap {
+    overflow-x: auto;
+  }
+
+  .compare-table {
+    margin-top: 40px;
+    min-width: 640px;
+  }
+
+  .compare-table td {
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .oss-grid {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+  }
+
+  .oss-box {
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+
+  .oss-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .oss-value {
+    margin-top: 6px;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .oss-detail {
+    margin-top: 10px;
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    line-height: 1.55;
   }
 </style>
