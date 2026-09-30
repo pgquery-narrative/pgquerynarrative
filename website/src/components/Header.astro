@@ -28,7 +28,7 @@ const links = [
                 href={link.href}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noopener" : undefined}
-                aria-current={pathname === link.href ? "page" : undefined}
+                aria-current={pathname === link.href.split("#")[0] ? "page" : undefined}
               >
                 {link.label}
               </a>
