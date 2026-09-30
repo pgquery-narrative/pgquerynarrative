@@ -19,8 +19,8 @@ export const site = {
   quickstartUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/quickstart/",
   installUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/installation/",
 
-  demoVideoId: "AkHfBttjLwI",
-  demoVideoUrl: "https://www.youtube.com/watch?v=AkHfBttjLwI",
+  demoVideoId: "enNpmCH0nvc",
+  demoVideoUrl: "https://www.youtube.com/watch?v=enNpmCH0nvc",
 
   // Update on each tagged release (no build-time GitHub API call, kept simple
   // for a static site). Source of truth: `gh release list`.
