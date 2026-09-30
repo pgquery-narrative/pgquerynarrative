@@ -211,7 +211,7 @@ func main() {
 
 type RunQueryInput struct {
 	SQL          string `json:"sql" jsonschema:"Read-only SQL query e.g. SELECT from demo.sales"`
-	Limit        int    `json:"limit" jsonschema:"Max rows to return"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max rows to return (default 100)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID (default connection when omitted)"`
 }
 
@@ -221,8 +221,8 @@ type GenerateReportInput struct {
 }
 
 type ListSavedQueriesInput struct {
-	Limit        int    `json:"limit" jsonschema:"Max items to return"`
-	Offset       int    `json:"offset" jsonschema:"Offset for pagination"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max items to return (default 20)"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"Offset for pagination (default 0)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID"`
 }
 
@@ -231,8 +231,8 @@ type GetReportInput struct {
 }
 
 type ListReportsInput struct {
-	Limit        int    `json:"limit" jsonschema:"Max items to return"`
-	Offset       int    `json:"offset" jsonschema:"Offset for pagination"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max items to return (default 20)"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"Offset for pagination (default 0)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID"`
 }
 
@@ -241,14 +241,14 @@ type GetSchemaInput struct {
 }
 
 type GetContextInput struct {
-	SavedLimit   int    `json:"saved_limit" jsonschema:"Max saved queries to include (default 20)"`
-	SavedOffset  int    `json:"saved_offset" jsonschema:"Offset for saved queries (default 0)"`
+	SavedLimit   int    `json:"saved_limit,omitempty" jsonschema:"Max saved queries to include (default 20)"`
+	SavedOffset  int    `json:"saved_offset,omitempty" jsonschema:"Offset for saved queries (default 0)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID for schema"`
 }
 
 type SuggestQueriesInput struct {
-	Intent string `json:"intent" jsonschema:"Optional natural-language intent to match saved queries (e.g. sales by region)"`
-	Limit  int    `json:"limit" jsonschema:"Max suggestions to return (default 5)"`
+	Intent string `json:"intent,omitempty" jsonschema:"Optional natural-language intent to match saved queries (e.g. sales by region)"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max suggestions to return (default 5)"`
 }
 
 type ListSchemasInput struct {
