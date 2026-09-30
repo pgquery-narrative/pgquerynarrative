@@ -1,0 +1,131 @@
+---
+// Lightweight YouTube facade: shows the real thumbnail and a play button,
+// only loads the YouTube iframe (and its JS) after a click. No video ID is
+// configured yet (see src/config/site.ts) - until one is, this renders an
+// honest placeholder instead of a broken or fake embed.
+import { site } from "../config/site";
+
+interface Props {
+  videoId?: string;
+  title?: string;
+}
+
+const { videoId = site.demoVideoId, title = "PgQueryNarrative demo" } = Astro.props;
+const hasVideo = Boolean(videoId);
+const thumbnailUrl = hasVideo ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : "";
+---
+
+{
+  hasVideo ? (
+    <div class="demo-video" data-video-id={videoId} data-title={title}>
+      <button type="button" class="demo-video-facade" aria-label={`Play video: ${title}`}>
+        <img src={thumbnailUrl} alt="" loading="lazy" />
+        <span class="play-button" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </span>
+      </button>
+    </div>
+  ) : (
+    <div class="demo-video demo-video-empty" role="img" aria-label="Demo video not yet published">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <path d="M8 5v14l11-7z" opacity="0.5" />
+      </svg>
+      <p>Demo video coming soon</p>
+      <p class="demo-video-sub">Set <code>demoVideoId</code> in <code>src/config/site.ts</code> once it's recorded and uploaded.</p>
+    </div>
+  )
+}
+
+<style>
+  .demo-video {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--code-bg);
+  }
+
+  .demo-video-facade {
+    all: unset;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: relative;
+  }
+
+  .demo-video-facade img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .play-button {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .play-button svg {
+    width: 72px;
+    height: 72px;
+    padding: 20px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.75);
+    color: white;
+  }
+
+  .demo-video-facade:hover .play-button svg,
+  .demo-video-facade:focus-visible .play-button svg {
+    background: var(--accent);
+  }
+
+  .demo-video iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  .demo-video-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-faint);
+    padding: 24px;
+    text-align: center;
+  }
+
+  .demo-video-empty p {
+    margin: 0;
+    font-size: 0.9375rem;
+  }
+
+  .demo-video-sub {
+    font-size: 0.8125rem !important;
+    max-width: 40ch;
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLElement>(".demo-video[data-video-id]").forEach((container) => {
+    const button = container.querySelector(".demo-video-facade");
+    button?.addEventListener("click", () => {
+      const videoId = container.dataset.videoId;
+      const title = container.dataset.title ?? "Demo video";
+      const iframe = document.createElement("iframe");
+      iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+      iframe.title = title;
+      iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+      iframe.allowFullscreen = true;
+      container.replaceChildren(iframe);
+    });
+  });
+</script>

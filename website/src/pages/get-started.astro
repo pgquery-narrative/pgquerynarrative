@@ -1,0 +1,112 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../config/site";
+---
+
+<BaseLayout
+  title="Get started"
+  description="Run PgQueryNarrative locally with Docker in one command."
+>
+  <section class="section">
+    <div class="container narrow">
+      <h1>Get started</h1>
+      <p class="lede">Requires Docker. This is the shortest verified path; the full options are in the docs.</p>
+
+      <h2>Run the guided demo</h2>
+      <pre><code>git clone {site.githubUrl}.git
+cd pgquerynarrative
+make demo</code></pre>
+      <p class="note">Open <code>http://localhost:8080</code>.</p>
+
+      <h2>Use your own database</h2>
+      <p>
+        The guided demo seeds its own data. To point PgQueryNarrative at a database you already have, see
+        <a href={site.docsUrl + "getting-started/connect-postgres/"} target="_blank" rel="noopener">
+          Connect your PostgreSQL
+        </a>.
+      </p>
+
+      <h2>Other install methods</h2>
+      <p>
+        Container image, release archive, or a source build: see
+        <a href={site.installUrl} target="_blank" rel="noopener">Installation</a>.
+      </p>
+
+      <div class="cta-row">
+        <a class="btn btn-primary" href={site.githubUrl} target="_blank" rel="noopener" data-analytics="github_click">
+          View on GitHub
+        </a>
+        <a class="btn btn-ghost" href={site.quickstartUrl} target="_blank" rel="noopener" data-analytics="docs_click">
+          Full quick start docs
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .section {
+    padding-block: 72px;
+  }
+
+  .narrow {
+    max-width: 640px;
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+  }
+
+  .lede {
+    margin-top: 16px;
+    font-size: 1.0625rem;
+    color: var(--text-dim);
+  }
+
+  h2 {
+    font-size: 1.1875rem;
+    margin-top: 44px;
+    margin-bottom: 14px;
+  }
+
+  p {
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+
+  .note {
+    margin-top: 14px;
+  }
+
+  pre {
+    margin: 0;
+  }
+
+  .cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 44px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--text);
+    color: var(--bg);
+  }
+
+  .btn-ghost {
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+</style>

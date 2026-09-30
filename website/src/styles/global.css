@@ -1,0 +1,266 @@
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #e2e6ec;
+  --text: #0f172a;
+  --text-dim: #5b6472;
+  --text-faint: #8a93a2;
+  --accent: #0891b2;
+  --accent-strong: #0e7490;
+  --accent-soft: #e6f4f7;
+  --code-bg: #f1f5f9;
+  --code-border: #e2e6ec;
+  --link: #0e7490;
+  --focus-ring: #0891b2;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #05060b;
+    --surface: #0a0f1f;
+    --surface-raised: #0d1428;
+    --border: #1e2740;
+    --text: #e2e8f0;
+    --text-dim: #9fabc0;
+    --text-faint: #6e7a8e;
+    --accent: #22d3ee;
+    --accent-strong: #67e8f9;
+    --accent-soft: #123644;
+    --code-bg: #0d1420;
+    --code-border: #1e2740;
+    --link: #67e8f9;
+    --focus-ring: #22d3ee;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #05060b;
+  --surface: #0a0f1f;
+  --surface-raised: #0d1428;
+  --border: #1e2740;
+  --text: #e2e8f0;
+  --text-dim: #9fabc0;
+  --text-faint: #6e7a8e;
+  --accent: #22d3ee;
+  --accent-strong: #67e8f9;
+  --accent-soft: #123644;
+  --code-bg: #0d1420;
+  --code-border: #1e2740;
+  --link: #67e8f9;
+  --focus-ring: #22d3ee;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  /* System font stack, deliberately: no self-hosted font file exists in
+     this environment to ship honestly, and a stack this good (San
+     Francisco / Segoe UI / Roboto depending on platform) costs zero
+     extra requests, which matters more for a marketing site than
+     matching Inter's exact letterforms. The logo/wordmark stays Inter,
+     outlined to paths, so brand identity isn't affected. */
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    system-ui,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body[data-no-transition] * {
+  transition: none !important;
+}
+
+body,
+.theme-transition {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--link);
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+code,
+pre,
+kbd {
+  font-family: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+}
+
+code:not(pre code) {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.9em;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9375rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+  text-align: left;
+}
+
+th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+blockquote {
+  margin: 0;
+  padding-left: 16px;
+  border-left: 3px solid var(--accent);
+  color: var(--text-dim);
+}
+
+.container {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+.prose {
+  max-width: 74ch;
+}
+
+.prose h2 {
+  font-size: 1.5rem;
+  margin-top: 2.5em;
+  margin-bottom: 0.6em;
+}
+
+.prose h3 {
+  font-size: 1.2rem;
+  margin-top: 2em;
+  margin-bottom: 0.5em;
+}
+
+.prose p,
+.prose ul,
+.prose ol,
+.prose pre,
+.prose table,
+.prose blockquote {
+  margin-top: 1.1em;
+  margin-bottom: 1.1em;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  z-index: 100;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

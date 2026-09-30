@@ -1,0 +1,75 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Page not found" noindex>
+  <section class="section">
+    <div class="container narrow">
+      <p class="code">404</p>
+      <h1>Page not found</h1>
+      <p class="lede">The page you're looking for doesn't exist, or moved.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="/">Home</a>
+        <a class="btn btn-ghost" href="/blog">Blog</a>
+        <a class="btn btn-ghost" href="/get-started">Get started</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .section {
+    padding-block: 96px;
+    text-align: center;
+  }
+
+  .narrow {
+    max-width: 480px;
+    margin-inline: auto;
+  }
+
+  .code {
+    font-family: "JetBrains Mono", monospace;
+    color: var(--accent);
+    font-size: 0.9375rem;
+    letter-spacing: 0.05em;
+  }
+
+  h1 {
+    margin-top: 8px;
+    font-size: 1.75rem;
+  }
+
+  .lede {
+    margin-top: 12px;
+    color: var(--text-dim);
+  }
+
+  .cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 32px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--text);
+    color: var(--bg);
+  }
+
+  .btn-ghost {
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+</style>
