@@ -395,7 +395,7 @@ const aiUses = [
 
   <section class="section">
     <div class="container">
-      <h2 class="section-title">Inside the app</h2>
+      <h2 class="section-title">UI Preview</h2>
       <div class="shot-grid">
         <figure>
           <Image src={homeShot} alt="PgQueryNarrative home screen, showing workload evidence pulled from a connected PostgreSQL database" width={1440} />
@@ -406,6 +406,36 @@ const aiUses = [
           <figcaption>Investigate: start from a regression, or a pasted query</figcaption>
         </figure>
       </div>
+    </div>
+  </section>
+
+  <section class="section section-muted">
+    <div class="container">
+      <h2 class="section-title">Prefer a terminal? Try pqn</h2>
+      <p class="section-lede">
+        A smaller, separate tool that does the same core job as the app above, but lives inside
+        PostgreSQL itself instead of a browser: no server to run, just a command line against
+        your database.
+      </p>
+      <div class="card-grid">
+        <div class="card">
+          <h3>Finds the slow ones</h3>
+          <p>Reads pg_stat_statements and ranks what's actually costing time on your database right now.</p>
+        </div>
+        <div class="card">
+          <h3>Proposes a fix</h3>
+          <p>The same rewrite engine as the app above: a fix proposed from the statement's own execution plan, not a guess.</p>
+        </div>
+        <div class="card">
+          <h3>Proves it, or says it can't</h3>
+          <p>Runs both versions for real and reports one of four verdicts: Proven, NotFaster, Different, or Unverified. Never a guess dressed up as a result.</p>
+        </div>
+      </div>
+      <p class="ai-scope-note">
+        Read-only by design: it only runs SELECT statements, and only against columns a database
+        admin has explicitly exposed to that person. See it end to end in the{" "}
+        <a href={site.docsUrl + "getting-started/pqn-extension/"} target="_blank" rel="noopener">ten-minute pqn quick start</a>.
+      </p>
     </div>
   </section>
 
