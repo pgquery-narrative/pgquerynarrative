@@ -12,6 +12,31 @@ Entries: edit `changelog/unreleased.md` then run `make changelog`.
 Nothing yet. Add entries here as work lands; `make changelog` folds them into `CHANGELOG.md`.
 When cutting a release, move them into `changelog/released/<version>.md` and run it again.
 
+## [3.0.1] - 2026-09-30
+
+MCP tool arguments that already have a server-side default are optional again.
+
+### Fixed
+
+- **MCP tools rejected calls that omitted an already-defaulted argument.**
+  `run_query`'s `limit`, `list_saved_queries`'/`list_reports`'s `limit`/`offset`,
+  `get_context`'s `saved_limit`/`saved_offset`, and `suggest_queries`'s
+  `intent`/`limit` were marked required by the MCP schema even though the
+  handlers already default each of them. The MCP Go SDK's struct-reflection
+  schema builder treats a field as required unless its `json` tag carries
+  `omitempty`; these fields were missing it. A client omitting `limit` on
+  `run_query`, for example, got a schema validation error
+  (`missing properties: ["limit"]`) instead of the documented default. Fixed
+  by adding `omitempty` to the affected fields; nothing else about their
+  behavior changes.
+
+### Added
+
+- **`PGQUERYNARRATIVE_TIMEOUT_SECONDS`** configures the MCP server's per-call
+  timeout (default 180s, raised from the prior implicit default to
+  accommodate AI-backed tools like report generation and question answering
+  against a local LLM). Set it higher if those specific calls are timing out.
+
 ## [3.0.0] - 2026-09-29
 
 Trust boundaries. A deep review of the repository found that four of the
@@ -746,9 +771,10 @@ Additional analytics: further cohort metrics, configurable windows, and seasonal
 - Secret scanning, dependency vulnerability scanning, CodeQL, gosec
 - Optional API authentication (Bearer token), per-IP rate limiting, and audit logging to `app.audit_logs`
 
-[Unreleased]: https://github.com/pgquery-narrative/pgquerynarrative/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/pgquery-narrative/pgquerynarrative/compare/v3.0.1...HEAD
 [1.0.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v1.0.0
 [2.0.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.0.0
 [2.1.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.1.0
 [2.2.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.2.0
 [3.0.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v3.0.0
+[3.0.1]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v3.0.1
