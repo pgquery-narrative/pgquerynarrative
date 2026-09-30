@@ -4,7 +4,7 @@ description: "A DATE_TRUNC predicate that forces a 49-partition scan, the sargab
 date: 2026-10-01
 author: "PgQueryNarrative"
 tags: ["postgresql", "query-performance", "partitioning"]
-draft: true
+draft: false
 ---
 
 A dashboard widget asks a common question: revenue by product category, this month. The SQL a backend developer writes for that is unremarkable:

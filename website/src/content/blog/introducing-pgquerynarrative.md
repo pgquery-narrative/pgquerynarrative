@@ -4,7 +4,7 @@ description: "A PostgreSQL query investigation tool that proposes bounded change
 date: 2026-09-30
 author: "PgQueryNarrative"
 tags: ["announcement", "postgresql"]
-draft: true
+draft: false
 ---
 
 Most slow-query workflows stop at the execution plan: read `EXPLAIN`, form a theory, try a rewrite, judge by feel whether it's faster. PgQueryNarrative closes that loop with evidence instead of a feeling, and the evidence it insists on is result verification, not just a faster-looking plan.
