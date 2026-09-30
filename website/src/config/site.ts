@@ -18,12 +18,8 @@ export const site = {
   quickstartUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/quickstart/",
   installUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/installation/",
 
-  // TODO(demo-video): no video has been uploaded yet. This is a placeholder
-  // YouTube ID, not a real one. Replace with the real video ID once the
-  // demo is recorded and uploaded, and DemoVideo.astro will pick it up
-  // everywhere it's used without further code changes.
-  demoVideoId: "",
-  demoVideoUrl: "",
+  demoVideoId: "AkHfBttjLwI",
+  demoVideoUrl: "https://www.youtube.com/watch?v=AkHfBttjLwI",
 
   twitterHandle: "",
 } as const;
