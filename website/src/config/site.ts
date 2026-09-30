@@ -21,6 +21,11 @@ export const site = {
   demoVideoId: "AkHfBttjLwI",
   demoVideoUrl: "https://www.youtube.com/watch?v=AkHfBttjLwI",
 
+  // Update on each tagged release (no build-time GitHub API call, kept simple
+  // for a static site). Source of truth: `gh release list`.
+  latestRelease: "v3.0.0",
+  latestReleaseUrl: "https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v3.0.0",
+
   twitterHandle: "",
 } as const;
 
