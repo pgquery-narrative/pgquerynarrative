@@ -27,12 +27,17 @@ import (
 )
 
 const (
-	defaultBaseURL      = "http://localhost:8080"
-	apiPrefix           = "/api/v1"
-	httpClientTimeout   = 60 * time.Second
-	defaultRunLimit     = 100
-	defaultListLimit    = 20
-	defaultSuggestLimit = 5
+	defaultBaseURL = "http://localhost:8080"
+	apiPrefix      = "/api/v1"
+	// defaultHTTPClientTimeout must comfortably cover generate_report/ask_question
+	// against a local Ollama model: NL2SQL and narrative generation are each
+	// full LLM calls on CPU, observed taking 30-100s depending on model size
+	// and load. Override with PGQUERYNARRATIVE_TIMEOUT_SECONDS for slower
+	// hardware or larger models.
+	defaultHTTPClientTimeout = 180 * time.Second
+	defaultRunLimit          = 100
+	defaultListLimit         = 20
+	defaultSuggestLimit      = 5
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...". Default "dev".
@@ -44,7 +49,15 @@ func main() {
 		baseURL = defaultBaseURL
 	}
 	apiKey := os.Getenv("PGQUERYNARRATIVE_API_KEY")
-	client, err := newAPIClient(baseURL, apiKey)
+	timeout := defaultHTTPClientTimeout
+	if s := os.Getenv("PGQUERYNARRATIVE_TIMEOUT_SECONDS"); s != "" {
+		if secs, err := strconv.Atoi(s); err == nil && secs > 0 {
+			timeout = time.Duration(secs) * time.Second
+		} else {
+			fmt.Fprintf(os.Stderr, "invalid PGQUERYNARRATIVE_TIMEOUT_SECONDS %q, using default %s\n", s, defaultHTTPClientTimeout)
+		}
+	}
+	client, err := newAPIClient(baseURL, apiKey, timeout)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "invalid PGQUERYNARRATIVE_URL: %v\n", err)
 		os.Exit(1)
@@ -211,7 +224,7 @@ func main() {
 
 type RunQueryInput struct {
 	SQL          string `json:"sql" jsonschema:"Read-only SQL query e.g. SELECT from demo.sales"`
-	Limit        int    `json:"limit" jsonschema:"Max rows to return"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max rows to return (default 100)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID (default connection when omitted)"`
 }
 
@@ -221,8 +234,8 @@ type GenerateReportInput struct {
 }
 
 type ListSavedQueriesInput struct {
-	Limit        int    `json:"limit" jsonschema:"Max items to return"`
-	Offset       int    `json:"offset" jsonschema:"Offset for pagination"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max items to return (default 20)"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"Offset for pagination (default 0)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID"`
 }
 
@@ -231,8 +244,8 @@ type GetReportInput struct {
 }
 
 type ListReportsInput struct {
-	Limit        int    `json:"limit" jsonschema:"Max items to return"`
-	Offset       int    `json:"offset" jsonschema:"Offset for pagination"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"Max items to return (default 20)"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"Offset for pagination (default 0)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID"`
 }
 
@@ -241,14 +254,14 @@ type GetSchemaInput struct {
 }
 
 type GetContextInput struct {
-	SavedLimit   int    `json:"saved_limit" jsonschema:"Max saved queries to include (default 20)"`
-	SavedOffset  int    `json:"saved_offset" jsonschema:"Offset for saved queries (default 0)"`
+	SavedLimit   int    `json:"saved_limit,omitempty" jsonschema:"Max saved queries to include (default 20)"`
+	SavedOffset  int    `json:"saved_offset,omitempty" jsonschema:"Offset for saved queries (default 0)"`
 	ConnectionID string `json:"connection_id,omitempty" jsonschema:"Optional configured connection ID for schema"`
 }
 
 type SuggestQueriesInput struct {
-	Intent string `json:"intent" jsonschema:"Optional natural-language intent to match saved queries (e.g. sales by region)"`
-	Limit  int    `json:"limit" jsonschema:"Max suggestions to return (default 5)"`
+	Intent string `json:"intent,omitempty" jsonschema:"Optional natural-language intent to match saved queries (e.g. sales by region)"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"Max suggestions to return (default 5)"`
 }
 
 type ListSchemasInput struct {
@@ -270,7 +283,7 @@ type apiClient struct {
 	http   *http.Client
 }
 
-func newAPIClient(baseURL, apiKey string) (*apiClient, error) {
+func newAPIClient(baseURL, apiKey string, timeout time.Duration) (*apiClient, error) {
 	u, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil {
 		return nil, err
@@ -288,7 +301,7 @@ func newAPIClient(baseURL, apiKey string) (*apiClient, error) {
 	return &apiClient{
 		base:   u,
 		apiKey: apiKey,
-		http:   &http.Client{Timeout: httpClientTimeout},
+		http:   &http.Client{Timeout: timeout},
 	}, nil
 }
 

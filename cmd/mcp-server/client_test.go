@@ -5,7 +5,7 @@ import (
 )
 
 func TestResolveAPIURLLocksHost(t *testing.T) {
-	c, err := newAPIClient("http://localhost:8080", "")
+	c, err := newAPIClient("http://localhost:8080", "", defaultHTTPClientTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestResolveAPIURLLocksHost(t *testing.T) {
 }
 
 func TestNewAPIClientRejectsBadScheme(t *testing.T) {
-	if _, err := newAPIClient("ftp://localhost:8080", ""); err == nil {
+	if _, err := newAPIClient("ftp://localhost:8080", "", defaultHTTPClientTimeout); err == nil {
 		t.Fatal("expected scheme rejection")
 	}
 }
