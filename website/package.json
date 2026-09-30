@@ -23,5 +23,8 @@
     "eslint": "^9.38.0",
     "eslint-plugin-astro": "^1.4.1",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "path-to-regexp": "6.3.0"
   }
 }
