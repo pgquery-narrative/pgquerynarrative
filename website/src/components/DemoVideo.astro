@@ -125,6 +125,15 @@ const thumbnailUrl = hasVideo ? `https://i.ytimg.com/vi/${videoId}/maxresdefault
       iframe.title = title;
       iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
       iframe.allowFullscreen = true;
+      // Set explicitly rather than relying on the scoped `.demo-video iframe`
+      // rule below: Astro's CSS scoping tags elements at render time via a
+      // data-astro-cid-* attribute, which an element created by this script
+      // after the page has already rendered never receives, so that rule
+      // silently never matches it and it falls back to the browser's default
+      // ~300x150 iframe size.
+      iframe.style.width = "100%";
+      iframe.style.height = "100%";
+      iframe.style.border = "0";
       container.replaceChildren(iframe);
     });
   });

@@ -4,33 +4,19 @@ description: "A PostgreSQL query investigation tool that proposes bounded change
 date: 2026-09-30
 author: "PgQueryNarrative"
 tags: ["announcement", "postgresql"]
-draft: true
+draft: false
 ---
 
-Most slow-query workflows end at the execution plan. You read the `EXPLAIN` output, you form a theory, you try a rewrite, and you eyeball whether it feels faster. PgQueryNarrative tries to close that loop with evidence instead of a feeling.
+Most slow-query workflows stop at the execution plan: read `EXPLAIN`, form a theory, try a rewrite, judge by feel whether it's faster. PgQueryNarrative closes that loop with evidence instead of a feeling, and the evidence it insists on is result verification, not just a faster-looking plan.
 
-## What it does
+Point it at a slow query and it runs `EXPLAIN`, optionally `ANALYZE`, and flags concrete plan problems: sequential scans, spills to disk, partition pruning defeated by a wrapped column. When a rewrite or an index applies, it proposes one, drawn from the query's own parse tree rather than a model guessing at SQL; most queries only get plan findings, no candidate at all. The candidate is compared against the original with a real `EXPLAIN (ANALYZE)` run on both sides, so the comparison is measured rather than estimated. Asked to, it runs both queries again and checks whether they return the same rows, and reports which of three things happened: a full checksum match, a bounded sample match, or that the check couldn't run. It always says which, rather than staying quiet about it. All of it lands in a report: the plan findings, the candidate, the comparison, the verification result. A person reads that and decides what to apply. PgQueryNarrative doesn't run `CREATE INDEX` or alter a query in production on its own.
 
-Given a slow query, PgQueryNarrative:
+## Estimate, measurement, verification
 
-1. Runs `EXPLAIN`, optionally with `ANALYZE`, and flags concrete plan problems: sequential scans, spills to disk, partition pruning defeated by a wrapped column.
-2. Proposes a bounded rewrite or index from the query's own parse tree, when one applies. Not every query gets a candidate.
-3. Compares the original and candidate query with a real `EXPLAIN (ANALYZE)` run on both sides, not planner cost alone.
-4. Checks whether the candidate returns the same rows as the original, and says so explicitly: a full checksum match, a bounded sample match, or that verification did not happen.
-5. Writes the plan findings, the candidate, the comparison, and the verification result into a report.
+A planner cost estimate is a guess about work, expressed in arbitrary units (useful for comparing plans against each other, useless as a time). A rewrite existing says nothing about whether it's actually faster; only a measured `EXPLAIN (ANALYZE)` run establishes that. And a faster measured run still says nothing about whether it returns the same rows. That's a separate, explicit check, and skipping it means the report just says verification wasn't requested. Most tuning advice collapses all of this into one number, which is exactly why it's hard to trust. PgQueryNarrative keeps the states apart and names them: proposed, estimated, measured, verified.
 
-A person decides whether to apply the change. PgQueryNarrative does not run `CREATE INDEX` or alter a query in production itself.
+## What the rule set covers today
 
-## Why the distinction between estimate and measurement matters
+The rule set covers a handful of shapes so far: DATE_TRUNC and EXTRACT wraps, a couple of cast forms, COALESCE, OR and IN restructurings. Each one got added because a real query hit that pattern, and it only shipped once it was provable against the parser's own AST, not because it looked like it would generalize.
 
-A planner cost estimate is not a time. A candidate rewrite existing is not evidence it is faster. A faster measured run is not evidence it returns the same rows. Collapsing these into one number is exactly what makes a lot of tuning advice hard to trust, so PgQueryNarrative keeps them as separate, named states instead: proposed, estimated, measured, verified.
-
-## What is out of scope, on purpose
-
-This is not a general query optimizer, and it is not an autonomous one. The rewrite rules are a fixed, auditable set (unwrapping a wrapped date column, for example), not a language model guessing at SQL. Index suggestions are surfaced for review, not applied. Result verification can be skipped, but the report says so rather than staying silent about it.
-
-## Where this is going
-
-The rewrite rule set is still small, and it is meant to grow the same way it started: one rule at a time, each one provable against the query's own syntax, not against a hope that it generalizes.
-
-The project is open source and the code is the actual specification. If the wording above ever drifts from what the tool does, the code is right and this post is wrong.
+This post will go stale before the code does. For what's actually covered right now, check the repo instead of this page.

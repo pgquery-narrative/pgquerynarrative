@@ -30,6 +30,27 @@ make demo</code></pre>
         <a href={site.installUrl} target="_blank" rel="noopener">Installation</a>.
       </p>
 
+      <h2>Try pqn instead — no server needed</h2>
+      <p>
+        <code>pqn</code> is a separate terminal tool and PostgreSQL extension. It talks to your database directly and
+        doesn't need this server running; see{" "}
+        <a href={site.docsUrl + "getting-started/pqn-extension/"} target="_blank" rel="noopener">pqn quick start</a>.
+      </p>
+      <div class="pqn-card">
+        <svg class="pqn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M21 7.5 12 3 3 7.5l9 4.5 9-4.5Z" stroke-linejoin="round" />
+          <path d="M3 7.5v9l9 4.5 9-4.5v-9" stroke-linejoin="round" />
+          <path d="M12 12v9" />
+        </svg>
+        <div class="pqn-card-body">
+          <p class="pqn-card-title">pqn <span class="pqn-version">{site.latestRelease}</span></p>
+          <p class="pqn-card-detail"><code>bin/pqn</code> in the release archive, or install it as an extension with <code>CREATE EXTENSION pqn</code>.</p>
+        </div>
+        <a class="btn btn-ghost pqn-download" href={site.latestReleaseUrl} target="_blank" rel="noopener" data-analytics="pqn_release_click">
+          Download {site.latestRelease}
+        </a>
+      </div>
+
       <div class="cta-row">
         <a class="btn btn-primary" href={site.githubUrl} target="_blank" rel="noopener" data-analytics="github_click">
           View on GitHub
@@ -106,5 +127,55 @@ make demo</code></pre>
   .btn-ghost {
     border: 1px solid var(--border);
     color: var(--text);
+  }
+
+  .pqn-card {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 20px 22px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  .pqn-icon {
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    color: var(--accent-strong);
+  }
+
+  .pqn-card-body {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .pqn-card-title {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.9375rem;
+  }
+
+  .pqn-version {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 6px;
+  }
+
+  .pqn-card-detail {
+    margin-top: 4px;
+    font-size: 0.875rem;
+  }
+
+  .pqn-download {
+    flex-shrink: 0;
   }
 </style>

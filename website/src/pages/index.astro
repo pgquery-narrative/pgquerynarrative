@@ -1,5 +1,6 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import Logo from "../components/Logo.astro";
 import { site } from "../config/site";
 import { Image } from "astro:assets";
 import homeShot from "../../public/screenshots/home.png";
@@ -59,45 +60,241 @@ const evidence = [
     detail: "The candidate's result rows were checked against the original: a full checksum match, or an explicit bounded sample.",
   },
 ];
+
+// Real output from one run of this repository's own demo dataset (`make demo`,
+// scenario "slow-dashboard"), captured through the running API while writing
+// this page. Not a benchmark suite average — one before/after run of one
+// query. Every caveat here is the product's own output, not marketing copy
+// written around the numbers.
+const example = {
+  before: `SELECT product_category, SUM(total_amount) AS revenue
+FROM demo.sales
+WHERE DATE_TRUNC('month', date) = DATE '2026-08-01'
+GROUP BY product_category
+ORDER BY revenue DESC`,
+  after: `SELECT product_category, sum(total_amount) AS revenue
+FROM demo.sales
+WHERE date >= '2026-08-01'::date AND date < '2026-09-01'::date
+GROUP BY product_category
+ORDER BY revenue DESC`,
+  finding:
+    "Sequential scan across 50 partitions — DATE_TRUNC('month', date) wraps the partition key, so PostgreSQL can't prune and has to scan every partition.",
+  rationale:
+    "Unwrap DATE_TRUNC('month') equality to a sargable range predicate so PostgreSQL can prune partitions and use indexes on the column.",
+  metrics: [
+    {
+      label: "Execution time (median)",
+      before: "47ms (3 runs, 26ms–60ms)",
+      after: "5ms (3 runs, 5ms–6ms)",
+      change: "−88.2%",
+      caveat: "Median of 3 runs each; observed spread up to 35ms, smaller than the 41ms difference between medians.",
+    },
+    {
+      label: "Planner cost (estimate)",
+      before: "8.5k",
+      after: "841.4",
+      change: "−90.1%",
+      caveat: "Arbitrary units, not a time and not a speed multiple. Execution time above is the actual measurement.",
+    },
+    {
+      label: "Partitions scanned",
+      before: "50",
+      after: "1",
+      change: "50 → 1",
+      caveat: null,
+    },
+  ],
+  verification: "VerifiedEqual — 5 rows, matched by an order-independent checksum over every row.",
+};
+
+const comparison = [
+  {
+    row: "Finds plan problems",
+    pgqn: "Parses EXPLAIN output for seq scans, spills, and defeated pruning",
+    manual: "Whatever the reader notices",
+    ai: "Whatever the prompt surfaces",
+  },
+  {
+    row: "Proposes a fix",
+    pgqn: "From the query's own parse tree, against a fixed, auditable rule set",
+    manual: "The engineer writes it",
+    ai: "A language model generates SQL",
+  },
+  {
+    row: "Before/after comparison",
+    pgqn: "EXPLAIN (ANALYZE) run on both sides, reported as a labeled metric table",
+    manual: "Only if someone remembers to run it",
+    ai: "Rarely run automatically",
+  },
+  {
+    row: "Result verification",
+    pgqn: "States VerifiedEqual, SampleMatch, Different, or Unverified — never silent",
+    manual: "Manual, easy to skip",
+    ai: "Usually not checked at all",
+  },
+  {
+    row: "Applies the change",
+    pgqn: "Never — a person decides",
+    manual: "The engineer applies it",
+    ai: "Varies; some tools do",
+  },
+];
+
+// Verified against internal/service/ask.go, internal/story/generator.go,
+// and docs/integrations/llm.md. An LLM is optional and scoped to exactly
+// these three features; everything in "What it actually does" above runs
+// without one.
+const aiUses = [
+  {
+    title: "Ask",
+    body: "Natural language to SQL to a narrative report, in one step. Requires an LLM.",
+  },
+  {
+    title: "Report narrative",
+    body: "The prose in a Workbench report (headline, takeaways, drivers). Falls back to a deterministic, metrics-only narrative if the call fails or its output can't be trusted.",
+  },
+  {
+    title: "Plain-English SQL explanation",
+    body: "One or two sentences describing what a query does. Requires an LLM.",
+  },
+];
 ---
 
 <BaseLayout title={site.name}>
   <section class="hero">
     <div class="container hero-inner">
-      <p class="eyebrow">Open source &middot; PostgreSQL</p>
-      <h1>Investigate slow PostgreSQL queries with evidence</h1>
-      <p class="lede">
-        Understand the execution plan, evaluate a candidate rewrite or index, compare before and after, and
-        verify what actually changed before anyone touches production SQL.
-      </p>
-      <div class="cta-row">
-        <a class="btn btn-primary" href={site.githubUrl} target="_blank" rel="noopener" data-analytics="github_click">
-          View on GitHub
-        </a>
-        <a class="btn btn-secondary" href="/demo" data-analytics="watch_demo">Watch demo</a>
-        <a class="btn btn-ghost" href={site.docsUrl} target="_blank" rel="noopener" data-analytics="docs_click">
-          Read docs
-        </a>
+      <div class="hero-text">
+        <p class="eyebrow">Open source &middot; PostgreSQL</p>
+        <h1>Investigate slow PostgreSQL queries with evidence</h1>
+        <p class="lede">
+          Understand the execution plan, evaluate a candidate rewrite or index, compare before and after, and
+          verify what actually changed before anyone touches production SQL.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href={site.githubUrl} target="_blank" rel="noopener" data-analytics="github_click">
+            View on GitHub
+          </a>
+          <a class="btn btn-secondary" href="/demo" data-analytics="watch_demo">Watch demo</a>
+          <a class="btn btn-ghost" href={site.docsUrl} target="_blank" rel="noopener" data-analytics="docs_click">
+            Read docs
+          </a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-mark" aria-hidden="true">
+          <div class="hero-mark-icon">
+            <Logo variant="mark" height={280} />
+          </div>
+          <svg class="hero-elephant-icon" viewBox="0 0 120 120" width="92" height="92">
+            <ellipse class="elephant-body" cx="25" cy="55" rx="22" ry="28" />
+            <ellipse class="elephant-body" cx="95" cy="55" rx="22" ry="28" />
+            <circle class="elephant-body" cx="60" cy="50" r="34" />
+            <path class="elephant-body" d="M52,78 C50,90 52,102 60,110 C68,102 70,90 68,78 Z" />
+            <circle class="elephant-eye" cx="48" cy="45" r="4" />
+            <circle class="elephant-eye" cx="72" cy="45" r="4" />
+          </svg>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="product" class="section">
     <div class="container">
-      <h2 class="section-title">How an investigation runs</h2>
-      <ol class="workflow">
-        {
-          workflow.map((step, i) => (
-            <li>
-              <span class="workflow-index">{i + 1}</span>
-              <div>
-                <p class="workflow-label">{step.label}</p>
-                <p class="workflow-detail">{step.detail}</p>
-              </div>
-            </li>
-          ))
-        }
-      </ol>
+      <h2 class="section-title">Walk through a real investigation</h2>
+      <p class="section-lede">
+        Six steps, shown with output from one actual run against this repository's own demo dataset
+        (<code>make demo</code>, scenario "slow-dashboard"), captured through the running API while writing this
+        page. One before/after run of one query, not a benchmark suite average.
+      </p>
+
+      <div class="stepper">
+        <input type="radio" name="stepper" id="tab-1" class="stepper-radio" checked />
+        <input type="radio" name="stepper" id="tab-2" class="stepper-radio" />
+        <input type="radio" name="stepper" id="tab-3" class="stepper-radio" />
+        <input type="radio" name="stepper" id="tab-4" class="stepper-radio" />
+        <input type="radio" name="stepper" id="tab-5" class="stepper-radio" />
+        <input type="radio" name="stepper" id="tab-6" class="stepper-radio" />
+
+        <div class="stepper-tabs">
+          {
+            workflow.map((step, i) => (
+              <label for={`tab-${i + 1}`} class="stepper-tab">
+                <span class="stepper-index">{i + 1}</span>
+                {step.label}
+              </label>
+            ))
+          }
+        </div>
+
+        <div class="stepper-panel" id="panel-1">
+          <p class="stepper-detail">{workflow[0].detail}</p>
+          <div class="example-sql">
+            <p class="example-sql-label">Query as received</p>
+            <pre><code>{example.before}</code></pre>
+          </div>
+        </div>
+
+        <div class="stepper-panel" id="panel-2">
+          <p class="stepper-detail">{workflow[1].detail}</p>
+          <p class="finding-callout">{example.finding}</p>
+        </div>
+
+        <div class="stepper-panel" id="panel-3">
+          <p class="stepper-detail">{workflow[2].detail}</p>
+          <div class="example-sql">
+            <p class="example-sql-label">Proposed rewrite</p>
+            <pre><code>{example.after}</code></pre>
+            <p class="example-note">{example.rationale}</p>
+          </div>
+        </div>
+
+        <div class="stepper-panel" id="panel-4">
+          <p class="stepper-detail">{workflow[3].detail}</p>
+          <table class="metrics-table">
+            <thead>
+              <tr>
+                <th scope="col">Evidence</th>
+                <th scope="col">Before</th>
+                <th scope="col">After</th>
+                <th scope="col">Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                example.metrics.map((m) => (
+                  <tr>
+                    <th scope="row">
+                      {m.label}
+                      {m.caveat && <span class="caveat">{m.caveat}</span>}
+                    </th>
+                    <td>{m.before}</td>
+                    <td>{m.after}</td>
+                    <td class="change">{m.change}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="stepper-panel" id="panel-5">
+          <p class="stepper-detail">{workflow[4].detail}</p>
+          <p class="verification-badge">
+            <span class="verification-dot" aria-hidden="true"></span>
+            {example.verification}
+          </p>
+        </div>
+
+        <div class="stepper-panel" id="panel-6">
+          <p class="stepper-detail">{workflow[5].detail}</p>
+          <p class="report-note">
+            A deterministic template built from the plan findings, the candidate SQL, the before/after metrics,
+            and the equivalence status above. No LLM writes it, and nothing here is applied to a database
+            automatically; the report is what a reviewer reads before deciding to run the DDL or ship the
+            rewritten query.
+          </p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -138,7 +335,65 @@ const evidence = [
     </div>
   </section>
 
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Compared to reading EXPLAIN by hand, or an AI SQL assistant</h2>
+      <p class="section-lede">Capability, not a speed claim. None of this is measured against a competing tool.</p>
+      <div class="compare-table-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th scope="col"></th>
+              <th scope="col">PgQueryNarrative</th>
+              <th scope="col">Manual EXPLAIN reading</th>
+              <th scope="col">Generic AI SQL assistant</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              comparison.map((row) => (
+                <tr>
+                  <th scope="row">{row.row}</th>
+                  <td>{row.pgqn}</td>
+                  <td>{row.manual}</td>
+                  <td>{row.ai}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="section section-muted">
+    <div class="container">
+      <h2 class="section-title">Where AI fits</h2>
+      <p class="section-lede">
+        An LLM is optional and scoped to three features. It plays no part in plan findings, the rewrite
+        engine, index candidates, plan comparison, or result verification, which are the "compared to"
+        table above and the worked example further up this page.
+      </p>
+      <div class="card-grid">
+        {
+          aiUses.map((u) => (
+            <div class="card">
+              <h3>{u.title}</h3>
+              <p>{u.body}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="ai-scope-note">
+        Bring your own provider: local Ollama by default, or an opt-in cloud provider (Claude, OpenAI,
+        Gemini, Groq) gated behind an explicit data-egress flag, with PII redaction and a token/cost
+        budget. See <a href={site.docsUrl + "integrations/llm/"} target="_blank" rel="noopener">LLM providers</a> in
+        the docs.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
     <div class="container">
       <h2 class="section-title">The actual application</h2>
       <p class="section-lede">Real screenshots from a running instance, not mockups.</p>
@@ -151,6 +406,41 @@ const evidence = [
           <Image src={investigateShot} alt="Investigate page, showing the regression inbox and sample problem queries" width={1440} />
           <figcaption>Investigate: start from a regression, or a pasted query</figcaption>
         </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-muted">
+    <div class="container">
+      <h2 class="section-title">Open source</h2>
+      <p class="section-lede">
+        PgQueryNarrative is a public, MIT-licensed project. There's no gated core, no CLA, and no paid tier —
+        what's on GitHub is the whole product.
+      </p>
+      <div class="oss-grid">
+        <div class="oss-box">
+          <p class="oss-label">License</p>
+          <p class="oss-value">MIT</p>
+          <p class="oss-detail">
+            <a href={site.licenseUrl} target="_blank" rel="noopener">Read the license</a>
+          </p>
+        </div>
+        <div class="oss-box">
+          <p class="oss-label">Source</p>
+          <p class="oss-value">Public repository</p>
+          <p class="oss-detail">
+            Every rewrite rule, plan-finding check, and report template referenced on this page is in the
+            repository, not held back.
+          </p>
+        </div>
+        <div class="oss-box">
+          <p class="oss-label">Contributing</p>
+          <p class="oss-value">Issues welcome</p>
+          <p class="oss-detail">
+            <a href={site.issuesUrl} target="_blank" rel="noopener">Open an issue</a> for bugs, gaps, or a rewrite pattern
+            you'd want supported.
+          </p>
+        </div>
       </div>
     </div>
   </section>
@@ -175,7 +465,66 @@ const evidence = [
   }
 
   .hero-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 48px;
+  }
+
+  .hero-text {
     max-width: 760px;
+  }
+
+  .hero-visual {
+    display: none;
+    flex-shrink: 0;
+  }
+
+  @media (min-width: 960px) {
+    .hero-visual {
+      display: block;
+    }
+  }
+
+  .hero-mark {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .hero-mark-icon {
+    filter: drop-shadow(0 0 60px color-mix(in srgb, var(--accent) 25%, transparent));
+  }
+
+  .hero-mark:hover .hero-mark-icon {
+    animation: hero-mark-spin 1.4s linear infinite;
+  }
+
+  @keyframes hero-mark-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Sits inside the ring's own hollow center (inner radius ~62px at this 280px
+     render height, so a 104px icon fits with room to spare) as a fixed,
+     mirror-symmetric emblem — not a child of .hero-mark-icon, so it does not
+     spin with the ring on hover. */
+  .hero-elephant-icon {
+    position: absolute;
+    top: calc(50% + 10px);
+    left: calc(50% + 8px);
+    margin: -46px;
+  }
+
+  .elephant-body {
+    fill: var(--text);
+  }
+
+  .elephant-eye {
+    fill: var(--accent-strong);
   }
 
   .eyebrow {
@@ -403,5 +752,287 @@ const evidence = [
   .cta-final .cta-row {
     justify-content: center;
     margin-top: 28px;
+  }
+
+  .example-grid {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+  }
+
+  .stepper {
+    margin-top: 40px;
+    position: relative;
+  }
+
+  .stepper-radio {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
+  }
+
+  .stepper-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+
+  .stepper-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px 9px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      color 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .stepper-tab:hover {
+    border-color: var(--text-faint);
+    color: var(--text);
+  }
+
+  .stepper-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-dim);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .stepper-panel {
+    display: none;
+    padding: 28px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+
+  .stepper-panel .example-sql pre {
+    margin: 0;
+  }
+
+  .stepper-detail {
+    color: var(--text-faint);
+    font-size: 0.8125rem;
+    font-family: "JetBrains Mono", monospace;
+    margin-bottom: 20px;
+  }
+
+  .finding-callout {
+    padding: 16px 18px;
+    border-radius: 10px;
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    color: var(--text);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+
+  .report-note {
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    max-width: 68ch;
+  }
+
+  #tab-1:checked ~ .stepper-tabs label[for="tab-1"],
+  #tab-2:checked ~ .stepper-tabs label[for="tab-2"],
+  #tab-3:checked ~ .stepper-tabs label[for="tab-3"],
+  #tab-4:checked ~ .stepper-tabs label[for="tab-4"],
+  #tab-5:checked ~ .stepper-tabs label[for="tab-5"],
+  #tab-6:checked ~ .stepper-tabs label[for="tab-6"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-strong);
+  }
+
+  #tab-1:focus-visible ~ .stepper-tabs label[for="tab-1"],
+  #tab-2:focus-visible ~ .stepper-tabs label[for="tab-2"],
+  #tab-3:focus-visible ~ .stepper-tabs label[for="tab-3"],
+  #tab-4:focus-visible ~ .stepper-tabs label[for="tab-4"],
+  #tab-5:focus-visible ~ .stepper-tabs label[for="tab-5"],
+  #tab-6:focus-visible ~ .stepper-tabs label[for="tab-6"] {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  #tab-1:checked ~ #panel-1,
+  #tab-2:checked ~ #panel-2,
+  #tab-3:checked ~ #panel-3,
+  #tab-4:checked ~ #panel-4,
+  #tab-5:checked ~ #panel-5,
+  #tab-6:checked ~ #panel-6 {
+    display: block;
+  }
+
+  .example-sql-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+  }
+
+  .example-sql pre {
+    margin: 0;
+    font-size: 0.8125rem;
+  }
+
+  .example-note {
+    margin-top: 10px;
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+
+  .metrics-table,
+  .compare-table {
+    margin-top: 32px;
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 0.9375rem;
+  }
+
+  .metrics-table th,
+  .metrics-table td,
+  .compare-table th,
+  .compare-table td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  .metrics-table tbody tr:last-child th,
+  .metrics-table tbody tr:last-child td,
+  .compare-table tbody tr:last-child th,
+  .compare-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .metrics-table th[scope="row"],
+  .compare-table th[scope="row"] {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .metrics-table .change {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    color: var(--accent-strong);
+  }
+
+  .caveat {
+    display: block;
+    margin-top: 4px;
+    font-weight: 400;
+    font-size: 0.8125rem;
+    color: var(--text-faint);
+  }
+
+  .verification-badge {
+    margin-top: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .verification-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-strong);
+    flex-shrink: 0;
+  }
+
+  .compare-table-wrap {
+    overflow-x: auto;
+  }
+
+  .compare-table {
+    margin-top: 40px;
+    min-width: 640px;
+  }
+
+  .compare-table td {
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .oss-grid {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+  }
+
+  .oss-box {
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+
+  .oss-label {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .oss-value {
+    margin-top: 6px;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .oss-detail {
+    margin-top: 10px;
+    color: var(--text-dim);
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+
+  .ai-scope-note {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    max-width: 68ch;
   }
 </style>
