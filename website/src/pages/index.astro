@@ -138,6 +138,25 @@ const comparison = [
     ai: "Varies; some tools do",
   },
 ];
+
+// Verified against internal/service/ask.go, internal/story/generator.go,
+// and docs/integrations/llm.md. An LLM is optional and scoped to exactly
+// these three features; everything in "What it actually does" above runs
+// without one.
+const aiUses = [
+  {
+    title: "Ask",
+    body: "Natural language to SQL to a narrative report, in one step. Requires an LLM.",
+  },
+  {
+    title: "Report narrative",
+    body: "The prose in a Workbench report (headline, takeaways, drivers). Falls back to a deterministic, metrics-only narrative if the call fails or its output can't be trusted.",
+  },
+  {
+    title: "Plain-English SQL explanation",
+    body: "One or two sentences describing what a query does. Requires an LLM.",
+  },
+];
 ---
 
 <BaseLayout title={site.name}>
@@ -304,6 +323,33 @@ const comparison = [
 
   <section class="section section-muted">
     <div class="container">
+      <h2 class="section-title">Where AI fits</h2>
+      <p class="section-lede">
+        An LLM is optional and scoped to three features. It plays no part in plan findings, the rewrite
+        engine, index candidates, plan comparison, or result verification, which are the "compared to"
+        table above and the worked example further up this page.
+      </p>
+      <div class="card-grid">
+        {
+          aiUses.map((u) => (
+            <div class="card">
+              <h3>{u.title}</h3>
+              <p>{u.body}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="ai-scope-note">
+        Bring your own provider: local Ollama by default, or an opt-in cloud provider (Claude, OpenAI,
+        Gemini, Groq) gated behind an explicit data-egress flag, with PII redaction and a token/cost
+        budget. See <a href={site.docsUrl + "integrations/llm/"} target="_blank" rel="noopener">LLM providers</a> in
+        the docs.
+      </p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
       <h2 class="section-title">The actual application</h2>
       <p class="section-lede">Real screenshots from a running instance, not mockups.</p>
       <div class="shot-grid">
@@ -319,7 +365,7 @@ const comparison = [
     </div>
   </section>
 
-  <section class="section">
+  <section class="section section-muted">
     <div class="container">
       <h2 class="section-title">Open source</h2>
       <p class="section-lede">
@@ -750,5 +796,15 @@ const comparison = [
     color: var(--text-dim);
     font-size: 0.875rem;
     line-height: 1.55;
+  }
+
+  .ai-scope-note {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    max-width: 68ch;
   }
 </style>
