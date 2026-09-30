@@ -13,6 +13,7 @@ export const site = {
   githubUrl: "https://github.com/pgquery-narrative/pgquerynarrative",
   issuesUrl: "https://github.com/pgquery-narrative/pgquerynarrative/issues",
   releasesUrl: "https://github.com/pgquery-narrative/pgquerynarrative/releases",
+  packagesUrl: "https://github.com/pgquery-narrative?tab=packages",
   licenseUrl: "https://github.com/pgquery-narrative/pgquerynarrative/blob/main/LICENSE",
   docsUrl: "https://pgquery-narrative.github.io/pgquerynarrative/",
   quickstartUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/quickstart/",

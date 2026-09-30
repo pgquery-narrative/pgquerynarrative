@@ -47,6 +47,35 @@ const isCurrent = (href: string) => {
     </nav>
 
     <div class="header-actions">
+      <a
+        href={site.latestReleaseUrl}
+        class="icon-btn"
+        target="_blank"
+        rel="noopener"
+        aria-label={`Latest stable release (${site.latestRelease})`}
+        title={`Latest stable release (${site.latestRelease})`}
+        data-analytics="header_release_click"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.59 13.41 13.41 20.59a2 2 0 0 1-2.82 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82Z"></path>
+          <circle cx="7" cy="7" r="1" fill="currentColor" stroke="none"></circle>
+        </svg>
+      </a>
+      <a
+        href={site.packagesUrl}
+        class="icon-btn"
+        target="_blank"
+        rel="noopener"
+        aria-label="Container packages"
+        title="Container packages"
+        data-analytics="header_packages_click"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 7.5 12 3 3 7.5l9 4.5 9-4.5Z"></path>
+          <path d="M3 7.5v9l9 4.5 9-4.5v-9"></path>
+          <path d="M12 12v9"></path>
+        </svg>
+      </a>
       <a href={site.githubUrl} class="github-link" target="_blank" rel="noopener" data-analytics="github_click">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path
@@ -77,6 +106,12 @@ const isCurrent = (href: string) => {
       }
       <li>
         <a href={site.githubUrl} target="_blank" rel="noopener">GitHub</a>
+      </li>
+      <li>
+        <a href={site.latestReleaseUrl} target="_blank" rel="noopener">Latest release ({site.latestRelease})</a>
+      </li>
+      <li>
+        <a href={site.packagesUrl} target="_blank" rel="noopener">Packages</a>
       </li>
     </ul>
   </nav>
@@ -153,6 +188,24 @@ const isCurrent = (href: string) => {
     border-color: var(--text-faint);
   }
 
+  .icon-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+
+  .icon-btn:hover {
+    color: var(--text);
+    border-color: var(--text-faint);
+  }
+
   .menu-toggle {
     display: inline-flex;
     align-items: center;
@@ -193,7 +246,8 @@ const isCurrent = (href: string) => {
       display: block;
     }
 
-    .github-link {
+    .github-link,
+    .icon-btn {
       display: inline-flex;
     }
 
