@@ -1,0 +1,407 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../config/site";
+import { Image } from "astro:assets";
+import homeShot from "../../public/screenshots/home.png";
+import investigateShot from "../../public/screenshots/investigate.png";
+
+const workflow = [
+  { label: "Slow query", detail: "Pasted directly, or pulled from pg_stat_statements" },
+  { label: "Execution-plan findings", detail: "EXPLAIN evidence: seq scans, spills, partition pruning defeated" },
+  { label: "Candidate rewrite or index", detail: "Proposed from the query's own parse tree, not a language model" },
+  { label: "Before / after comparison", detail: "Both plans run through EXPLAIN (ANALYZE), measured, not estimated" },
+  { label: "Result verification", detail: "Checked that both queries return the same rows" },
+  { label: "Engineering report", detail: "A deterministic template citing the evidence above" },
+];
+
+const capabilities = [
+  {
+    title: "Execution-plan findings",
+    body: "Reads EXPLAIN output and flags concrete plan problems: sequential scans, spills to disk, partition pruning defeated by a wrapped column.",
+  },
+  {
+    title: "Rewrite candidates",
+    body: "Proposes bounded SQL rewrites, such as unwrapping DATE_TRUNC on a filtered column, from the query's own AST when one applies. Not every query gets one.",
+  },
+  {
+    title: "Index candidates",
+    body: "Surfaces index DDL for review. Cost is projected through HypoPG when installed, otherwise labeled as an unverified heuristic. Nothing is applied automatically.",
+  },
+  {
+    title: "Measured comparison",
+    body: "Runs EXPLAIN (ANALYZE) on both the original and candidate query and reports real execution time and plan shape, not planner cost alone.",
+  },
+  {
+    title: "Result verification",
+    body: "Confirms the candidate returns the same rows as the original, by full checksum or a bounded sample, and says which one happened.",
+  },
+  {
+    title: "Investigation report",
+    body: "Packages the findings, candidate, comparison, and verification status into a report generated from a deterministic template.",
+  },
+];
+
+const evidence = [
+  {
+    term: "Proposed",
+    detail: "A candidate rewrite or index exists. It has not been run.",
+  },
+  {
+    term: "Estimated",
+    detail: "A planner cost, or a HypoPG projection when the extension is installed. A cost, not a time.",
+  },
+  {
+    term: "Measured",
+    detail: "EXPLAIN (ANALYZE) actually ran both queries. Real execution time and plan shape.",
+  },
+  {
+    term: "Verified",
+    detail: "The candidate's result rows were checked against the original: a full checksum match, or an explicit bounded sample.",
+  },
+];
+---
+
+<BaseLayout title={site.name}>
+  <section class="hero">
+    <div class="container hero-inner">
+      <p class="eyebrow">Open source &middot; PostgreSQL</p>
+      <h1>Investigate slow PostgreSQL queries with evidence</h1>
+      <p class="lede">
+        Understand the execution plan, evaluate a candidate rewrite or index, compare before and after, and
+        verify what actually changed before anyone touches production SQL.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href={site.githubUrl} target="_blank" rel="noopener" data-analytics="github_click">
+          View on GitHub
+        </a>
+        <a class="btn btn-secondary" href="/demo" data-analytics="watch_demo">Watch demo</a>
+        <a class="btn btn-ghost" href={site.docsUrl} target="_blank" rel="noopener" data-analytics="docs_click">
+          Read docs
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="product" class="section">
+    <div class="container">
+      <h2 class="section-title">How an investigation runs</h2>
+      <ol class="workflow">
+        {
+          workflow.map((step, i) => (
+            <li>
+              <span class="workflow-index">{i + 1}</span>
+              <div>
+                <p class="workflow-label">{step.label}</p>
+                <p class="workflow-detail">{step.detail}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <section class="section section-muted">
+    <div class="container">
+      <h2 class="section-title">What it actually does</h2>
+      <div class="card-grid">
+        {
+          capabilities.map((cap) => (
+            <div class="card">
+              <h3>{cap.title}</h3>
+              <p>{cap.body}</p>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <h2 class="section-title">Estimate is not measurement. Proposal is not verified improvement.</h2>
+      <p class="section-lede">
+        A candidate rewrite existing is not evidence that it is faster, and a faster measured run is not evidence
+        that it returns the same rows. PgQueryNarrative keeps these four states distinct instead of collapsing
+        them into a single confidence score.
+      </p>
+      <dl class="evidence-grid">
+        {
+          evidence.map((e) => (
+            <div class="evidence-item">
+              <dt>{e.term}</dt>
+              <dd>{e.detail}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </div>
+  </section>
+
+  <section class="section section-muted">
+    <div class="container">
+      <h2 class="section-title">The actual application</h2>
+      <p class="section-lede">Real screenshots from a running instance, not mockups.</p>
+      <div class="shot-grid">
+        <figure>
+          <Image src={homeShot} alt="PgQueryNarrative home screen, showing workload evidence pulled from a connected PostgreSQL database" width={1440} />
+          <figcaption>Home: workload evidence from a connected database</figcaption>
+        </figure>
+        <figure>
+          <Image src={investigateShot} alt="Investigate page, showing the regression inbox and sample problem queries" width={1440} />
+          <figcaption>Investigate: start from a regression, or a pasted query</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section cta-section">
+    <div class="container cta-final">
+      <h2>Read the code, not the pitch</h2>
+      <p>The investigation loop, the rewrite rules, and the verification logic are all in the repository.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href={site.githubUrl} target="_blank" rel="noopener" data-analytics="github_click">
+          View on GitHub
+        </a>
+        <a class="btn btn-secondary" href="/get-started" data-analytics="get_started_click">Get started</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .hero {
+    padding-block: 88px 64px;
+  }
+
+  .hero-inner {
+    max-width: 760px;
+  }
+
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.8125rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 4.5vw, 3.25rem);
+    line-height: 1.12;
+  }
+
+  .lede {
+    margin-top: 22px;
+    font-size: 1.1875rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+    max-width: 62ch;
+  }
+
+  .cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary {
+    background: var(--text);
+    color: var(--bg);
+  }
+
+  .btn-primary:hover {
+    opacity: 0.88;
+  }
+
+  .btn-secondary {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .btn-ghost {
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .btn-ghost:hover {
+    border-color: var(--text-faint);
+  }
+
+  .section {
+    padding-block: 72px;
+  }
+
+  .section-muted {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-size: 1.75rem;
+  }
+
+  .section-lede {
+    margin-top: 14px;
+    color: var(--text-dim);
+    max-width: 68ch;
+    font-size: 1.0625rem;
+  }
+
+  .workflow {
+    list-style: none;
+    margin: 40px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-width: 640px;
+  }
+
+  .workflow li {
+    display: flex;
+    gap: 20px;
+    padding-block: 18px;
+    border-top: 1px solid var(--border);
+  }
+
+  .workflow li:last-child {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .workflow-index {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+
+  .workflow-label {
+    font-weight: 600;
+  }
+
+  .workflow-detail {
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    margin-top: 3px;
+  }
+
+  .card-grid {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+
+  .card {
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+  }
+
+  .card h3 {
+    font-size: 1.0625rem;
+    margin-bottom: 8px;
+  }
+
+  .card p {
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+  }
+
+  .evidence-grid {
+    margin: 40px 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .evidence-item {
+    background: var(--surface);
+    padding: 22px;
+  }
+
+  .evidence-item dt {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    color: var(--accent-strong);
+    font-size: 0.9375rem;
+  }
+
+  .evidence-item dd {
+    margin: 8px 0 0;
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+    line-height: 1.55;
+  }
+
+  .shot-grid {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+  }
+
+  .shot-grid figure {
+    margin: 0;
+  }
+
+  .shot-grid img {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  .shot-grid figcaption {
+    margin-top: 10px;
+    font-size: 0.875rem;
+    color: var(--text-faint);
+  }
+
+  .cta-section {
+    text-align: center;
+  }
+
+  .cta-final {
+    max-width: 560px;
+    margin-inline: auto;
+  }
+
+  .cta-final p {
+    margin-top: 12px;
+    color: var(--text-dim);
+  }
+
+  .cta-final .cta-row {
+    justify-content: center;
+    margin-top: 28px;
+  }
+</style>
