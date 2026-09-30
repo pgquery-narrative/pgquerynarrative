@@ -11,6 +11,14 @@ const links = [
   { href: "/blog", label: "Blog" },
   { href: site.docsUrl, label: "Docs", external: true },
 ];
+
+const normalize = (p: string) => (p.length > 1 ? p.replace(/\/$/, "") : p);
+const isCurrent = (href: string) => {
+  if (href.startsWith("http")) return false;
+  const base = normalize(href.split("#")[0]);
+  const path = normalize(pathname);
+  return base === "/" ? path === "/" : path === base || path.startsWith(base + "/");
+};
 ---
 
 <header class="site-header">
@@ -28,7 +36,7 @@ const links = [
                 href={link.href}
                 target={link.external ? "_blank" : undefined}
                 rel={link.external ? "noopener" : undefined}
-                aria-current={pathname === link.href.split("#")[0] ? "page" : undefined}
+                aria-current={isCurrent(link.href) ? "page" : undefined}
               >
                 {link.label}
               </a>
@@ -200,19 +208,32 @@ const links = [
 </style>
 
 <script>
-  const toggle = document.querySelector(".menu-toggle");
+  const toggle = document.querySelector<HTMLButtonElement>(".menu-toggle");
   const nav = document.getElementById("mobile-nav");
+
+  const closeMenu = () => {
+    if (!toggle || nav?.hasAttribute("hidden")) return;
+    nav?.setAttribute("hidden", "");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", "Open menu");
+  };
 
   toggle?.addEventListener("click", () => {
     const isOpen = nav?.hasAttribute("hidden") === false;
     if (isOpen) {
-      nav?.setAttribute("hidden", "");
-      toggle.setAttribute("aria-expanded", "false");
-      toggle.setAttribute("aria-label", "Open menu");
+      closeMenu();
     } else {
       nav?.removeAttribute("hidden");
       toggle.setAttribute("aria-expanded", "true");
       toggle.setAttribute("aria-label", "Close menu");
     }
+  });
+
+  nav?.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement)?.closest("a")) closeMenu();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMenu();
   });
 </script>
