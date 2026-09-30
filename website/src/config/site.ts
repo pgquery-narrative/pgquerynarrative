@@ -13,14 +13,31 @@ export const site = {
   githubUrl: "https://github.com/pgquery-narrative/pgquerynarrative",
   issuesUrl: "https://github.com/pgquery-narrative/pgquerynarrative/issues",
   releasesUrl: "https://github.com/pgquery-narrative/pgquerynarrative/releases",
+  discussionsUrl: "https://github.com/pgquery-narrative/pgquerynarrative/discussions",
   packagesUrl: "https://github.com/pgquery-narrative?tab=packages",
   licenseUrl: "https://github.com/pgquery-narrative/pgquerynarrative/blob/main/LICENSE",
   docsUrl: "https://pgquery-narrative.github.io/pgquerynarrative/",
   quickstartUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/quickstart/",
   installUrl: "https://pgquery-narrative.github.io/pgquerynarrative/getting-started/installation/",
 
+  authorLinkedinUrl: "https://www.linkedin.com/in/damil-shahzad-465321264/",
+
   demoVideoId: "enNpmCH0nvc",
   demoVideoUrl: "https://www.youtube.com/watch?v=enNpmCH0nvc",
+
+  // Two videos shown side by side on /demo.
+  demoVideos: [
+    {
+      videoId: "enNpmCH0nvc",
+      title: "Investigating a Slow Query in PgQueryNarrative",
+      caption: "The web app: paste a slow query, get a verified rewrite.",
+    },
+    {
+      videoId: "OAK-6vpyOPE",
+      title: "PostgreSQL 18 + pgvector + pqn: Semantic Search and a Proven Query Fix",
+      caption: "pqn from the terminal: semantic search, then a proven query fix.",
+    },
+  ],
 
   // Update on each tagged release (no build-time GitHub API call, kept simple
   // for a static site). Source of truth: `gh release list`.

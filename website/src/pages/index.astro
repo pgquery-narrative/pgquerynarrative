@@ -417,18 +417,50 @@ const aiUses = [
         PostgreSQL itself instead of a browser: no server to run, just a command line against
         your database.
       </p>
-      <div class="card-grid">
-        <div class="card">
-          <h3>Finds the slow ones</h3>
-          <p>Reads pg_stat_statements and ranks what's actually costing time on your database right now.</p>
-        </div>
-        <div class="card">
-          <h3>Proposes a fix</h3>
-          <p>The same rewrite engine as the app above: a fix proposed from the statement's own execution plan, not a guess.</p>
-        </div>
-        <div class="card">
-          <h3>Proves it, or says it can't</h3>
-          <p>Runs both versions for real and reports one of four verdicts: Proven, NotFaster, Different, or Unverified. Never a guess dressed up as a result.</p>
+      <div class="pqn-layout">
+        <ol class="workflow pqn-steps">
+          <li>
+            <span class="workflow-index">1</span>
+            <div>
+              <p class="workflow-label">Finds the slow ones</p>
+              <p class="workflow-detail">Reads pg_stat_statements and ranks what's actually costing time on your database right now.</p>
+            </div>
+          </li>
+          <li>
+            <span class="workflow-index">2</span>
+            <div>
+              <p class="workflow-label">Proposes a fix</p>
+              <p class="workflow-detail">The same rewrite engine as the app above: a fix proposed from the statement's own execution plan, not a guess.</p>
+            </div>
+          </li>
+          <li>
+            <span class="workflow-index">3</span>
+            <div>
+              <p class="workflow-label">Proves it, or says it can't</p>
+              <p class="workflow-detail">Runs both versions for real and reports one of four verdicts: Proven, NotFaster, Different, or Unverified. Never a guess dressed up as a result.</p>
+            </div>
+          </li>
+        </ol>
+        <div class="term-window" aria-hidden="true">
+          <div class="term-bar">
+            <span class="term-dot term-dot-red"></span>
+            <span class="term-dot term-dot-yellow"></span>
+            <span class="term-dot term-dot-green"></span>
+            <span class="term-bar-title">psql</span>
+          </div>
+          <pre class="term-body" id="pqn-term-body"><code id="pqn-term-code"><span class="term-prompt">$ pqn top -n 1</span>
+queryid               calls  mean     statement
+-7409685708004192759  3      36.6 ms  WHERE date_trunc('day', created_at)…
+
+<span class="term-prompt">$ pqn investigate --queryid -7409685708004192759 --bind day --bind 2025-03-01</span>
+Proposed from the plan
+  1. function_wrap (confidence high)
+     unwrap DATE_TRUNC('day') equality to a sargable range
+
+Proof (same rows, then faster)
+  function_wrap  1096 rows  101.6 ms -&gt; 1.2 ms  87.0x  <span class="term-verdict">Proven</span>
+
+Evidence is in the ledger: pqn evidence 1</code><span class="term-cursor" id="pqn-term-cursor" aria-hidden="true"></span></pre>
         </div>
       </div>
       <p class="ai-scope-note">
@@ -691,6 +723,105 @@ const aiUses = [
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 20px;
+  }
+
+  .pqn-layout {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: minmax(260px, 360px) 1fr;
+    gap: 36px;
+    align-items: start;
+  }
+
+  .pqn-steps {
+    max-width: none;
+  }
+
+  .term-window {
+    border: 1px solid var(--code-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--code-bg);
+  }
+
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--code-border);
+  }
+
+  .term-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .term-dot-red {
+    background: #f26d6d;
+  }
+
+  .term-dot-yellow {
+    background: #f0b429;
+  }
+
+  .term-dot-green {
+    background: #3fb950;
+  }
+
+  .term-bar-title {
+    margin-left: 6px;
+    font-family: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.75rem;
+    color: var(--text-faint);
+  }
+
+  .term-body {
+    margin: 0;
+    padding: 20px 22px;
+    font-family: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    color: var(--text-dim);
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .term-prompt {
+    color: var(--accent-strong);
+  }
+
+  .term-verdict {
+    color: var(--accent-strong);
+    font-weight: 700;
+  }
+
+  .term-cursor {
+    display: inline-block;
+    width: 0.5em;
+    height: 1em;
+    margin-left: 1px;
+    background: var(--accent-strong);
+    vertical-align: text-bottom;
+    animation: term-blink 1s steps(1) infinite;
+  }
+
+  @keyframes term-blink {
+    0%,
+    50% {
+      opacity: 1;
+    }
+    50.01%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .pqn-layout {
+      grid-template-columns: 1fr;
+    }
   }
 
   .card {
@@ -1065,3 +1196,108 @@ const aiUses = [
     max-width: 68ch;
   }
 </style>
+
+<script>
+  // Replays the pqn terminal panel as a typing animation once it scrolls into
+  // view. The static markup in the .term-body <code> is the source of truth
+  // (no-JS visitors and crawlers see the final output immediately); this just
+  // clears it and retypes the same content to look like a live session.
+  function initPqnTerminal() {
+    const codeEl = document.getElementById("pqn-term-code");
+    const cursor = document.getElementById("pqn-term-cursor");
+    if (!(codeEl instanceof HTMLElement) || !cursor) return;
+    const code = codeEl;
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, reduceMotion ? 0 : ms));
+
+    const steps: Array<
+      | { cmd: string }
+      | { lines: string[] }
+      | { verdict: { prefix: string; word: string } }
+    > = [
+      { cmd: "$ pqn top -n 1" },
+      {
+        lines: [
+          "queryid               calls  mean     statement",
+          "-7409685708004192759  3      36.6 ms  WHERE date_trunc('day', created_at)…",
+          "",
+        ],
+      },
+      { cmd: "$ pqn investigate --queryid -7409685708004192759 --bind day --bind 2025-03-01" },
+      {
+        lines: [
+          "Proposed from the plan",
+          "  1. function_wrap (confidence high)",
+          "     unwrap DATE_TRUNC('day') equality to a sargable range",
+          "",
+          "Proof (same rows, then faster)",
+        ],
+      },
+      { verdict: { prefix: "  function_wrap  1096 rows  101.6 ms -> 1.2 ms  87.0x  ", word: "Proven" } },
+      { lines: ["", "Evidence is in the ledger: pqn evidence 1"] },
+    ];
+
+    async function typeCommand(text: string) {
+      const span = document.createElement("span");
+      span.className = "term-prompt";
+      code.appendChild(span);
+      if (reduceMotion) {
+        span.textContent = text;
+      } else {
+        for (const ch of text) {
+          span.textContent += ch;
+          await wait(14);
+        }
+      }
+      code.appendChild(document.createTextNode("\n"));
+      await wait(350);
+    }
+
+    async function appendLines(lines: string[]) {
+      for (const line of lines) {
+        code.appendChild(document.createTextNode(line + "\n"));
+        await wait(55);
+      }
+    }
+
+    async function appendVerdict(prefix: string, word: string) {
+      code.appendChild(document.createTextNode(prefix));
+      const span = document.createElement("span");
+      span.className = "term-verdict";
+      span.textContent = word;
+      code.appendChild(span);
+      code.appendChild(document.createTextNode("\n"));
+      await wait(60);
+    }
+
+    async function run() {
+      code.textContent = "";
+      for (const step of steps) {
+        if ("cmd" in step) await typeCommand(step.cmd);
+        else if ("lines" in step) await appendLines(step.lines);
+        else await appendVerdict(step.verdict.prefix, step.verdict.word);
+      }
+    }
+
+    run();
+  }
+
+  const termWindow = document.querySelector(".term-window");
+  if (termWindow) {
+    let started = false;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !started) {
+            started = true;
+            initPqnTerminal();
+            observer.disconnect();
+          }
+        }
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(termWindow);
+  }
+</script>

@@ -29,7 +29,16 @@ const steps = [
 
   <section class="section demo-player-section">
     <div class="container">
-      <DemoVideo />
+      <div class="demo-grid">
+        {
+          site.demoVideos.map((v) => (
+            <div class="demo-item">
+              <DemoVideo videoId={v.videoId} title={v.title} />
+              <p class="demo-caption">{v.caption}</p>
+            </div>
+          ))
+        }
+      </div>
     </div>
   </section>
 
@@ -79,6 +88,18 @@ const steps = [
   .demo-player-section {
     padding-top: 0;
     padding-bottom: 56px;
+  }
+
+  .demo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 28px;
+  }
+
+  .demo-caption {
+    margin-top: 12px;
+    color: var(--text-dim);
+    font-size: 0.9375rem;
   }
 
   .section-muted {
