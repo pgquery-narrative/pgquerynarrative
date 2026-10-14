@@ -106,9 +106,12 @@ func (s *ReportsService) GetShared(ctx context.Context, payload *reports.GetShar
 	}
 	// Unauthenticated share-link viewers see the narrative/metrics/charts but not the raw
 	// SQL by default, since it may reveal schema or business-logic details beyond what the
-	// report was meant to share. Operators can opt back in via SetShareLinkExposeSQL.
+	// report was meant to share. Operators can opt back in via SetShareLinkExposeSQL. The
+	// query text and captured bind values are also embedded in the narrative and metrics
+	// evidence (see redactEmbeddedSQL) and must be stripped there too, not just here.
 	if report != nil && !s.shareLinkExposeSQL {
 		report.SQL = ""
+		redactEmbeddedSQL(report)
 	}
 	return report, nil
 }

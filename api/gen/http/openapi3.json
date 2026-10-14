@@ -522,6 +522,43 @@
         ],
         "type": "object"
       },
+      "CreateFromPostgRESTPayload": {
+        "properties": {
+          "analyze": {
+            "default": false,
+            "description": "Run EXPLAIN ANALYZE on the captured bind values (executes the query)",
+            "type": "boolean"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "http_duration_ms": {
+            "description": "Optional client-measured HTTP request time in milliseconds",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "postgres_log": {
+            "description": "PostgreSQL log excerpt (stderr, csvlog or jsonlog) for one PostgREST read request, including failed ones. Requires log_min_duration_statement=0 or log_statement=all and log_parameter_max_length=-1; a stderr log_line_prefix must contain the process id as [%p]. Request headers, cookies and JWT claims in the excerpt are discarded, never stored; the log is caller-supplied text with no verification it is authentic, so nothing in it that could impersonate a specific identity is trusted.",
+            "maxLength": 200000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "server_timing": {
+            "description": "Optional Server-Timing response header from the same request, e.g. jwt;dur=0.6, transaction;dur=54.8",
+            "maxLength": 8192,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "postgres_log"
+        ],
+        "type": "object"
+      },
       "CreateFromRegressionRequestBody": {
         "properties": {
           "regression_alert_id": {
@@ -1084,6 +1121,13 @@
       },
       "Investigation": {
         "properties": {
+          "binds": {
+            "description": "Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and compare substitute them",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "candidate_explain": {
             "$ref": "#/components/schemas/ExplainQueryResult"
           },
@@ -1139,6 +1183,9 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "postgrest_request": {
+            "$ref": "#/components/schemas/PostgRESTRequest"
           },
           "query_fingerprint": {
             "type": "string"
@@ -1675,6 +1722,95 @@
           "node_type",
           "is_seq_scan",
           "message"
+        ],
+        "type": "object"
+      },
+      "PostgRESTRequest": {
+        "properties": {
+          "endpoint": {
+            "description": "Request path without query string, e.g. /orders_daily",
+            "type": "string"
+          },
+          "failure": {
+            "description": "PostgreSQL's error when the request statement failed, e.g. canceling statement due to statement timeout",
+            "type": "string"
+          },
+          "generic_plan_total_cost": {
+            "description": "EXPLAIN (GENERIC_PLAN) total cost of the parameterized statement",
+            "format": "double",
+            "type": "number"
+          },
+          "http_duration_ms": {
+            "description": "Client-measured HTTP request time (ms), as supplied at intake. Wire and PostgREST time, not database time.",
+            "format": "double",
+            "type": "number"
+          },
+          "method": {
+            "description": "HTTP method of the captured request (GET or HEAD)",
+            "type": "string"
+          },
+          "plan_cache_note": {
+            "description": "Whether PostgreSQL is likely to run this statement with the custom plan the replay measured or with the generic plan",
+            "type": "string"
+          },
+          "prepared_statement": {
+            "description": "True when PostgREST ran the statement as a named prepared statement, which PostgreSQL may switch to a generic plan. Absent when a failed statement was recovered only from the error context, which does not record the statement's name.",
+            "type": "boolean"
+          },
+          "query_id": {
+            "description": "PostgreSQL query identifier, when the log line carried one",
+            "type": "string"
+          },
+          "replay_limitations": {
+            "description": "What the replay does not reproduce. A non-empty list means endpoint equivalence is not claimed.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "replay_role": {
+            "description": "Role every replay of this investigation runs as (SET LOCAL ROLE); empty means the connection's own role",
+            "type": "string"
+          },
+          "replay_search_path": {
+            "description": "search_path every replay applies: the captured schemas this connection allows, in captured order",
+            "type": "string"
+          },
+          "request_settings": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Well-known settings the request set (Prefer: timezone, per-role settings); replays apply all but statement_timeout",
+            "type": "object"
+          },
+          "role": {
+            "description": "Database role PostgREST executed the request as",
+            "type": "string"
+          },
+          "search_path": {
+            "description": "search_path PostgREST set for the request",
+            "type": "string"
+          },
+          "server_timing_transaction_ms": {
+            "description": "PostgREST Server-Timing 'transaction' stage (ms): the whole database transaction, including role and settings setup",
+            "format": "double",
+            "type": "number"
+          },
+          "session_context_missing": {
+            "description": "True when the log had no session-context statement for the request (slow-query-only logging): method, endpoint, role and search_path are then empty",
+            "type": "boolean"
+          },
+          "statement_duration_ms": {
+            "description": "PostgreSQL's logged duration for the main request statement's execute phase (ms). Excludes parse and bind, where a custom plan is planned.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "method",
+          "endpoint",
+          "role",
+          "replay_limitations"
         ],
         "type": "object"
       },
@@ -3514,6 +3650,48 @@
           }
         },
         "summary": "create investigations",
+        "tags": [
+          "investigations"
+        ]
+      }
+    },
+    "/api/v1/investigations/from-postgrest": {
+      "post": {
+        "description": "Open an investigation from a PostgREST read request. The PostgreSQL log excerpt supplies the exact generated SQL, its bind values, the database role and the statement duration; nothing is inferred from the URL.",
+        "operationId": "investigations#create_from_postgrest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFromPostgRESTPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Investigation"
+                }
+              }
+            },
+            "description": "OK response."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            },
+            "description": "validation_error: Bad Request response."
+          }
+        },
+        "summary": "create_from_postgrest investigations",
         "tags": [
           "investigations"
         ]

@@ -538,5 +538,42 @@ func (s *ReportsService) applySQLVisibility(ctx context.Context, report *reports
 		}
 	default:
 		report.SQL = ""
+		redactEmbeddedSQL(report)
 	}
+}
+
+// redactEmbeddedSQL scrubs SQL text and captured PostgREST bind values out of
+// report.Metrics.Investigation and report.Narrative.Drivers — the same
+// story.InvestigationReport / story.NarrativeContent evidence report.SQL
+// itself was generated from, which otherwise still carries the query text and
+// its bind values even after report.SQL is cleared. Called everywhere a
+// viewer is denied report.SQL (applySQLVisibility's default case, GetShared
+// when share links do not expose SQL) so the two never drift apart.
+func redactEmbeddedSQL(report *reports.Report) {
+	if report == nil {
+		return
+	}
+	if report.Narrative != nil {
+		report.Narrative.Drivers = story.RedactSQLFromNarrativeDrivers(report.Narrative.Drivers)
+	}
+	if report.Metrics == nil || report.Metrics.Investigation == nil {
+		return
+	}
+	raw, err := json.Marshal(report.Metrics.Investigation)
+	if err != nil {
+		return
+	}
+	var inv story.InvestigationReport
+	if err := json.Unmarshal(raw, &inv); err != nil {
+		return
+	}
+	redacted, err := json.Marshal(story.RedactSQL(inv))
+	if err != nil {
+		return
+	}
+	var out any
+	if err := json.Unmarshal(redacted, &out); err != nil {
+		return
+	}
+	report.Metrics.Investigation = out
 }

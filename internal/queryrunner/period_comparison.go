@@ -103,7 +103,7 @@ func (r *Runner) PeriodComparison(ctx context.Context, innerSQL, timeCol string,
 	if pool == nil {
 		return nil, fmt.Errorf("period comparison pool unavailable")
 	}
-	rows, tx, err := queryReadOnlyRows(queryCtx, pool, wrappedSQL)
+	rows, tx, err := r.queryReadOnlyRows(queryCtx, pool, wrappedSQL)
 	if err != nil {
 		return nil, fmt.Errorf("period comparison query failed: %w", err)
 	}

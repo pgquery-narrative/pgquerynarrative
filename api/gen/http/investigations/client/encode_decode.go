@@ -107,6 +107,95 @@ func DecodeCreateResponse(decoder func(*http.Response) goahttp.Decoder, restoreB
 	}
 }
 
+// BuildCreateFromPostgrestRequest instantiates a HTTP request object with
+// method and path set to call the "investigations" service
+// "create_from_postgrest" endpoint
+func (c *Client) BuildCreateFromPostgrestRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: CreateFromPostgrestInvestigationsPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("investigations", "create_from_postgrest", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeCreateFromPostgrestRequest returns an encoder for requests sent to the
+// investigations create_from_postgrest server.
+func EncodeCreateFromPostgrestRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*investigations.CreateFromPostgRESTPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("investigations", "create_from_postgrest", "*investigations.CreateFromPostgRESTPayload", v)
+		}
+		body := NewCreateFromPostgrestRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("investigations", "create_from_postgrest", err)
+		}
+		return nil
+	}
+}
+
+// DecodeCreateFromPostgrestResponse returns a decoder for responses returned
+// by the investigations create_from_postgrest endpoint. restoreBody controls
+// whether the response body should be restored after having been read.
+// DecodeCreateFromPostgrestResponse may return the following errors:
+//   - "validation_error" (type *investigations.ValidationError): http.StatusBadRequest
+//   - error: internal error
+func DecodeCreateFromPostgrestResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (any, error) {
+		if restoreBody {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer resp.Body.Close()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body CreateFromPostgrestResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "create_from_postgrest", err)
+			}
+			err = ValidateCreateFromPostgrestResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "create_from_postgrest", err)
+			}
+			res := NewCreateFromPostgrestInvestigationOK(&body)
+			return res, nil
+		case http.StatusBadRequest:
+			var (
+				body CreateFromPostgrestValidationErrorResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("investigations", "create_from_postgrest", err)
+			}
+			err = ValidateCreateFromPostgrestValidationErrorResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("investigations", "create_from_postgrest", err)
+			}
+			return nil, NewCreateFromPostgrestValidationError(&body)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			return nil, goahttp.ErrInvalidResponse("investigations", "create_from_postgrest", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildCreateFromRegressionRequest instantiates a HTTP request object with
 // method and path set to call the "investigations" service
 // "create_from_regression" endpoint
@@ -1244,6 +1333,46 @@ func unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCan
 	return res
 }
 
+// unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest builds
+// a value of type *investigations.PostgRESTRequest from a value of type
+// *PostgRESTRequestResponseBody.
+func unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(v *PostgRESTRequestResponseBody) *investigations.PostgRESTRequest {
+	if v == nil {
+		return nil
+	}
+	res := &investigations.PostgRESTRequest{
+		Method:                    *v.Method,
+		Endpoint:                  *v.Endpoint,
+		Role:                      *v.Role,
+		SearchPath:                v.SearchPath,
+		QueryID:                   v.QueryID,
+		HTTPDurationMs:            v.HTTPDurationMs,
+		ServerTimingTransactionMs: v.ServerTimingTransactionMs,
+		StatementDurationMs:       v.StatementDurationMs,
+		SessionContextMissing:     v.SessionContextMissing,
+		Failure:                   v.Failure,
+		PreparedStatement:         v.PreparedStatement,
+		ReplayRole:                v.ReplayRole,
+		ReplaySearchPath:          v.ReplaySearchPath,
+		GenericPlanTotalCost:      v.GenericPlanTotalCost,
+		PlanCacheNote:             v.PlanCacheNote,
+	}
+	res.ReplayLimitations = make([]string, len(v.ReplayLimitations))
+	for i, val := range v.ReplayLimitations {
+		res.ReplayLimitations[i] = val
+	}
+	if v.RequestSettings != nil {
+		res.RequestSettings = make(map[string]string, len(v.RequestSettings))
+		for key, val := range v.RequestSettings {
+			tk := key
+			tv := val
+			res.RequestSettings[tk] = tv
+		}
+	}
+
+	return res
+}
+
 // unmarshalInvestigationResponseBodyToInvestigationsInvestigation builds a
 // value of type *investigations.Investigation from a value of type
 // *InvestigationResponseBody.
@@ -1287,6 +1416,15 @@ func unmarshalInvestigationResponseBodyToInvestigationsInvestigation(v *Investig
 			}
 			res.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
+	}
+	if v.Binds != nil {
+		res.Binds = make([]string, len(v.Binds))
+		for i, val := range v.Binds {
+			res.Binds[i] = val
+		}
+	}
+	if v.PostgrestRequest != nil {
+		res.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(v.PostgrestRequest)
 	}
 
 	return res

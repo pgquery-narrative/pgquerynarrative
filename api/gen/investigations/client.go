@@ -16,6 +16,7 @@ import (
 // Client is the "investigations" service client.
 type Client struct {
 	CreateEndpoint               goa.Endpoint
+	CreateFromPostgrestEndpoint  goa.Endpoint
 	CreateFromRegressionEndpoint goa.Endpoint
 	ListEndpoint                 goa.Endpoint
 	GetEndpoint                  goa.Endpoint
@@ -27,9 +28,10 @@ type Client struct {
 }
 
 // NewClient initializes a "investigations" service client given the endpoints.
-func NewClient(create, createFromRegression, list, get, addCandidate, updateFix, suggestRewrite, rankCandidates, generateReport goa.Endpoint) *Client {
+func NewClient(create, createFromPostgrest, createFromRegression, list, get, addCandidate, updateFix, suggestRewrite, rankCandidates, generateReport goa.Endpoint) *Client {
 	return &Client{
 		CreateEndpoint:               create,
+		CreateFromPostgrestEndpoint:  createFromPostgrest,
 		CreateFromRegressionEndpoint: createFromRegression,
 		ListEndpoint:                 list,
 		GetEndpoint:                  get,
@@ -48,6 +50,20 @@ func NewClient(create, createFromRegression, list, get, addCandidate, updateFix,
 func (c *Client) Create(ctx context.Context, p *CreateInvestigationPayload) (res *Investigation, err error) {
 	var ires any
 	ires, err = c.CreateEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*Investigation), nil
+}
+
+// CreateFromPostgrest calls the "create_from_postgrest" endpoint of the
+// "investigations" service.
+// CreateFromPostgrest may return the following errors:
+//   - "validation_error" (type *ValidationError)
+//   - error: internal error
+func (c *Client) CreateFromPostgrest(ctx context.Context, p *CreateFromPostgRESTPayload) (res *Investigation, err error) {
+	var ires any
+	ires, err = c.CreateFromPostgrestEndpoint(ctx, p)
 	if err != nil {
 		return
 	}

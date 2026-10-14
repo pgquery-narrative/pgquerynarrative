@@ -56,6 +56,8 @@ export type ComparePlansResult = S.ComparePlansResult;
 export type StatSnapshot = S.StatSnapshot;
 export type InvestigationCandidate = S.InvestigationCandidate;
 export type Investigation = S.Investigation;
+export type PostgRESTRequest = S.PostgRESTRequest;
+export type CreateFromPostgRESTPayload = S.CreateFromPostgRESTPayload;
 export type WorkspaceOverview = S.WorkspaceOverview;
 export type RegressionAlert = S.RegressionAlert;
 export type DemoScenario = S.DemoScenario;
@@ -200,6 +202,13 @@ export const api = {
     total_time_ms?: number;
     rows?: number;
   }) => request<Investigation>("/investigations", { method: "POST", body: JSON.stringify(body) }),
+
+  createInvestigationFromPostgrest: (body: CreateFromPostgRESTPayload) =>
+    request<Investigation>("/investigations/from-postgrest", {
+      method: "POST",
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000),
+    }),
 
   createInvestigationFromRegression: (regressionAlertId: string) =>
     request<Investigation>("/investigations/from-regression", {

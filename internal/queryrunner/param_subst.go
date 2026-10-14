@@ -26,6 +26,35 @@ const maxBindValueLen = 4096
 // param-free SELECT, and callers MUST still run it through the read-only
 // validator.
 func SubstituteParams(sql string, binds []string) (string, error) {
+	return substituteParams(sql, binds, func(_ int, v string) string { return bindLiteral(v) }, maxBindValueLen)
+}
+
+// SubstituteCapturedParams preserves the text representation of parameters from
+// PostgreSQL logs. Guessing types (or trimming whitespace) changes text filters
+// such as account = '001'. Let PostgreSQL infer types from the original SQL.
+// Captured values are not capped individually: a large in.(...) list is real
+// evidence, the log excerpt is bounded, and the validator bounds the statement.
+//
+// One shape needs an explicit cast rather than relying on inference: some
+// PostgREST versions (pre-v13, confirmed on v12.2.12; v13.0.4 and v16.4 do
+// not) pass RPC scalar arguments through one JSON payload parameter unpacked
+// by json_to_record/jsonb_to_record, built as "(SELECT $N AS json_data)
+// pgrst_payload" with no cast in the SQL text — PostgREST's live bind message
+// carries the parameter's type instead. A plain string literal there defaults
+// to text, and json_to_record(text) does not exist. See postgrestJSONPayloadCast.
+func SubstituteCapturedParams(sql string, binds []string) (string, error) {
+	castN, castType := postgrestJSONPayloadCast(sql)
+	return substituteParams(sql, binds, func(i int, v string) string {
+		lit := quoteSQLLiteral(v)
+		if i+1 == castN {
+			lit += "::" + castType
+		}
+		return lit
+	}, 0)
+}
+
+// maxBind of 0 means no per-value limit.
+func substituteParams(sql string, binds []string, literal func(int, string) string, maxBind int) (string, error) {
 	trimmed := trimSQL(sql)
 	n := maxParamNumber(trimmed)
 	if n == 0 {
@@ -41,13 +70,13 @@ func SubstituteParams(sql string, binds []string) (string, error) {
 	lits := make([]string, n)
 	for i := 0; i < n; i++ {
 		b := binds[i]
-		if len(b) > maxBindValueLen {
-			return "", fmt.Errorf("bind $%d is %d bytes; limit is %d", i+1, len(b), maxBindValueLen)
+		if maxBind > 0 && len(b) > maxBind {
+			return "", fmt.Errorf("bind $%d is %d bytes; limit is %d", i+1, len(b), maxBind)
 		}
 		if strings.ContainsRune(b, 0) {
 			return "", fmt.Errorf("bind $%d contains a NUL byte", i+1)
 		}
-		lits[i] = bindLiteral(b)
+		lits[i] = literal(i, b)
 	}
 
 	out := replaceDollarParams(trimmed, lits)
@@ -267,11 +296,20 @@ func bindLiteral(v string) string {
 	}
 }
 
-// quoteSQLLiteral renders s as a single-quoted SQL string literal with every
-// embedded single quote doubled. pg_query.Parse (the re-parse guard) and the
-// analytical runner both assume standard_conforming_strings = on, under which a
-// backslash in a single-quoted string is a literal character, so no backslash
-// handling is needed.
+// quoteSQLLiteral renders s as a PostgreSQL escape string literal (E'...').
+// Backslash is doubled and single quote is doubled before being wrapped in
+// E'...'. PostgreSQL always interprets backslash as an escape introducer
+// inside an E'...' literal — unlike a plain '...' literal, this is NOT
+// conditional on the standard_conforming_strings session setting (see
+// https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-STRINGS-ESCAPE).
+// So the escaped text always decodes back to exactly s, regardless of what a
+// pooled connection's standard_conforming_strings happens to be. A plain
+// quote-only doubling (the prior implementation) is ambiguous when that
+// setting is "off": a captured value containing a literal backslash followed
+// by a quote can then terminate the string early and inject SQL that runs
+// after the validator has already approved the statement.
 func quoteSQLLiteral(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "'", "''")
+	return "E'" + s + "'"
 }

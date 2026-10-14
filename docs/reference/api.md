@@ -15,6 +15,7 @@ This page tracks the Goa design (`api/design/*.go`) and the generated OpenAPI 3 
 |---|---|---|
 | POST | `/investigations` | Body: `title`, `sql`, optional `connection_id`, `analyze`. Creates an investigation and runs plan analysis |
 | POST | `/investigations/from-regression` | Body: **`regression_alert_id`** (uuid). Opens, or reuses, an investigation from a regression alert |
+| POST | `/investigations/from-postgrest` | Body: `postgres_log`, optional `title`, `connection_id`, `analyze`, `server_timing`, `http_duration_ms`. Imports one captured GET/HEAD request (table, view or RPC, including failed requests); see [capture requirements](../integrations/rest-api.md#postgrest-request-capture) |
 | GET | `/investigations` | Query: `limit` (default 20, max 100), `offset` |
 | GET | `/investigations/{id}` | Full investigation: evidence, candidate, comparison |
 | POST | `/investigations/{id}/suggest-rewrite` | AST-based rewrite suggestions. Returns `candidates[]` (`sql`, `rationale`, `category`). No SQL executes |

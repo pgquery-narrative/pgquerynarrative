@@ -89,6 +89,11 @@ cmd/linkedin-social/
 automation/
 tools/demo/capture_readme_gif.sh
 docs/assets/demo-workflow.gif
+# Local content-strategy / audience research notes — not engineering output,
+# never belongs in the public tree (see the same reasoning as the LinkedIn
+# tooling above).
+/reports/
+/research_notes/
 
 # Local-only AI agent context (never publish — keep on disk for Cursor/agents)
 AGENTS.md
