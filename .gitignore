@@ -45,6 +45,12 @@ secrets/
 coverage.out
 coverage.html
 *.log
+# ...except committed test fixtures that happen to be literal PostgreSQL log
+# excerpts — the blanket *.log rule above was silently excluding these from
+# every `git add`, so TestParsePostgREST* passed locally (the files exist on
+# disk) but failed in CI (a fresh checkout never had them) with
+# "open testdata/....log: no such file or directory".
+!internal/queryrunner/testdata/*.log
 *.tmp
 
 # Frontend dependencies and build output. Every consumer — Dockerfile, CI, the
