@@ -213,12 +213,12 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		// A parameterized EXPLAIN (GENERIC_PLAN) has to reach Postgres verbatim
 		// over the simple query protocol — pgx's normal path parses $1 as a bind
 		// placeholder and fails with "insufficient arguments" before it is sent.
-		text, gerr := runGenericPlanExplain(queryCtx, pool, explainSQL)
+		text, gerr := r.runGenericPlanExplain(queryCtx, pool, explainSQL)
 		if gerr != nil {
 			if errors.Is(gerr, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 				return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
 			}
-			return nil, apperrors.ErrQueryExecutionFailed
+			return nil, executionFailed(gerr)
 		}
 		planText = text
 	} else {
@@ -227,12 +227,15 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 			return nil, apperrors.ErrQueryExecutionFailed
 		}
 		defer func() { _ = tx.Rollback(queryCtx) }()
+		if err := r.applyReplay(queryCtx, tx); err != nil {
+			return nil, executionFailed(err)
+		}
 		if err := tx.QueryRow(queryCtx, explainSQL).Scan(&planText); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
 				return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
 			}
-			// Do not embed driver/Postgres detail in the returned error.
-			return nil, apperrors.ErrQueryExecutionFailed
+			// Only statement-caused errors carry PostgreSQL detail (see executionFailed).
+			return nil, executionFailed(err)
 		}
 		if err := tx.Commit(queryCtx); err != nil {
 			return nil, apperrors.ErrQueryExecutionFailed
@@ -277,7 +280,9 @@ func buildExplainSQL(innerSQL string, opts ExplainOptions) string {
 	if opts.Settings {
 		parts = append(parts, "SETTINGS")
 	}
-	parts = append(parts, "FORMAT JSON")
+	// VERBOSE includes the scanned relation's schema. Resolving a bare name
+	// from the allowlist can confuse an API view with its underlying table.
+	parts = append(parts, "VERBOSE", "FORMAT JSON")
 	return fmt.Sprintf("EXPLAIN (%s) %s", strings.Join(parts, ", "), innerSQL)
 }
 
@@ -285,7 +290,7 @@ func buildExplainSQL(innerSQL string, opts ExplainOptions) string {
 // over the simple query protocol so $1/$2/... are seen by the EXPLAIN parser as
 // literal SQL text rather than driver bind placeholders. Wrapped in a READ ONLY
 // transaction; GENERIC_PLAN never executes the query so this is cheap and safe.
-func runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL string) (string, error) {
+func (r *Runner) runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL string) (string, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return "", err
@@ -293,7 +298,7 @@ func runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL s
 	defer conn.Release()
 
 	pgConn := conn.Conn().PgConn()
-	batch := "BEGIN TRANSACTION READ ONLY;\n" + explainSQL + ";\nROLLBACK;"
+	batch := "BEGIN TRANSACTION READ ONLY;\n" + r.replayBatchSQL(ctx) + explainSQL + ";\nROLLBACK;"
 	results, err := pgConn.Exec(ctx, batch).ReadAll()
 	if err != nil {
 		return "", err
@@ -302,7 +307,11 @@ func runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL s
 		if res.Err != nil {
 			return "", res.Err
 		}
-		if len(res.Rows) > 0 && len(res.Rows[0]) > 0 {
+	}
+	// The EXPLAIN is the last statement that returns rows; replay set_config
+	// calls before it return rows too.
+	for i := len(results) - 1; i >= 0; i-- {
+		if res := results[i]; len(res.Rows) > 0 && len(res.Rows[0]) > 0 {
 			return string(res.Rows[0][0]), nil
 		}
 	}

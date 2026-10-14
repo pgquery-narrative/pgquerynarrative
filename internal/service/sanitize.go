@@ -49,6 +49,9 @@ func SanitizeAPIError(err error, fallback string) string {
 	} {
 		if errors.Is(err, sentinel) {
 			if errors.Is(err, apperrors.ErrQueryExecutionFailed) {
+				// Shared by every caller (ask, schedules, stored-error persistence,
+				// ...); must stay generic for the same reason as
+				// ClassifyRunError's identical branch — see its comment.
 				return "Query execution failed. Check your SQL and try again."
 			}
 			if errors.Is(err, apperrors.ErrQueryTimeout) {

@@ -20,6 +20,10 @@ type Client struct {
 	// Create Doer is the HTTP client used to make requests to the create endpoint.
 	CreateDoer goahttp.Doer
 
+	// CreateFromPostgrest Doer is the HTTP client used to make requests to the
+	// create_from_postgrest endpoint.
+	CreateFromPostgrestDoer goahttp.Doer
+
 	// CreateFromRegression Doer is the HTTP client used to make requests to the
 	// create_from_regression endpoint.
 	CreateFromRegressionDoer goahttp.Doer
@@ -72,6 +76,7 @@ func NewClient(
 ) *Client {
 	return &Client{
 		CreateDoer:               doer,
+		CreateFromPostgrestDoer:  doer,
 		CreateFromRegressionDoer: doer,
 		ListDoer:                 doer,
 		GetDoer:                  doer,
@@ -107,6 +112,30 @@ func (c *Client) Create() goa.Endpoint {
 		resp, err := c.CreateDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("investigations", "create", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// CreateFromPostgrest returns an endpoint that makes HTTP requests to the
+// investigations service create_from_postgrest server.
+func (c *Client) CreateFromPostgrest() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeCreateFromPostgrestRequest(c.encoder)
+		decodeResponse = DecodeCreateFromPostgrestResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildCreateFromPostgrestRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.CreateFromPostgrestDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("investigations", "create_from_postgrest", err)
 		}
 		return decodeResponse(resp)
 	}

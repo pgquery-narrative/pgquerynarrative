@@ -134,6 +134,15 @@ export interface CorrelationPairData {
   spearman: number;
 }
 
+export interface CreateFromPostgRESTPayload {
+  analyze?: boolean;
+  connection_id?: string;
+  http_duration_ms?: number;
+  postgres_log: string;
+  server_timing?: string;
+  title?: string;
+}
+
 export interface CreateFromRegressionRequestBody {
   regression_alert_id: string;
 }
@@ -280,6 +289,7 @@ export interface IndexDefinition {
 }
 
 export interface Investigation {
+  binds?: string[];
   candidate_explain?: ExplainQueryResult;
   candidate_sql?: string;
   candidates?: InvestigationCandidate[];
@@ -294,6 +304,7 @@ export interface Investigation {
   fix_reference?: string;
   fix_status?: string;
   id: string;
+  postgrest_request?: PostgRESTRequest;
   query_fingerprint?: string;
   report_id?: string;
   sql: string;
@@ -422,6 +433,26 @@ export interface PlanFinding {
   related_columns?: string[];
   relation?: string;
   schema?: string;
+}
+
+export interface PostgRESTRequest {
+  endpoint: string;
+  failure?: string;
+  generic_plan_total_cost?: number;
+  http_duration_ms?: number;
+  method: string;
+  plan_cache_note?: string;
+  prepared_statement?: boolean;
+  query_id?: string;
+  replay_limitations: string[];
+  replay_role?: string;
+  replay_search_path?: string;
+  request_settings?: { [key: string]: string };
+  role: string;
+  search_path?: string;
+  server_timing_transaction_ms?: number;
+  session_context_missing?: boolean;
+  statement_duration_ms?: number;
 }
 
 export interface QuerySuggestion {

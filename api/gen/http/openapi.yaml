@@ -527,6 +527,43 @@ paths:
               - message
       schemes:
         - http
+  /api/v1/investigations/from-postgrest:
+    post:
+      tags:
+        - investigations
+      summary: create_from_postgrest investigations
+      description: Open an investigation from a PostgREST read request. The PostgreSQL log excerpt supplies the exact generated SQL, its bind values, the database role and the statement duration; nothing is inferred from the URL.
+      operationId: investigations#create_from_postgrest
+      parameters:
+        - name: create_from_postgrest_request_body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/CreateFromPostgRESTPayload'
+            required:
+              - postgres_log
+      responses:
+        "200":
+          description: OK response.
+          schema:
+            $ref: '#/definitions/Investigation'
+            required:
+              - id
+              - title
+              - status
+              - sql
+              - connection_id
+              - created_at
+              - updated_at
+        "400":
+          description: Bad Request response.
+          schema:
+            $ref: '#/definitions/ValidationError'
+            required:
+              - name
+              - message
+      schemes:
+        - http
   /api/v1/investigations/from-regression:
     post:
       tags:
@@ -2122,6 +2159,35 @@ definitions:
       - column_b
       - pearson
       - spearman
+  CreateFromPostgRESTPayload:
+    title: CreateFromPostgRESTPayload
+    type: object
+    properties:
+      analyze:
+        type: boolean
+        description: Run EXPLAIN ANALYZE on the captured bind values (executes the query)
+        default: false
+      connection_id:
+        type: string
+      http_duration_ms:
+        type: number
+        description: Optional client-measured HTTP request time in milliseconds
+        format: double
+        minimum: 0
+      postgres_log:
+        type: string
+        description: PostgreSQL log excerpt (stderr, csvlog or jsonlog) for one PostgREST read request, including failed ones. Requires log_min_duration_statement=0 or log_statement=all and log_parameter_max_length=-1; a stderr log_line_prefix must contain the process id as [%p]. Request headers, cookies and JWT claims in the excerpt are discarded, never stored; the log is caller-supplied text with no verification it is authentic, so nothing in it that could impersonate a specific identity is trusted.
+        minLength: 1
+        maxLength: 200000
+      server_timing:
+        type: string
+        description: Optional Server-Timing response header from the same request, e.g. jwt;dur=0.6, transaction;dur=54.8
+        maxLength: 8192
+      title:
+        type: string
+        maxLength: 200
+    required:
+      - postgres_log
   CreateInvestigationPayload:
     title: CreateInvestigationPayload
     type: object
@@ -2529,6 +2595,11 @@ definitions:
     title: Investigation
     type: object
     properties:
+      binds:
+        type: array
+        items:
+          type: string
+        description: Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and compare substitute them
       candidate_explain:
         $ref: '#/definitions/ExplainQueryResult'
       candidate_sql:
@@ -2570,6 +2641,8 @@ definitions:
       id:
         type: string
         format: uuid
+      postgrest_request:
+        $ref: '#/definitions/PostgRESTRequest'
       query_fingerprint:
         type: string
       report_id:
@@ -2977,6 +3050,74 @@ definitions:
       - node_type
       - is_seq_scan
       - message
+  PostgRESTRequest:
+    title: PostgRESTRequest
+    type: object
+    properties:
+      endpoint:
+        type: string
+        description: Request path without query string, e.g. /orders_daily
+      failure:
+        type: string
+        description: PostgreSQL's error when the request statement failed, e.g. canceling statement due to statement timeout
+      generic_plan_total_cost:
+        type: number
+        description: EXPLAIN (GENERIC_PLAN) total cost of the parameterized statement
+        format: double
+      http_duration_ms:
+        type: number
+        description: Client-measured HTTP request time (ms), as supplied at intake. Wire and PostgREST time, not database time.
+        format: double
+      method:
+        type: string
+        description: HTTP method of the captured request (GET or HEAD)
+      plan_cache_note:
+        type: string
+        description: Whether PostgreSQL is likely to run this statement with the custom plan the replay measured or with the generic plan
+      prepared_statement:
+        type: boolean
+        description: True when PostgREST ran the statement as a named prepared statement, which PostgreSQL may switch to a generic plan. Absent when a failed statement was recovered only from the error context, which does not record the statement's name.
+      query_id:
+        type: string
+        description: PostgreSQL query identifier, when the log line carried one
+      replay_limitations:
+        type: array
+        items:
+          type: string
+        description: What the replay does not reproduce. A non-empty list means endpoint equivalence is not claimed.
+      replay_role:
+        type: string
+        description: Role every replay of this investigation runs as (SET LOCAL ROLE); empty means the connection's own role
+      replay_search_path:
+        type: string
+        description: 'search_path every replay applies: the captured schemas this connection allows, in captured order'
+      request_settings:
+        type: object
+        description: 'Well-known settings the request set (Prefer: timezone, per-role settings); replays apply all but statement_timeout'
+        additionalProperties:
+          type: string
+      role:
+        type: string
+        description: Database role PostgREST executed the request as
+      search_path:
+        type: string
+        description: search_path PostgREST set for the request
+      server_timing_transaction_ms:
+        type: number
+        description: 'PostgREST Server-Timing ''transaction'' stage (ms): the whole database transaction, including role and settings setup'
+        format: double
+      session_context_missing:
+        type: boolean
+        description: 'True when the log had no session-context statement for the request (slow-query-only logging): method, endpoint, role and search_path are then empty'
+      statement_duration_ms:
+        type: number
+        description: PostgreSQL's logged duration for the main request statement's execute phase (ms). Excludes parse and bind, where a custom plan is planned.
+        format: double
+    required:
+      - method
+      - endpoint
+      - role
+      - replay_limitations
   QuerySuggestion:
     title: QuerySuggestion
     type: object
