@@ -287,6 +287,111 @@ func TestParsePostgRESTLogEllipsisNeedsProof(t *testing.T) {
 	}
 }
 
+// ellipsisMainOnly is the postgrest_ellipsis.log fixture stripped to only its
+// target request's own lines (its session-context statement dropped), the
+// same reduction TestParsePostgRESTLogEllipsisNeedsProof uses to produce a
+// request with no evidence of its own that "Loading..." was not truncated.
+func ellipsisMainOnly(t *testing.T) string {
+	t.Helper()
+	genuine, err := os.ReadFile("testdata/postgrest_ellipsis.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mainOnly []string
+	for _, l := range strings.Split(string(genuine), "\n") {
+		if strings.Contains(l, "pgrst_source") || strings.Contains(l, "'Loading...'") {
+			mainOnly = append(mainOnly, l)
+		}
+	}
+	out := strings.Join(mainOnly, "\n")
+	if _, err := ParsePostgRESTLog(out); err == nil {
+		t.Fatal("fixture setup is broken: expected this reduced excerpt to be refused on its own")
+	}
+	return out
+}
+
+// Bug: unprovenTruncation's "longest untruncated value" was computed over
+// every paramSet parsed anywhere in the log excerpt, filtered only by
+// source ("detail" vs "context") — never by which backend logged it. A
+// target request on one PID with no evidence of its own that a value was
+// not truncated became wrongly accepted the moment any OTHER backend in the
+// same excerpt happened to log a longer, non-truncated "detail" parameter,
+// even though that unrelated backend's logging configuration says nothing
+// about this request's own.
+func TestParsePostgRESTLogUnrelatedBackendCannotProveTruncation(t *testing.T) {
+	mainOnly := ellipsisMainOnly(t)
+	// An entirely unrelated backend (PID 999, no pgrst_source statement, no
+	// relation to this request at all) logs a much longer, untruncated
+	// "detail" parameter on its own unrelated statement.
+	unrelated := "2026-10-08 17:38:18.420 UTC [999] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 5: SELECT 1\n" +
+		"2026-10-08 17:38:18.420 UTC [999] app=PostgREST 16.4 DETAIL:  Parameters: $1 = '" + strings.Repeat("z", 400) + "'\n"
+	if _, err := ParsePostgRESTLog(unrelated + mainOnly); err == nil || !strings.Contains(err.Error(), "log_parameter_max_length") {
+		t.Fatalf("an unrelated backend's longer parameter must not rescue an unproven truncated value, got %v", err)
+	}
+	// Order must not matter: the same unrelated evidence appended after the
+	// target request's own lines must be rejected too.
+	if _, err := ParsePostgRESTLog(mainOnly + unrelated); err == nil {
+		t.Fatal("an unrelated backend's longer parameter (logged after the request) must not rescue it either")
+	}
+}
+
+// Bug (same root cause): a connection pooler hands the same OS PID to many
+// sequential, unrelated backends/transactions over an excerpt's lifetime.
+// unprovenTruncation's evidence was scoped only by source, never by
+// transaction, so an earlier, already-finished transaction on the very same
+// PID — fully separated from the target request by its own COMMIT — could
+// still "prove" the target request's truncated-looking value was not cut,
+// even though a backend restarting under a reused PID (or a pooled backend
+// between two unrelated requests) is not evidence the second request used
+// the same log_parameter_max_length configuration as the first.
+func TestParsePostgRESTLogReusedPIDAcrossTransactionsCannotProveTruncation(t *testing.T) {
+	mainOnly := ellipsisMainOnly(t)
+	// An earlier, fully-finished transaction on the SAME PID (106) as the
+	// target request, closed by its own COMMIT before the target request's
+	// lines begin.
+	earlierTxn := "2026-10-08 17:30:00.000 UTC [106] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 1: BEGIN\n" +
+		"2026-10-08 17:30:00.000 UTC [106] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 2: SELECT $1\n" +
+		"2026-10-08 17:30:00.000 UTC [106] app=PostgREST 16.4 DETAIL:  Parameters: $1 = '" + strings.Repeat("z", 400) + "'\n" +
+		"2026-10-08 17:30:00.000 UTC [106] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 3: COMMIT\n"
+	if _, err := ParsePostgRESTLog(earlierTxn + mainOnly); err == nil || !strings.Contains(err.Error(), "log_parameter_max_length") {
+		t.Fatalf("an earlier, COMMITted transaction on a reused PID must not rescue a later transaction's unproven truncated value, got %v", err)
+	}
+}
+
+// log_parameter_max_length (DETAIL) and log_parameter_max_length_on_error
+// (CONTEXT) are independently configurable, so proof from one source must
+// never cover a value logged under the other, even within the same
+// transaction on the same backend.
+func TestParsePostgRESTLogIndependentDetailAndContextLimits(t *testing.T) {
+	log := fixture(t, "postgrest_timeout.log")
+	// Drop the failing bind's own DETAIL line, exactly as
+	// TestParsePostgRESTLogFailedRequestSources does, so the request's binds
+	// can only be recovered from the error CONTEXT line (source "context") —
+	// otherwise the bind's own DETAIL (source "detail") always wins. Then make
+	// the recovered CONTEXT value end in "...". The same transaction's
+	// session-context DETAIL (the JWT header blob) is a long, untruncated
+	// "detail"-source value — proof for "detail", not "context".
+	var noBindDetail []string
+	lines := strings.Split(log, "\n")
+	for i, l := range lines {
+		if strings.Contains(l, "DETAIL:  Parameters: $1 = '1'") && i > 0 && strings.Contains(lines[i-1], " bind ") {
+			continue
+		}
+		noBindDetail = append(noBindDetail, l)
+	}
+	withAmbiguousContext := strings.Replace(strings.Join(noBindDetail, "\n"),
+		`CONTEXT:  unnamed portal with parameters: $1 = '1', $2 = '0'`,
+		`CONTEXT:  unnamed portal with parameters: $1 = '1...', $2 = '0'`, 1)
+	// Sanity: this fixture's long "detail"-source header value (the JWT blob)
+	// is still present and untouched by the edit above.
+	if !strings.Contains(withAmbiguousContext, `$8 = '{"user-agent"`) {
+		t.Fatal("fixture setup is broken: expected a long detail-source value to remain in the transaction")
+	}
+	if _, err := ParsePostgRESTLog(withAmbiguousContext); err == nil {
+		t.Fatal("a long same-transaction DETAIL value must not prove a CONTEXT value was not truncated")
+	}
+}
+
 // Only an exact trailing "..." is treated as ambiguous; dots elsewhere, or a
 // short run that doesn't end the value, are ordinary data.
 func TestSplitLogParamsAllowsDotsThatDoNotEndTheValue(t *testing.T) {

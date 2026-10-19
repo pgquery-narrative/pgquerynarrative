@@ -97,11 +97,17 @@ var errNoSessionContext = errors.New("no PostgREST session-context statement pre
 
 // paramSet is one logged parameter list. source is "detail" (governed by
 // log_parameter_max_length) or "context" (log_parameter_max_length_on_error).
+// pid and atStmtIdx are this value's provenance: which backend logged it, and
+// where in the parsed statement stream it was logged — see transactionBounds
+// and unprovenTruncation for why both are needed to tell this request's own
+// evidence apart from an unrelated backend's, or a different transaction's.
 type paramSet struct {
-	values  []string
-	present bool
-	err     error
-	source  string
+	values    []string
+	present   bool
+	err       error
+	source    string
+	pid       string
+	atStmtIdx int
 }
 
 type logStatement struct {
@@ -159,6 +165,10 @@ func ParsePostgRESTLog(log string) (*PostgRESTCapture, error) {
 		return nil, fmt.Errorf("captured statement is not a single SELECT")
 	}
 	out := &PostgRESTCapture{QueryID: main.queryID, SQL: main.sql, StatementMs: main.durMs, Failure: main.failure, Prepared: main.prepared}
+	// Only this backend's own values, logged within this same transaction, can
+	// say anything about what this request's logging configuration actually
+	// cut — see transactionParamSets.
+	txnParams := transactionParamSets(stmts, allParams, mainIdx[0])
 
 	ctx, err := sessionContextBefore(stmts, mainIdx[0])
 	switch {
@@ -178,7 +188,7 @@ func ParsePostgRESTLog(log string) (*PostgRESTCapture, error) {
 		for _, v := range ctx.settings {
 			contextValues = append(contextValues, v)
 		}
-		if i := unprovenTruncation(contextValues, "detail", allParams); i >= 0 {
+		if i := unprovenTruncation(contextValues, "detail", txnParams); i >= 0 {
 			return nil, fmt.Errorf("a session-context value ends in '...'; %s", truncationAdvice)
 		}
 		out.ContextLogged = true
@@ -203,7 +213,7 @@ func ParsePostgRESTLog(log string) (*PostgRESTCapture, error) {
 	if n != len(out.Binds) {
 		return nil, fmt.Errorf("captured statement uses $%d but the log carries %d bind value(s)", n, len(out.Binds))
 	}
-	if i := unprovenTruncation(out.Binds, main.ps.source, allParams); i >= 0 {
+	if i := unprovenTruncation(out.Binds, main.ps.source, txnParams); i >= 0 {
 		return nil, fmt.Errorf("bind $%d's logged value ends in '...'; %s", i+1, truncationAdvice)
 	}
 	return out, nil
@@ -216,7 +226,15 @@ const truncationAdvice = "PostgreSQL marks a value cut by log_parameter_max_leng
 // most maxlen bytes and appends "...", so a truncated value is at least maxlen
 // bytes long including the marker, while every untruncated value from the same
 // setting is at most maxlen bytes. An untruncated value longer than v therefore
-// proves v was not cut.
+// proves v was not cut — but only when it was logged by the same backend, in
+// the same transaction, under the same logging source: callers must pass an
+// all already scoped to that (see transactionParamSets), never every paramSet
+// parsed anywhere in the excerpt. A different session's (or a different
+// transaction's, including one that merely reused the same OS PID) longer
+// value says nothing about what this request's own backend was configured to
+// log, and the log_parameter_max_length{,_on_error} limits are independently
+// configurable per source, so "detail" evidence can never stand in for
+// "context" either.
 func unprovenTruncation(values []string, source string, all []paramSet) int {
 	longest := 0
 	for _, ps := range all {
@@ -420,9 +438,9 @@ func parseLogStatements(recs []logRecord) ([]logStatement, []paramSet, error) {
 		}
 		return states[pid]
 	}
-	params := func(list, source string) paramSet {
+	params := func(list, source, pid string) paramSet {
 		values, err := splitLogParams(list)
-		ps := paramSet{values: values, present: true, err: err, source: source}
+		ps := paramSet{values: values, present: true, err: err, source: source, pid: pid, atStmtIdx: len(stmts)}
 		all = append(all, ps)
 		return ps
 	}
@@ -469,16 +487,16 @@ func parseLogStatements(recs []logRecord) ([]logStatement, []paramSet, error) {
 			if len(r.msg) >= len(prefix) && strings.EqualFold(r.msg[:len(prefix)], prefix) {
 				switch {
 				case s.detailStmt >= 0:
-					stmts[s.detailStmt].ps = params(r.msg[len(prefix):], "detail")
+					stmts[s.detailStmt].ps = params(r.msg[len(prefix):], "detail", r.pid)
 				case s.detailBind != nil:
-					s.detailBind.ps = params(r.msg[len(prefix):], "detail")
+					s.detailBind.ps = params(r.msg[len(prefix):], "detail", r.pid)
 				}
 			}
 			s.detailStmt, s.detailBind = -1, nil
 			continue
 		case "CONTEXT":
 			if m := logPortalParamsRe.FindStringSubmatch(r.msg); m != nil && s.failure != nil {
-				s.failure.ps = params(m[1], "context")
+				s.failure.ps = params(m[1], "context", r.pid)
 			}
 			continue
 		case "STATEMENT":
@@ -565,6 +583,84 @@ func namedStatement(name string) bool {
 	return name != "" && !strings.HasPrefix(name, "<unnamed>")
 }
 
+// transactionBoundaryWords are the statements PostgreSQL logs that start or end
+// a transaction on a backend. A pooled connection can be handed to another,
+// logically unrelated transaction — on the same backend, or (since a
+// connection pooler can later hand out a reused OS PID to an entirely
+// different backend process) even on a different one that merely shares the
+// same logged PID — the moment one of these is logged.
+var transactionBoundaryWords = []string{"BEGIN", "START TRANSACTION", "COMMIT", "END", "ROLLBACK", "ABORT"}
+
+func isTransactionBoundaryStatement(sql string) bool {
+	upper := strings.ToUpper(sql)
+	for _, boundary := range transactionBoundaryWords {
+		if strings.HasPrefix(upper, boundary) {
+			return true
+		}
+	}
+	return false
+}
+
+// transactionBounds returns the stmts index range (start, end] that bounds
+// the same backend's same transaction as stmts[idx]: start is the index of
+// the nearest earlier boundary statement on the same PID, or -1 if none;
+// end is the index of the nearest later boundary statement on the same PID,
+// or len(stmts)-1 if none. This is the same window sessionContextBefore
+// already trusts when it stops its own backward scan at a boundary.
+func transactionBounds(stmts []logStatement, idx int) (start, end int) {
+	pid := stmts[idx].pid
+	start = -1
+	for i := idx - 1; i >= 0; i-- {
+		if stmts[i].pid != pid {
+			continue
+		}
+		if isTransactionBoundaryStatement(stmts[i].sql) {
+			start = i
+			break
+		}
+	}
+	end = len(stmts) - 1
+	for i := idx + 1; i < len(stmts); i++ {
+		if stmts[i].pid != pid {
+			continue
+		}
+		if isTransactionBoundaryStatement(stmts[i].sql) {
+			end = i
+			break
+		}
+	}
+	return start, end
+}
+
+// transactionParamSets returns the subset of all logged by stmts[idx]'s own
+// backend PID, within stmts[idx]'s own transaction (see transactionBounds).
+// A value's logging limit can only be inferred from other values this exact
+// session is known to have logged in this exact transaction window: a
+// different backend, an earlier or later transaction on the same backend, or
+// a transaction on a connection that merely reused the same logged PID,
+// proves nothing about what this request's own PostgreSQL backend was
+// configured to log — see unprovenTruncation.
+func transactionParamSets(stmts []logStatement, all []paramSet, idx int) []paramSet {
+	pid := stmts[idx].pid
+	start, end := transactionBounds(stmts, idx)
+	var out []paramSet
+	for _, ps := range all {
+		if ps.pid != pid {
+			continue
+		}
+		// atStmtIdx is len(stmts) at the moment this value was logged, so
+		// atStmtIdx-1 is the stmts index it was logged at or just before —
+		// a chronological marker on the same timeline start/end are indices
+		// into, even when that exact stmts slot belongs to another PID's
+		// interleaved statement.
+		assoc := ps.atStmtIdx - 1
+		if assoc > start && assoc <= end {
+			out = append(out, ps)
+		}
+	}
+	return out
+}
+
 type sessionContext struct {
 	searchPath, role, method, path, claims string
 	settings                               map[string]string
@@ -580,11 +676,8 @@ func sessionContextBefore(stmts []logStatement, idx int) (sessionContext, error)
 		if s.pid != stmts[idx].pid {
 			continue
 		}
-		upper := strings.ToUpper(s.sql)
-		for _, boundary := range []string{"BEGIN", "START TRANSACTION", "COMMIT", "END", "ROLLBACK", "ABORT"} {
-			if strings.HasPrefix(upper, boundary) {
-				return sessionContext{}, errNoSessionContext
-			}
+		if isTransactionBoundaryStatement(s.sql) {
+			return sessionContext{}, errNoSessionContext
 		}
 		if !strings.Contains(s.sql, "set_config") {
 			continue
