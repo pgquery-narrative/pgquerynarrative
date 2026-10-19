@@ -82,6 +82,16 @@ func notRequestedEquivalence() EquivalenceResult {
 // compareResultEquivalence runs COUNT(*) on both queries, then compares a
 // deterministic bounded sample. The caller is responsible for authorizing query
 // execution before calling this. Returns Unverified (Equal=nil) on any run error.
+//
+// Every read either path issues — the fingerprint pair, or the COUNT(*) and
+// sample pairs in the fallback — runs against one shared Runner.RunSnapshot
+// transaction per path, never two separate Run calls. Two separate
+// transactions can each observe a different concurrently committed write and
+// agree or disagree by accident: e.g. comparing SELECT n and SELECT n-1
+// against a row moving from n=1 to n=2 between two unsynchronized reads can
+// make every single snapshot's true values (1 vs 0, or 2 vs 1 — never equal)
+// look equal (1 vs 1) purely from the timing of an unrelated write. Holding
+// one snapshot for every read in a path closes that gap.
 func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, beforeSQL, afterSQL string) EquivalenceResult {
 	out := EquivalenceResult{
 		Status: EquivalenceUnverified,
@@ -101,8 +111,62 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 		return res
 	}
 
-	beforeCount, errB := countQueryRows(ctx, runner, beforeSQL)
-	afterCount, errA := countQueryRows(ctx, runner, afterSQL)
+	return compareByCountAndSample(ctx, runner, beforeSQL, afterSQL)
+}
+
+// compareByCountAndSample is compareResultEquivalence's fallback when
+// compareByFingerprint cannot run (e.g. a result column with no text output,
+// or — see parseCountResult/parseFingerprintResult's maxColumns interaction —
+// a runner configured with a lower column cap than the fingerprint's 5
+// aggregate columns need).
+func compareByCountAndSample(ctx context.Context, runner *queryrunner.Runner, beforeSQL, afterSQL string) EquivalenceResult {
+	out := EquivalenceResult{
+		Status: EquivalenceUnverified,
+		Notes:  "Result equivalence could not be verified (query error, timeout, or incomplete sample). Treat as unknown — not as a mismatch.",
+	}
+
+	beforeCountSQL, err := wrapCountSQL(beforeSQL)
+	if err != nil {
+		out.Notes = fmt.Sprintf("Result equivalence unverified: %v", err)
+		return out
+	}
+	afterCountSQL, err := wrapCountSQL(afterSQL)
+	if err != nil {
+		out.Notes = fmt.Sprintf("Result equivalence unverified: %v", err)
+		return out
+	}
+	// The sample fetch always orders by md5(row::text) before the LIMIT, even
+	// though that ordering only matters once the full result is larger than
+	// the cap (see wrapEquivalenceSampleSQL): this query's SQL text has to be
+	// built now, before COUNT(*) has run, because all four reads below share
+	// one snapshot — splitting COUNT(*) and the sample fetch into two
+	// separate RunSnapshot calls would reopen exactly the concurrent-write
+	// race this function exists to close, just with a shorter window (a
+	// write landing between the count snapshot and a later, separate sample
+	// snapshot could still make a stale count agree with a sample that no
+	// longer matches it, or vice versa). Sorting a result that turns out to
+	// already fit under the cap costs a sort on a small result set; that is
+	// cheap, and correctness cannot wait for the count to decide whether it
+	// is needed.
+	beforeSampleSQL, err := wrapEquivalenceSampleSQL(beforeSQL, equivalenceSampleCap, true)
+	if err != nil {
+		out.Notes = fmt.Sprintf("Result equivalence unverified: sample SQL could not be built: %v", err)
+		return out
+	}
+	afterSampleSQL, err := wrapEquivalenceSampleSQL(afterSQL, equivalenceSampleCap, true)
+	if err != nil {
+		out.Notes = fmt.Sprintf("Result equivalence unverified: sample SQL could not be built: %v", err)
+		return out
+	}
+
+	results := runner.RunSnapshot(ctx, []queryrunner.SnapshotQuery{
+		{SQL: beforeCountSQL, Limit: 1},
+		{SQL: afterCountSQL, Limit: 1},
+		{SQL: beforeSampleSQL, Limit: equivalenceSampleCap},
+		{SQL: afterSampleSQL, Limit: equivalenceSampleCap},
+	})
+	beforeCount, errB := parseCountResult(results[0].Result, results[0].Err)
+	afterCount, errA := parseCountResult(results[1].Result, results[1].Err)
 	if errB != nil || errA != nil {
 		out.Notes = fmt.Sprintf(
 			"Result equivalence unverified: COUNT(*) failed (before_err=%v after_err=%v). Unknown — not a mismatch.",
@@ -124,23 +188,38 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 		return out
 	}
 
-	// The full result already fits the cap: fetch it in any order and let the
-	// order-independent multiset fingerprint compare it. Only when the result is
-	// larger than the cap do we need the deterministic md5 ordering so the two
-	// samples cover the same rows — and only then do we pay for the sort.
-	deterministic := beforeCount > int64(equivalenceSampleCap)
-	before, err := runEquivalenceSample(ctx, runner, beforeSQL, deterministic)
-	if err != nil {
-		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample run failed on original SQL: %v. Unverified — not a mismatch.", beforeCount, err)
+	if results[2].Err != nil {
+		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample run failed on original SQL: %v. Unverified — not a mismatch.", beforeCount, results[2].Err)
 		return out
 	}
-	after, err := runEquivalenceSample(ctx, runner, afterSQL, deterministic)
-	if err != nil {
-		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample run failed on candidate SQL: %v. Unverified — not a mismatch.", afterCount, err)
+	if results[3].Err != nil {
+		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample run failed on candidate SQL: %v. Unverified — not a mismatch.", afterCount, results[3].Err)
 		return out
 	}
+	before, after := results[2].Result, results[3].Result
 	if before == nil || after == nil {
 		out.Notes = fmt.Sprintf("COUNT(*) matched (%d rows) but sample result was empty/nil. Unverified — not a mismatch.", beforeCount)
+		return out
+	}
+
+	// The sample request asked for up to equivalenceSampleCap rows (or all of
+	// beforeCount, if fewer); the runner itself may still cap what one query
+	// can return lower than that (maxRows, maxResultBytes, ...). If either side
+	// came back shorter than expected, rows were silently dropped by a limit
+	// unrelated to this comparison's own cap — not fully sampled, and not
+	// known to be a full compare either, so neither VerifiedEqual nor
+	// SampleMatch can be claimed from it, matching or not: a match over a
+	// truncated, arbitrarily-ordered subset proves nothing about the rows
+	// that were never fetched.
+	expectedRows := beforeCount
+	if expectedRows > int64(equivalenceSampleCap) {
+		expectedRows = int64(equivalenceSampleCap)
+	}
+	if int64(before.RowCount) < expectedRows || int64(after.RowCount) < expectedRows {
+		out.Notes = fmt.Sprintf(
+			"COUNT(*) matched (%d rows) but the runner returned only %d (before) / %d (after) of the %d rows this comparison needed — a configured result limit (not this comparison's own %d-row cap) truncated the sample. Unverified — not a mismatch.",
+			beforeCount, before.RowCount, after.RowCount, expectedRows, equivalenceSampleCap,
+		)
 		return out
 	}
 
@@ -189,25 +268,20 @@ func compareResultEquivalence(ctx context.Context, runner *queryrunner.Runner, b
 	return out
 }
 
-// runEquivalenceSample fetches up to equivalenceSampleCap rows of sql. When
-// deterministic is set (the result is larger than the cap) it orders by
-// md5(row::text) before the LIMIT so two queries with identical full result sets
-// return the same subset; an un-ordered LIMIT would return an arbitrary — and
-// possibly different — slice of each plan. When the whole result fits the cap
-// the plain unordered fetch is enough (the fingerprint is order-independent) and
-// avoids sorting the result set.
-func runEquivalenceSample(ctx context.Context, runner *queryrunner.Runner, sql string, deterministic bool) (*queryrunner.Result, error) {
-	if !deterministic {
-		return runner.Run(ctx, sql, equivalenceSampleCap)
-	}
-	wrapped, err := wrapDeterministicSampleSQL(sql, equivalenceSampleCap)
-	if err != nil {
-		return nil, err
-	}
-	return runner.Run(ctx, wrapped, equivalenceSampleCap)
-}
-
-func wrapDeterministicSampleSQL(sql string, limit int) (string, error) {
+// wrapEquivalenceSampleSQL renders every row of sql to PostgreSQL's own
+// composite-to-text form inside the database — the same lossless rendering the
+// primary hashtextextended fingerprint already trusts (see wrapFingerprintSQL)
+// — instead of fetching structured column values for Go to decode. A row
+// containing a JSON/JSONB value, such as PostgREST's whole-response wrapper,
+// would otherwise have to pass through pgx's default JSON decode into a Go
+// interface{}, which unmarshals every JSON number as a float64 and silently
+// rounds an integer above 2^53 (9007199254740992) to the nearest representable
+// value. Two candidate results that differ only in such a digit could then
+// decode to the same float64, fingerprint identically, and be reported
+// VerifiedEqual. Casting the whole row to text in SQL means no column value is
+// ever decoded into a Go number at all, so this holds for any column shape, not
+// only ones a caller happens to know might carry JSON.
+func wrapEquivalenceSampleSQL(sql string, limit int, deterministic bool) (string, error) {
 	inner, _, err := queryrunner.ExtractReadOnlySQL(sql)
 	if err != nil {
 		return "", err
@@ -216,18 +290,19 @@ func wrapDeterministicSampleSQL(sql string, limit int) (string, error) {
 	if inner == "" {
 		return "", fmt.Errorf("empty SQL")
 	}
+	order := ""
+	if deterministic {
+		order = " ORDER BY md5(pgqn_eq::text)"
+	}
 	return fmt.Sprintf(
-		"SELECT * FROM (%s) AS pgqn_eq ORDER BY md5(pgqn_eq::text) LIMIT %d",
-		inner, limit,
+		"SELECT pgqn_eq::text AS pgqn_row FROM (%s) AS pgqn_eq%s LIMIT %d",
+		inner, order, limit,
 	), nil
 }
 
-func countQueryRows(ctx context.Context, runner *queryrunner.Runner, sql string) (int64, error) {
-	wrapped, err := wrapCountSQL(sql)
-	if err != nil {
-		return 0, err
-	}
-	res, err := runner.Run(ctx, wrapped, 1)
+// parseCountResult extracts the COUNT(*) scalar from a wrapCountSQL result
+// run via Runner.RunSnapshot.
+func parseCountResult(res *queryrunner.Result, err error) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
@@ -277,35 +352,49 @@ func errString(err error) string {
 	return err.Error()
 }
 
-// multisetFingerprint hashes column names plus a sorted list of per-row hashes so
-// unordered SELECT results do not false-negative as Different.
+// multisetFingerprint hashes a sorted list of per-row hashes so unordered
+// SELECT results do not false-negative as Different. Each row must already be
+// PostgreSQL's own composite-to-text rendering of the row — produced by
+// wrapEquivalenceSampleSQL, never a Go-decoded column value — so that a
+// JSON/JSONB value's exact digits survive instead of being rounded by a
+// float64 decode. A row that is not that single text cell fails closed
+// (ok=false) rather than silently hashing something else.
 func multisetFingerprint(result *queryrunner.Result) (string, bool) {
 	if result == nil {
 		return "", false
 	}
-	cols := make([]string, 0, len(result.Columns))
-	for _, c := range result.Columns {
-		cols = append(cols, c.Name)
-	}
 	rowHashes := make([]string, 0, len(result.Rows))
 	for _, row := range result.Rows {
-		payload, err := json.Marshal(row)
-		if err != nil {
+		text, ok := rowTextCell(row)
+		if !ok {
 			return "", false
 		}
-		sum := sha256.Sum256(payload)
+		sum := sha256.Sum256([]byte(text))
 		rowHashes = append(rowHashes, hex.EncodeToString(sum[:]))
 	}
 	sort.Strings(rowHashes)
-	blob, err := json.Marshal(struct {
-		Columns []string `json:"columns"`
-		Rows    []string `json:"rows"`
-	}{Columns: cols, Rows: rowHashes})
+	blob, err := json.Marshal(rowHashes)
 	if err != nil {
 		return "", false
 	}
 	sum := sha256.Sum256(blob)
 	return hex.EncodeToString(sum[:]), true
+}
+
+// rowTextCell returns row's single text cell (PostgreSQL's own row::text
+// rendering), or ok=false if row is not shaped that way.
+func rowTextCell(row []interface{}) (string, bool) {
+	if len(row) != 1 {
+		return "", false
+	}
+	switch t := row[0].(type) {
+	case string:
+		return t, true
+	case []byte:
+		return string(t), true
+	default:
+		return "", false
+	}
 }
 
 // resultFingerprint kept for unit tests / stable single-result hashing.
@@ -353,13 +442,10 @@ func wrapFingerprintSQL(sql string) (string, error) {
 FROM (%s) AS pgqn_eq`, inner), nil
 }
 
-func runResultFingerprint(ctx context.Context, runner *queryrunner.Runner, sql string) (aggregateFingerprint, error) {
+// parseFingerprintResult extracts the five aggregate scalars from a
+// wrapFingerprintSQL result run via Runner.RunSnapshot.
+func parseFingerprintResult(res *queryrunner.Result, err error) (aggregateFingerprint, error) {
 	var fp aggregateFingerprint
-	wrapped, err := wrapFingerprintSQL(sql)
-	if err != nil {
-		return fp, err
-	}
-	res, err := runner.Run(ctx, wrapped, 1)
 	if err != nil {
 		return fp, err
 	}
@@ -392,11 +478,20 @@ func (f aggregateFingerprint) equal(other aggregateFingerprint) bool {
 func compareByFingerprint(ctx context.Context, runner *queryrunner.Runner, beforeSQL, afterSQL string) (EquivalenceResult, bool) {
 	var out EquivalenceResult
 
-	beforeFP, errB := runResultFingerprint(ctx, runner, beforeSQL)
+	beforeWrapped, errB := wrapFingerprintSQL(beforeSQL)
+	afterWrapped, errA := wrapFingerprintSQL(afterSQL)
+	if errB != nil || errA != nil {
+		return out, false
+	}
+	results := runner.RunSnapshot(ctx, []queryrunner.SnapshotQuery{
+		{SQL: beforeWrapped, Limit: 1},
+		{SQL: afterWrapped, Limit: 1},
+	})
+	beforeFP, errB := parseFingerprintResult(results[0].Result, results[0].Err)
 	if errB != nil {
 		return out, false
 	}
-	afterFP, errA := runResultFingerprint(ctx, runner, afterSQL)
+	afterFP, errA := parseFingerprintResult(results[1].Result, results[1].Err)
 	if errA != nil {
 		return out, false
 	}

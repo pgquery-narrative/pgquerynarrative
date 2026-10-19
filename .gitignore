@@ -45,6 +45,12 @@ secrets/
 coverage.out
 coverage.html
 *.log
+# ...except committed test fixtures that happen to be literal PostgreSQL log
+# excerpts — the blanket *.log rule above was silently excluding these from
+# every `git add`, so TestParsePostgREST* passed locally (the files exist on
+# disk) but failed in CI (a fresh checkout never had them) with
+# "open testdata/....log: no such file or directory".
+!internal/queryrunner/testdata/*.log
 *.tmp
 
 # Frontend dependencies and build output. Every consumer — Dockerfile, CI, the
@@ -89,6 +95,11 @@ cmd/linkedin-social/
 automation/
 tools/demo/capture_readme_gif.sh
 docs/assets/demo-workflow.gif
+# Local content-strategy / audience research notes — not engineering output,
+# never belongs in the public tree (see the same reasoning as the LinkedIn
+# tooling above).
+/reports/
+/research_notes/
 
 # Local-only AI agent context (never publish — keep on disk for Cursor/agents)
 AGENTS.md

@@ -13,6 +13,22 @@ export function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "..." : s;
 }
 
+/** Byte length of s as the server counts it (UTF-8 len(sql) in Go), not JS string length (UTF-16 code units). */
+export function utf8ByteLength(s: string): number {
+  return new TextEncoder().encode(s).length;
+}
+
+/**
+ * The largest SQL byte length any server configuration can ever accept —
+ * DATABASE_MAX_QUERY_LENGTH's hard ceiling (see internal/config/validate.go).
+ * The frontend has no way to know the operator's actual configured limit
+ * (1,000-1,000,000 bytes, defaulting to 10,000), so this cannot reject
+ * anything a correctly configured server would accept. It only catches a
+ * paste no configuration could ever accept, before paying a round trip to
+ * find that out.
+ */
+export const MAX_PASTED_SQL_BYTES = 1_000_000;
+
 /** Human-readable relative time (e.g. "22 minutes ago"). */
 export function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();

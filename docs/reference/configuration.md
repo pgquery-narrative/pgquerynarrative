@@ -62,6 +62,7 @@ here; this page states each variable's ordinary default and behavior.
 | `QUERY_MAX_RESULT_BYTES` | `10485760` (10 MiB) | Approximate max materialized result size before `QUERY_RESULT_TOO_LARGE`. Must be > 0 in production |
 | `QUERY_MAX_CELL_BYTES` | `1048576` (1 MiB) | Approximate max size for one cell. Must be > 0 in production |
 | `QUERY_MAX_COLUMNS` | `100` | Max columns in a result. Must be > 0 in production |
+| `DATABASE_MAX_QUERY_LENGTH` | `10000` | Max statement length in bytes the query validator accepts (1,000–1,000,000). Raise it to import PostgREST requests with large `in.(...)` lists |
 | `DATABASE_ALLOWED_SCHEMAS` | `demo` | Comma-separated schema allowlist. Never `app`, `pg_catalog`, `information_schema`, `pg_toast*`, always rejected. Must be non-empty and exclude `public` in production |
 | `DATABASE_DEFAULT_CONNECTION_ID` | `default` | Connection used when `connection_id` is omitted or blank. If this id isn't among the configured connections, the first configured connection is used instead |
 | `DATABASE_CONNECTIONS_JSON` | empty | JSON array of additional read-only connections, see [below](#multiple-database-connections) |
@@ -185,6 +186,7 @@ or `SECURITY_OIDC_ISSUER` is required whenever auth is enabled.
 | `SECURITY_EXPLAIN_SNAPSHOT_RETENTION_DAYS` | `90` (`0` = forever) | Retention for stored EXPLAIN snapshots, cleaned up every 6h |
 | `SECURITY_STAT_STATEMENTS_ENABLED` | `true` | Whether `pg_stat_statements` reads (query stats, regression polling) are attempted |
 | `SECURITY_CONNECTION_ALLOWLIST_REQUIRED` | on under StrictMode, else off | When on, an organization with no assignment for a connection is denied instead of allowed by default |
+| `SECURITY_POSTGREST_REPLAY_ROLES` | empty | Comma-separated PostgREST roles an imported request may be replayed as (`SET LOCAL ROLE`, so role-keyed RLS matches the endpoint). Empty never impersonates. Each role must also be granted to the analytical role. `request.jwt.claims` is never replayed, for any role: the capture is unverified caller-supplied text, so claims-keyed RLS (e.g. `auth.uid()`) cannot be reproduced |
 
 ### OIDC
 

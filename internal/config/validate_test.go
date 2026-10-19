@@ -268,3 +268,14 @@ func TestIsWeakSecret(t *testing.T) {
 		t.Fatal("strong password marked weak")
 	}
 }
+
+func TestValidate_MaxQueryLengthRange(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	for n, ok := range map[int]bool{0: true, 1000: true, 50000: true, 1000000: true, 999: false, 1000001: false, -5: false} {
+		cfg := validProductionConfig()
+		cfg.Database.MaxQueryLength = n
+		if err := cfg.Validate(); (err == nil) != ok {
+			t.Fatalf("DATABASE_MAX_QUERY_LENGTH=%d: err=%v, want ok=%v", n, err, ok)
+		}
+	}
+}
