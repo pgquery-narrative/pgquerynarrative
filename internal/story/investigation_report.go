@@ -543,18 +543,27 @@ func normalizeEquivalenceStatus(s string) string {
 }
 
 // RedactSQL returns a copy of report with every field that carries raw SQL
-// text or captured PostgREST bind values cleared — for a viewer (an
+// text, captured PostgREST bind values, a literal EXPLAIN filter clause, or a
+// verbatim captured PostgreSQL error cleared — for a viewer (an
 // unauthenticated share-link visitor, or a Viewer-role user) who must not see
-// the underlying query. It clears SourceQuery, the ProposedChange of every
-// CandidateImprovement whose Kind is executable SQL (an investigate_hint's
-// plain-English pointer is not SQL and is left alone), Provenance.PostgREST's
-// captured Binds, and the PostgreSQLEvidence line that states those bind
-// values (see postgrestBindsLine — this is the exact text that line exists to
-// show, so filtering by its own prefix removes the one line that leaks the
-// values it quotes, not findings or timings). Findings, timings, the
-// endpoint/role/method and replay limitations are untouched: they describe
-// the investigation, not the query text, and a viewer denied the SQL can
-// still use them.
+// the underlying query. Query text and bind values are not the only way a
+// value from the query leaks: a plan finding's Message/Evidence can embed the
+// literal predicate EXPLAIN printed (see planFindingMessage/seqScanEvidence
+// in queryrunner), and PostgREST.Failure is a verbatim captured PostgreSQL
+// error that can quote a literal straight out of the query — neither is a
+// known bind string, so this cannot rely on matching the Binds list.
+//
+// It clears SourceQuery; the ProposedChange of every CandidateImprovement
+// whose Kind is executable SQL (an investigate_hint's plain-English pointer
+// is not SQL and is left alone); strips any literal filter clause from every
+// finding's Message and every candidate's WhyItMightHelp (see
+// redactLiteralFilterText), and drops any Evidence line that is entirely that
+// literal filter text; drops the PostgreSQLEvidence lines that state captured
+// bind values or a captured production failure verbatim (see
+// redactSensitiveEvidenceLines); and clears Provenance.PostgREST's captured
+// Binds and Failure. Findings, timings, the endpoint/role/method and replay
+// limitations are otherwise untouched: they describe the investigation, not
+// the query text, and a viewer denied the SQL can still use them.
 func RedactSQL(report InvestigationReport) InvestigationReport {
 	report.SourceQuery = ""
 	if len(report.CandidateImprovements) > 0 {
@@ -563,14 +572,25 @@ func RedactSQL(report InvestigationReport) InvestigationReport {
 			if c.Kind == CandidateKindSQLRewrite || c.Kind == CandidateKindIndexDDL {
 				c.ProposedChange = ""
 			}
+			c.WhyItMightHelp = redactLiteralFilterText(c.WhyItMightHelp)
 			candidates[i] = c
 		}
 		report.CandidateImprovements = candidates
 	}
-	report.PostgreSQLEvidence = redactBindsEvidenceLine(report.PostgreSQLEvidence)
+	if len(report.PlanFindings) > 0 {
+		findings := make([]InvestigationFinding, len(report.PlanFindings))
+		for i, f := range report.PlanFindings {
+			f.Message = redactLiteralFilterText(f.Message)
+			f.Evidence = redactFilterEvidence(f.Evidence)
+			findings[i] = f
+		}
+		report.PlanFindings = findings
+	}
+	report.PostgreSQLEvidence = redactSensitiveEvidenceLines(report.PostgreSQLEvidence)
 	if report.Provenance.PostgREST != nil {
 		pg := *report.Provenance.PostgREST
 		pg.Binds = nil
+		pg.Failure = nil
 		report.Provenance.PostgREST = &pg
 	}
 	// EquivalenceValidation.Notes is free text built from whatever error a
@@ -591,15 +611,81 @@ func RedactSQL(report InvestigationReport) InvestigationReport {
 	return report
 }
 
-// RedactSQLFromNarrativeDrivers strips the same bind-revealing line RedactSQL
+// RedactSQLFromNarrativeDrivers strips the same sensitive lines RedactSQL
 // removes from PostgreSQLEvidence, from a NarrativeContent.Drivers slice
 // built alongside an InvestigationReport — BuildInvestigationReport sets
 // Drivers to the exact same lines (see pgEvidence).
 func RedactSQLFromNarrativeDrivers(drivers []string) []string {
-	return redactBindsEvidenceLine(drivers)
+	return redactSensitiveEvidenceLines(drivers)
 }
 
-func redactBindsEvidenceLine(lines []string) []string {
+// RedactSQLFromNarrativeTakeaways strips any literal EXPLAIN filter clause
+// from a NarrativeContent.Takeaways slice built alongside an
+// InvestigationReport — buildTakeaways copies every candidate's
+// WhyItMightHelp verbatim (see RedactSQL's doc comment for why that text can
+// carry a literal from the query), and that copy happens before RedactSQL
+// ever runs, so Takeaways needs its own pass over the same text.
+func RedactSQLFromNarrativeTakeaways(takeaways []string) []string {
+	if len(takeaways) == 0 {
+		return takeaways
+	}
+	out := make([]string, len(takeaways))
+	for i, t := range takeaways {
+		out[i] = redactLiteralFilterText(t)
+	}
+	return out
+}
+
+// filterTextMarker is the exact separator planFindingMessage
+// (queryrunner/explain.go) inserts before a literal EXPLAIN filter clause in
+// a plan finding's Message. Matching on this marker — a template this
+// package controls, not any specific captured value — lets redaction remove
+// whatever filter text follows it regardless of content, including a literal
+// that never appeared in any captured bind list.
+const filterTextMarker = " — filter: "
+
+// redactLiteralFilterText removes a literal EXPLAIN filter clause embedded
+// after filterTextMarker, replacing it with a fixed placeholder and leaving
+// everything before and after (including the generic guidance clause
+// planFindingMessage appends next) intact. A no-op when the marker is absent.
+func redactLiteralFilterText(s string) string {
+	idx := strings.Index(s, filterTextMarker)
+	if idx < 0 {
+		return s
+	}
+	rest := s[idx+len(filterTextMarker):]
+	if end := strings.Index(rest, " — "); end >= 0 {
+		return s[:idx] + " — filter withheld" + rest[end:]
+	}
+	return s[:idx] + " — filter withheld"
+}
+
+// redactFilterEvidence drops any Evidence entry that is entirely the literal
+// EXPLAIN filter text (see seqScanEvidence's "Filter="+filter in
+// queryrunner/plan_analysis.go) — unlike Message, an Evidence line carries no
+// safe prefix worth preserving once the filter is removed from it.
+func redactFilterEvidence(evidence []string) []string {
+	if len(evidence) == 0 {
+		return evidence
+	}
+	out := make([]string, 0, len(evidence))
+	for _, e := range evidence {
+		if strings.HasPrefix(e, "Filter=") {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// redactSensitiveEvidenceLines drops PostgreSQLEvidence/Narrative.Drivers
+// lines built entirely from values a restricted viewer must not see — the
+// captured-bind-values line (see postgrestBindsLine) and the captured
+// production failure line (see the PostgREST.Failure branch in
+// BuildInvestigationReport, which embeds *pg.Failure verbatim and may quote a
+// literal from the query that is not in the bind list at all) — and strips
+// any embedded literal filter clause from the remaining lines.
+func redactSensitiveEvidenceLines(lines []string) []string {
 	if len(lines) == 0 {
 		return lines
 	}
@@ -608,7 +694,10 @@ func redactBindsEvidenceLine(lines []string) []string {
 		if strings.HasPrefix(l, "Captured bind values (") {
 			continue
 		}
-		out = append(out, l)
+		if strings.HasPrefix(l, "The request statement failed in production: ") {
+			continue
+		}
+		out = append(out, redactLiteralFilterText(l))
 	}
 	return out
 }

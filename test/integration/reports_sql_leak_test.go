@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -29,10 +30,19 @@ import (
 // Viewer, could read the full query and its captured parameter values straight
 // out of the narrative or metrics even with SQL exposure disabled.
 //
+// Two further leaks of the same kind, fixed alongside the above: a plan
+// finding's Message/Evidence can embed the literal EXPLAIN filter clause
+// verbatim (planFindingMessage/seqScanEvidence in queryrunner), which also
+// reaches CandidateImprovements[].WhyItMightHelp and Narrative.Takeaways; and
+// PostgREST.Failure is a verbatim captured production PostgreSQL error that
+// is not a bind value at all, so it cannot be caught by filtering the Binds
+// list.
+//
 // This generates a real investigation report (story.BuildInvestigationReport)
-// with a distinctive source SQL marker, candidate SQL marker and captured bind
-// secret, stores it exactly as Generate would, and checks every reader's
-// serialized JSON response for all three markers.
+// with a distinctive source SQL marker, candidate SQL marker, captured bind
+// secret, literal plan-filter secret and captured-failure secret, stores it
+// exactly as Generate would, and checks every reader's serialized JSON
+// response for every marker.
 func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 	ctx := context.Background()
 	container := helpers.RunPostgresContainer(t, ctx)
@@ -60,11 +70,29 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 		// can echo a literal value straight out of the query — here standing
 		// in for an echoed bind value a type-mismatch error quoted back.
 		equivalenceErrorSecret = "echoed-literal-secret-5fa2"
+		// A plan finding's Message/Evidence embeds the literal EXPLAIN filter
+		// clause verbatim (see planFindingMessage/seqScanEvidence in
+		// queryrunner) — shaped here exactly like that real output.
+		filterSecret = "secret-filter-literal-d4e9"
+		// PostgREST.Failure is a verbatim captured production PostgreSQL error;
+		// unlike bindSecret, it is never in the Binds list at all.
+		failureSecret = "duplicate key value violates unique constraint secret-detail-b2a7"
 	)
 
+	failure := "query execution failed: SQLSTATE 23505: " + failureSecret
 	report, narrative := story.BuildInvestigationReport(
 		"Investigation", sourceSQL, candidateSQL, "fp-leak-test", "default",
-		story.StatInput{}, nil, &story.ComparisonInput{
+		story.StatInput{}, []story.PlanFindingInput{
+			{
+				Category:   "seq_scan",
+				Confidence: "medium",
+				Message: fmt.Sprintf(
+					"Sequential scan on demo.sales (estimated cost 120.00) — filter: (status = '%s'::text) — consider a btree index on filtered or joined columns",
+					filterSecret,
+				),
+				Evidence: []string{"Total Cost=120.00", "Plan Rows=500", "Filter=(status = '" + filterSecret + "'::text)"},
+			},
+		}, &story.ComparisonInput{
 			ResultEquivalenceStatus: "Unverified",
 			ResultEquivalenceNotes:  "sample run failed on candidate SQL: query execution failed: SQLSTATE 22P02: invalid input syntax for type integer: \"" + equivalenceErrorSecret + "\"",
 		},
@@ -72,6 +100,7 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 			Method: "GET", Endpoint: "/orders", Role: "web_anon",
 			EndpointEquivalence: "not_claimed",
 			Binds:               []string{bindSecret},
+			Failure:             &failure,
 		}},
 	)
 	narrativeJSON, err := json.Marshal(narrative)
@@ -92,7 +121,10 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 	if !strings.Contains(string(narrativeJSON), bindSecret) {
 		t.Fatalf("fixture setup is broken: bind secret missing from narrative: %s", narrativeJSON)
 	}
-	for _, marker := range []string{sourceSQL, candidateSQL, bindSecret, equivalenceErrorSecret} {
+	if !strings.Contains(string(narrativeJSON), filterSecret) || !strings.Contains(string(narrativeJSON), failureSecret) {
+		t.Fatalf("fixture setup is broken: filter/failure secret missing from narrative: %s", narrativeJSON)
+	}
+	for _, marker := range []string{sourceSQL, candidateSQL, bindSecret, equivalenceErrorSecret, filterSecret, failureSecret} {
 		if !strings.Contains(string(metricsJSON), marker) {
 			t.Fatalf("fixture setup is broken: %q missing from metrics: %s", marker, metricsJSON)
 		}
@@ -123,7 +155,7 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: marshal: %v", label, err)
 		}
-		for _, marker := range []string{sourceSQL, candidateSQL, bindSecret, topLevelSQL, equivalenceErrorSecret} {
+		for _, marker := range []string{sourceSQL, candidateSQL, bindSecret, topLevelSQL, equivalenceErrorSecret, filterSecret, failureSecret} {
 			if strings.Contains(string(b), marker) {
 				t.Errorf("%s: leaked marker %q in response: %s", label, marker, b)
 			}
@@ -135,7 +167,7 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: marshal: %v", label, err)
 		}
-		for _, marker := range []string{sourceSQL, candidateSQL, bindSecret, equivalenceErrorSecret} {
+		for _, marker := range []string{sourceSQL, candidateSQL, bindSecret, equivalenceErrorSecret, filterSecret, failureSecret} {
 			if !strings.Contains(string(b), marker) {
 				t.Errorf("%s: expected marker %q present for authorized access, missing from: %s", label, marker, b)
 			}

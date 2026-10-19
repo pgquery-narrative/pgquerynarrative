@@ -386,3 +386,111 @@ func TestRedactSQLScrubsUnverifiedEquivalenceNotes(t *testing.T) {
 		t.Fatalf("a VerifiedEqual status's safe Notes must not be touched, got %+v", redactedMatched.EquivalenceValidation)
 	}
 }
+
+// Bug: RedactSQL/RedactSQLFromNarrativeDrivers only ever cleared SourceQuery,
+// a sql_rewrite/index_ddl ProposedChange, and the captured Binds list plus
+// its one evidence line. Two other paths still carried a literal value out
+// of the query into a restricted viewer's response:
+//
+//  1. A plan finding's Message/Evidence embeds the literal EXPLAIN filter
+//     clause verbatim (see planFindingMessage/seqScanEvidence in
+//     queryrunner), which flows into PlanFindings, PostgreSQLEvidence,
+//     Narrative.Drivers (the same lines), and CandidateImprovements[].WhyItMightHelp
+//     (groupedInvestigateHints copies a seq_scan/index_candidate finding's
+//     Message verbatim) and from there into Narrative.Takeaways.
+//  2. PostgREST.Failure is a verbatim captured production PostgreSQL error
+//     (not a bind value — it is never in the Binds list) that is both
+//     serialized directly under Provenance.PostgREST.Failure and quoted into
+//     a PostgreSQLEvidence/Drivers line.
+//
+// This reproduces both with realistic report construction — a
+// PlanFindingInput shaped exactly like queryrunner's real output, and a
+// PostgREST.Failure populated the way investigations_postgrest.go populates
+// it — and checks every redaction surface.
+func TestRedactSQLScrubsLiteralFilterTextAndCapturedFailure(t *testing.T) {
+	const (
+		filterSecret  = "secret-filter-literal-7af2"
+		failureSecret = "duplicate key value violates unique constraint secret-detail-c91a"
+	)
+	findings := []PlanFindingInput{
+		{
+			Category:   "seq_scan",
+			Confidence: "medium",
+			Message: fmt.Sprintf(
+				"Sequential scan on demo.sales (estimated cost 120.00) — filter: (status = '%s'::text) — consider a btree index on filtered or joined columns",
+				filterSecret,
+			),
+			Evidence: []string{
+				"Total Cost=120.00",
+				"Plan Rows=500",
+				"Filter=(status = '" + filterSecret + "'::text)",
+			},
+		},
+	}
+	failure := fmt.Sprintf("query execution failed: SQLSTATE 23505: %s", failureSecret)
+	p := &PostgRESTEvidence{
+		Method: "GET", Endpoint: "/orders", Role: "web_anon", EndpointEquivalence: "not_claimed",
+		Failure: &failure,
+	}
+
+	report, narrative := BuildInvestigationReport(
+		"Investigation", "SELECT secret_col FROM t", "SELECT secret_col FROM t WHERE 1=1", "fp1", "default",
+		StatInput{}, findings, nil, InvestigationProvenance{PostgREST: p},
+	)
+
+	// Sanity check: the fixture really does carry both secrets before any
+	// redaction runs, across every surface the fix must cover.
+	preRedaction, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{filterSecret, failureSecret} {
+		if !strings.Contains(string(preRedaction), marker) {
+			t.Fatalf("fixture setup is broken: %q missing from unredacted report: %s", marker, preRedaction)
+		}
+	}
+	if !strings.Contains(strings.Join(narrative.Drivers, "\n"), filterSecret) {
+		t.Fatal("fixture setup is broken: filter secret missing from narrative drivers")
+	}
+	if !strings.Contains(strings.Join(narrative.Drivers, "\n"), failureSecret) {
+		t.Fatal("fixture setup is broken: failure secret missing from narrative drivers")
+	}
+	sawFilterInTakeaway := false
+	for _, tk := range narrative.Takeaways {
+		if strings.Contains(tk, filterSecret) {
+			sawFilterInTakeaway = true
+		}
+	}
+	if !sawFilterInTakeaway {
+		t.Fatalf("fixture setup is broken: filter secret missing from narrative takeaways: %v", narrative.Takeaways)
+	}
+
+	redacted := RedactSQL(*report)
+	redactedDrivers := RedactSQLFromNarrativeDrivers(narrative.Drivers)
+	redactedTakeaways := RedactSQLFromNarrativeTakeaways(narrative.Takeaways)
+
+	redactedJSON, err := json.Marshal(redacted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driversJSON, _ := json.Marshal(redactedDrivers)
+	takeawaysJSON, _ := json.Marshal(redactedTakeaways)
+	for _, blob := range []string{string(redactedJSON), string(driversJSON), string(takeawaysJSON)} {
+		for _, marker := range []string{filterSecret, failureSecret} {
+			if strings.Contains(blob, marker) {
+				t.Fatalf("secret %q survived redaction: %s", marker, blob)
+			}
+		}
+	}
+	if redacted.Provenance.PostgREST == nil || redacted.Provenance.PostgREST.Failure != nil {
+		t.Fatalf("Provenance.PostgREST.Failure must be cleared, got %+v", redacted.Provenance.PostgREST)
+	}
+
+	// Non-sensitive evidence must survive: the table name, the cost, and the
+	// generic guidance clause are not literal query values.
+	for _, want := range []string{"Sequential scan on demo.sales", "estimated cost 120.00", "consider a btree index", "filter withheld", "Total Cost=120.00", "Plan Rows=500"} {
+		if !strings.Contains(string(redactedJSON), want) {
+			t.Fatalf("redaction over-removed non-sensitive evidence %q: %s", want, redactedJSON)
+		}
+	}
+}
