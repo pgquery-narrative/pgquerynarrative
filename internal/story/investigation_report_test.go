@@ -404,9 +404,14 @@ func TestRedactSQLScrubsUnverifiedEquivalenceNotes(t *testing.T) {
 //     a PostgreSQLEvidence/Drivers line.
 //
 // This reproduces both with realistic report construction — a
-// PlanFindingInput shaped exactly like queryrunner's real output, and a
-// PostgREST.Failure populated the way investigations_postgrest.go populates
-// it — and checks every redaction surface.
+// PlanFindingInput shaped the way queryrunner's real output looked before
+// planFindingMessage stopped embedding the filter clause into Message (see
+// TestRedactSQLScrubsEmbeddedDelimiterInLiteralFilterText for why, and for
+// what current real output looks like instead), so this also doubles as the
+// backward-compatibility case: a report persisted before that change must
+// still redact safely. A PostgREST.Failure populated the way
+// investigations_postgrest.go populates it is included too — and checks
+// every redaction surface.
 func TestRedactSQLScrubsLiteralFilterTextAndCapturedFailure(t *testing.T) {
 	const (
 		filterSecret  = "secret-filter-literal-7af2"
@@ -487,10 +492,150 @@ func TestRedactSQLScrubsLiteralFilterTextAndCapturedFailure(t *testing.T) {
 	}
 
 	// Non-sensitive evidence must survive: the table name, the cost, and the
-	// generic guidance clause are not literal query values.
-	for _, want := range []string{"Sequential scan on demo.sales", "estimated cost 120.00", "consider a btree index", "filter withheld", "Total Cost=120.00", "Plan Rows=500"} {
+	// non-filter Evidence entries are not literal query values.
+	for _, want := range []string{"Sequential scan on demo.sales", "estimated cost 120.00", "filter withheld", "Total Cost=120.00", "Plan Rows=500"} {
 		if !strings.Contains(string(redactedJSON), want) {
 			t.Fatalf("redaction over-removed non-sensitive evidence %q: %s", want, redactedJSON)
 		}
+	}
+	// This fixture's Message is in the old, pre-structural-separation shape
+	// (the filter clause baked directly into Message, with a trailing
+	// guidance clause after it) — exactly what a report persisted before
+	// that change still looks like. Once the filter marker is found, nothing
+	// after it can be trusted to be the safe guidance clause rather than
+	// more of the filter text (see redactLiteralFilterText), so the
+	// trailing clause is conservatively removed along with the secret, not
+	// preserved.
+	if strings.Contains(string(redactedJSON), "consider a btree index") {
+		t.Fatalf("a historical message's trailing guidance clause must not be reconstructed after the filter marker, got: %s", redactedJSON)
+	}
+}
+
+// Bug: redactLiteralFilterText found filterTextMarker, then treated the
+// *next* " — " in the remainder as the start of planFindingMessage's own
+// trailing guidance clause, splicing everything from there onward back into
+// the "redacted" output. A SQL string literal can itself contain " — " —
+// nothing stops a WHERE predicate's value from doing so — so a secret
+// embedded in a literalized plan filter survived redaction whenever it
+// happened to contain that exact sequence. This reproduces the reported
+// case (`WHERE account = 'prefix — secret-filter-literal-d4e9'`) plus
+// repeated delimiters, a delimiter followed by quotes/newlines, and a
+// literal that contains the marker text itself — against a message in the
+// old, pre-structural-separation shape (filter baked into Message), which
+// is what every report persisted before planFindingMessage stopped doing
+// that still looks like on disk.
+func TestRedactSQLScrubsEmbeddedDelimiterInLiteralFilterText(t *testing.T) {
+	const guidance = " — consider a btree index on filtered or joined columns"
+	tests := []struct {
+		name   string
+		secret string
+	}{
+		{"single embedded delimiter", "prefix — secret-filter-literal-d4e9"},
+		{"repeated delimiters", "a — b — c — secret-9f1e — d — e"},
+		{"delimiter followed by a quote", "pre — 'quoted-secret-21ab' — post"},
+		{"delimiter followed by a newline", "pre —\nsecret-on-next-line-77c2\npost"},
+		{"literal contains the marker text itself", "nested — filter: still-a-secret-4b10"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			message := fmt.Sprintf(
+				"Sequential scan on public.review_redaction (estimated cost 1.05) — filter: (account = '%s'::text)%s",
+				tc.secret, guidance,
+			)
+			findings := []PlanFindingInput{{
+				Category:   "seq_scan",
+				Confidence: "medium",
+				Message:    message,
+				Evidence:   []string{"Filter=(account = '" + tc.secret + "'::text)"},
+			}}
+			report, narrative := BuildInvestigationReport(
+				"Investigation", "SELECT account FROM public.review_redaction", "", "fp1", "default",
+				StatInput{}, findings, nil, InvestigationProvenance{},
+			)
+
+			// Sanity: the fixture really does carry the secret before redaction
+			// (checked on the raw Go string — a secret containing a literal
+			// newline would not substring-match its own JSON-escaped form).
+			if !strings.Contains(report.PlanFindings[0].Message, tc.secret) {
+				t.Fatalf("fixture setup is broken: secret missing from unredacted message: %q", report.PlanFindings[0].Message)
+			}
+
+			redacted := RedactSQL(*report)
+			redactedDrivers := RedactSQLFromNarrativeDrivers(narrative.Drivers)
+			redactedTakeaways := RedactSQLFromNarrativeTakeaways(narrative.Takeaways)
+
+			redactedJSON, err := json.Marshal(redacted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			driversJSON, _ := json.Marshal(redactedDrivers)
+			takeawaysJSON, _ := json.Marshal(redactedTakeaways)
+			for _, blob := range []string{string(redactedJSON), string(driversJSON), string(takeawaysJSON)} {
+				if strings.Contains(blob, tc.secret) {
+					t.Fatalf("secret survived redaction: %s", blob)
+				}
+				// Every word of the secret, not just the exact joined string —
+				// catches a bug that strips the marker but reinserts a suffix
+				// starting mid-secret (as the original delimiter-resumption bug did).
+				for _, word := range strings.Fields(tc.secret) {
+					if len(word) > 4 && strings.Contains(blob, word) {
+						t.Fatalf("fragment %q of the secret survived redaction: %s", word, blob)
+					}
+				}
+			}
+			if !strings.Contains(string(redactedJSON), "filter withheld") {
+				t.Fatalf("expected the withheld placeholder in place of the filter clause: %s", redactedJSON)
+			}
+		})
+	}
+}
+
+// New reports never have this problem in the first place: planFindingMessage
+// no longer embeds the filter clause into Message at all (see its comment in
+// queryrunner/explain.go), so the secret is not present even before
+// redaction runs — only in Evidence's "Filter=" entry, which a restricted
+// view drops outright (see redactFilterEvidence) rather than parsing.
+func TestNewFindingsNeverEmbedFilterTextInMessage(t *testing.T) {
+	const secret = "prefix — secret-filter-literal-d4e9"
+	findings := []PlanFindingInput{{
+		Category:   "seq_scan",
+		Confidence: "medium",
+		// Shaped like planFindingMessage's real current output: no filter
+		// clause anywhere in Message, only in Evidence.
+		Message:  "Sequential scan on public.review_redaction (estimated cost 1.05) — consider a btree index on filtered or joined columns",
+		Evidence: []string{"Total Cost=1.05", "Plan Rows=1", "Filter=(account = '" + secret + "'::text)"},
+	}}
+	report, narrative := BuildInvestigationReport(
+		"Investigation", "SELECT account FROM public.review_redaction", "", "fp1", "default",
+		StatInput{}, findings, nil, InvestigationProvenance{},
+	)
+	if strings.Contains(report.PlanFindings[0].Message, secret) {
+		t.Fatalf("Message must never carry the filter literal, got: %q", report.PlanFindings[0].Message)
+	}
+	for _, line := range append(append([]string{}, report.PostgreSQLEvidence...), narrative.Drivers...) {
+		if strings.Contains(line, secret) {
+			t.Fatalf("PostgreSQLEvidence/Drivers must never carry the filter literal via Message, got: %q", line)
+		}
+	}
+	for _, tk := range narrative.Takeaways {
+		if strings.Contains(tk, secret) {
+			t.Fatalf("Takeaways must never carry the filter literal, got: %q", tk)
+		}
+	}
+	// Authorized access still sees it, structurally, in Evidence.
+	found := false
+	for _, e := range report.PlanFindings[0].Evidence {
+		if strings.Contains(e, secret) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("authorized Evidence should still carry the filter literal")
+	}
+	// A restricted view drops that Evidence entry outright.
+	redacted := RedactSQL(*report)
+	redactedJSON, _ := json.Marshal(redacted)
+	if strings.Contains(string(redactedJSON), secret) {
+		t.Fatalf("secret survived redaction via Evidence: %s", redactedJSON)
 	}
 }

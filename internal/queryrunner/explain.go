@@ -479,9 +479,15 @@ func planFindingMessage(nodeType, schema, relation, filter string, cost float64,
 		filterLower := strings.ToLower(filter)
 		confidence := "medium"
 		msg := fmt.Sprintf("Sequential scan on %s (estimated cost %.2f)", target, cost)
-		if filter != "" {
-			msg += fmt.Sprintf(" — filter: %s", filter)
-		}
+		// The literal filter clause is deliberately never embedded in this
+		// guidance sentence: Message is trusted, generated text with no
+		// caller-controlled content, so a restricted viewer's report can
+		// show it without redaction. The filter clause itself — which can
+		// contain anything a WHERE predicate can, including this
+		// function's own "—" guidance separator — is carried only in
+		// Evidence's "Filter="+filter entry (see seqScanEvidence), a
+		// separate value that a restricted view drops outright rather than
+		// needing to parse apart from safe text.
 		switch {
 		case strings.Contains(filterLower, "date_trunc") ||
 			strings.Contains(filterLower, "extract(") ||

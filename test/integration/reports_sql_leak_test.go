@@ -216,3 +216,177 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 		assertHasMarkers(t, "GetShared with exposure enabled", got)
 	})
 }
+
+// Bug: redactLiteralFilterText found the " — filter: " marker a plan
+// finding's Message embedded, then treated the *next* " — " in the
+// remainder as the boundary where planFindingMessage's own trailing
+// guidance clause began, splicing everything from that point back into the
+// supposedly redacted output. A SQL string literal can contain that exact
+// sequence — nothing stops a WHERE predicate's value from doing so — so a
+// secret quoted in a captured literal survived redaction.
+//
+// Unlike the sibling test above (which hand-shapes a PlanFindingInput),
+// this drives the real EXPLAIN pipeline against a real table and a real
+// literal containing the delimiter, through ReportsService.GetShared and
+// Get as Viewer exactly as reported, and checks the complete serialized
+// response.
+func TestSharedAndViewerReportsNeverLeakEmbeddedDelimiterInFilterLiteral(t *testing.T) {
+	ctx := context.Background()
+	container := helpers.RunPostgresContainer(t, ctx)
+	t.Cleanup(func() { _ = container.Terminate(ctx) })
+	connStr, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForPostgres(t, ctx, connStr)
+	helpers.RunMigrations(t, connStr)
+
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	const secret = "secret-filter-literal-d4e9"
+	const literal = "prefix — " + secret
+	if _, err := pool.Exec(ctx, `
+		CREATE SCHEMA IF NOT EXISTS demo;
+		CREATE TABLE IF NOT EXISTS demo.review_redaction (account text);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO demo.review_redaction (account) VALUES ($1), ('other-row-1'), ('other-row-2');
+	`, literal); err != nil {
+		t.Fatal(err)
+	}
+
+	validator := queryrunner.NewValidator([]string{"demo"}, 10000)
+	runner := queryrunner.NewRunner(pool, validator, 1000, 30*time.Second)
+
+	sourceSQL := fmt.Sprintf("SELECT account FROM demo.review_redaction WHERE account = '%s'", strings.ReplaceAll(literal, "'", "''"))
+	explainResult, err := runner.Explain(ctx, sourceSQL, false)
+	if err != nil {
+		t.Fatalf("EXPLAIN failed: %v", err)
+	}
+	if len(explainResult.Findings) == 0 {
+		t.Fatal("fixture setup is broken: expected at least one plan finding (a seq scan on an unindexed filtered column)")
+	}
+
+	var findings []story.PlanFindingInput
+	sawSecretInRealEvidence := false
+	for _, f := range explainResult.Findings {
+		findings = append(findings, story.PlanFindingInput{
+			NodeType:   f.NodeType,
+			Category:   f.Category,
+			Confidence: f.Confidence,
+			Message:    f.Message,
+			Evidence:   f.Evidence,
+		})
+		for _, e := range f.Evidence {
+			if strings.Contains(e, secret) {
+				sawSecretInRealEvidence = true
+			}
+		}
+	}
+	if !sawSecretInRealEvidence {
+		t.Fatalf("fixture setup is broken: expected the real EXPLAIN output to carry the secret in a finding's Evidence, got: %+v", explainResult.Findings)
+	}
+
+	report, narrative := story.BuildInvestigationReport(
+		"Investigation", sourceSQL, "", "fp-real-explain", "default",
+		story.StatInput{}, findings, nil, story.InvestigationProvenance{},
+	)
+	narrativeJSON, err := json.Marshal(narrative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metricsJSON, err := json.Marshal(map[string]any{"investigation": report})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var reportID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO app.reports (sql, narrative_md, narrative_json, metrics, llm_model, llm_provider, organization_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id
+	`, sourceSQL, "redaction test", narrativeJSON, metricsJSON, "test", "integration", auth.DefaultOrganizationID).Scan(&reportID); err != nil {
+		t.Fatal(err)
+	}
+
+	appDB := db.NewOrgScoped(pool)
+	svc := service.NewReportsService(pool, appDB, runner, noopLLM{}, config.MetricsConfig{})
+	svc.SetShareLinksEnabled(true)
+
+	adminCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "admin-1", OrgID: auth.DefaultOrganizationID, Role: auth.RoleAdmin})
+	viewerCtx := auth.WithPrincipal(ctx, auth.Principal{UserID: "viewer-1", OrgID: auth.DefaultOrganizationID, Role: auth.RoleViewer})
+
+	assertSecretAbsent := func(t *testing.T, label string, v any) {
+		t.Helper()
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", label, err)
+		}
+		if strings.Contains(string(b), secret) {
+			t.Errorf("%s: leaked secret in response: %s", label, b)
+		}
+	}
+
+	t.Run("share link with SQL exposure disabled (default)", func(t *testing.T) {
+		link, err := svc.CreateShare(adminCtx, &reports.CreateSharePayload{ReportID: reportID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := svc.GetShared(ctx, &reports.GetSharedPayload{Token: link.Token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSecretAbsent(t, "GetShared", got)
+	})
+
+	t.Run("authenticated viewer role", func(t *testing.T) {
+		got, err := svc.Get(viewerCtx, &reports.GetPayload{ID: reportID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertSecretAbsent(t, "Get as viewer", got)
+	})
+
+	// Positive control: authorized access is not over-redacted. The real
+	// EXPLAIN finding's Evidence carries the secret for an admin.
+	t.Run("authenticated admin keeps permitted access", func(t *testing.T) {
+		got, err := svc.Get(adminCtx, &reports.GetPayload{ID: reportID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), secret) {
+			t.Fatalf("admin access over-redacted: expected secret present, got: %s", b)
+		}
+	})
+
+	// Positive control: an explicitly exposed share link is not over-redacted.
+	t.Run("share link with SQL exposure explicitly enabled", func(t *testing.T) {
+		svc.SetShareLinkExposeSQL(true)
+		t.Cleanup(func() { svc.SetShareLinkExposeSQL(false) })
+		link, err := svc.CreateShare(adminCtx, &reports.CreateSharePayload{ReportID: reportID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := svc.GetShared(ctx, &reports.GetSharedPayload{Token: link.Token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := json.Marshal(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), secret) {
+			t.Fatalf("exposed share link over-redacted: expected secret present, got: %s", b)
+		}
+	})
+}
