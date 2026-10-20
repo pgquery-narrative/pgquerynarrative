@@ -28,6 +28,28 @@ type CreateRequestBody struct {
 	Rows        *int64   `form:"rows,omitempty" json:"rows,omitempty" xml:"rows,omitempty"`
 }
 
+// CreateFromPostgrestRequestBody is the type of the "investigations" service
+// "create_from_postgrest" endpoint HTTP request body.
+type CreateFromPostgrestRequestBody struct {
+	Title        *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	ConnectionID *string `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	// PostgreSQL log excerpt (stderr, csvlog or jsonlog) for one PostgREST read
+	// request, including failed ones. Requires log_min_duration_statement=0 or
+	// log_statement=all and log_parameter_max_length=-1; a stderr log_line_prefix
+	// must contain the process id as [%p]. Request headers, cookies and JWT claims
+	// in the excerpt are discarded, never stored; the log is caller-supplied text
+	// with no verification it is authentic, so nothing in it that could
+	// impersonate a specific identity is trusted.
+	PostgresLog string `form:"postgres_log" json:"postgres_log" xml:"postgres_log"`
+	// Optional Server-Timing response header from the same request, e.g.
+	// jwt;dur=0.6, transaction;dur=54.8
+	ServerTiming *string `form:"server_timing,omitempty" json:"server_timing,omitempty" xml:"server_timing,omitempty"`
+	// Optional client-measured HTTP request time in milliseconds
+	HTTPDurationMs *float64 `form:"http_duration_ms,omitempty" json:"http_duration_ms,omitempty" xml:"http_duration_ms,omitempty"`
+	// Run EXPLAIN ANALYZE on the captured bind values (executes the query)
+	Analyze bool `form:"analyze" json:"analyze" xml:"analyze"`
+}
+
 // CreateFromRegressionRequestBody is the type of the "investigations" service
 // "create_from_regression" endpoint HTTP request body.
 type CreateFromRegressionRequestBody struct {
@@ -80,6 +102,48 @@ type CreateResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
+	// proposed | verified | applied | confirmed | regressed | abandoned
+	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
+	// PR or ticket URL for the shipped fix
+	FixReference *string `form:"fix_reference,omitempty" json:"fix_reference,omitempty" xml:"fix_reference,omitempty"`
+	FixAppliedAt *string `form:"fix_applied_at,omitempty" json:"fix_applied_at,omitempty" xml:"fix_applied_at,omitempty"`
+	// Linked-query mean latency (ms) captured when the fix was marked applied
+	FixBaselineMeanMs *float64 `form:"fix_baseline_mean_ms,omitempty" json:"fix_baseline_mean_ms,omitempty" xml:"fix_baseline_mean_ms,omitempty"`
+	// Linked-query mean latency (ms) at the most recent post-deploy re-measurement
+	FixConfirmedMeanMs *float64 `form:"fix_confirmed_mean_ms,omitempty" json:"fix_confirmed_mean_ms,omitempty" xml:"fix_confirmed_mean_ms,omitempty"`
+	FixMeasuredAt      *string  `form:"fix_measured_at,omitempty" json:"fix_measured_at,omitempty" xml:"fix_measured_at,omitempty"`
+	CreatedAt          *string  `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
+	UpdatedAt          *string  `form:"updated_at,omitempty" json:"updated_at,omitempty" xml:"updated_at,omitempty"`
+}
+
+// CreateFromPostgrestResponseBody is the type of the "investigations" service
+// "create_from_postgrest" endpoint HTTP response body.
+type CreateFromPostgrestResponseBody struct {
+	ID    *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// open, analyzing, comparing, or complete
+	Status           *string                         `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	SQL              *string                         `form:"sql,omitempty" json:"sql,omitempty" xml:"sql,omitempty"`
+	ConnectionID     *string                         `form:"connection_id,omitempty" json:"connection_id,omitempty" xml:"connection_id,omitempty"`
+	QueryFingerprint *string                         `form:"query_fingerprint,omitempty" json:"query_fingerprint,omitempty" xml:"query_fingerprint,omitempty"`
+	StatSnapshot     *StatSnapshotResponseBody       `form:"stat_snapshot,omitempty" json:"stat_snapshot,omitempty" xml:"stat_snapshot,omitempty"`
+	Explain          *ExplainQueryResultResponseBody `form:"explain,omitempty" json:"explain,omitempty" xml:"explain,omitempty"`
+	CandidateSQL     *string                         `form:"candidate_sql,omitempty" json:"candidate_sql,omitempty" xml:"candidate_sql,omitempty"`
+	CandidateExplain *ExplainQueryResultResponseBody `form:"candidate_explain,omitempty" json:"candidate_explain,omitempty" xml:"candidate_explain,omitempty"`
+	Comparison       *ComparePlansResultResponseBody `form:"comparison,omitempty" json:"comparison,omitempty" xml:"comparison,omitempty"`
+	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
+	// Every candidate rewrite tested for this investigation, newest first
+	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -112,6 +176,11 @@ type CreateFromRegressionResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -152,6 +221,11 @@ type GetResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -184,6 +258,11 @@ type AddCandidateResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -216,6 +295,11 @@ type UpdateFixResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -266,6 +350,11 @@ type GenerateReportResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -284,6 +373,15 @@ type GenerateReportResponseBody struct {
 // service "create" endpoint HTTP response body for the "validation_error"
 // error.
 type CreateValidationErrorResponseBody struct {
+	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
+}
+
+// CreateFromPostgrestValidationErrorResponseBody is the type of the
+// "investigations" service "create_from_postgrest" endpoint HTTP response body
+// for the "validation_error" error.
+type CreateFromPostgrestValidationErrorResponseBody struct {
 	Name    *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 	Code    *string `form:"code,omitempty" json:"code,omitempty" xml:"code,omitempty"`
@@ -614,6 +712,58 @@ type InvestigationCandidateResponseBody struct {
 	CreatedAt *string `form:"created_at,omitempty" json:"created_at,omitempty" xml:"created_at,omitempty"`
 }
 
+// PostgRESTRequestResponseBody is used to define fields on response body types.
+type PostgRESTRequestResponseBody struct {
+	// HTTP method of the captured request (GET or HEAD)
+	Method *string `form:"method,omitempty" json:"method,omitempty" xml:"method,omitempty"`
+	// Request path without query string, e.g. /orders_daily
+	Endpoint *string `form:"endpoint,omitempty" json:"endpoint,omitempty" xml:"endpoint,omitempty"`
+	// Database role PostgREST executed the request as
+	Role *string `form:"role,omitempty" json:"role,omitempty" xml:"role,omitempty"`
+	// search_path PostgREST set for the request
+	SearchPath *string `form:"search_path,omitempty" json:"search_path,omitempty" xml:"search_path,omitempty"`
+	// PostgreSQL query identifier, when the log line carried one
+	QueryID *string `form:"query_id,omitempty" json:"query_id,omitempty" xml:"query_id,omitempty"`
+	// Client-measured HTTP request time (ms), as supplied at intake. Wire and
+	// PostgREST time, not database time.
+	HTTPDurationMs *float64 `form:"http_duration_ms,omitempty" json:"http_duration_ms,omitempty" xml:"http_duration_ms,omitempty"`
+	// PostgREST Server-Timing 'transaction' stage (ms): the whole database
+	// transaction, including role and settings setup
+	ServerTimingTransactionMs *float64 `form:"server_timing_transaction_ms,omitempty" json:"server_timing_transaction_ms,omitempty" xml:"server_timing_transaction_ms,omitempty"`
+	// PostgreSQL's logged duration for the main request statement's execute phase
+	// (ms). Excludes parse and bind, where a custom plan is planned.
+	StatementDurationMs *float64 `form:"statement_duration_ms,omitempty" json:"statement_duration_ms,omitempty" xml:"statement_duration_ms,omitempty"`
+	// What the replay does not reproduce. A non-empty list means endpoint
+	// equivalence is not claimed.
+	ReplayLimitations []string `form:"replay_limitations,omitempty" json:"replay_limitations,omitempty" xml:"replay_limitations,omitempty"`
+	// True when the log had no session-context statement for the request
+	// (slow-query-only logging): method, endpoint, role and search_path are then
+	// empty
+	SessionContextMissing *bool `form:"session_context_missing,omitempty" json:"session_context_missing,omitempty" xml:"session_context_missing,omitempty"`
+	// PostgreSQL's error when the request statement failed, e.g. canceling
+	// statement due to statement timeout
+	Failure *string `form:"failure,omitempty" json:"failure,omitempty" xml:"failure,omitempty"`
+	// True when PostgREST ran the statement as a named prepared statement, which
+	// PostgreSQL may switch to a generic plan. Absent when a failed statement was
+	// recovered only from the error context, which does not record the statement's
+	// name.
+	PreparedStatement *bool `form:"prepared_statement,omitempty" json:"prepared_statement,omitempty" xml:"prepared_statement,omitempty"`
+	// Role every replay of this investigation runs as (SET LOCAL ROLE); empty
+	// means the connection's own role
+	ReplayRole *string `form:"replay_role,omitempty" json:"replay_role,omitempty" xml:"replay_role,omitempty"`
+	// search_path every replay applies: the captured schemas this connection
+	// allows, in captured order
+	ReplaySearchPath *string `form:"replay_search_path,omitempty" json:"replay_search_path,omitempty" xml:"replay_search_path,omitempty"`
+	// Well-known settings the request set (Prefer: timezone, per-role settings);
+	// replays apply all but statement_timeout
+	RequestSettings map[string]string `form:"request_settings,omitempty" json:"request_settings,omitempty" xml:"request_settings,omitempty"`
+	// EXPLAIN (GENERIC_PLAN) total cost of the parameterized statement
+	GenericPlanTotalCost *float64 `form:"generic_plan_total_cost,omitempty" json:"generic_plan_total_cost,omitempty" xml:"generic_plan_total_cost,omitempty"`
+	// Whether PostgreSQL is likely to run this statement with the custom plan the
+	// replay measured or with the generic plan
+	PlanCacheNote *string `form:"plan_cache_note,omitempty" json:"plan_cache_note,omitempty" xml:"plan_cache_note,omitempty"`
+}
+
 // InvestigationResponseBody is used to define fields on response body types.
 type InvestigationResponseBody struct {
 	ID    *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
@@ -631,6 +781,11 @@ type InvestigationResponseBody struct {
 	ReportID         *string                         `form:"report_id,omitempty" json:"report_id,omitempty" xml:"report_id,omitempty"`
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidateResponseBody `form:"candidates,omitempty" json:"candidates,omitempty" xml:"candidates,omitempty"`
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string `form:"binds,omitempty" json:"binds,omitempty" xml:"binds,omitempty"`
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequestResponseBody `form:"postgrest_request,omitempty" json:"postgrest_request,omitempty" xml:"postgrest_request,omitempty"`
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string `form:"fix_status,omitempty" json:"fix_status,omitempty" xml:"fix_status,omitempty"`
 	// PR or ticket URL for the shipped fix
@@ -712,6 +867,27 @@ func NewCreateRequestBody(p *investigations.CreateInvestigationPayload) *CreateR
 		MeanTimeMs:   p.MeanTimeMs,
 		TotalTimeMs:  p.TotalTimeMs,
 		Rows:         p.Rows,
+	}
+	{
+		var zero bool
+		if body.Analyze == zero {
+			body.Analyze = false
+		}
+	}
+	return body
+}
+
+// NewCreateFromPostgrestRequestBody builds the HTTP request body from the
+// payload of the "create_from_postgrest" endpoint of the "investigations"
+// service.
+func NewCreateFromPostgrestRequestBody(p *investigations.CreateFromPostgRESTPayload) *CreateFromPostgrestRequestBody {
+	body := &CreateFromPostgrestRequestBody{
+		Title:          p.Title,
+		ConnectionID:   p.ConnectionID,
+		PostgresLog:    p.PostgresLog,
+		ServerTiming:   p.ServerTiming,
+		HTTPDurationMs: p.HTTPDurationMs,
+		Analyze:        p.Analyze,
 	}
 	{
 		var zero bool
@@ -821,6 +997,15 @@ func NewCreateInvestigationOK(body *CreateResponseBody) *investigations.Investig
 			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
 	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
+	}
 
 	return v
 }
@@ -828,6 +1013,74 @@ func NewCreateInvestigationOK(body *CreateResponseBody) *investigations.Investig
 // NewCreateValidationError builds a investigations service create endpoint
 // validation_error error.
 func NewCreateValidationError(body *CreateValidationErrorResponseBody) *investigations.ValidationError {
+	v := &investigations.ValidationError{
+		Name:    *body.Name,
+		Message: *body.Message,
+		Code:    body.Code,
+	}
+
+	return v
+}
+
+// NewCreateFromPostgrestInvestigationOK builds a "investigations" service
+// "create_from_postgrest" endpoint result from a HTTP "OK" response.
+func NewCreateFromPostgrestInvestigationOK(body *CreateFromPostgrestResponseBody) *investigations.Investigation {
+	v := &investigations.Investigation{
+		ID:                 *body.ID,
+		Title:              *body.Title,
+		Status:             *body.Status,
+		SQL:                *body.SQL,
+		ConnectionID:       *body.ConnectionID,
+		QueryFingerprint:   body.QueryFingerprint,
+		CandidateSQL:       body.CandidateSQL,
+		ReportID:           body.ReportID,
+		FixStatus:          body.FixStatus,
+		FixReference:       body.FixReference,
+		FixAppliedAt:       body.FixAppliedAt,
+		FixBaselineMeanMs:  body.FixBaselineMeanMs,
+		FixConfirmedMeanMs: body.FixConfirmedMeanMs,
+		FixMeasuredAt:      body.FixMeasuredAt,
+		CreatedAt:          *body.CreatedAt,
+		UpdatedAt:          *body.UpdatedAt,
+	}
+	if body.StatSnapshot != nil {
+		v.StatSnapshot = unmarshalStatSnapshotResponseBodyToInvestigationsStatSnapshot(body.StatSnapshot)
+	}
+	if body.Explain != nil {
+		v.Explain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(body.Explain)
+	}
+	if body.CandidateExplain != nil {
+		v.CandidateExplain = unmarshalExplainQueryResultResponseBodyToInvestigationsExplainQueryResult(body.CandidateExplain)
+	}
+	if body.Comparison != nil {
+		v.Comparison = unmarshalComparePlansResultResponseBodyToInvestigationsComparePlansResult(body.Comparison)
+	}
+	if body.Candidates != nil {
+		v.Candidates = make([]*investigations.InvestigationCandidate, len(body.Candidates))
+		for i, val := range body.Candidates {
+			if val == nil {
+				v.Candidates[i] = nil
+				continue
+			}
+			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
+		}
+	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
+	}
+
+	return v
+}
+
+// NewCreateFromPostgrestValidationError builds a investigations service
+// create_from_postgrest endpoint validation_error error.
+func NewCreateFromPostgrestValidationError(body *CreateFromPostgrestValidationErrorResponseBody) *investigations.ValidationError {
 	v := &investigations.ValidationError{
 		Name:    *body.Name,
 		Message: *body.Message,
@@ -879,6 +1132,15 @@ func NewCreateFromRegressionInvestigationOK(body *CreateFromRegressionResponseBo
 			}
 			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
+	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
 	}
 
 	return v
@@ -970,6 +1232,15 @@ func NewGetInvestigationOK(body *GetResponseBody) *investigations.Investigation 
 			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
 	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
+	}
 
 	return v
 }
@@ -1027,6 +1298,15 @@ func NewAddCandidateInvestigationOK(body *AddCandidateResponseBody) *investigati
 			}
 			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
+	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
 	}
 
 	return v
@@ -1098,6 +1378,15 @@ func NewUpdateFixInvestigationOK(body *UpdateFixResponseBody) *investigations.In
 			}
 			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
+	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
 	}
 
 	return v
@@ -1245,6 +1534,15 @@ func NewGenerateReportInvestigationOK(body *GenerateReportResponseBody) *investi
 			v.Candidates[i] = unmarshalInvestigationCandidateResponseBodyToInvestigationsInvestigationCandidate(val)
 		}
 	}
+	if body.Binds != nil {
+		v.Binds = make([]string, len(body.Binds))
+		for i, val := range body.Binds {
+			v.Binds[i] = val
+		}
+	}
+	if body.PostgrestRequest != nil {
+		v.PostgrestRequest = unmarshalPostgRESTRequestResponseBodyToInvestigationsPostgRESTRequest(body.PostgrestRequest)
+	}
 
 	return v
 }
@@ -1321,6 +1619,80 @@ func ValidateCreateResponseBody(body *CreateResponseBody) (err error) {
 			}
 		}
 	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.FixAppliedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
+	}
+	if body.FixMeasuredAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_measured_at", *body.FixMeasuredAt, goa.FormatDateTime))
+	}
+	if body.CreatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.created_at", *body.CreatedAt, goa.FormatDateTime))
+	}
+	if body.UpdatedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.updated_at", *body.UpdatedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateCreateFromPostgrestResponseBody runs the validations defined on
+// create_from_postgrest_response_body
+func ValidateCreateFromPostgrestResponseBody(body *CreateFromPostgrestResponseBody) (err error) {
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.SQL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("sql", "body"))
+	}
+	if body.ConnectionID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection_id", "body"))
+	}
+	if body.CreatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("created_at", "body"))
+	}
+	if body.UpdatedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("updated_at", "body"))
+	}
+	if body.ID != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.id", *body.ID, goa.FormatUUID))
+	}
+	if body.Explain != nil {
+		if err2 := ValidateExplainQueryResultResponseBody(body.Explain); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.CandidateExplain != nil {
+		if err2 := ValidateExplainQueryResultResponseBody(body.CandidateExplain); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.Comparison != nil {
+		if err2 := ValidateComparePlansResultResponseBody(body.Comparison); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	for _, e := range body.Candidates {
+		if e != nil {
+			if err2 := ValidateInvestigationCandidateResponseBody(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	if body.FixAppliedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
 	}
@@ -1383,6 +1755,11 @@ func ValidateCreateFromRegressionResponseBody(body *CreateFromRegressionResponse
 			if err2 := ValidateInvestigationCandidateResponseBody(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	if body.FixAppliedAt != nil {
@@ -1469,6 +1846,11 @@ func ValidateGetResponseBody(body *GetResponseBody) (err error) {
 			}
 		}
 	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	if body.FixAppliedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
 	}
@@ -1533,6 +1915,11 @@ func ValidateAddCandidateResponseBody(body *AddCandidateResponseBody) (err error
 			}
 		}
 	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	if body.FixAppliedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
 	}
@@ -1595,6 +1982,11 @@ func ValidateUpdateFixResponseBody(body *UpdateFixResponseBody) (err error) {
 			if err2 := ValidateInvestigationCandidateResponseBody(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	if body.FixAppliedAt != nil {
@@ -1693,6 +2085,11 @@ func ValidateGenerateReportResponseBody(body *GenerateReportResponseBody) (err e
 			}
 		}
 	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	if body.FixAppliedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.fix_applied_at", *body.FixAppliedAt, goa.FormatDateTime))
 	}
@@ -1711,6 +2108,18 @@ func ValidateGenerateReportResponseBody(body *GenerateReportResponseBody) (err e
 // ValidateCreateValidationErrorResponseBody runs the validations defined on
 // create_validation_error_response_body
 func ValidateCreateValidationErrorResponseBody(body *CreateValidationErrorResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateCreateFromPostgrestValidationErrorResponseBody runs the validations
+// defined on create_from_postgrest_validation_error_response_body
+func ValidateCreateFromPostgrestValidationErrorResponseBody(body *CreateFromPostgrestValidationErrorResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -2106,6 +2515,24 @@ func ValidateInvestigationCandidateResponseBody(body *InvestigationCandidateResp
 	return
 }
 
+// ValidatePostgRESTRequestResponseBody runs the validations defined on
+// PostgRESTRequestResponseBody
+func ValidatePostgRESTRequestResponseBody(body *PostgRESTRequestResponseBody) (err error) {
+	if body.Method == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("method", "body"))
+	}
+	if body.Endpoint == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("endpoint", "body"))
+	}
+	if body.Role == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
+	}
+	if body.ReplayLimitations == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("replay_limitations", "body"))
+	}
+	return
+}
+
 // ValidateInvestigationResponseBody runs the validations defined on
 // InvestigationResponseBody
 func ValidateInvestigationResponseBody(body *InvestigationResponseBody) (err error) {
@@ -2153,6 +2580,11 @@ func ValidateInvestigationResponseBody(body *InvestigationResponseBody) (err err
 			if err2 := ValidateInvestigationCandidateResponseBody(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	if body.PostgrestRequest != nil {
+		if err2 := ValidatePostgRESTRequestResponseBody(body.PostgrestRequest); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	if body.FixAppliedAt != nil {

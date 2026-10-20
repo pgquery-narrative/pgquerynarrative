@@ -89,6 +89,76 @@ func EncodeCreateError(encoder func(context.Context, http.ResponseWriter) goahtt
 	}
 }
 
+// EncodeCreateFromPostgrestResponse returns an encoder for responses returned
+// by the investigations create_from_postgrest endpoint.
+func EncodeCreateFromPostgrestResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*investigations.Investigation)
+		enc := encoder(ctx, w)
+		body := NewCreateFromPostgrestResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeCreateFromPostgrestRequest returns a decoder for requests sent to the
+// investigations create_from_postgrest endpoint.
+func DecodeCreateFromPostgrestRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*investigations.CreateFromPostgRESTPayload, error) {
+	return func(r *http.Request) (*investigations.CreateFromPostgRESTPayload, error) {
+		var (
+			body CreateFromPostgrestRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return nil, gerr
+			}
+			return nil, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateCreateFromPostgrestRequestBody(&body)
+		if err != nil {
+			return nil, err
+		}
+		payload := NewCreateFromPostgrestCreateFromPostgRESTPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeCreateFromPostgrestError returns an encoder for errors returned by the
+// create_from_postgrest investigations endpoint.
+func EncodeCreateFromPostgrestError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "validation_error":
+			var res *investigations.ValidationError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewCreateFromPostgrestValidationErrorResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusBadRequest)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeCreateFromRegressionResponse returns an encoder for responses returned
 // by the investigations create_from_regression endpoint.
 func EncodeCreateFromRegressionResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -1078,6 +1148,50 @@ func marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponse
 	return res
 }
 
+// marshalInvestigationsPostgRESTRequestToPostgRESTRequestResponseBody builds a
+// value of type *PostgRESTRequestResponseBody from a value of type
+// *investigations.PostgRESTRequest.
+func marshalInvestigationsPostgRESTRequestToPostgRESTRequestResponseBody(v *investigations.PostgRESTRequest) *PostgRESTRequestResponseBody {
+	if v == nil {
+		return nil
+	}
+	res := &PostgRESTRequestResponseBody{
+		Method:                    v.Method,
+		Endpoint:                  v.Endpoint,
+		Role:                      v.Role,
+		SearchPath:                v.SearchPath,
+		QueryID:                   v.QueryID,
+		HTTPDurationMs:            v.HTTPDurationMs,
+		ServerTimingTransactionMs: v.ServerTimingTransactionMs,
+		StatementDurationMs:       v.StatementDurationMs,
+		SessionContextMissing:     v.SessionContextMissing,
+		Failure:                   v.Failure,
+		PreparedStatement:         v.PreparedStatement,
+		ReplayRole:                v.ReplayRole,
+		ReplaySearchPath:          v.ReplaySearchPath,
+		GenericPlanTotalCost:      v.GenericPlanTotalCost,
+		PlanCacheNote:             v.PlanCacheNote,
+	}
+	if v.ReplayLimitations != nil {
+		res.ReplayLimitations = make([]string, len(v.ReplayLimitations))
+		for i, val := range v.ReplayLimitations {
+			res.ReplayLimitations[i] = val
+		}
+	} else {
+		res.ReplayLimitations = []string{}
+	}
+	if v.RequestSettings != nil {
+		res.RequestSettings = make(map[string]string, len(v.RequestSettings))
+		for key, val := range v.RequestSettings {
+			tk := key
+			tv := val
+			res.RequestSettings[tk] = tv
+		}
+	}
+
+	return res
+}
+
 // marshalInvestigationsInvestigationToInvestigationResponseBody builds a value
 // of type *InvestigationResponseBody from a value of type
 // *investigations.Investigation.
@@ -1121,6 +1235,15 @@ func marshalInvestigationsInvestigationToInvestigationResponseBody(v *investigat
 			}
 			res.Candidates[i] = marshalInvestigationsInvestigationCandidateToInvestigationCandidateResponseBody(val)
 		}
+	}
+	if v.Binds != nil {
+		res.Binds = make([]string, len(v.Binds))
+		for i, val := range v.Binds {
+			res.Binds[i] = val
+		}
+	}
+	if v.PostgrestRequest != nil {
+		res.PostgrestRequest = marshalInvestigationsPostgRESTRequestToPostgRESTRequestResponseBody(v.PostgrestRequest)
 	}
 
 	return res

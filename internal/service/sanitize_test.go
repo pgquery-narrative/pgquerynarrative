@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -31,6 +32,24 @@ func TestSanitizeAPIError_Sentinel(t *testing.T) {
 	got := SanitizeAPIError(apperrors.ErrQueryExecutionFailed, "fallback")
 	if !strings.Contains(got, "Query execution failed") {
 		t.Fatalf("expected sanitized execution message, got %q", got)
+	}
+}
+
+// Bug: SanitizeAPIError started returning PostgreSQL's SQLSTATE and raw
+// server message for an executionFailed-wrapped error — the same widening as
+// ClassifyRunError (see runerror_test.go), shared by every caller of this
+// function (ask.go, SanitizeStoredError, SanitizeClientMessage via
+// ClassifyRunError). looksLikeDriverOrInternalDetail already treats a bare
+// "sqlstate" substring as detail worth redacting; the ErrQueryExecutionFailed
+// branch must not manufacture a message containing that very word.
+func TestSanitizeAPIError_ExecutionFailedStaysGenericEvenWithSQLSTATEDetail(t *testing.T) {
+	wrapped := fmt.Errorf("%w: SQLSTATE 42501: permission denied to set role \"secret_role\"", apperrors.ErrQueryExecutionFailed)
+	got := SanitizeAPIError(wrapped, "fallback")
+	if got != "Query execution failed. Check your SQL and try again." {
+		t.Fatalf("SanitizeAPIError leaked PostgreSQL detail to a shared caller: %q", got)
+	}
+	if strings.Contains(got, "SQLSTATE") || strings.Contains(got, "secret_role") {
+		t.Fatalf("leaked driver detail: %q", got)
 	}
 }
 

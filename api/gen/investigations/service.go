@@ -16,6 +16,10 @@ import (
 type Service interface {
 	// Start a new query investigation from SQL or pg_stat_statements context
 	Create(context.Context, *CreateInvestigationPayload) (res *Investigation, err error)
+	// Open an investigation from a PostgREST read request. The PostgreSQL log
+	// excerpt supplies the exact generated SQL, its bind values, the database role
+	// and the statement duration; nothing is inferred from the URL.
+	CreateFromPostgrest(context.Context, *CreateFromPostgRESTPayload) (res *Investigation, err error)
 	// Open an investigation from a regression alert (EXPLAIN + link alert to
 	// investigation)
 	CreateFromRegression(context.Context, *CreateFromRegressionPayload) (res *Investigation, err error)
@@ -53,7 +57,7 @@ const ServiceName = "investigations"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [9]string{"create", "create_from_regression", "list", "get", "add_candidate", "update_fix", "suggest_rewrite", "rank_candidates", "generate_report"}
+var MethodNames = [10]string{"create", "create_from_postgrest", "create_from_regression", "list", "get", "add_candidate", "update_fix", "suggest_rewrite", "rank_candidates", "generate_report"}
 
 // AddCandidatePayload is the payload type of the investigations service
 // add_candidate method.
@@ -91,6 +95,28 @@ type ComparePlansResult struct {
 	ResultAfterRowCount *int64
 	// Rows compared in the multiset sample
 	ResultSampleRows *int32
+}
+
+// CreateFromPostgRESTPayload is the payload type of the investigations service
+// create_from_postgrest method.
+type CreateFromPostgRESTPayload struct {
+	Title        *string
+	ConnectionID *string
+	// PostgreSQL log excerpt (stderr, csvlog or jsonlog) for one PostgREST read
+	// request, including failed ones. Requires log_min_duration_statement=0 or
+	// log_statement=all and log_parameter_max_length=-1; a stderr log_line_prefix
+	// must contain the process id as [%p]. Request headers, cookies and JWT claims
+	// in the excerpt are discarded, never stored; the log is caller-supplied text
+	// with no verification it is authentic, so nothing in it that could
+	// impersonate a specific identity is trusted.
+	PostgresLog string
+	// Optional Server-Timing response header from the same request, e.g.
+	// jwt;dur=0.6, transaction;dur=54.8
+	ServerTiming *string
+	// Optional client-measured HTTP request time in milliseconds
+	HTTPDurationMs *float64
+	// Run EXPLAIN ANALYZE on the captured bind values (executes the query)
+	Analyze bool
 }
 
 // CreateFromRegressionPayload is the payload type of the investigations
@@ -211,6 +237,11 @@ type Investigation struct {
 	ReportID         *string
 	// Every candidate rewrite tested for this investigation, newest first
 	Candidates []*InvestigationCandidate
+	// Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and
+	// compare substitute them
+	Binds []string
+	// Set when the investigation was opened from a PostgREST request
+	PostgrestRequest *PostgRESTRequest
 	// proposed | verified | applied | confirmed | regressed | abandoned
 	FixStatus *string
 	// PR or ticket URL for the shipped fix
@@ -354,6 +385,57 @@ type PlanFinding struct {
 	RelatedColumns []string
 	// Structured index advice when catalog enrichment produced it
 	IndexAdvice *IndexAdvice
+}
+
+type PostgRESTRequest struct {
+	// HTTP method of the captured request (GET or HEAD)
+	Method string
+	// Request path without query string, e.g. /orders_daily
+	Endpoint string
+	// Database role PostgREST executed the request as
+	Role string
+	// search_path PostgREST set for the request
+	SearchPath *string
+	// PostgreSQL query identifier, when the log line carried one
+	QueryID *string
+	// Client-measured HTTP request time (ms), as supplied at intake. Wire and
+	// PostgREST time, not database time.
+	HTTPDurationMs *float64
+	// PostgREST Server-Timing 'transaction' stage (ms): the whole database
+	// transaction, including role and settings setup
+	ServerTimingTransactionMs *float64
+	// PostgreSQL's logged duration for the main request statement's execute phase
+	// (ms). Excludes parse and bind, where a custom plan is planned.
+	StatementDurationMs *float64
+	// What the replay does not reproduce. A non-empty list means endpoint
+	// equivalence is not claimed.
+	ReplayLimitations []string
+	// True when the log had no session-context statement for the request
+	// (slow-query-only logging): method, endpoint, role and search_path are then
+	// empty
+	SessionContextMissing *bool
+	// PostgreSQL's error when the request statement failed, e.g. canceling
+	// statement due to statement timeout
+	Failure *string
+	// True when PostgREST ran the statement as a named prepared statement, which
+	// PostgreSQL may switch to a generic plan. Absent when a failed statement was
+	// recovered only from the error context, which does not record the statement's
+	// name.
+	PreparedStatement *bool
+	// Role every replay of this investigation runs as (SET LOCAL ROLE); empty
+	// means the connection's own role
+	ReplayRole *string
+	// search_path every replay applies: the captured schemas this connection
+	// allows, in captured order
+	ReplaySearchPath *string
+	// Well-known settings the request set (Prefer: timezone, per-role settings);
+	// replays apply all but statement_timeout
+	RequestSettings map[string]string
+	// EXPLAIN (GENERIC_PLAN) total cost of the parameterized statement
+	GenericPlanTotalCost *float64
+	// Whether PostgreSQL is likely to run this statement with the custom plan the
+	// replay measured or with the generic plan
+	PlanCacheNote *string
 }
 
 // RankCandidatesPayload is the payload type of the investigations service

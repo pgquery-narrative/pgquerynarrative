@@ -16,6 +16,7 @@ import (
 // Endpoints wraps the "investigations" service endpoints.
 type Endpoints struct {
 	Create               goa.Endpoint
+	CreateFromPostgrest  goa.Endpoint
 	CreateFromRegression goa.Endpoint
 	List                 goa.Endpoint
 	Get                  goa.Endpoint
@@ -31,6 +32,7 @@ type Endpoints struct {
 func NewEndpoints(s Service) *Endpoints {
 	return &Endpoints{
 		Create:               NewCreateEndpoint(s),
+		CreateFromPostgrest:  NewCreateFromPostgrestEndpoint(s),
 		CreateFromRegression: NewCreateFromRegressionEndpoint(s),
 		List:                 NewListEndpoint(s),
 		Get:                  NewGetEndpoint(s),
@@ -46,6 +48,7 @@ func NewEndpoints(s Service) *Endpoints {
 // endpoints.
 func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Create = m(e.Create)
+	e.CreateFromPostgrest = m(e.CreateFromPostgrest)
 	e.CreateFromRegression = m(e.CreateFromRegression)
 	e.List = m(e.List)
 	e.Get = m(e.Get)
@@ -62,6 +65,15 @@ func NewCreateEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*CreateInvestigationPayload)
 		return s.Create(ctx, p)
+	}
+}
+
+// NewCreateFromPostgrestEndpoint returns an endpoint function that calls the
+// method "create_from_postgrest" of service "investigations".
+func NewCreateFromPostgrestEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*CreateFromPostgRESTPayload)
+		return s.CreateFromPostgrest(ctx, p)
 	}
 }
 

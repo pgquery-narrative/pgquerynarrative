@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { collapseFindings, collapsePartitionRepeats } from "./utils";
+import { collapseFindings, collapsePartitionRepeats, utf8ByteLength, MAX_PASTED_SQL_BYTES } from "./utils";
 import { collapsePartitionSiblings, type PlanTreeNode } from "./plan-tree";
+
+describe("utf8ByteLength", () => {
+  it("matches JS string length for ASCII", () => {
+    expect(utf8ByteLength("SELECT 1")).toBe(8);
+  });
+
+  it("counts UTF-8 bytes, not UTF-16 code units, for multi-byte characters", () => {
+    // '日' is one UTF-16 code unit (string length 1) but 3 UTF-8 bytes — the
+    // server's len(sql) in Go counts bytes, so a client-side cap using
+    // string length instead would let through more than the server accepts.
+    expect(utf8ByteLength("日")).toBe(3);
+    expect("日".length).toBe(1);
+  });
+
+  it("stays well under the paste cap for an ordinary query", () => {
+    expect(utf8ByteLength("SELECT * FROM demo.sales WHERE region = 'North'")).toBeLessThan(MAX_PASTED_SQL_BYTES);
+  });
+});
 
 describe("collapseFindings", () => {
   it("groups monthly seq scans that only differ by partition and cost", () => {

@@ -221,6 +221,11 @@ func (r *Runner) projectWithHypopg(ctx context.Context, sql, createIndexSQL stri
 		return IndexProjection{}, err
 	}
 
+	// The hypothetical index is created as the analytical role; the plan runs in
+	// the replay context, like every other plan for the same statement.
+	if err := r.applyReplay(ctx, tx); err != nil {
+		return IndexProjection{}, err
+	}
 	explainSQL := buildExplainSQL(innerSQL, ExplainOptions{Analyze: false, Buffers: false})
 	var planText string
 	if err := tx.QueryRow(ctx, explainSQL).Scan(&planText); err != nil {
