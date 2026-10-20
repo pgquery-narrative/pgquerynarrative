@@ -46,6 +46,12 @@ func ClassifyRunError(err error) (RunErrorKind, string) {
 	} {
 		if errors.Is(err, sentinel) {
 			if errors.Is(err, apperrors.ErrQueryExecutionFailed) {
+				// Every caller of ClassifyRunError — ask, queries, queries_compare,
+				// reports_generate, schedules, and the PostgREST investigation path
+				// alike — gets this message, so it must stay generic. A caller that
+				// specifically needs PostgreSQL's SQLSTATE/message detail (e.g. the
+				// PostgREST replay-role grant check's remediation text) must call
+				// executionFailedMessage directly, not through this shared classifier.
 				return RunErrorValidation, "Query execution failed. Check your SQL and try again."
 			}
 			return RunErrorValidation, sentinel.Error()
@@ -61,6 +67,16 @@ func ClassifyRunError(err error) (RunErrorKind, string) {
 		return RunErrorValidation, sanitizeValidationMessage(msg)
 	}
 	return RunErrorValidation, "Query execution failed. Check your SQL and try again."
+}
+
+// executionFailedMessage reports PostgreSQL's SQLSTATE and message when the
+// runner kept them (only for errors the statement itself caused), otherwise a
+// generic message.
+func executionFailedMessage(err error) string {
+	if _, detail, ok := strings.Cut(err.Error(), apperrors.ErrQueryExecutionFailed.Error()+": SQLSTATE "); ok {
+		return "Query execution failed (SQLSTATE " + detail + "). Check your SQL and try again."
+	}
+	return "Query execution failed. Check your SQL and try again."
 }
 
 func sanitizeValidationMessage(msg string) string {

@@ -253,6 +253,7 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	queriesService.SetDataEncryptionKey(encKey)
 	reportsService.SetDataEncryptionKey(encKey)
+	investigationsService.SetPostgRESTReplayRoles(cfg.Security.PostgRESTReplayRoles)
 
 	return &Client{
 		pools:                 pools,

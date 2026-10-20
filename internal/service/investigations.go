@@ -26,6 +26,8 @@ type InvestigationsService struct {
 	appPool    db.DB
 	queriesSvc *QueriesService
 	reportsSvc *ReportsService
+	// replayRoles are PostgREST roles an imported request may be replayed as.
+	replayRoles map[string]bool
 }
 
 // NewInvestigationsService creates an investigations service.
@@ -35,30 +37,9 @@ func NewInvestigationsService(appPool db.DB, queriesSvc *QueriesService, reports
 
 // Create starts a new investigation with automatic EXPLAIN evidence.
 func (s *InvestigationsService) Create(ctx context.Context, payload *investigations.CreateInvestigationPayload) (*investigations.Investigation, error) {
-	p := auth.PrincipalFromContext(ctx)
 	connID := "default"
 	if payload.ConnectionID != nil && *payload.ConnectionID != "" {
 		connID = *payload.ConnectionID
-	}
-
-	// Estimate-only EXPLAIN by default — creating an investigation must not run a
-	// possibly-expensive production query. ANALYZE only when the caller opts in
-	// (and then still fall back if it is disabled server-side).
-	wantAnalyze := payload.Analyze
-	explainResult, err := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
-		SQL:          payload.SQL,
-		Analyze:      wantAnalyze,
-		ConnectionID: &connID,
-	})
-	if err != nil && wantAnalyze {
-		explainResult, err = s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
-			SQL:          payload.SQL,
-			Analyze:      false,
-			ConnectionID: &connID,
-		})
-	}
-	if err != nil {
-		return nil, normalizeInvestigationError(err)
 	}
 
 	var statSnap *investigations.StatSnapshot
@@ -81,26 +62,92 @@ func (s *InvestigationsService) Create(ctx context.Context, payload *investigati
 		}
 	}
 
+	return s.insertInvestigation(ctx, investigationDraft{
+		Title:        payload.Title,
+		SQL:          payload.SQL,
+		ConnectionID: connID,
+		Analyze:      payload.Analyze,
+		StatSnapshot: statSnap,
+	})
+}
+
+// investigationDraft is everything an investigation is created from. Binds and
+// PostgREST provenance are set only by the PostgREST intake.
+type investigationDraft struct {
+	Title, SQL, ConnectionID string
+	Analyze                  bool
+	StatSnapshot             *investigations.StatSnapshot
+	Binds                    []string
+	PostgREST                *investigations.PostgRESTRequest
+}
+
+// insertInvestigation runs EXPLAIN and persists the investigation. With binds,
+// EXPLAIN runs on the literal substitution, so the plan reflects the values the
+// request actually used rather than a generic plan with unknown row counts.
+func (s *InvestigationsService) insertInvestigation(ctx context.Context, d investigationDraft) (*investigations.Investigation, error) {
+	p := auth.PrincipalFromContext(ctx)
+
+	explainSQL, err := planSQL(d.SQL, d.Binds)
+	if err != nil {
+		return nil, &investigations.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
+
+	// Estimate-only EXPLAIN by default — creating an investigation must not run a
+	// possibly-expensive production query. ANALYZE only when the caller opts in
+	// (and then still fall back if it is disabled server-side).
+	wantAnalyze := d.Analyze
+	explainResult, err := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
+		SQL:          explainSQL,
+		Analyze:      wantAnalyze,
+		ConnectionID: &d.ConnectionID,
+	})
+	if err != nil && wantAnalyze {
+		explainResult, err = s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
+			SQL:          explainSQL,
+			Analyze:      false,
+			ConnectionID: &d.ConnectionID,
+		})
+	}
+	if err != nil {
+		return nil, normalizeInvestigationError(err)
+	}
+
+	if d.PostgREST != nil {
+		s.modelPlanCache(ctx, d, explainResult)
+	}
+
 	// Plan and stat evidence is the product. A marshal failure must surface, not
 	// persist an investigation whose evidence column silently reads "null".
 	explainJSON, err := json.Marshal(explainResult)
 	if err != nil {
 		return nil, fmt.Errorf("marshal explain evidence: %w", err)
 	}
-	statJSON, err := json.Marshal(statSnap)
+	statJSON, err := json.Marshal(d.StatSnapshot)
 	if err != nil {
 		return nil, fmt.Errorf("marshal stat evidence: %w", err)
 	}
-	fingerprint := sqlFingerprint(payload.SQL)
+	var bindsJSON, postgrestJSON []byte
+	if len(d.Binds) > 0 {
+		if bindsJSON, err = json.Marshal(d.Binds); err != nil {
+			return nil, fmt.Errorf("marshal bind evidence: %w", err)
+		}
+	}
+	if d.PostgREST != nil {
+		if postgrestJSON, err = json.Marshal(d.PostgREST); err != nil {
+			return nil, fmt.Errorf("marshal postgrest provenance: %w", err)
+		}
+	}
+	fingerprint := sqlFingerprint(d.SQL)
 
 	var id string
 	err = s.appPool.QueryRow(ctx, `
 		INSERT INTO app.investigations (
 			organization_id, created_by, title, status, sql, connection_id,
-			query_fingerprint, stat_snapshot, explain_result
-		) VALUES ($1, $2, $3, 'analyzing', $4, $5, $6, $7, $8)
+			query_fingerprint, stat_snapshot, explain_result, binds, postgrest_request
+		) VALUES ($1, $2, $3, 'analyzing', $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id
-	`, p.OrgID, p.UserID, payload.Title, payload.SQL, connID, fingerprint, statJSON, explainJSON).Scan(&id)
+	`, p.OrgID, p.UserID, d.Title, d.SQL, d.ConnectionID, fingerprint, statJSON, explainJSON,
+		bindsJSON, postgrestJSON).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +156,16 @@ func (s *InvestigationsService) Create(ctx context.Context, payload *investigati
 	_, _ = s.appPool.Exec(ctx, `UPDATE app.investigations SET status = 'open', updated_at = now() WHERE id = $1`, id)
 
 	return s.Get(ctx, &investigations.GetPayload{ID: id})
+}
+
+// planSQL returns the statement to EXPLAIN or time: sql with its captured binds
+// substituted as literals. Without binds it is sql unchanged. Substitution is
+// fail-closed (see queryrunner.SubstituteParams); a missing bind is an error.
+func planSQL(sql string, binds []string) (string, error) {
+	if len(binds) == 0 {
+		return sql, nil
+	}
+	return queryrunner.SubstituteCapturedParams(sql, binds)
 }
 
 // CreateFromRegression opens an investigation from a regression alert: loads full
@@ -302,13 +359,14 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 		       stat_snapshot, explain_result, candidate_sql, candidate_explain,
 		       comparison, report_id, created_at, updated_at,
 		       fix_status, fix_reference, fix_applied_at,
-		       fix_baseline_mean_ms, fix_confirmed_mean_ms, fix_measured_at
+		       fix_baseline_mean_ms, fix_confirmed_mean_ms, fix_measured_at,
+		       binds, postgrest_request
 		FROM app.investigations
 		WHERE id = $1 AND organization_id = $2
 	`, payload.ID, orgID(ctx))
 
 	var inv investigations.Investigation
-	var statJSON, explainJSON, candidateExplainJSON, comparisonJSON []byte
+	var statJSON, explainJSON, candidateExplainJSON, comparisonJSON, bindsJSON, postgrestJSON []byte
 	var candidateSQL, reportID, fingerprint, fixReference *string
 	var createdAt, updatedAt time.Time
 	var fixStatus string
@@ -321,6 +379,7 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 		&comparisonJSON, &reportID, &createdAt, &updatedAt,
 		&fixStatus, &fixReference, &fixAppliedAt,
 		&fixBaselineMean, &fixConfirmedMean, &fixMeasuredAt,
+		&bindsJSON, &postgrestJSON,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -332,6 +391,18 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 	inv.UpdatedAt = updatedAt.Format(time.RFC3339)
 	if fingerprint != nil {
 		inv.QueryFingerprint = fingerprint
+	}
+	if len(bindsJSON) > 0 && string(bindsJSON) != "null" {
+		if err := json.Unmarshal(bindsJSON, &inv.Binds); err != nil {
+			return nil, fmt.Errorf("decode captured bind evidence: %w", err)
+		}
+	}
+	if len(postgrestJSON) > 0 && string(postgrestJSON) != "null" {
+		var pr investigations.PostgRESTRequest
+		if err := json.Unmarshal(postgrestJSON, &pr); err != nil {
+			return nil, fmt.Errorf("decode PostgREST provenance: %w", err)
+		}
+		inv.PostgrestRequest = &pr
 	}
 	if candidateSQL != nil {
 		inv.CandidateSQL = candidateSQL
@@ -503,7 +574,7 @@ func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *inv
 	}
 
 	findings := queryrunnerFindingsFromInvestigation(inv.Explain)
-	cands := queryrunner.SuggestRewrites(inv.SQL, findings)
+	cands := queryrunner.SuggestRewritesForInvestigation(inv.SQL, findings, inv.PostgrestRequest != nil)
 	out := &investigations.RewriteSuggestionList{
 		Candidates: make([]*investigations.RewriteCandidate, 0, len(cands)),
 	}
@@ -524,10 +595,18 @@ func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *inv
 	}
 	if len(out.Candidates) == 0 {
 		reason := queryrunner.DeclineReason
+		if inv.PostgrestRequest != nil {
+			reason = postgrestWrapperDeclineReason
+		}
 		out.DeclineReason = &reason
 	}
 	return out, nil
 }
+
+// postgrestWrapperDeclineReason explains why a PostgREST-generated statement gets
+// no rewrite, and where the change belongs instead.
+const postgrestWrapperDeclineReason = "No rewrite offered: this is PostgREST's generated response wrapper, so a rewrite here would not change the relation that costs time. " +
+	"Apply the change to the relation the endpoint reads (a view or function definition), add an index, or change the request shape. The plan findings above still apply."
 
 // attachDiagnosis derives the verdict-first rollup from the stored findings and
 // plan and sets exp.Diagnosis. Computed at read time so it always reflects the
@@ -680,16 +759,23 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 	if err != nil {
 		return nil, err
 	}
+	if ctx, err = s.postgrestReplayContext(ctx, inv); err != nil {
+		return nil, err
+	}
 
+	baseSQL, err := planSQL(inv.SQL, inv.Binds)
+	if err != nil {
+		return nil, &investigations.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
 	analyze := payload.Analyze
 	baselineAPI, err := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
-		SQL:          inv.SQL,
+		SQL:          baseSQL,
 		Analyze:      analyze,
 		ConnectionID: &inv.ConnectionID,
 	})
 	if err != nil && analyze {
 		baselineAPI, err = s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
-			SQL:          inv.SQL,
+			SQL:          baseSQL,
 			Analyze:      false,
 			ConnectionID: &inv.ConnectionID,
 		})
@@ -711,11 +797,17 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 		findings = queryrunnerFindingsFromInvestigation(inv.Explain)
 	}
 
+	wrapper := inv.PostgrestRequest != nil
 	var scored []queryrunner.ScoredCandidate
 	skippedCandidates := 0
-	for _, rewrite := range queryrunner.SuggestRewrites(inv.SQL, findings) {
+	for _, rewrite := range queryrunner.SuggestRewritesForInvestigation(inv.SQL, findings, wrapper) {
+		rewriteSQL, sqlErr := planSQL(rewrite.SQL, inv.Binds)
+		if sqlErr != nil {
+			skippedCandidates++
+			continue
+		}
 		afterAPI, explErr := s.queriesSvc.ExplainPlan(ctx, &queries.ExplainQueryPayload{
-			SQL:          rewrite.SQL,
+			SQL:          rewriteSQL,
 			Analyze:      analyze,
 			ConnectionID: &inv.ConnectionID,
 		})
@@ -737,8 +829,12 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 		scored = append(scored, queryrunner.ScoreSQLRewrite(rewrite, baselineMetrics, afterMetrics, improved))
 	}
 	for _, idxCand := range queryrunner.CollectIndexDDLCandidates(findings) {
-		proj := s.queriesSvc.ProjectIndexCost(ctx, &inv.ConnectionID, inv.SQL, idxCand.DDL, baselineMetrics.TotalCost)
-		scored = append(scored, queryrunner.ScoreIndexProjection(idxCand, proj))
+		proj := s.queriesSvc.ProjectIndexCost(ctx, &inv.ConnectionID, baseSQL, idxCand.DDL, baselineMetrics.TotalCost)
+		sc := queryrunner.ScoreIndexProjection(idxCand, proj)
+		if wrapper && sc.NeedsPredicateRewrite {
+			sc.Rationale += " " + postgrestIndexNeedsRewriteNote
+		}
+		scored = append(scored, sc)
 	}
 	scored = queryrunner.RankScoredCandidates(scored)
 
@@ -936,27 +1032,39 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 	if err != nil {
 		return nil, err
 	}
+	if ctx, err = s.postgrestReplayContext(ctx, inv); err != nil {
+		return nil, err
+	}
+	beforeSQL, afterSQL, binds, err := investigationCompareSQL(inv, payload)
+	if err != nil {
+		return nil, &investigations.ValidationError{Name: "validation_error", Message: err.Error(), Code: strPtr("VALIDATION_ERROR")}
+	}
+	compareBinds := binds
+	if inv.PostgrestRequest != nil {
+		// Captured text has already been substituted without guessing its type.
+		compareBinds = nil
+	}
 
 	// EXPLAIN ANALYZE only when the caller opts in (payload.analyze); estimate-only
 	// otherwise. When ANALYZE was requested but is disabled server-side, fall back.
 	wantAnalyze := payload.Analyze
 	cmp, err := s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
-		BeforeSQL:     inv.SQL,
-		AfterSQL:      payload.CandidateSQL,
+		BeforeSQL:     beforeSQL,
+		AfterSQL:      afterSQL,
 		Analyze:       wantAnalyze,
 		VerifyResults: payload.VerifyResults,
 		ConnectionID:  &inv.ConnectionID,
-		Binds:         payload.Binds,
+		Binds:         compareBinds,
 		TimingRuns:    payload.TimingRuns,
 	})
 	if err != nil && wantAnalyze {
 		cmp, err = s.queriesSvc.ComparePlans(ctx, &queries.ComparePlansPayload{
-			BeforeSQL:     inv.SQL,
-			AfterSQL:      payload.CandidateSQL,
+			BeforeSQL:     beforeSQL,
+			AfterSQL:      afterSQL,
 			Analyze:       false,
 			VerifyResults: payload.VerifyResults,
 			ConnectionID:  &inv.ConnectionID,
-			Binds:         payload.Binds,
+			Binds:         compareBinds,
 			TimingRuns:    payload.TimingRuns,
 		})
 	}
@@ -978,8 +1086,8 @@ func (s *InvestigationsService) AddCandidate(ctx context.Context, payload *inves
 		equivStatus = cmp.ResultEquivalenceStatus
 	}
 	var bindsJSON []byte
-	if len(payload.Binds) > 0 {
-		bindsJSON, _ = json.Marshal(payload.Binds)
+	if len(binds) > 0 {
+		bindsJSON, _ = json.Marshal(binds)
 	}
 
 	// Record this candidate in the history (one row per distinct SQL; a re-test
@@ -1162,14 +1270,22 @@ func (s *InvestigationsService) GenerateReport(ctx context.Context, payload *inv
 		fingerprint = *inv.QueryFingerprint
 	}
 
+	provenance := story.InvestigationProvenance{
+		QueryFingerprint: fingerprint,
+		GeneratedBy:      auth.PrincipalFromContext(ctx).UserID,
+		ResultsSampled:   resultsSampled,
+	}
+	if inv.PostgrestRequest != nil {
+		var plannerCost *float64
+		if inv.Explain != nil {
+			cost := inv.Explain.TotalCost
+			plannerCost = &cost
+		}
+		provenance.PostgREST = postgrestEvidenceForReport(inv.PostgrestRequest, plannerCost, inv.SQL, inv.Binds)
+	}
 	invReport, narrative := story.BuildInvestigationReport(
 		inv.Title, inv.SQL, candidateSQL, fingerprint, inv.ConnectionID,
-		stat, findings, comparison,
-		story.InvestigationProvenance{
-			QueryFingerprint: fingerprint,
-			GeneratedBy:      auth.PrincipalFromContext(ctx).UserID,
-			ResultsSampled:   resultsSampled,
-		},
+		stat, findings, comparison, provenance,
 	)
 
 	// Persist the report and mark the investigation complete in one transaction.

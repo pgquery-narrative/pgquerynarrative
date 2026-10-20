@@ -75,6 +75,14 @@ func TestMigrationsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
+	// The PostgREST migration must remove both optional evidence columns when
+	// rolled back, without dropping earlier investigation data or privileges.
+	if version == 62 {
+		var captureColumns int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'investigations' AND column_name IN ('binds', 'postgrest_request')`).Scan(&captureColumns); err != nil || captureColumns != 0 {
+			t.Fatalf("PostgREST columns after rollback: %d, %v", captureColumns, err)
+		}
+	}
 
 	// Rolling back one step from the tip must not drop earlier artifacts:
 	// regression_alerts.investigation_id (migration 50) or the poller tables (48).
@@ -118,6 +126,12 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	}
 	if finalVersion != version {
 		t.Fatalf("expected version %d after re-up, got %d", version, finalVersion)
+	}
+	if version >= 62 {
+		var captureColumns int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'investigations' AND column_name IN ('binds', 'postgrest_request') AND data_type = 'jsonb' AND is_nullable = 'YES'`).Scan(&captureColumns); err != nil || captureColumns != 2 {
+			t.Fatalf("PostgREST columns after reapply: %d, %v", captureColumns, err)
+		}
 	}
 
 	err = pool.QueryRow(ctx, `
