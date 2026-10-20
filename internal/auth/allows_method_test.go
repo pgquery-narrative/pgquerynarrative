@@ -46,6 +46,7 @@ func TestAllowsMethod_AnalystInvestigations(t *testing.T) {
 	paths := []string{
 		"/api/v1/investigations",
 		"/api/v1/investigations/from-regression",
+		"/api/v1/investigations/from-postgrest",
 		"/api/v1/investigations/abc/candidate",
 		"/api/v1/investigations/abc/suggest-rewrite",
 		"/api/v1/investigations/abc/rank-candidates",

@@ -11,11 +11,12 @@ import { PlanExplorer } from "@/components/plan-explorer";
 import { PlanCompare } from "@/components/plan-compare";
 import { InvestigationVerdict } from "@/components/investigation-verdict";
 import { InvestigationFix } from "@/components/investigation-fix";
+import { PostgRESTRequestPanel } from "@/components/postgrest-request";
 import { api, type Investigation, type RankedCandidate, type RewriteCandidate, type SecurityTrust, ApiError } from "@/api/client";
 import {
   Search, FileText, GitCompare, CheckCircle2, ArrowRight, Play, Loader2, Sparkles, ListOrdered, ChevronRight,
 } from "lucide-react";
-import { cn, formatFloat, timeAgo, truncate } from "@/lib/utils";
+import { cn, formatFloat, timeAgo, truncate, utf8ByteLength, MAX_PASTED_SQL_BYTES } from "@/lib/utils";
 import { equivalenceStatusOf, equivalenceLabel, equivalenceTone, isShippableEquivalence, normalizeEquivalenceStatus, requiresSampleMatchAck } from "@/lib/equivalence";
 
 const STEPS = [
@@ -384,6 +385,10 @@ export default function InvestigatePage() {
         </Card>
       )}
 
+      {investigation.postgrest_request && (
+        <PostgRESTRequestPanel request={investigation.postgrest_request} binds={investigation.binds} />
+      )}
+
       {/* Source SQL */}
       <Card>
         <CardHeader>
@@ -724,6 +729,12 @@ function InvestigateLanding() {
   const [pastedTitle, setPastedTitle] = useState("");
   const [pastedSql, setPastedSql] = useState("");
   const [pasteError, setPasteError] = useState("");
+  const [pgLog, setPgLog] = useState("");
+  const [pgServerTiming, setPgServerTiming] = useState("");
+  const [pgHttpMs, setPgHttpMs] = useState("");
+  const [pgAnalyze, setPgAnalyze] = useState(false);
+  const [pgError, setPgError] = useState("");
+  const [pgBusy, setPgBusy] = useState(false);
 
   useEffect(() => {
     Promise.allSettled([api.getDemoScenarios(), api.getRegressions(5)]).then(([s, r]) => {
@@ -780,8 +791,9 @@ function InvestigateLanding() {
       setPasteError("SQL cannot be empty.");
       return;
     }
-    if (sql.length > 10000) {
-      setPasteError(`SQL is ${sql.length} characters; the limit is 10,000.`);
+    const sqlBytes = utf8ByteLength(sql);
+    if (sqlBytes > MAX_PASTED_SQL_BYTES) {
+      setPasteError(`SQL is ${sqlBytes.toLocaleString()} bytes; the server accepts at most ${MAX_PASTED_SQL_BYTES.toLocaleString()}.`);
       return;
     }
     if (sql.includes(";")) {
@@ -792,6 +804,31 @@ function InvestigateLanding() {
     // sensitive literals that must not land in the URL bar, browser
     // history, or referrer headers.
     navigate("/investigate", { state: { title, sql } });
+  };
+
+  // The log excerpt goes in the POST body only: it can hold credentials and
+  // filter values, which must not reach the URL or browser history.
+  const startFromPostgrest = async () => {
+    setPgError("");
+    const httpMs = pgHttpMs.trim() === "" ? undefined : Number(pgHttpMs);
+    if (httpMs !== undefined && !(Number.isFinite(httpMs) && httpMs >= 0)) {
+      setPgError("HTTP duration must be a non-negative number of milliseconds.");
+      return;
+    }
+    setPgBusy(true);
+    try {
+      const inv = await api.createInvestigationFromPostgrest({
+        postgres_log: pgLog,
+        analyze: pgAnalyze,
+        ...(pgServerTiming.trim() ? { server_timing: pgServerTiming.trim() } : {}),
+        ...(httpMs !== undefined ? { http_duration_ms: httpMs } : {}),
+      });
+      navigate(`/investigate/${inv.id}`);
+    } catch (e) {
+      setPgError(e instanceof ApiError ? e.message : "Failed to import the PostgREST request");
+    } finally {
+      setPgBusy(false);
+    }
   };
 
   return (
@@ -906,6 +943,53 @@ function InvestigateLanding() {
               <Button variant="outline"><Play className="h-4 w-4" /> Select from pg_stat_statements</Button>
             </Link>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="postgrest-import">
+        <CardHeader>
+          <CardTitle className="text-base">Import a PostgREST request</CardTitle>
+          <CardDescription>
+            Paste the PostgreSQL log for one PostgREST request (stderr, csvlog or jsonlog). The exact generated SQL and
+            bind values come from the log, never from the URL. Request headers and cookies are discarded.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Textarea
+            aria-label="PostgreSQL log excerpt"
+            placeholder={"2026-10-08 10:07:55.794 UTC [107] app=PostgREST LOG:  duration: 37.5 ms  execute 2: WITH pgrst_source AS ...\n2026-10-08 10:07:55.794 UTC [107] app=PostgREST DETAIL:  Parameters: $1 = '...'"}
+            className="font-mono text-xs min-h-40"
+            value={pgLog}
+            onChange={(e) => setPgLog(e.target.value)}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              aria-label="Server-Timing header"
+              placeholder="Server-Timing header (optional), e.g. transaction;dur=54.8"
+              value={pgServerTiming}
+              onChange={(e) => setPgServerTiming(e.target.value)}
+            />
+            <Input
+              aria-label="HTTP duration in milliseconds"
+              inputMode="decimal"
+              placeholder="HTTP duration in ms (optional)"
+              value={pgHttpMs}
+              onChange={(e) => setPgHttpMs(e.target.value)}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={pgAnalyze}
+              onChange={(e) => setPgAnalyze(e.target.checked)}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            Run EXPLAIN ANALYZE with the captured values (executes the query)
+          </label>
+          {pgError && <p className="text-sm text-destructive whitespace-pre-wrap">{pgError}</p>}
+          <Button onClick={() => void startFromPostgrest()} disabled={!pgLog.trim() || pgBusy}>
+            {pgBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Import request
+          </Button>
         </CardContent>
       </Card>
     </div>

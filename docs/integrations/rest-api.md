@@ -92,6 +92,96 @@ curl -s http://localhost:8080/api/v1/workspace/regressions | jq .
 curl -s http://localhost:8080/api/v1/trust | jq .
 ```
 
+## PostgREST request capture
+
+`POST /investigations/from-postgrest` (or **Import a PostgREST request** on the
+Investigate page) imports one captured GET or HEAD request to a table, view or
+RPC function. It reads the actual generated SQL and bind values from PostgreSQL
+logs; it does not fetch a URL or require a running PostgREST instance in
+PgQueryNarrative. The capture format is tested with PostgREST 12.2, 13.0 and
+16.4 on PostgreSQL 16/18 across common request shapes (filters, embeds, JSON
+paths, full-text search, computed columns, RPC, counts, CSV, singular objects,
+Range pagination, large `in` lists). PostgREST versions before 13 pass RPC
+scalar arguments through one JSON payload parameter the importer casts
+explicitly; this is handled automatically and needs no configuration.
+
+**Capture.** Paste stderr, csvlog or jsonlog output. Log with
+`log_min_duration_statement=0` or `log_statement=all`, and
+`log_parameter_max_length=-1`. A stderr `log_line_prefix` must contain the
+backend PID as `[%p]` (for example `'%m [%p] %Q app=%a '`; fixed
+managed-service prefixes such as `%t:%r:%u@%d:[%p]:` also work); with
+`compute_query_id=on`, a `%Q` directly after `[%p]` is recorded as the query
+id. Include one request's transaction. If the excerpt holds several requests,
+the error names their backend PIDs so you can keep one. The excerpt is at most
+200,000 bytes.
+
+- **Failed requests**, including ones that hit `statement_timeout`, import from
+  PostgreSQL's `ERROR` / `STATEMENT` records. Their values come from the bind
+  record (`log_min_duration_statement=0`) or the error context
+  (`log_parameter_max_length_on_error=-1`). The investigation records the error;
+  replays use the product's own timeout, so the statement can still be measured.
+- **Slow-query-only logs** (a threshold above the session-context statement's
+  duration) import with the session context marked as not logged: method,
+  endpoint and role are then unknown.
+- A value ending in `...` imports only when a longer, untruncated value in the
+  same excerpt proves `log_parameter_max_length` did not cut it.
+- Refused: writes, NULL binds (PostgREST does not send them), and
+  syslog-forwarded logs, which split and escape records so the exact SQL cannot
+  be rebuilt.
+
+The statement with its values substituted must fit `DATABASE_MAX_QUERY_LENGTH`
+(default 10,000 bytes: an `in.(...)` list of roughly 2,000 four-digit ids, or
+about 250 UUIDs). These source logs can contain credentials and row-filter
+values: keep the capture restricted and turn off broad logging after capture.
+The importer discards request headers and cookies. SQL and its captured values
+are retained as investigation evidence.
+
+```bash
+jq -n --rawfile capture capture.txt \
+  '{postgres_log: $capture, connection_id: "default", analyze: false}' \
+  | curl --fail-with-body -sS http://localhost:8080/api/v1/investigations/from-postgrest \
+      -H "Authorization: Bearer $PGQN_API_KEY" \
+      -H "Content-Type: application/json" --data-binary @-
+```
+
+Use the returned investigation ID with the existing rank, candidate, and report
+endpoints. Captured binds are reused automatically in comparisons; conflicting
+bind overrides are rejected. Generated response wrappers receive index advice
+when applicable and an explicit rewrite-decline reason. Changes to a view,
+function, or request shape must be tested at that source.
+
+**Replay context.** Every plan, ranking and comparison for the investigation
+runs with the captured `search_path` (only schemas the connection allows, in
+captured order), the captured settings such as `timezone` (all but
+`statement_timeout`), and the request method and path. It runs as the captured
+role only when that role is listed in `SECURITY_POSTGREST_REPLAY_ROLES` and
+granted to the analytical role (`GRANT <role> TO <analytical role>`); role-keyed
+RLS then applies as it did for the endpoint. **`request.jwt.claims` is never
+replayed, for any role, under any circumstance.** The captured log is
+caller-supplied text with no verification it came from a real PostgreSQL log;
+trusting a claims value from it would let any principal able to import a
+PostgREST capture choose the identity a claims-keyed RLS policy (for example
+`auth.uid()`) evaluates for, for any row any allowlisted role could ever see.
+Role impersonation does not have this problem: Postgres itself independently
+checks the `GRANT`, which the capture text cannot forge. Everything the replay
+does not reproduce is listed with the investigation and in its report: an
+unimpersonated role, claims (always, even under an impersonated role), captured
+schemas outside the allowlist (so, for example, `citext` in an `extensions`
+schema can resolve differently), request headers, and the endpoint's response
+body. Reports never claim endpoint equivalence.
+
+**Plan cache.** For a named prepared statement, the investigation also plans the
+parameterized statement with `EXPLAIN (GENERIC_PLAN)` (PostgreSQL 16+) and
+states whether PostgreSQL is likely to switch to that generic plan after five
+executions, or to keep planning per request. Unnamed statements (PostgREST
+`db-prepared-statements=false`) are planned per request. HTTP duration,
+PostgREST transaction time, the logged execute-phase duration, and replay plan
+estimates/timings remain separate.
+
+`make test-postgrest` verifies the workflow with disposable real servers
+(PostgREST 16.4 on PostgreSQL 16 and 18, plus PostgREST 13.0 and 12.2) and
+fails if Docker or the containers are unavailable.
+
 ## Compare plans standalone (no investigation record)
 
 ```bash

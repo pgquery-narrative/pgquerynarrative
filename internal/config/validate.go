@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -82,6 +83,14 @@ func (c Config) Validate() error {
 	}
 	if err := validateAllowedSchemas(c.Database.AllowedSchemas, StrictMode()); err != nil {
 		return err
+	}
+	for _, role := range c.Security.PostgRESTReplayRoles {
+		if !replayRoleRe.MatchString(role) {
+			return fmt.Errorf("SECURITY_POSTGREST_REPLAY_ROLES entry %q is not a plain role name", role)
+		}
+	}
+	if n := c.Database.MaxQueryLength; n != 0 && (n < 1000 || n > 1000000) {
+		return fmt.Errorf("DATABASE_MAX_QUERY_LENGTH must be between 1000 and 1000000 bytes, got %d", n)
 	}
 	for _, conn := range c.Database.Connections {
 		if len(conn.AllowedSchemas) == 0 {
@@ -358,3 +367,5 @@ func validateAllowedSchemas(schemas []string, strict bool) error {
 	}
 	return nil
 }
+
+var replayRoleRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$-]{0,62}$`)

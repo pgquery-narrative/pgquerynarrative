@@ -363,6 +363,30 @@ var StatSnapshot = Type("StatSnapshot", func() {
 	Attribute("rows", Int64)
 })
 
+// PostgRESTRequest is the sanitized provenance of the PostgREST read request an
+// investigation was opened from. Only the method, path, database role and timings
+// are kept: request headers, cookies and JWT claims are never stored.
+var PostgRESTRequest = Type("PostgRESTRequest", func() {
+	Attribute("method", String, "HTTP method of the captured request (GET or HEAD)")
+	Attribute("endpoint", String, "Request path without query string, e.g. /orders_daily")
+	Attribute("role", String, "Database role PostgREST executed the request as")
+	Attribute("search_path", String, "search_path PostgREST set for the request")
+	Attribute("query_id", String, "PostgreSQL query identifier, when the log line carried one")
+	Attribute("http_duration_ms", Float64, "Client-measured HTTP request time (ms), as supplied at intake. Wire and PostgREST time, not database time.")
+	Attribute("server_timing_transaction_ms", Float64, "PostgREST Server-Timing 'transaction' stage (ms): the whole database transaction, including role and settings setup")
+	Attribute("statement_duration_ms", Float64, "PostgreSQL's logged duration for the main request statement's execute phase (ms). Excludes parse and bind, where a custom plan is planned.")
+	Attribute("replay_limitations", ArrayOf(String), "What the replay does not reproduce. A non-empty list means endpoint equivalence is not claimed.")
+	Attribute("session_context_missing", Boolean, "True when the log had no session-context statement for the request (slow-query-only logging): method, endpoint, role and search_path are then empty")
+	Attribute("failure", String, "PostgreSQL's error when the request statement failed, e.g. canceling statement due to statement timeout")
+	Attribute("prepared_statement", Boolean, "True when PostgREST ran the statement as a named prepared statement, which PostgreSQL may switch to a generic plan. Absent when a failed statement was recovered only from the error context, which does not record the statement's name.")
+	Attribute("replay_role", String, "Role every replay of this investigation runs as (SET LOCAL ROLE); empty means the connection's own role")
+	Attribute("replay_search_path", String, "search_path every replay applies: the captured schemas this connection allows, in captured order")
+	Attribute("request_settings", MapOf(String, String), "Well-known settings the request set (Prefer: timezone, per-role settings); replays apply all but statement_timeout")
+	Attribute("generic_plan_total_cost", Float64, "EXPLAIN (GENERIC_PLAN) total cost of the parameterized statement")
+	Attribute("plan_cache_note", String, "Whether PostgreSQL is likely to run this statement with the custom plan the replay measured or with the generic plan")
+	Required("method", "endpoint", "role", "replay_limitations")
+})
+
 // Investigation is a Query Investigation workflow artifact.
 // InvestigationCandidate is one rewrite that was tested against the investigation.
 var InvestigationCandidate = Type("InvestigationCandidate", func() {
@@ -401,6 +425,8 @@ var Investigation = Type("Investigation", func() {
 	Attribute("comparison", ComparePlansResult)
 	Attribute("report_id", String)
 	Attribute("candidates", ArrayOf(InvestigationCandidate), "Every candidate rewrite tested for this investigation, newest first")
+	Attribute("binds", ArrayOf(String), "Captured bind values for a parameterized sql ($1, $2, ...); EXPLAIN and compare substitute them")
+	Attribute("postgrest_request", PostgRESTRequest, "Set when the investigation was opened from a PostgREST request")
 	Attribute("fix_status", String, "proposed | verified | applied | confirmed | regressed | abandoned")
 	Attribute("fix_reference", String, "PR or ticket URL for the shipped fix")
 	Attribute("fix_applied_at", String, func() {
@@ -465,6 +491,29 @@ var CreateInvestigationPayload = Type("CreateInvestigationPayload", func() {
 	Attribute("total_time_ms", Float64)
 	Attribute("rows", Int64)
 	Required("title", "sql")
+})
+
+// CreateFromPostgRESTPayload opens an investigation from captured PostgREST
+// evidence. The log excerpt is parsed server-side and never stored verbatim.
+var CreateFromPostgRESTPayload = Type("CreateFromPostgRESTPayload", func() {
+	Attribute("title", String, func() {
+		MaxLength(200)
+	})
+	Attribute("connection_id", String)
+	Attribute("postgres_log", String, "PostgreSQL log excerpt (stderr, csvlog or jsonlog) for one PostgREST read request, including failed ones. Requires log_min_duration_statement=0 or log_statement=all and log_parameter_max_length=-1; a stderr log_line_prefix must contain the process id as [%p]. Request headers, cookies and JWT claims in the excerpt are discarded, never stored; the log is caller-supplied text with no verification it is authentic, so nothing in it that could impersonate a specific identity is trusted.", func() {
+		MinLength(1)
+		MaxLength(200000)
+	})
+	Attribute("server_timing", String, "Optional Server-Timing response header from the same request, e.g. jwt;dur=0.6, transaction;dur=54.8", func() {
+		MaxLength(8192)
+	})
+	Attribute("http_duration_ms", Float64, "Optional client-measured HTTP request time in milliseconds", func() {
+		Minimum(0)
+	})
+	Attribute("analyze", Boolean, "Run EXPLAIN ANALYZE on the captured bind values (executes the query)", func() {
+		Default(false)
+	})
+	Required("postgres_log")
 })
 
 var AddCandidatePayload = Type("AddCandidatePayload", func() {

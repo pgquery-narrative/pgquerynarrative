@@ -16,6 +16,11 @@ func CreateInvestigationsPath() string {
 	return "/api/v1/investigations"
 }
 
+// CreateFromPostgrestInvestigationsPath returns the URL path to the investigations service create_from_postgrest HTTP endpoint.
+func CreateFromPostgrestInvestigationsPath() string {
+	return "/api/v1/investigations/from-postgrest"
+}
+
 // CreateFromRegressionInvestigationsPath returns the URL path to the investigations service create_from_regression HTTP endpoint.
 func CreateFromRegressionInvestigationsPath() string {
 	return "/api/v1/investigations/from-regression"

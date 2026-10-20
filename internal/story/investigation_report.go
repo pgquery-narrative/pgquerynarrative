@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // InvestigationReport is a structured Query Investigation engineering artifact.
@@ -98,6 +99,39 @@ type InvestigationProvenance struct {
 	ExplainAnalyze    bool   `json:"explain_analyze"`
 	ResultsSampled    bool   `json:"results_sampled"`
 	GeneratedBy       string `json:"generated_by,omitempty"`
+	// PostgREST is set when the investigation was opened from a PostgREST request.
+	PostgREST *PostgRESTEvidence `json:"postgrest,omitempty"`
+}
+
+// PostgRESTEvidence is the request provenance a report cites for an endpoint.
+// Its timings are kept apart on purpose: HTTP wire time, PostgREST's transaction
+// and the statement alone are different clocks, and the planner's total cost is
+// an estimate, not a time.
+type PostgRESTEvidence struct {
+	Method                    string   `json:"method"`
+	Endpoint                  string   `json:"endpoint"`
+	Role                      string   `json:"role"`
+	SearchPath                *string  `json:"search_path,omitempty"`
+	QueryID                   *string  `json:"query_id,omitempty"`
+	HTTPDurationMs            *float64 `json:"http_duration_ms,omitempty"`
+	ServerTimingTransactionMs *float64 `json:"server_timing_transaction_ms,omitempty"`
+	StatementDurationMs       *float64 `json:"statement_duration_ms,omitempty"`
+	PlannerTotalCost          *float64 `json:"planner_total_cost,omitempty"`
+	// Binds are the captured values every plan and comparison used.
+	Binds []string `json:"binds,omitempty"`
+	// SessionContextMissing: the log had no session context (slow-query-only
+	// logging), so method, endpoint and role are unknown.
+	SessionContextMissing bool              `json:"session_context_missing,omitempty"`
+	Failure               *string           `json:"failure,omitempty"`
+	ReplayRole            *string           `json:"replay_role,omitempty"`
+	ReplaySearchPath      *string           `json:"replay_search_path,omitempty"`
+	RequestSettings       map[string]string `json:"request_settings,omitempty"`
+	PlanCacheNote         *string           `json:"plan_cache_note,omitempty"`
+	ReplayLimitations     []string          `json:"replay_limitations"`
+	// EndpointEquivalence is always "not_claimed" for a PostgREST replay: only
+	// query-level comparisons are verified, not the endpoint's response.
+	EndpointEquivalence string   `json:"endpoint_equivalence"`
+	ApplyAt             []string `json:"apply_at"`
 }
 
 // PlanFindingInput is a simplified plan finding for report building.
@@ -194,6 +228,24 @@ func BuildInvestigationReport(
 	if candidateSQL == "" {
 		risks = append(risks, "No candidate rewrite tested yet — treat findings as investigative, not prescriptive.")
 	}
+	if pg := provenance.PostgREST; pg != nil {
+		header := []string{postgrestRequestLine(pg)}
+		if pg.Failure != nil {
+			header = append(header, fmt.Sprintf("The request statement failed in production: %s. PostgreSQL logs no duration for a failed statement.", *pg.Failure))
+		}
+		header = append(header, postgrestTimingLines(pg)...)
+		if len(pg.Binds) > 0 {
+			header = append(header, postgrestBindsLine(pg.Binds))
+		}
+		header = append(header, postgrestReplayLine(pg))
+		if pg.PlanCacheNote != nil {
+			header = append(header, "Plan cache: "+*pg.PlanCacheNote)
+		}
+		pgEvidence = append(header, pgEvidence...)
+		pgEvidence = append(pgEvidence, pg.ApplyAt...)
+		risks = append(risks, "Endpoint equivalence is not claimed: the PostgREST response was not replayed, so the comparison below is query-level.")
+		risks = append(risks, pg.ReplayLimitations...)
+	}
 
 	nextAction := "Review plan evidence and test a candidate rewrite in a controlled environment."
 	if comparison != nil && len(comparison.Improved) > 0 {
@@ -252,6 +304,77 @@ func BuildInvestigationReport(
 		Recommendations: []string{nextAction},
 	}
 	return report, narrative
+}
+
+func postgrestRequestLine(pg *PostgRESTEvidence) string {
+	if pg.SessionContextMissing {
+		return "Captured PostgREST request statement (imported log evidence); its session context was not logged, so the HTTP method, endpoint and database role are unknown"
+	}
+	return fmt.Sprintf("Captured PostgREST request: %s %s, reported database role %q (imported log evidence)", pg.Method, pg.Endpoint, pg.Role)
+}
+
+// postgrestReplayLine states the context every replayed plan and comparison ran in.
+func postgrestReplayLine(pg *PostgRESTEvidence) string {
+	role := "the connection's own role"
+	if pg.ReplayRole != nil && *pg.ReplayRole != "" {
+		role = fmt.Sprintf("captured role %q (its JWT claims are not replayed)", *pg.ReplayRole)
+	}
+	path := "the connection's search_path"
+	if pg.ReplaySearchPath != nil && *pg.ReplaySearchPath != "" {
+		path = "search_path " + *pg.ReplaySearchPath
+	}
+	line := fmt.Sprintf("Replay context: %s, %s", role, path)
+	keys := make([]string, 0, len(pg.RequestSettings))
+	for k := range pg.RequestSettings {
+		if k != "statement_timeout" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	if len(keys) > 0 {
+		pairs := make([]string, len(keys))
+		for i, k := range keys {
+			pairs[i] = k + "=" + pg.RequestSettings[k]
+		}
+		line += ", " + strings.Join(pairs, ", ")
+	}
+	return line
+}
+
+// postgrestBindsLine lists the captured values so the cited plans can be
+// reproduced. Long values are shortened for display only.
+func postgrestBindsLine(binds []string) string {
+	parts := make([]string, len(binds))
+	for i, b := range binds {
+		shown := b
+		if len(shown) > 120 {
+			cut := 120
+			for !utf8.RuneStart(shown[cut]) {
+				cut--
+			}
+			shown = fmt.Sprintf("%s... (%d bytes total)", shown[:cut], len(b))
+		}
+		parts[i] = fmt.Sprintf("$%d = '%s'", i+1, strings.ReplaceAll(shown, "'", "''"))
+	}
+	return "Captured bind values (every plan and comparison used these): " + strings.Join(parts, ", ")
+}
+
+// postgrestTimingLines states each clock on its own line, with what it measures.
+func postgrestTimingLines(pg *PostgRESTEvidence) []string {
+	var out []string
+	if pg.HTTPDurationMs != nil {
+		out = append(out, fmt.Sprintf("HTTP request time (client-measured, includes network and PostgREST): %.1fms", *pg.HTTPDurationMs))
+	}
+	if pg.ServerTimingTransactionMs != nil {
+		out = append(out, fmt.Sprintf("PostgREST transaction (Server-Timing): %.1fms, the whole database transaction including role setup", *pg.ServerTimingTransactionMs))
+	}
+	if pg.StatementDurationMs != nil {
+		out = append(out, fmt.Sprintf("Request statement execute phase (PostgreSQL log): %.1fms; excludes parse and bind, where PostgreSQL plans a custom plan", *pg.StatementDurationMs))
+	}
+	if pg.PlannerTotalCost != nil {
+		out = append(out, fmt.Sprintf("Planner estimate (EXPLAIN total cost): %.2f, a unitless estimate, not a time", *pg.PlannerTotalCost))
+	}
+	return out
 }
 
 func buildExecutiveSummary(title, severity string, findingCount int, comparison *ComparisonInput) string {
@@ -417,6 +540,176 @@ func normalizeEquivalenceStatus(s string) string {
 	default:
 		return "Unverified"
 	}
+}
+
+// RedactSQL returns a copy of report with every field that carries raw SQL
+// text, captured PostgREST bind values, a literal EXPLAIN filter clause, or a
+// verbatim captured PostgreSQL error cleared — for a viewer (an
+// unauthenticated share-link visitor, or a Viewer-role user) who must not see
+// the underlying query. Query text and bind values are not the only way a
+// value from the query leaks: a plan finding's Message/Evidence can embed the
+// literal predicate EXPLAIN printed (see planFindingMessage/seqScanEvidence
+// in queryrunner), and PostgREST.Failure is a verbatim captured PostgreSQL
+// error that can quote a literal straight out of the query — neither is a
+// known bind string, so this cannot rely on matching the Binds list.
+//
+// It clears SourceQuery; the ProposedChange of every CandidateImprovement
+// whose Kind is executable SQL (an investigate_hint's plain-English pointer
+// is not SQL and is left alone); strips any literal filter clause from every
+// finding's Message and every candidate's WhyItMightHelp (see
+// redactLiteralFilterText), and drops any Evidence line that is entirely that
+// literal filter text; drops the PostgreSQLEvidence lines that state captured
+// bind values or a captured production failure verbatim (see
+// redactSensitiveEvidenceLines); and clears Provenance.PostgREST's captured
+// Binds and Failure. Findings, timings, the endpoint/role/method and replay
+// limitations are otherwise untouched: they describe the investigation, not
+// the query text, and a viewer denied the SQL can still use them.
+func RedactSQL(report InvestigationReport) InvestigationReport {
+	report.SourceQuery = ""
+	if len(report.CandidateImprovements) > 0 {
+		candidates := make([]CandidateImprovement, len(report.CandidateImprovements))
+		for i, c := range report.CandidateImprovements {
+			if c.Kind == CandidateKindSQLRewrite || c.Kind == CandidateKindIndexDDL {
+				c.ProposedChange = ""
+			}
+			c.WhyItMightHelp = redactLiteralFilterText(c.WhyItMightHelp)
+			candidates[i] = c
+		}
+		report.CandidateImprovements = candidates
+	}
+	if len(report.PlanFindings) > 0 {
+		findings := make([]InvestigationFinding, len(report.PlanFindings))
+		for i, f := range report.PlanFindings {
+			f.Message = redactLiteralFilterText(f.Message)
+			f.Evidence = redactFilterEvidence(f.Evidence)
+			findings[i] = f
+		}
+		report.PlanFindings = findings
+	}
+	report.PostgreSQLEvidence = redactSensitiveEvidenceLines(report.PostgreSQLEvidence)
+	if report.Provenance.PostgREST != nil {
+		pg := *report.Provenance.PostgREST
+		pg.Binds = nil
+		pg.Failure = nil
+		report.Provenance.PostgREST = &pg
+	}
+	// EquivalenceValidation.Notes is free text built from whatever error a
+	// failed comparison run raised (see compareResultEquivalence's Unverified
+	// branches) — unlike every other status, which only ever reports counts
+	// and booleans, an Unverified run's Notes can carry PostgreSQL's own
+	// error message verbatim, and that message can echo back a literal value
+	// from the query (e.g. a type-mismatch error quoting the bad value) —
+	// for a PostgREST-captured investigation, quite possibly one of the
+	// captured bind values this function exists to keep out of the report.
+	// Every other status's Notes is a fixed template over counts/booleans
+	// and is left alone.
+	if report.EquivalenceValidation != nil && report.EquivalenceValidation.Status == "Unverified" {
+		eq := *report.EquivalenceValidation
+		eq.Notes = "Equivalence check could not be verified; details withheld because SQL access is restricted for this view."
+		report.EquivalenceValidation = &eq
+	}
+	return report
+}
+
+// RedactSQLFromNarrativeDrivers strips the same sensitive lines RedactSQL
+// removes from PostgreSQLEvidence, from a NarrativeContent.Drivers slice
+// built alongside an InvestigationReport — BuildInvestigationReport sets
+// Drivers to the exact same lines (see pgEvidence).
+func RedactSQLFromNarrativeDrivers(drivers []string) []string {
+	return redactSensitiveEvidenceLines(drivers)
+}
+
+// RedactSQLFromNarrativeTakeaways strips any literal EXPLAIN filter clause
+// from a NarrativeContent.Takeaways slice built alongside an
+// InvestigationReport — buildTakeaways copies every candidate's
+// WhyItMightHelp verbatim (see RedactSQL's doc comment for why that text can
+// carry a literal from the query), and that copy happens before RedactSQL
+// ever runs, so Takeaways needs its own pass over the same text.
+func RedactSQLFromNarrativeTakeaways(takeaways []string) []string {
+	if len(takeaways) == 0 {
+		return takeaways
+	}
+	out := make([]string, len(takeaways))
+	for i, t := range takeaways {
+		out[i] = redactLiteralFilterText(t)
+	}
+	return out
+}
+
+// filterTextMarker was the separator a previous version of
+// planFindingMessage (queryrunner/explain.go) inserted before a literal
+// EXPLAIN filter clause in a plan finding's Message. planFindingMessage no
+// longer embeds the filter clause into Message at all — see its own comment
+// for why (the clause can contain this package's own " — " guidance
+// separator, which made the previous version of this function's "find the
+// next separator" logic treat part of the secret as safe trailing text; a
+// value a WHERE predicate can contain is not a safe place to look for a
+// trusted boundary). The marker is kept only to recognize a message stored
+// before that change — see redactLiteralFilterText. Matching on this marker
+// — a template this package controls, not any specific captured value — lets
+// redaction remove whatever filter text follows it regardless of content,
+// including a literal that never appeared in any captured bind list.
+const filterTextMarker = " — filter: "
+
+// redactLiteralFilterText removes a historical, pre-structural-separation
+// message's literal EXPLAIN filter clause: everything from filterTextMarker
+// to the end of the string, including any trailing guidance clause that
+// followed it. It deliberately does not try to find where the filter clause
+// ends and safe text resumes — a WHERE predicate's literal can contain
+// anything, including this package's own " — " separator, so no delimiter
+// found inside untrusted content can ever be trusted as that boundary. A
+// no-op when the marker is absent, which is always true for a message built
+// after planFindingMessage stopped embedding the filter clause at all (see
+// its own comment) — this function exists only so a message stored before
+// that change still redacts safely.
+func redactLiteralFilterText(s string) string {
+	idx := strings.Index(s, filterTextMarker)
+	if idx < 0 {
+		return s
+	}
+	return s[:idx] + " — filter withheld"
+}
+
+// redactFilterEvidence drops any Evidence entry that is entirely the literal
+// EXPLAIN filter text (see seqScanEvidence's "Filter="+filter in
+// queryrunner/plan_analysis.go) — unlike Message, an Evidence line carries no
+// safe prefix worth preserving once the filter is removed from it.
+func redactFilterEvidence(evidence []string) []string {
+	if len(evidence) == 0 {
+		return evidence
+	}
+	out := make([]string, 0, len(evidence))
+	for _, e := range evidence {
+		if strings.HasPrefix(e, "Filter=") {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// redactSensitiveEvidenceLines drops PostgreSQLEvidence/Narrative.Drivers
+// lines built entirely from values a restricted viewer must not see — the
+// captured-bind-values line (see postgrestBindsLine) and the captured
+// production failure line (see the PostgREST.Failure branch in
+// BuildInvestigationReport, which embeds *pg.Failure verbatim and may quote a
+// literal from the query that is not in the bind list at all) — and strips
+// any embedded literal filter clause from the remaining lines.
+func redactSensitiveEvidenceLines(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if strings.HasPrefix(l, "Captured bind values (") {
+			continue
+		}
+		if strings.HasPrefix(l, "The request statement failed in production: ") {
+			continue
+		}
+		out = append(out, redactLiteralFilterText(l))
+	}
+	return out
 }
 
 func investigateHints(category string) []string {
