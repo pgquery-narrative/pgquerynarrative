@@ -259,3 +259,38 @@ func TestSuggestRewrites_DemoScenarioSQL(t *testing.T) {
 func normalizeSQL(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
+
+// Bug: SuggestRewrites' PostgREST-wrapper decline relied on SQL shape alone
+// (a CTE literally named pgrst_source), with no way for a caller holding a
+// real investigation to say whether it actually came from a PostgREST
+// capture. Ordinary pasted SQL that merely reuses that CTE name — plausible
+// if someone copied a snippet out of a PostgREST log by hand instead of
+// using the dedicated importer — had every rewrite silently declined for a
+// statement that was never PostgREST's response wrapper at all.
+// SuggestRewritesForInvestigation lets a caller override the guess with
+// real provenance, in both directions.
+func TestSuggestRewritesForInvestigationUsesRealProvenanceNotShape(t *testing.T) {
+	// Shaped exactly like PostgREST's wrapper, but the caller knows for
+	// certain (investigation.PostgrestRequest == nil) that it is not one: the
+	// date_trunc predicate inside it must still get its sargable rewrite.
+	wrapped := `WITH pgrst_source AS ( SELECT id FROM data.orders WHERE date_trunc('day', created_at) = $1 ORDER BY id LIMIT $2 OFFSET $3 ) SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t`
+	if got := SuggestRewrites(wrapped, nil); len(got) != 0 {
+		t.Fatalf("sanity check: shape-only SuggestRewrites should still decline this, got %d", len(got))
+	}
+	if got := SuggestRewritesForInvestigation(wrapped, nil, false); len(got) == 0 {
+		t.Fatal("confirmed non-PostgREST provenance must not be overridden by a coincidentally matching CTE name")
+	}
+
+	// Ordinary-shaped SQL, but the caller knows for certain
+	// (investigation.PostgrestRequest != nil) that it really is a PostgREST
+	// capture (e.g. slow-query-only logging, where the session-context
+	// statement — and so the usual wrapper shape check — was never logged):
+	// still declined.
+	ordinary := `SELECT id FROM data.orders WHERE date_trunc('day', created_at) = $1`
+	if IsPostgRESTWrapper(ordinary) {
+		t.Fatal("test fixture is broken: this SQL should not shape-match the wrapper")
+	}
+	if got := SuggestRewritesForInvestigation(ordinary, nil, true); len(got) != 0 {
+		t.Fatalf("confirmed PostgREST provenance must decline even when the shape heuristic alone would not catch it, got %d", len(got))
+	}
+}

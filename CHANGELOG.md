@@ -9,6 +9,36 @@ Entries: edit `changelog/unreleased.md` then run `make changelog`.
 
 ## [Unreleased]
 
+Nothing yet. Add entries here as work lands; `make changelog` folds them into `CHANGELOG.md`.
+When cutting a release, move them into `changelog/released/<version>.md` and run it again.
+
+## [3.0.1] - 2026-09-30
+
+MCP tool arguments that already have a server-side default are optional again.
+
+### Fixed
+
+- **MCP tools rejected calls that omitted an already-defaulted argument.**
+  `run_query`'s `limit`, `list_saved_queries`'/`list_reports`'s `limit`/`offset`,
+  `get_context`'s `saved_limit`/`saved_offset`, and `suggest_queries`'s
+  `intent`/`limit` were marked required by the MCP schema even though the
+  handlers already default each of them. The MCP Go SDK's struct-reflection
+  schema builder treats a field as required unless its `json` tag carries
+  `omitempty`; these fields were missing it. A client omitting `limit` on
+  `run_query`, for example, got a schema validation error
+  (`missing properties: ["limit"]`) instead of the documented default. Fixed
+  by adding `omitempty` to the affected fields; nothing else about their
+  behavior changes.
+
+### Added
+
+- **`PGQUERYNARRATIVE_TIMEOUT_SECONDS`** configures the MCP server's per-call
+  timeout (default 180s, raised from the prior implicit default to
+  accommodate AI-backed tools like report generation and question answering
+  against a local LLM). Set it higher if those specific calls are timing out.
+
+## [3.0.0] - 2026-09-29
+
 Trust boundaries. A deep review of the repository found that four of the
 guarantees the product makes were not actually enforced end to end: a rewrite
 could change results, the schema allowlist governed tables but not functions,
@@ -76,15 +106,22 @@ four, plus the lifecycle and deployment gaps found alongside them.
   connection, and the workspace overview's two workload totals read zero for other users
   there. Give each organization its own read-only credentials to see its own. Single-
   organization installs and organizations with their own credentials are unaffected.
-- **Migrations `000058` to `000060`; the schema gate is now 60.** Run them before the new
+- **Migrations `000058` to `000061`; the schema gate is now 61.** Run them before the new
   binary, or `/ready` reports 503. What they change is under Security.
 - **The `pqn` alias in the CLI container's shell (`make cli-shell`) is removed.** `pqn` now
   names the terminal tool for the `pqn` extension, so the alias would have run a different
   program. Use `pgquerynarrative`.
 - **Private Go packages moved from `app/` to `internal/`.** Go now rejects imports of
   those packages from outside this module. `pkg/narrative` remains the supported library
-  API. Release archives and the container image place migrations at `internal/db/migrations`
-  (previously `app/db/migrations`). The PostgreSQL `app` schema is unchanged.
+  API: `narrative.LoadConfig()`, `narrativemw.NewAuthenticator`/`NewSessionManager`, and
+  `narrativemw.NewOIDCValidator`/`NewMembershipStore`/`NewManagedKeyStore`/`NewSessionStore`
+  are new, so embedders never need to import `internal/config` or `internal/auth` directly
+  (which this move made impossible) to load config or build a fully-featured
+  `SecurityConfig` — OIDC, organization-membership resolution, managed API keys, and
+  server-side session revocation included. `NewAuthenticator` now takes an OIDC validator
+  parameter (nil to keep API-key-only auth). Release archives and the container image place
+  migrations at `internal/db/migrations` (previously `app/db/migrations`). The PostgreSQL
+  `app` schema is unchanged.
 
 ### Security
 
@@ -169,6 +206,14 @@ four, plus the lifecycle and deployment gaps found alongside them.
   `INSERT`, `UPDATE` and `DELETE` have their own policies that name the current organization,
   so a session that set a login lookup could otherwise have deleted a user's memberships in
   other organizations.
+- **Logout now actually revokes the server-side session** (migration `000061`). Migration
+  `000046` granted the application role `EXECUTE` on 5 of the 6 browser-session functions it
+  created, but missed `app.revoke_browser_session(uuid)` — the single-session-by-ID revoke
+  `SessionManager.RevokeCurrent` calls on every logout. That call's error is discarded (a
+  best-effort revoke shouldn't block clearing the cookie), so the missing grant was invisible:
+  logout always appeared to work, but the session row was never actually revoked, leaving a
+  copy of the cookie taken before logout valid until its natural expiry instead of being cut
+  off immediately.
 - **Statement statistics on a shared role are refused by what the connection is, not what the
   role is called.** The check compared the pool's login name with the configured one, so a
   shared role with a non-default name skipped it. It now asks whether the organization has
@@ -726,8 +771,10 @@ Additional analytics: further cohort metrics, configurable windows, and seasonal
 - Secret scanning, dependency vulnerability scanning, CodeQL, gosec
 - Optional API authentication (Bearer token), per-IP rate limiting, and audit logging to `app.audit_logs`
 
-[Unreleased]: https://github.com/pgquery-narrative/pgquerynarrative/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/pgquery-narrative/pgquerynarrative/compare/v3.0.1...HEAD
 [1.0.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v1.0.0
 [2.0.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.0.0
 [2.1.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.1.0
 [2.2.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v2.2.0
+[3.0.0]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v3.0.0
+[3.0.1]: https://github.com/pgquery-narrative/pgquerynarrative/releases/tag/v3.0.1

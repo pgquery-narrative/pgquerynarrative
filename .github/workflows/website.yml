@@ -1,0 +1,42 @@
+name: Website
+
+# Isolated CI for the public marketing site under website/. Scoped by path so
+# it never runs, and never blocks, on changes to the Go app, frontend/, or
+# docs. See website/README.md for local commands.
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'website/**'
+      - '.github/workflows/website.yml'
+  pull_request:
+    paths:
+      - 'website/**'
+      - '.github/workflows/website.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Check and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+      - name: Astro check
+        working-directory: website
+        run: npm run check
+      - name: Lint
+        working-directory: website
+        run: npm run lint
+      - name: Build
+        working-directory: website
+        run: npm run build

@@ -1,0 +1,152 @@
+---
+import Logo from "./Logo.astro";
+import { site } from "../config/site";
+
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <Logo variant="mark" height={28} />
+      <p>{site.tagline}</p>
+    </div>
+
+    <div class="footer-links">
+      <div>
+        <h2>Project</h2>
+        <ul>
+          <li><a href={site.githubUrl} target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href={site.issuesUrl} target="_blank" rel="noopener">Issues</a></li>
+          <li><a href={site.releasesUrl} target="_blank" rel="noopener">Releases</a></li>
+          <li><a href={site.licenseUrl} target="_blank" rel="noopener">License (MIT)</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Learn</h2>
+        <ul>
+          <li><a href={site.docsUrl} target="_blank" rel="noopener">Documentation</a></li>
+          <li><a href="/get-started">Get started</a></li>
+          <li><a href="/demo">Demo</a></li>
+          <li><a href="/blog">Blogs</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Connect</h2>
+        <ul>
+          <li><a href={site.authorLinkedinUrl} target="_blank" rel="noopener">LinkedIn</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="container footer-bottom">
+    <p>&copy; {year} PgQueryNarrative. MIT licensed.</p>
+    <a class="discuss-btn" href={site.discussionsUrl} target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A.25.25 0 0 1 6 14.396V12H2.75A1.75 1.75 0 0 1 1 10.25Z" />
+      </svg>
+      Discuss on GitHub
+    </a>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    border-top: 1px solid var(--border);
+    margin-top: 96px;
+  }
+
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px;
+    justify-content: space-between;
+    padding-block: 48px 32px;
+  }
+
+  .footer-brand {
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .footer-brand p {
+    color: var(--text-dim);
+    font-size: 0.9375rem;
+  }
+
+  .footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 48px 64px;
+  }
+
+  .footer-links h2 {
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+  }
+
+  .footer-links ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .footer-links a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 0.9375rem;
+  }
+
+  .footer-links a:hover {
+    color: var(--text);
+  }
+
+  .footer-bottom {
+    border-top: 1px solid var(--border);
+    padding-block: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .footer-bottom p {
+    color: var(--text-faint);
+    font-size: 0.8125rem;
+    margin: 0;
+  }
+
+  .discuss-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-dim);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .discuss-btn:hover {
+    border-color: var(--text-faint);
+    color: var(--text);
+  }
+
+  @media (max-width: 480px) {
+    .footer-links {
+      gap: 32px;
+    }
+  }
+</style>

@@ -12,8 +12,12 @@ server; it contains no query logic of its own and needs the app running.
   `Authorization: Bearer <key>` on every call; set it to the same value as
   `SECURITY_API_KEY` when the server has auth enabled
 - **Target URL:** `PGQUERYNARRATIVE_URL`, default `http://localhost:8080`
+- **Call timeout:** `PGQUERYNARRATIVE_TIMEOUT_SECONDS`, default 180. `generate_report`
+  and `ask_question` run one or two LLM calls server-side; against a local Ollama
+  model on CPU this alone can take 30-100+ seconds, so the default has headroom
+  for that. Lower it for a cloud LLM provider, raise it for slower hardware.
 - **Safety limits:** the target host is locked to prevent SSRF via a malicious URL,
-  every call has a 60-second timeout, and responses are capped at 1 MiB
+  and responses are capped at 1 MiB
 
 ## Configuring a client
 
@@ -55,6 +59,28 @@ Claude Desktop config path: macOS
 All accept optional `connection_id` where relevant, see
 [Multiple connections](../workflows/connections.md).
 
+## AI-backed tools
+
+Three of the twelve tools call the LLM the server is configured with:
+`ask_question`, `generate_report`, and `explain_sql`. The rest are
+deterministic: schema lookups, saved queries, and `run_query` never touch
+an LLM.
+
+MCP has no LLM configuration of its own. `ask_question` and `generate_report`
+inherit whichever provider and model the running server has configured
+(`LLM_PROVIDER`, `LLM_MODEL`, …); an MCP client can't select or override
+either. The same is true of the governance controls: budgets, PII redaction,
+and the external-data gate for cloud providers all apply to an MCP-triggered
+call exactly as they would to the equivalent REST call, since it's the same
+server code path underneath. See [LLM providers](llm.md) for what's
+configured and how, and note `generate_report`'s deterministic fallback
+(metrics-only narrative) applies here too when the LLM call fails or its
+output can't be trusted.
+
+If the configured LLM is unreachable or the call fails, `ask_question` and
+`explain_sql` return an LLM error; `generate_report` still succeeds via its
+fallback.
+
 ## What is not supported
 
 There are no MCP tools for investigations, EXPLAIN/EXPLAIN ANALYZE, plan compare,
@@ -69,6 +95,7 @@ onward) is REST- and UI-only today; use the [REST API](rest-api.md) directly for
 | Connection refused | The app isn't running at `PGQUERYNARRATIVE_URL` |
 | `401` in the tool error | Auth is on server-side and `PGQUERYNARRATIVE_API_KEY` is missing or wrong |
 | Tool call rejected before any HTTP request | `PGQUERYNARRATIVE_URL` points at a host the SSRF lock refuses |
+| `context deadline exceeded` on `generate_report` / `ask_question` | Local LLM call took longer than `PGQUERYNARRATIVE_TIMEOUT_SECONDS`; raise it |
 
 The exact error (`API POST /api/v1/queries/run: 401`, `connection refused`, …) is
 shown in the chat's tool result.

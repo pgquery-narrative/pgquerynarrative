@@ -2,6 +2,7 @@ package queryrunner
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -31,6 +32,9 @@ type ScoredCandidate struct {
 	HasTiming         bool
 	Improved          []string
 	ProjectionMethod  string // hypopg | heuristic | unavailable (index_ddl)
+	// NeedsPredicateRewrite: the index only helps once a function-wrapped
+	// predicate is rewritten onto the bare column.
+	NeedsPredicateRewrite bool
 }
 
 // CollectIndexDDLCandidates returns unique CREATE/DROP index DDL suggestions
@@ -73,6 +77,8 @@ func CollectIndexDDLCandidates(findings []PlanFinding) []ScoredCandidate {
 			Category:         category,
 			Confidence:       f.Confidence,
 			ProjectionMethod: IndexProjectionNone,
+			NeedsPredicateRewrite: isFunctionWrapFinding(f) &&
+				slices.Contains(f.IndexAdvice.Issues, "no_covering_index"),
 		})
 	}
 	return out

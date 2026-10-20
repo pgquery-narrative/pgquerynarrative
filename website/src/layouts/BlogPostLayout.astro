@@ -1,0 +1,119 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  date: Date;
+  author: string;
+  image?: string;
+  tags: string[];
+}
+
+const { title, description, date, author, image, tags } = Astro.props;
+
+const formattedDate = date.toLocaleDateString("en-US", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
+const isoDate = date.toISOString();
+---
+
+<BaseLayout title={title} description={description} image={image} type="article">
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: title,
+    description,
+    datePublished: isoDate,
+    author: { "@type": "Organization", name: author },
+  })} />
+
+  <article class="section">
+    <div class="container prose-container">
+      <header class="post-header">
+        <a href="/blog" class="back-link">&larr; Blog</a>
+        <h1>{title}</h1>
+        <div class="post-meta">
+          <time datetime={isoDate}>{formattedDate}</time>
+          <span aria-hidden="true">&middot;</span>
+          <span>{author}</span>
+        </div>
+        {
+          tags.length > 0 && (
+            <ul class="tag-list">
+              {tags.map((tag) => (
+                <li>{tag}</li>
+              ))}
+            </ul>
+          )
+        }
+      </header>
+
+      <div class="prose">
+        <slot />
+      </div>
+    </div>
+  </article>
+</BaseLayout>
+
+<style>
+  .section {
+    padding-block: 56px 80px;
+  }
+
+  .prose-container {
+    max-width: 760px;
+  }
+
+  .back-link {
+    display: inline-block;
+    color: var(--text-faint);
+    font-size: 0.875rem;
+    text-decoration: none;
+    margin-bottom: 24px;
+  }
+
+  .back-link:hover {
+    color: var(--text);
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    line-height: 1.2;
+  }
+
+  .post-meta {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+    color: var(--text-faint);
+    font-size: 0.875rem;
+  }
+
+  .tag-list {
+    list-style: none;
+    display: flex;
+    gap: 8px;
+    margin: 16px 0 0;
+    padding: 0;
+  }
+
+  .tag-list li {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.75rem;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+
+  .prose {
+    margin-top: 40px;
+    color: var(--text);
+    font-size: 1.0625rem;
+    line-height: 1.75;
+  }
+</style>

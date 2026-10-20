@@ -1,0 +1,83 @@
+---
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import ThemeInit from "../components/ThemeInit.astro";
+import { site } from "../config/site";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description?: string;
+  image?: string;
+  type?: "website" | "article";
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description = site.description,
+  image = "/og-default.png",
+  type = "website",
+  noindex = false,
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, site.url).toString();
+const ogImageURL = new URL(image, site.url).toString();
+const pageTitle = title === site.name ? site.name : `${title} · ${site.name}`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
+    {noindex && <meta name="robots" content="noindex" />}
+
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="alternate" type="application/rss+xml" title={site.name} href="/rss.xml" />
+
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImageURL} />
+    <meta property="og:site_name" content={site.name} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageURL} />
+    {site.twitterHandle && <meta name="twitter:site" content={site.twitterHandle} />}
+
+    <ThemeInit />
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Skip to main content</a>
+    <Header />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+
+    <script>
+      // Fires named events (github_click, docs_click, watch_demo,
+      // get_started_click - see data-analytics attributes) through Vercel
+      // Web Analytics' custom-event API when it's enabled, no-ops
+      // otherwise. No analytics package is bundled; enabling Analytics in
+      // the Vercel project dashboard injects window.va itself.
+      document.addEventListener("click", (event) => {
+        const target = (event.target as HTMLElement)?.closest<HTMLElement>("[data-analytics]");
+        const eventName = target?.dataset.analytics;
+        if (eventName) {
+          (window as typeof window & { va?: (kind: string, name: string) => void }).va?.(
+            "event",
+            eventName,
+          );
+        }
+      });
+    </script>
+  </body>
+</html>

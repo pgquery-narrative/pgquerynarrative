@@ -117,25 +117,25 @@ func TestParseExplainJSON_invalid(t *testing.T) {
 
 func TestBuildExplainSQL(t *testing.T) {
 	got := buildExplainSQL("SELECT 1", ExplainOptions{})
-	if got != "EXPLAIN (FORMAT JSON) SELECT 1" {
+	if got != "EXPLAIN (VERBOSE, FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}
 	got = buildExplainSQL("SELECT 1", ExplainOptions{Analyze: true, Buffers: true})
-	if got != "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT 1" {
+	if got != "EXPLAIN (ANALYZE, BUFFERS, VERBOSE, FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}
 	got = buildExplainSQL("SELECT 1", ExplainOptions{Analyze: true})
-	if got != "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1" {
+	if got != "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}
 	got = buildExplainSQL("SELECT 1 WHERE x = $1", ExplainOptions{GenericPlan: true})
-	if got != "EXPLAIN (GENERIC_PLAN, FORMAT JSON) SELECT 1 WHERE x = $1" {
+	if got != "EXPLAIN (GENERIC_PLAN, VERBOSE, FORMAT JSON) SELECT 1 WHERE x = $1" {
 		t.Fatalf("got %q", got)
 	}
 	// ANALYZE and GENERIC_PLAN are incompatible — ANALYZE wins if both are set
 	// (the caller clears Analyze for parameterized queries).
 	got = buildExplainSQL("SELECT 1", ExplainOptions{Analyze: true, GenericPlan: true})
-	if got != "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1" {
+	if got != "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) SELECT 1" {
 		t.Fatalf("got %q", got)
 	}
 }

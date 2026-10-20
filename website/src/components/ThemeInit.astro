@@ -1,0 +1,19 @@
+---
+// Inline, blocking, tiny: sets data-theme before first paint so there's no
+// flash of the wrong theme. Mirrors the same pattern already used in
+// frontend/index.html (localStorage override, else OS preference).
+---
+
+<script is:inline>
+  (function () {
+    try {
+      var stored = localStorage.getItem("pgquerynarrative-theme");
+      if (stored === "light" || stored === "dark") {
+        document.documentElement.setAttribute("data-theme", stored);
+      }
+    } catch (e) {
+      /* localStorage unavailable (private mode, etc.) - fall back to
+         prefers-color-scheme via the CSS media query, no attribute set. */
+    }
+  })();
+</script>

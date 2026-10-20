@@ -1,0 +1,64 @@
+---
+// Renders the approved mark or lockup with a light/dark swap via CSS,
+// same technique as the README's <picture> - two images, one hidden per
+// theme, rather than a filter/invert hack on a single asset. Works with
+// both the OS-level prefers-color-scheme and this site's manual toggle
+// because it keys off the [data-theme] attribute ThemeToggle sets, with
+// the media query as fallback when no explicit choice was made.
+interface Props {
+  variant?: "mark" | "lockup";
+  height?: number;
+  class?: string;
+}
+
+const { variant = "lockup", height = 28, class: className = "" } = Astro.props;
+
+const lightSrc =
+  variant === "mark"
+    ? "/brand/pgquerynarrative-mark-light.svg"
+    : "/brand/pgquerynarrative-logo-light.svg";
+const darkSrc =
+  variant === "mark"
+    ? "/brand/pgquerynarrative-mark-dark.svg"
+    : "/brand/pgquerynarrative-logo-dark.svg";
+---
+
+<span class:list={["logo-swap", className]} style={{ height: `${height}px` }}>
+  <img src={lightSrc} alt="PgQueryNarrative" height={height} class="logo-light" />
+  <img src={darkSrc} alt="PgQueryNarrative" height={height} class="logo-dark" />
+</span>
+
+<style define:vars={{ h: `${height}px` }}>
+  .logo-swap {
+    display: inline-flex;
+    align-items: center;
+    height: var(--h);
+  }
+
+  .logo-swap img {
+    height: 100%;
+    width: auto;
+  }
+
+  .logo-dark {
+    display: none;
+  }
+
+  :root[data-theme="dark"] .logo-light {
+    display: none;
+  }
+
+  :root[data-theme="dark"] .logo-dark {
+    display: block;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .logo-light {
+      display: none;
+    }
+
+    :root:not([data-theme="light"]) .logo-dark {
+      display: block;
+    }
+  }
+</style>

@@ -96,6 +96,7 @@ type DatabaseConfig struct {
 	MaxResultBytes   int           // Approximate max materialized result bytes
 	MaxCellBytes     int           // Approximate max bytes for an individual cell
 	MaxColumns       int           // Max columns returned by a query
+	MaxQueryLength   int           // Max statement length in bytes the query validator accepts
 	Connections      []DataConnectionConfig
 	DefaultID        string
 }
@@ -162,6 +163,10 @@ type SecurityConfig struct {
 	ShareLinkExposeSQL              bool     // When false (default), public shared-report views omit the underlying SQL text.
 	DataEncryptionKey               string   // AES-GCM key material for at-rest sealing of EXPLAIN snapshots (SECURITY_DATA_ENCRYPTION_KEY).
 	ConnectionAllowlistRequired     bool     // When true, orgs with zero organization_connections rows cannot use any connection.
+	// PostgRESTReplayRoles lists PostgREST roles an imported request may be
+	// replayed as (SET LOCAL ROLE; request.jwt.claims is never replayed, for any
+	// role — see queryrunner.ReplayContext). Empty: never impersonate.
+	PostgRESTReplayRoles []string
 }
 
 // LLMConfig contains settings for the LLM provider used for narrative generation.
@@ -219,6 +224,7 @@ func Load() Config {
 			MaxResultBytes:   getEnvInt("QUERY_MAX_RESULT_BYTES", 10*1024*1024),
 			MaxCellBytes:     getEnvInt("QUERY_MAX_CELL_BYTES", 1024*1024),
 			MaxColumns:       getEnvInt("QUERY_MAX_COLUMNS", 100),
+			MaxQueryLength:   getEnvInt("DATABASE_MAX_QUERY_LENGTH", 10000),
 		},
 		Security: SecurityConfig{
 			AuthEnabled:                     getEnvBool("SECURITY_AUTH_ENABLED", false),
@@ -262,6 +268,7 @@ func Load() Config {
 			ShareLinkExposeSQL:              getEnvBool("SECURITY_SHARE_LINK_EXPOSE_SQL", false),
 			DataEncryptionKey:               getEnv("SECURITY_DATA_ENCRYPTION_KEY", ""),
 			ConnectionAllowlistRequired:     getEnvBool("SECURITY_CONNECTION_ALLOWLIST_REQUIRED", StrictMode()),
+			PostgRESTReplayRoles:            getEnvSlice("SECURITY_POSTGREST_REPLAY_ROLES", ","),
 		},
 		LLM: LLMConfig{
 			Provider:                    strings.ToLower(strings.TrimSpace(getEnv("LLM_PROVIDER", "ollama"))),

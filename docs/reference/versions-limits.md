@@ -54,7 +54,7 @@ native OS/arch, not the full matrix. Details: [Releases and versioning](../proje
 | Result size | 10 MiB | `QUERY_MAX_RESULT_BYTES` |
 | Cell size | 1 MiB | `QUERY_MAX_CELL_BYTES` |
 | Column count | 100 | `QUERY_MAX_COLUMNS` |
-| SQL length | Bytes, configured at validator construction | - |
+| SQL length | 10,000 bytes | `DATABASE_MAX_QUERY_LENGTH` (1,000–1,000,000) |
 | `timing_runs` | 1–5 | Request field |
 | Report `similar` results | ≤ 20 | Request field |
 | Share-link expiry | 1–720 hours (30 days) | `expires_in_hours`, default from `SECURITY_SHARE_LINK_DEFAULT_HOURS` |
