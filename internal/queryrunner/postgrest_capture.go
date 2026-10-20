@@ -97,17 +97,18 @@ var errNoSessionContext = errors.New("no PostgREST session-context statement pre
 
 // paramSet is one logged parameter list. source is "detail" (governed by
 // log_parameter_max_length) or "context" (log_parameter_max_length_on_error).
-// pid and atStmtIdx are this value's provenance: which backend logged it, and
-// where in the parsed statement stream it was logged — see transactionBounds
-// and unprovenTruncation for why both are needed to tell this request's own
-// evidence apart from an unrelated backend's, or a different transaction's.
+// pid and txnEpoch are this value's provenance: which backend logged it, and
+// which of that backend's transactions it was logged within — see
+// transactionParamSets and unprovenTruncation for why both are needed to
+// tell this request's own evidence apart from an unrelated backend's, or a
+// different transaction's.
 type paramSet struct {
-	values    []string
-	present   bool
-	err       error
-	source    string
-	pid       string
-	atStmtIdx int
+	values   []string
+	present  bool
+	err      error
+	source   string
+	pid      string
+	txnEpoch int
 }
 
 type logStatement struct {
@@ -117,6 +118,10 @@ type logStatement struct {
 	failure           string
 	// prepared is nil when unknown — see PostgRESTCapture.Prepared.
 	prepared *bool
+	// txnEpoch is the backend's transaction epoch (see pidState.txnEpoch)
+	// at the moment this statement was appended — this statement's own
+	// transaction ownership, used the same way paramSet.txnEpoch is.
+	txnEpoch int
 }
 
 type logRecord struct {
@@ -421,6 +426,17 @@ type pidState struct {
 	// a bind and that same bind's own failure, never beyond.
 	lastBind *loggedBind
 	failure  *openFailure // ERROR group not yet closed by STATEMENT
+	// txnEpoch is the ordinal count of BEGIN/COMMIT/ROLLBACK-style fences
+	// (see transactionBoundaryWords) this backend has crossed so far,
+	// incremented as each is parsed (see appendStmt) — not reconstructed
+	// afterward from stmts index positions. Every paramSet and logStatement
+	// records this backend's txnEpoch at the moment it was captured, so
+	// transaction ownership reflects actual log-event order: a bind logged
+	// before its own statement's execute record still shares that
+	// statement's epoch (no fence crossed in between), while a value
+	// logged after a COMMIT — even one with no logStatement of its own yet,
+	// such as a pending bind — never shares the prior transaction's epoch.
+	txnEpoch int
 }
 
 // parseLogStatements turns records into executed statements with their
@@ -440,9 +456,28 @@ func parseLogStatements(recs []logRecord) ([]logStatement, []paramSet, error) {
 	}
 	params := func(list, source, pid string) paramSet {
 		values, err := splitLogParams(list)
-		ps := paramSet{values: values, present: true, err: err, source: source, pid: pid, atStmtIdx: len(stmts)}
+		ps := paramSet{values: values, present: true, err: err, source: source, pid: pid, txnEpoch: state(pid).txnEpoch}
 		all = append(all, ps)
 		return ps
+	}
+	// appendStmt is the single place a parsed statement joins stmts, so a
+	// statement's recorded transaction ownership always reflects actual
+	// log-event order (see pidState.txnEpoch) rather than being
+	// reconstructed later from index positions. It tags st with this
+	// backend's current epoch, appends it, and — since a transaction fence
+	// is as much a boundary when it is a synthetic ROLLBACK (failure
+	// cleanup, FATAL/PANIC) as when it is a real logged BEGIN/COMMIT —
+	// advances the epoch whenever st.sql is itself one of those fences, so
+	// every later capture for this pid is correctly scoped to the next
+	// transaction, including one with no bind/execute of its own yet.
+	appendStmt := func(pid string, st logStatement) int {
+		st.pid = pid
+		st.txnEpoch = state(pid).txnEpoch
+		stmts = append(stmts, st)
+		if isTransactionBoundaryStatement(st.sql) {
+			state(pid).txnEpoch++
+		}
+		return len(stmts) - 1
 	}
 	finish := func(pid, statement string) {
 		s := state(pid)
@@ -468,14 +503,14 @@ func parseLogStatements(recs []logRecord) ([]logStatement, []paramSet, error) {
 					// rather than defaulting to a confident "no".
 					failed.ps = f.ps
 				}
-				stmts = append(stmts, failed)
+				appendStmt(pid, failed)
 			}
 		}
 		// This failure's transaction is closing (the ROLLBACK below): whatever
 		// bind was pending belonged to it, used or not, and must not be offered
 		// to a later, unrelated failure on the same backend.
 		s.lastBind = nil
-		stmts = append(stmts, logStatement{pid: pid, sql: "ROLLBACK"})
+		appendStmt(pid, logStatement{pid: pid, sql: "ROLLBACK"})
 	}
 
 	for _, r := range recs {
@@ -522,7 +557,7 @@ func parseLogStatements(recs []logRecord) ([]logStatement, []paramSet, error) {
 			// to whatever logically unrelated request a connection pooler
 			// later maps to this same PID.
 			s.lastBind = nil
-			stmts = append(stmts, logStatement{pid: r.pid, sql: "ROLLBACK"})
+			appendStmt(r.pid, logStatement{pid: r.pid, sql: "ROLLBACK"})
 			continue
 		case "LOG":
 		default:
@@ -555,15 +590,15 @@ func parseLogStatements(recs []logRecord) ([]logStatement, []paramSet, error) {
 				}
 				st.durMs = dur
 			}
-			stmts = append(stmts, st)
-			s.detailStmt = len(stmts) - 1
+			idx := appendStmt(r.pid, st)
+			s.detailStmt = idx
 			if st.durMs == nil {
 				// No duration yet: log_statement logged this at statement start,
 				// before its outcome is known. It stays eligible to be claimed
 				// by an ERROR that opens on the very next record (see finish);
 				// anything else settles it (see the "new primary record" reset).
-				s.durStmt = len(stmts) - 1
-				s.openExecIdx = len(stmts) - 1
+				s.durStmt = idx
+				s.openExecIdx = idx
 			}
 			// This statement completed executing, resolving any bind that was
 			// still pending for this backend (see pidState.lastBind); it is no
@@ -601,60 +636,24 @@ func isTransactionBoundaryStatement(sql string) bool {
 	return false
 }
 
-// transactionBounds returns the stmts index range (start, end] that bounds
-// the same backend's same transaction as stmts[idx]: start is the index of
-// the nearest earlier boundary statement on the same PID, or -1 if none;
-// end is the index of the nearest later boundary statement on the same PID,
-// or len(stmts)-1 if none. This is the same window sessionContextBefore
-// already trusts when it stops its own backward scan at a boundary.
-func transactionBounds(stmts []logStatement, idx int) (start, end int) {
-	pid := stmts[idx].pid
-	start = -1
-	for i := idx - 1; i >= 0; i-- {
-		if stmts[i].pid != pid {
-			continue
-		}
-		if isTransactionBoundaryStatement(stmts[i].sql) {
-			start = i
-			break
-		}
-	}
-	end = len(stmts) - 1
-	for i := idx + 1; i < len(stmts); i++ {
-		if stmts[i].pid != pid {
-			continue
-		}
-		if isTransactionBoundaryStatement(stmts[i].sql) {
-			end = i
-			break
-		}
-	}
-	return start, end
-}
-
 // transactionParamSets returns the subset of all logged by stmts[idx]'s own
-// backend PID, within stmts[idx]'s own transaction (see transactionBounds).
-// A value's logging limit can only be inferred from other values this exact
-// session is known to have logged in this exact transaction window: a
-// different backend, an earlier or later transaction on the same backend, or
-// a transaction on a connection that merely reused the same logged PID,
-// proves nothing about what this request's own PostgreSQL backend was
-// configured to log — see unprovenTruncation.
+// backend PID, within stmts[idx]'s own transaction epoch (see
+// pidState.txnEpoch and appendStmt — both stmts[idx] and every paramSet in
+// all record the epoch they belonged to at the moment they were parsed, so
+// this is an exact match on actual transaction ownership, not a
+// reconstruction from index positions). A value's logging limit can only be
+// inferred from other values this exact session logged in this exact
+// transaction: a different backend, an earlier or later transaction on the
+// same backend — including one separated only by an autocommit statement
+// with no explicit BEGIN/COMMIT of its own — or a transaction on a
+// connection that merely reused the same logged PID, proves nothing about
+// what this request's own PostgreSQL backend was configured to log — see
+// unprovenTruncation.
 func transactionParamSets(stmts []logStatement, all []paramSet, idx int) []paramSet {
-	pid := stmts[idx].pid
-	start, end := transactionBounds(stmts, idx)
+	target := stmts[idx]
 	var out []paramSet
 	for _, ps := range all {
-		if ps.pid != pid {
-			continue
-		}
-		// atStmtIdx is len(stmts) at the moment this value was logged, so
-		// atStmtIdx-1 is the stmts index it was logged at or just before —
-		// a chronological marker on the same timeline start/end are indices
-		// into, even when that exact stmts slot belongs to another PID's
-		// interleaved statement.
-		assoc := ps.atStmtIdx - 1
-		if assoc > start && assoc <= end {
+		if ps.pid == target.pid && ps.txnEpoch == target.txnEpoch {
 			out = append(out, ps)
 		}
 	}
