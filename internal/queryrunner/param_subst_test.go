@@ -16,31 +16,31 @@ func TestSubstituteParams(t *testing.T) {
 			name:  "date range with cast so interval arithmetic type-checks",
 			sql:   "SELECT 1 FROM demo.sales WHERE date >= $1 AND date < ($1 + '1 month'::interval)",
 			binds: []string{"2025-01-01"},
-			want:  "SELECT 1 FROM demo.sales WHERE date >= '2025-01-01'::date AND date < ('2025-01-01'::date + '1 month'::interval)",
+			want:  "SELECT 1 FROM demo.sales WHERE date >= E'2025-01-01'::date AND date < (E'2025-01-01'::date + '1 month'::interval)",
 		},
 		{
 			name:  "mixed string and numeric binds",
 			sql:   "SELECT 1 FROM demo.sales WHERE region = $1 AND quantity > $2",
 			binds: []string{"North", "5"},
-			want:  "SELECT 1 FROM demo.sales WHERE region = 'North' AND quantity > 5",
+			want:  "SELECT 1 FROM demo.sales WHERE region = E'North' AND quantity > 5",
 		},
 		{
 			name:  "BETWEEN with two params",
 			sql:   "SELECT 1 FROM demo.sales WHERE date >= $1 AND date < ($2 + '1 day'::interval)",
 			binds: []string{"2025-01-01", "2025-01-31"},
-			want:  "SELECT 1 FROM demo.sales WHERE date >= '2025-01-01'::date AND date < ('2025-01-31'::date + '1 day'::interval)",
+			want:  "SELECT 1 FROM demo.sales WHERE date >= E'2025-01-01'::date AND date < (E'2025-01-31'::date + '1 day'::interval)",
 		},
 		{
 			name:  "dollar token inside a string literal is left alone",
 			sql:   "SELECT 1 FROM demo.sales WHERE note = 'costs $1 total' AND region = $1",
 			binds: []string{"North"},
-			want:  "SELECT 1 FROM demo.sales WHERE note = 'costs $1 total' AND region = 'North'",
+			want:  "SELECT 1 FROM demo.sales WHERE note = 'costs $1 total' AND region = E'North'",
 		},
 		{
 			name:  "single quote in a bind value is escaped",
 			sql:   "SELECT 1 FROM demo.sales WHERE region = $1",
 			binds: []string{"O'Brien"},
-			want:  "SELECT 1 FROM demo.sales WHERE region = 'O''Brien'",
+			want:  "SELECT 1 FROM demo.sales WHERE region = E'O''Brien'",
 		},
 	}
 	for _, tc := range cases {
@@ -122,7 +122,7 @@ func TestSubstituteParams_HostileTimestampPrefixBinds(t *testing.T) {
 				return // rejecting outright is a valid neutralization
 			}
 			// Every caller quote must be doubled (breakout neutralized).
-			esc := "'" + strings.ReplaceAll(strings.TrimSpace(b), "'", "''") + "'"
+			esc := "E'" + strings.ReplaceAll(strings.TrimSpace(b), "'", "''") + "'"
 			if !strings.Contains(got, esc) {
 				t.Fatalf("hostile bind not emitted as a quote-doubled literal:\n bind: %q\n  got: %s", b, got)
 			}
@@ -155,14 +155,15 @@ func TestSubstituteParams_RejectsUnsafeBytes(t *testing.T) {
 }
 
 func TestSubstituteParams_BackslashBindIsQuotedNotRejected(t *testing.T) {
-	// Under standard_conforming_strings=on a backslash in a single-quoted string
-	// is a literal char, so a LIKE / path bind must still work.
+	// A LIKE / path bind containing a backslash must still work, rendered as an
+	// E'...' literal with the backslash doubled so it decodes back to exactly
+	// the original value regardless of the session's standard_conforming_strings.
 	got, err := SubstituteParams("SELECT 1 FROM demo.sales WHERE path LIKE $1", []string{`C:\logs\%`})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(got, `'C:\logs\%'`) {
-		t.Fatalf("backslash bind should be quoted literally, got: %s", got)
+	if !strings.Contains(got, `E'C:\\logs\\%'`) {
+		t.Fatalf("backslash bind should be quoted as an escaped E'' literal, got: %s", got)
 	}
 	if _, sel, ok := parseSingleSelect(got); !ok || selectTreeContainsParamRef(sel) {
 		t.Fatalf("result is not a clean param-free SELECT: %s", got)
@@ -212,7 +213,7 @@ func TestSubstituteParams_RealParamBesideBlockComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(got, "region = 'North'") || !strings.Contains(got, "/* keep $2 out */") {
+	if !strings.Contains(got, "region = E'North'") || !strings.Contains(got, "/* keep $2 out */") {
 		t.Fatalf("real param not substituted / comment altered: %s", got)
 	}
 }
@@ -248,6 +249,45 @@ func TestSubstituteParams_TimestampBindKeepsCast(t *testing.T) {
 		if !strings.Contains(got, tc.want) {
 			t.Fatalf("%q should produce %s, got: %s", tc.bind, tc.want, got)
 		}
+	}
+}
+
+// quoteSQLLiteral must decode back to exactly the original value when parsed
+// by the real PostgreSQL grammar (pg_query), regardless of backslash content —
+// this is the property the standard_conforming_strings injection fix depends
+// on. Parsing "SELECT " + the literal and reading back the resulting string
+// constant exercises the same parser used elsewhere as the post-substitution
+// re-parse guard, not a hand-rolled decoder.
+func TestQuoteSQLLiteral_RoundTripsThroughRealParser(t *testing.T) {
+	cases := []string{
+		"",
+		"North",
+		"O'Brien",
+		`C:\logs\%`,
+		`a\nb`, // literal backslash-n, not a newline
+		`\' ) SELECT pg_catalog.pg_sleep(0.2) --`,
+		`\\\\`, // a run of backslashes
+		"日本語",
+		"'001'",
+		"   leading and trailing whitespace   ",
+		"line one\nline two",
+		"back\\slash'quote mix\\'",
+	}
+	for _, want := range cases {
+		t.Run(want, func(t *testing.T) {
+			lit := quoteSQLLiteral(want)
+			if !strings.HasPrefix(lit, "E'") {
+				t.Fatalf("expected an E'...' literal, got: %s", lit)
+			}
+			_, sel, ok := parseSingleSelect("SELECT " + lit)
+			if !ok || len(sel.TargetList) != 1 {
+				t.Fatalf("literal did not parse as a single-target SELECT: %s", lit)
+			}
+			got := sel.TargetList[0].GetResTarget().GetVal().GetAConst().GetSval().GetSval()
+			if got != want {
+				t.Fatalf("round-trip mismatch:\n want %q\n  got %q\n  lit %s", want, got, lit)
+			}
+		})
 	}
 }
 

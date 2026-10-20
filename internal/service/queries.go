@@ -292,6 +292,33 @@ func boolPtrIf(b bool) *bool {
 	return nil
 }
 
+// PostgRESTReplaySearchPath returns the captured schemas this connection's
+// policy lets a replay search, in captured order.
+func (s *QueriesService) PostgRESTReplaySearchPath(ctx context.Context, connectionID *string, captured []string) []string {
+	runner, err := s.connectionResolver.runnerFor(connectionID)
+	if err != nil || runner == nil {
+		return nil
+	}
+	return runner.ReplaySearchPath(ctx, captured)
+}
+
+// CheckPostgRESTReplayRole reports whether this connection can replay as role.
+// It authorizes like EXPLAIN and never runs a statement as that role.
+func (s *QueriesService) CheckPostgRESTReplayRole(ctx context.Context, connectionID *string, role string) error {
+	connID, err := s.connectionResolver.resolveConnectionID(connectionID)
+	if err != nil {
+		return connectionNotFoundQueriesError(err)
+	}
+	if err := checkConnectionAccess(ctx, s.authz, connID, auth.ActionExplain); err != nil {
+		return connectionForbiddenQueriesError(err)
+	}
+	runner, err := s.connectionResolver.runnerFor(connectionID)
+	if err != nil {
+		return connectionNotFoundQueriesError(err)
+	}
+	return runner.CheckReplayRole(ctx, role)
+}
+
 // ProjectIndexCost estimates plan cost if candidate DDL were applied (hypopg when
 // available; otherwise an honest heuristic). Never executes real DDL.
 func (s *QueriesService) ProjectIndexCost(ctx context.Context, connectionID *string, sql, candidateDDL string, baselineCost float64) queryrunner.IndexProjection {

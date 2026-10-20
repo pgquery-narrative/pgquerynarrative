@@ -55,7 +55,12 @@ func suggestLeftJoinAntiJoinToNotExists(sql string, findings []PlanFinding) *Rew
 	}
 	leftAlias := rangeVarAlias(leftRV)
 	rightAlias := rangeVarAlias(rightRV)
-	if leftAlias == "" || rightAlias == "" || strings.EqualFold(leftAlias, rightAlias) {
+	// Exact identifier identity, not EqualFold: PostgreSQL already folds every
+	// unquoted identifier to lowercase at parse time, so the AST's own string
+	// value is exactly what PostgreSQL treats as the name. A case-insensitive
+	// compare here would conflate a quoted "Alias" with an unrelated unquoted
+	// alias, or vice versa.
+	if leftAlias == "" || rightAlias == "" || leftAlias == rightAlias {
 		return nil
 	}
 
@@ -70,8 +75,11 @@ func suggestLeftJoinAntiJoinToNotExists(sql string, findings []PlanFinding) *Rew
 	peeled := 0
 	for _, c := range conjuncts {
 		if col, isNull := nullTestColumn(c); isNull {
-			if a, name := qualifiedColParts(col); strings.EqualFold(a, rightAlias) {
-				if _, isKey := rightKeyCols[strings.ToLower(name)]; isKey {
+			// Exact identifier identity (see the leftAlias/rightAlias comment
+			// above): b.id and b."ID" are different columns to PostgreSQL, so
+			// they must stay different here too.
+			if a, name := qualifiedColParts(col); a == rightAlias {
+				if _, isKey := rightKeyCols[name]; isKey {
 					peeled++
 					continue
 				}
@@ -174,8 +182,10 @@ func onClauseSafeForAntiJoin(n *pg_query.Node, rightAlias string, keyCols map[st
 	}
 	if aExprOpIs(ae, "=") {
 		for _, side := range []*pg_query.Node{ae.Lexpr, ae.Rexpr} {
-			if a, name := qualifiedColParts(side); name != "" && strings.EqualFold(a, rightAlias) {
-				keyCols[strings.ToLower(name)] = struct{}{}
+			// Exact identifier identity — see the comment on the alias check
+			// in suggestLeftJoinAntiJoinToNotExists.
+			if a, name := qualifiedColParts(side); name != "" && a == rightAlias {
+				keyCols[name] = struct{}{}
 			}
 		}
 	}
@@ -260,7 +270,9 @@ func referencesAliasOrBareCol(nodes []*pg_query.Node, alias string) bool {
 				bad = true
 				return
 			}
-			if first, ok := stringNodeValue(cr.Fields[0]); !ok || strings.EqualFold(first, alias) {
+			// Exact identifier identity — see the comment on the alias check
+			// in suggestLeftJoinAntiJoinToNotExists.
+			if first, ok := stringNodeValue(cr.Fields[0]); !ok || first == alias {
 				bad = true
 			}
 		})

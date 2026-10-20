@@ -133,11 +133,13 @@ func tryRewriteInSubLink(sl *pg_query.SubLink, outerAlias string, notIn bool) (*
 	if target == nil || target.GetAStar() != nil {
 		return nil, false
 	}
-	// subqueryEligibleForExists already required a bare-column target, so
-	// unwrapColumnRefNode(target) is never nil here; qualifyColumnRef can still
-	// fail to produce a ColumnRef, in which case the original target node is
-	// used unqualified.
-	innerCol := qualifyColumnRef(unwrapColumnRefNode(target), innerAlias)
+	// subqueryEligibleForExists already required a bare, uncast column target
+	// (target.GetColumnRef() != nil), so qualifyColumnRef gets the real
+	// projected column directly. Unwrapping a cast here (e.g. i.id::int) would
+	// drop it from the correlation's equality and change what the comparison
+	// means: EXISTS (... WHERE i.id = o.id) is not IN (SELECT i.id::int ...)
+	// when the cast narrows or rounds the value.
+	innerCol := qualifyColumnRef(target, innerAlias)
 	if innerCol == nil || innerCol.GetColumnRef() == nil {
 		innerCol = target
 	}
@@ -208,9 +210,12 @@ func subqueryEligibleForExists(sel *pg_query.SelectStmt) bool {
 	if len(sel.FromClause) != 1 || sel.FromClause[0].GetRangeVar() == nil {
 		return false
 	}
-	// Target must be a bare column (not expression/agg) so equality correlation is sound.
+	// Target must be a bare column — not an expression, aggregate, or cast — so
+	// the correlation's equality (inner.col = outer.col) means the same thing
+	// as the original IN/NOT IN comparison. A cast (e.g. i.id::int) changes the
+	// compared value, so it is declined here rather than silently dropped.
 	target := resTargetVal(sel.TargetList[0])
-	return unwrapColumnRefNode(target) != nil
+	return target.GetColumnRef() != nil
 }
 
 func hasKind(kinds []string, want string) bool {

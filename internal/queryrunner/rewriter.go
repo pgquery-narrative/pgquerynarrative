@@ -58,6 +58,38 @@ func SuggestRewrites(sql string, findings []PlanFinding) []RewriteCandidate {
 	if trimmed == "" {
 		return nil
 	}
+	return suggestRewrites(trimmed, findings, IsPostgRESTWrapper(trimmed))
+}
+
+// SuggestRewritesForInvestigation is SuggestRewrites for a caller that knows
+// for certain whether sql came from a real, imported PostgREST capture —
+// isPostgREST should be investigation.PostgrestRequest != nil, never derived
+// from sql's own shape. SuggestRewrites falls back to guessing from shape
+// (see IsPostgRESTWrapper) only because it has no better signal available;
+// a caller holding an investigation does, and must use it instead, or
+// ordinary pasted SQL that merely happens to define a CTE named
+// pgrst_source — plausible if someone copied a snippet out of a PostgREST
+// log by hand instead of using the dedicated importer — would have every
+// rewrite silently declined for a statement that was never PostgREST's
+// response wrapper at all.
+func SuggestRewritesForInvestigation(sql string, findings []PlanFinding, isPostgREST bool) []RewriteCandidate {
+	trimmed := trimSQL(sql)
+	if trimmed == "" {
+		return nil
+	}
+	return suggestRewrites(trimmed, findings, isPostgREST)
+}
+
+// suggestRewrites is SuggestRewrites' shared body. trimmed is already
+// trimSQL'd; isPostgRESTWrapper decides the PostgREST-wrapper decline (see
+// SuggestRewrites vs SuggestRewritesForInvestigation for how callers should
+// derive it).
+func suggestRewrites(trimmed string, findings []PlanFinding, isPostgRESTWrapper bool) []RewriteCandidate {
+	// PostgREST's response wrapper is generated, not user SQL: a rewrite inside it
+	// would not reach the relation that causes the cost. Decline; see IsPostgRESTWrapper.
+	if isPostgRESTWrapper {
+		return nil
+	}
 	hasParam := false
 	if _, sel, ok := parseSingleSelect(trimmed); ok {
 		hasParam = selectTreeContainsParamRef(sel)

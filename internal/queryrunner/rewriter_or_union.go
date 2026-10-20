@@ -128,6 +128,23 @@ func selectIsSimpleForUnion(sel *pg_query.SelectStmt) bool {
 	if targetListHasAggregate(sel.TargetList) {
 		return false
 	}
+	// A window function's value depends on the partition's other rows, which
+	// splitting the WHERE into UNION ALL branches changes per branch (e.g.
+	// row_number() OVER (ORDER BY id) numbers each branch from 1, not the
+	// combined result). WindowClause alone only catches a named WINDOW
+	// definition, not the far more common inline `fn(...) OVER (...)`, which
+	// sets FuncCall.Over directly with no WindowClause entry at all — so every
+	// target and sort item is checked for that, wherever it is nested.
+	for _, t := range sel.TargetList {
+		if nodeContainsWindowFunc(t.GetResTarget().GetVal()) {
+			return false
+		}
+	}
+	for _, s := range sel.SortClause {
+		if nodeContainsWindowFunc(s.GetSortBy().GetNode()) {
+			return false
+		}
+	}
 	// ORDER BY on a UNION ALL result may only be an integer ordinal or an
 	// unqualified output column name — not a qualified reference (the top
 	// level union has no table alias in scope) and not an arbitrary
@@ -227,6 +244,62 @@ func nodeContainsAggregateCall(n *pg_query.Node) bool {
 				continue
 			}
 			if nodeContainsAggregateCall(cw.Expr) || nodeContainsAggregateCall(cw.Result) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nodeContainsWindowFunc reports whether n contains a window function call
+// anywhere in its expression tree — an inline `fn(...) OVER (...)` sets
+// FuncCall.Over directly and never touches SelectStmt.WindowClause, so this is
+// the only reliable way to find one. Mirrors nodeContainsAggregateCall's walk.
+func nodeContainsWindowFunc(n *pg_query.Node) bool {
+	if n == nil {
+		return false
+	}
+	if fc := n.GetFuncCall(); fc != nil {
+		if fc.Over != nil {
+			return true
+		}
+		for _, arg := range fc.Args {
+			if nodeContainsWindowFunc(arg) {
+				return true
+			}
+		}
+		return false
+	}
+	if ae := n.GetAExpr(); ae != nil {
+		return nodeContainsWindowFunc(ae.Lexpr) || nodeContainsWindowFunc(ae.Rexpr)
+	}
+	if be := n.GetBoolExpr(); be != nil {
+		for _, arg := range be.Args {
+			if nodeContainsWindowFunc(arg) {
+				return true
+			}
+		}
+	}
+	if ce := n.GetCoalesceExpr(); ce != nil {
+		for _, arg := range ce.Args {
+			if nodeContainsWindowFunc(arg) {
+				return true
+			}
+		}
+	}
+	if tc := n.GetTypeCast(); tc != nil {
+		return nodeContainsWindowFunc(tc.Arg)
+	}
+	if ce := n.GetCaseExpr(); ce != nil {
+		if nodeContainsWindowFunc(ce.Arg) || nodeContainsWindowFunc(ce.Defresult) {
+			return true
+		}
+		for _, w := range ce.Args {
+			cw := w.GetCaseWhen()
+			if cw == nil {
+				continue
+			}
+			if nodeContainsWindowFunc(cw.Expr) || nodeContainsWindowFunc(cw.Result) {
 				return true
 			}
 		}

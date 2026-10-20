@@ -19,14 +19,14 @@ func TestWrapCountSQL(t *testing.T) {
 }
 
 func TestMultisetFingerprint_OrderIndependent(t *testing.T) {
+	// Each row is the single text cell wrapEquivalenceSampleSQL would produce
+	// (PostgreSQL's own row::text rendering), not a Go-decoded column value.
 	a := &queryrunner.Result{
-		Columns:  []queryrunner.ColumnInfo{{Name: "x"}},
-		Rows:     [][]interface{}{{1}, {2}, {3}},
+		Rows:     [][]interface{}{{"(1)"}, {"(2)"}, {"(3)"}},
 		RowCount: 3,
 	}
 	b := &queryrunner.Result{
-		Columns:  []queryrunner.ColumnInfo{{Name: "x"}},
-		Rows:     [][]interface{}{{3}, {1}, {2}},
+		Rows:     [][]interface{}{{"(3)"}, {"(1)"}, {"(2)"}},
 		RowCount: 3,
 	}
 	ha, okA := multisetFingerprint(a)
@@ -38,19 +38,46 @@ func TestMultisetFingerprint_OrderIndependent(t *testing.T) {
 
 func TestMultisetFingerprint_DetectsDifference(t *testing.T) {
 	a := &queryrunner.Result{
-		Columns:  []queryrunner.ColumnInfo{{Name: "x"}},
-		Rows:     [][]interface{}{{1}, {2}},
+		Rows:     [][]interface{}{{"(1)"}, {"(2)"}},
 		RowCount: 2,
 	}
 	b := &queryrunner.Result{
-		Columns:  []queryrunner.ColumnInfo{{Name: "x"}},
-		Rows:     [][]interface{}{{1}, {9}},
+		Rows:     [][]interface{}{{"(1)"}, {"(9)"}},
 		RowCount: 2,
 	}
 	ha, _ := multisetFingerprint(a)
 	hb, _ := multisetFingerprint(b)
 	if ha == hb {
 		t.Fatal("different payloads must not match")
+	}
+}
+
+// Regression for the lossy-JSON-decode bug: two row texts that differ only in a
+// digit above 2^53 (where float64 can no longer represent every integer) must
+// still fingerprint differently. multisetFingerprint hashes the given text
+// verbatim — this is the property the fix at the SQL layer (row::text, never a
+// Go-decoded JSON number) depends on.
+func TestMultisetFingerprint_PreservesDigitsAbove2Pow53(t *testing.T) {
+	a := &queryrunner.Result{Rows: [][]interface{}{{`({"n":9007199254740992})`}}}
+	b := &queryrunner.Result{Rows: [][]interface{}{{`({"n":9007199254740993})`}}}
+	ha, okA := multisetFingerprint(a)
+	hb, okB := multisetFingerprint(b)
+	if !okA || !okB {
+		t.Fatal("expected both to fingerprint")
+	}
+	if ha == hb {
+		t.Fatal("values differing only above 2^53 must not fingerprint the same")
+	}
+}
+
+// A row that is not a single text cell (the shape wrapEquivalenceSampleSQL
+// guarantees) must fail closed, never silently hash something else.
+func TestMultisetFingerprint_RejectsNonTextRow(t *testing.T) {
+	if _, ok := multisetFingerprint(&queryrunner.Result{Rows: [][]interface{}{{1, 2}}}); ok {
+		t.Fatal("a multi-cell row must be rejected")
+	}
+	if _, ok := multisetFingerprint(&queryrunner.Result{Rows: [][]interface{}{{42}}}); ok {
+		t.Fatal("a non-string/[]byte cell must be rejected")
 	}
 }
 
@@ -74,14 +101,18 @@ func TestEquivalenceSemantics_CountMismatchIsDifferent(t *testing.T) {
 	}
 }
 
-func TestWrapDeterministicSampleSQL(t *testing.T) {
-	got, err := wrapDeterministicSampleSQL(`SELECT region, total FROM demo.sales WHERE region = 'North' ORDER BY total`, 1000)
+func TestWrapEquivalenceSampleSQL_Deterministic(t *testing.T) {
+	got, err := wrapEquivalenceSampleSQL(`SELECT region, total FROM demo.sales WHERE region = 'North' ORDER BY total`, 1000, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	low := strings.ToLower(got)
 	// The wrapper imposes its own hash order + limit so two plans with the same
-	// full result set return the same subset.
+	// full result set return the same subset, and renders each row to text in
+	// SQL rather than leaving it to be decoded as structured columns in Go.
+	if !strings.Contains(low, "pgqn_eq::text") {
+		t.Fatalf("missing row-to-text rendering: %s", got)
+	}
 	if !strings.Contains(low, "order by md5(pgqn_eq::text)") {
 		t.Fatalf("missing deterministic order: %s", got)
 	}
@@ -90,6 +121,23 @@ func TestWrapDeterministicSampleSQL(t *testing.T) {
 	}
 	if !strings.Contains(low, "from (select region, total from demo.sales") {
 		t.Fatalf("inner query not wrapped: %s", got)
+	}
+}
+
+func TestWrapEquivalenceSampleSQL_NonDeterministicStillCastsToText(t *testing.T) {
+	// Even when the whole result fits under the sample cap (no ORDER BY needed),
+	// every row must still go through PostgreSQL's row::text rendering so a
+	// JSON/JSONB column is never decoded into a lossy Go float64.
+	got, err := wrapEquivalenceSampleSQL(`SELECT n FROM api.items`, 1000, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	low := strings.ToLower(got)
+	if !strings.Contains(low, "pgqn_eq::text") {
+		t.Fatalf("missing row-to-text rendering: %s", got)
+	}
+	if strings.Contains(low, "order by") {
+		t.Fatalf("non-deterministic sample should not sort: %s", got)
 	}
 }
 

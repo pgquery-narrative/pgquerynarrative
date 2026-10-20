@@ -287,6 +287,15 @@ test-integration:
 	@echo "🧪 Running integration tests..."
 	DOCKER_API_VERSION=1.44 $(GO) test ./test/integration/... -v
 
+# Real PostgREST (16.4 on PostgreSQL 16 and 18; 13.0 and 12.2 on 18), restricted runtime roles.
+# The PostgREST helper fails (never skips) when the stack cannot start.
+.PHONY: test-postgrest
+test-postgrest:
+	DOCKER_API_VERSION=1.44 POSTGREST_TEST_POSTGRES_IMAGE=pgvector/pgvector:pg16 $(GO) test ./test/integration/... -run '^TestPostgREST' -count=1 -v
+	DOCKER_API_VERSION=1.44 POSTGREST_TEST_POSTGRES_IMAGE=pgvector/pgvector:pg18 $(GO) test ./test/integration/... -run '^TestPostgREST' -count=1 -v
+	DOCKER_API_VERSION=1.44 POSTGREST_TEST_IMAGE=postgrest/postgrest:v13.0.4 $(GO) test ./test/integration/... -run '^TestPostgREST' -count=1 -v
+	DOCKER_API_VERSION=1.44 POSTGREST_TEST_IMAGE=postgrest/postgrest:v12.2.12 $(GO) test ./test/integration/... -run '^TestPostgREST' -count=1 -v
+
 test-e2e:
 	@echo "🧪 Running E2E tests..."
 	DOCKER_API_VERSION=1.44 $(GO) test ./test/e2e/... -v

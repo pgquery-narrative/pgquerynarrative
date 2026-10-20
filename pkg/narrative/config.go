@@ -63,6 +63,7 @@ type SecurityConfig struct {
 	AuditMode                    string
 	DataEncryptionKey            string
 	ConnectionAllowlistRequired  bool
+	PostgRESTReplayRoles         []string
 }
 
 // EmbeddingConfig holds optional embedding model settings (e.g. Ollama nomic-embed-text).
@@ -226,7 +227,7 @@ func FromAppConfig(cfg config.Config) Config {
 			Model:   cfg.Embedding.Model,
 		},
 		AllowedSchemas:  allowedSchemasOrDefault(cfg.Database.AllowedSchemas),
-		MaxQueryLength:  10000,
+		MaxQueryLength:  maxQueryLengthOrDefault(cfg.Database.MaxQueryLength),
 		MaxRowsPerQuery: 1000,
 		Security: SecurityConfig{
 			AuthEnabled:                  cfg.Security.AuthEnabled,
@@ -259,6 +260,7 @@ func FromAppConfig(cfg config.Config) Config {
 			AuditMode:                    cfg.Security.AuditMode,
 			DataEncryptionKey:            cfg.Security.DataEncryptionKey,
 			ConnectionAllowlistRequired:  cfg.Security.ConnectionAllowlistRequired,
+			PostgRESTReplayRoles:         cfg.Security.PostgRESTReplayRoles,
 		},
 	}
 }
@@ -362,4 +364,11 @@ func toAppConnectionsFromNarrative(in []DataConnectionConfig) []config.DataConne
 		})
 	}
 	return out
+}
+
+func maxQueryLengthOrDefault(n int) int {
+	if n <= 0 {
+		return 10000
+	}
+	return n
 }

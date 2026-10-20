@@ -19,6 +19,18 @@ var _ = Service("investigations", func() {
 		})
 	})
 
+	Method("create_from_postgrest", func() {
+		Description("Open an investigation from a PostgREST read request. The PostgreSQL log excerpt supplies the exact generated SQL, its bind values, the database role and the statement duration; nothing is inferred from the URL.")
+		Payload(CreateFromPostgRESTPayload)
+		Result(Investigation)
+		Error("validation_error", ValidationError)
+		HTTP(func() {
+			POST("/api/v1/investigations/from-postgrest")
+			Response(StatusOK)
+			Response(StatusBadRequest, "validation_error")
+		})
+	})
+
 	Method("create_from_regression", func() {
 		Description("Open an investigation from a regression alert (EXPLAIN + link alert to investigation)")
 		Payload(func() {
