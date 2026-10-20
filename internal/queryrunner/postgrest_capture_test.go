@@ -1,6 +1,8 @@
 package queryrunner
 
 import (
+	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -389,6 +391,166 @@ func TestParsePostgRESTLogIndependentDetailAndContextLimits(t *testing.T) {
 	}
 	if _, err := ParsePostgRESTLog(withAmbiguousContext); err == nil {
 		t.Fatal("a long same-transaction DETAIL value must not prove a CONTEXT value was not truncated")
+	}
+}
+
+// pgrstOneParamWrapper and pgrstTwoParamWrapper are minimal PostgREST
+// response wrappers around a one- or two-parameter SELECT, matching the
+// shape real PostgREST capture fixtures elsewhere in this file use.
+const pgrstOneParamWrapper = `WITH pgrst_source AS ( SELECT id FROM data.orders WHERE note = $1 ) SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t`
+const pgrstTwoParamWrapper = `WITH pgrst_source AS ( SELECT id FROM data.orders WHERE note = $1 AND tag = $2 ) SELECT null::bigint AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, coalesce(json_agg(_postgrest_t), '[]') AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, '' AS response_inserted FROM ( SELECT * FROM pgrst_source ) _postgrest_t`
+
+// Bug: a bind event logs no statement of its own (only its later execute
+// does), so the paramSet captured at bind time was associated with
+// "len(stmts) at that moment minus one" — whichever statement happened to
+// be last appended before the bind, including a transaction boundary
+// statement itself. When a later, entirely separate autocommit statement's
+// bind was captured immediately after a COMMIT, that arithmetic pointed
+// squarely at the COMMIT's own index, which an inclusive upper bound then
+// treated as still "inside" the window of the transaction the COMMIT had
+// just closed — letting a later transaction's longer, complete parameter
+// rescue an earlier, unrelated request's truncated-looking value.
+func TestParsePostgRESTLogEvidenceAfterCommitCannotRescueEarlierRequest(t *testing.T) {
+	targetOnly := `2026-10-08 17:40:00.100 UTC [210] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 1: BEGIN
+2026-10-08 17:40:00.101 UTC [210] app=PostgREST 16.4 LOG:  duration: 0.1 ms  bind 2: ` + pgrstOneParamWrapper + `
+2026-10-08 17:40:00.102 UTC [210] app=PostgREST 16.4 DETAIL:  Parameters: $1 = 'abc...'
+2026-10-08 17:40:00.103 UTC [210] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 2: ` + pgrstOneParamWrapper + `
+2026-10-08 17:40:00.104 UTC [210] app=PostgREST 16.4 DETAIL:  Parameters: $1 = 'abc...'
+2026-10-08 17:40:00.105 UTC [210] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 3: COMMIT
+`
+	// Sanity: the target alone, with no evidence that 'abc...' was not
+	// truncated, is rejected.
+	if _, err := ParsePostgRESTLog(targetOnly); err == nil || !strings.Contains(err.Error(), "log_parameter_max_length") {
+		t.Fatalf("fixture setup is broken: expected rejection with no evidence, got %+v, %v", err == nil, err)
+	}
+
+	// A later, separate autocommit statement's bind, logged immediately
+	// after the COMMIT, with a longer, complete parameter.
+	withLaterEvidence := targetOnly +
+		`2026-10-08 17:40:00.106 UTC [210] app=PostgREST 16.4 LOG:  duration: 0.1 ms  bind 4: SELECT 1
+2026-10-08 17:40:00.107 UTC [210] app=PostgREST 16.4 DETAIL:  Parameters: $1 = '` + strings.Repeat("z", 400) + `'
+2026-10-08 17:40:00.108 UTC [210] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 4: SELECT 1
+`
+	if _, err := ParsePostgRESTLog(withLaterEvidence); err == nil || !strings.Contains(err.Error(), "log_parameter_max_length") {
+		t.Fatalf("a later transaction's bind, logged right after the earlier one's COMMIT, must not rescue the earlier request's unproven truncated value, got %+v, %v", err == nil, err)
+	}
+}
+
+// Bug (same root cause, opposite direction): when a bind's own statement
+// recovers via ERROR/STATEMENT (no execute record of its own was logged —
+// see finish), the failed statement's stmts entry is appended *after* the
+// bind's paramSet was already captured. If the bind happened immediately
+// after BEGIN (nothing else appended yet), "len(stmts) at bind time minus
+// one" pointed at BEGIN's own index — the transaction's start boundary —
+// which the old strict lower bound then excluded as outside the window,
+// discarding the failed statement's own valid, complete bind evidence: a
+// longer, complete parameter ($2) in the very same parameter list as a
+// truncated-looking one ($1), which should prove $1 was not cut (same bind
+// event, same source, same transaction) rather than being thrown away.
+func TestParsePostgRESTLogFailedStatementOwnBindProvenRightAfterBegin(t *testing.T) {
+	long := strings.Repeat("z", 400)
+	log := `2026-10-08 17:41:00.100 UTC [211] app=PostgREST 16.4 LOG:  duration: 0.1 ms  execute 1: BEGIN
+2026-10-08 17:41:00.101 UTC [211] app=PostgREST 16.4 LOG:  duration: 0.1 ms  bind 2: ` + pgrstTwoParamWrapper + `
+2026-10-08 17:41:00.102 UTC [211] app=PostgREST 16.4 DETAIL:  Parameters: $1 = 'Loading...', $2 = '` + long + `'
+2026-10-08 17:41:00.103 UTC [211] app=PostgREST 16.4 ERROR:  canceling statement due to statement timeout
+2026-10-08 17:41:00.104 UTC [211] app=PostgREST 16.4 STATEMENT:  ` + pgrstTwoParamWrapper + `
+`
+	got, err := ParsePostgRESTLog(log)
+	if err != nil {
+		t.Fatalf("a bind's own untruncated sibling parameter, logged right after BEGIN, must still prove the truncated-looking one was not cut: %v", err)
+	}
+	if got.Failure == "" {
+		t.Fatal("expected a captured failure")
+	}
+	if want := []string{"Loading...", long}; !reflect.DeepEqual(got.Binds, want) {
+		t.Fatalf("Binds = %q, want %q", got.Binds, want)
+	}
+}
+
+// rawLogRecord is one primary log record (with an optional DETAIL), format-
+// agnostic — toStderrLog/toCSVLog/toJSONLog each render the identical
+// sequence of records in their own wire format, so a behavior can be proven
+// independent of which format normalized it into the same []logRecord
+// parseLogStatements actually consumes.
+type rawLogRecord struct {
+	pid, severity, msg, detail string
+}
+
+func toStderrLog(recs []rawLogRecord) string {
+	var b strings.Builder
+	for i, r := range recs {
+		fmt.Fprintf(&b, "2026-10-08 17:40:00.%03d UTC [%s] app=PostgREST 16.4 %s:  %s\n", i, r.pid, r.severity, r.msg)
+		if r.detail != "" {
+			fmt.Fprintf(&b, "2026-10-08 17:40:00.%03d UTC [%s] app=PostgREST 16.4 DETAIL:  %s\n", i, r.pid, r.detail)
+		}
+	}
+	return b.String()
+}
+
+func toJSONLog(recs []rawLogRecord) string {
+	var b strings.Builder
+	for _, r := range recs {
+		obj := map[string]string{"pid": r.pid, "query_id": "0", "error_severity": r.severity, "message": r.msg}
+		if r.detail != "" {
+			obj["detail"] = r.detail
+		}
+		line, err := json.Marshal(obj)
+		if err != nil {
+			panic(err)
+		}
+		b.Write(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// toCSVLog renders csvlog's 23 fixed columns (see readCSVLog): index 3 is
+// process_id, 11 is error_severity, 13 is message, 14 is detail.
+func toCSVLog(recs []rawLogRecord) string {
+	var b strings.Builder
+	w := csv.NewWriter(&b)
+	for i, r := range recs {
+		fields := make([]string, 23)
+		fields[0] = fmt.Sprintf("2026-10-08 17:40:00.%03d UTC", i)
+		fields[3] = r.pid
+		fields[11] = r.severity
+		fields[13] = r.msg
+		fields[14] = r.detail
+		if err := w.Write(fields); err != nil {
+			panic(err)
+		}
+	}
+	w.Flush()
+	return b.String()
+}
+
+// Bug, exercised across every log format ParsePostgRESTLog accepts: a bind
+// has no statement of its own in the parsed record stream — the primary
+// record its paramSet was indexed against could be a transaction boundary
+// (here, the COMMIT ending an unrelated, earlier transaction) regardless of
+// whether stderr, csvlog or jsonlog normalization produced that record
+// stream, since all three funnel into the same []logRecord parseLogStatements
+// consumes. A later, separate transaction's longer parameter must not rescue
+// an earlier request's unproven truncated value under any of them.
+func TestParsePostgRESTLogEvidenceAfterCommitCannotRescueEarlierRequest_AllFormats(t *testing.T) {
+	recs := []rawLogRecord{
+		{pid: "210", severity: "LOG", msg: "duration: 0.1 ms  execute 1: BEGIN"},
+		{pid: "210", severity: "LOG", msg: "duration: 0.1 ms  bind 2: " + pgrstOneParamWrapper, detail: "Parameters: $1 = 'abc...'"},
+		{pid: "210", severity: "LOG", msg: "duration: 0.1 ms  execute 2: " + pgrstOneParamWrapper, detail: "Parameters: $1 = 'abc...'"},
+		{pid: "210", severity: "LOG", msg: "duration: 0.1 ms  execute 3: COMMIT"},
+		{pid: "210", severity: "LOG", msg: "duration: 0.1 ms  bind 4: SELECT 1", detail: "Parameters: $1 = '" + strings.Repeat("z", 400) + "'"},
+		{pid: "210", severity: "LOG", msg: "duration: 0.1 ms  execute 4: SELECT 1"},
+	}
+	for name, render := range map[string]func([]rawLogRecord) string{
+		"stderr":  toStderrLog,
+		"csvlog":  toCSVLog,
+		"jsonlog": toJSONLog,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParsePostgRESTLog(render(recs)); err == nil || !strings.Contains(err.Error(), "log_parameter_max_length") {
+				t.Fatalf("%s: a later transaction's bind, logged right after the earlier one's COMMIT, must not rescue the earlier request's unproven truncated value, got %+v, %v", name, err == nil, err)
+			}
+		})
 	}
 }
 
