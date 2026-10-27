@@ -200,32 +200,68 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		Analyze: analyze, Buffers: analyze, GenericPlan: genericPlan, Settings: true,
 	})
 
-	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
-	defer cancel()
-
 	start := time.Now()
-	pool := r.activePool(queryCtx)
+	pool := r.activePool(ctx)
 	if pool == nil {
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
+	// queryCtx is assigned differently per branch below, and
+	// enrichExplainFindings after this block reuses whichever one ran.
+	var queryCtx context.Context
 	var planText string
 	if genericPlan {
 		// A parameterized EXPLAIN (GENERIC_PLAN) has to reach Postgres verbatim
 		// over the simple query protocol — pgx's normal path parses $1 as a bind
 		// placeholder and fails with "insufficient arguments" before it is sent.
-		text, gerr := r.runGenericPlanExplain(queryCtx, pool, explainSQL)
+		text, qctx, cancel, gerr := r.runGenericPlanExplain(ctx, pool, explainSQL)
+		queryCtx = qctx
+		if cancel != nil {
+			defer cancel()
+		}
 		if gerr != nil {
-			if errors.Is(gerr, context.DeadlineExceeded) || errors.Is(queryCtx.Err(), context.DeadlineExceeded) {
+			if errors.Is(gerr, context.DeadlineExceeded) || (queryCtx != nil && errors.Is(queryCtx.Err(), context.DeadlineExceeded)) {
 				return nil, fmt.Errorf("%s: explain exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
 			}
 			return nil, executionFailed(gerr)
 		}
 		planText = text
 	} else {
-		tx, err := pool.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+		// EXPLAIN — analyzed or not — can run the statement's actual code:
+		// PostgreSQL's planner evaluates an IMMUTABLE-declared function at its
+		// declared volatility's word, with no further check, and will
+		// constant-fold a call with all-constant arguments during planning
+		// alone, with no ANALYZE and no row ever fetched. Confirmed against a
+		// real PostgreSQL 16: a plain EXPLAIN of a query calling an
+		// IMMUTABLE-declared function that itself ran set_config left that
+		// setting on the session afterward, with ANALYZE never requested. So
+		// every EXPLAIN here, analyzed or not, discards its connection
+		// afterward — see discardConn's doc comment in runner.go — never the
+		// shared pooled path a "plain EXPLAIN only plans" assumption would
+		// otherwise justify.
+		conn, err := r.acquireConn(ctx, pool)
 		if err != nil {
-			return nil, apperrors.ErrQueryExecutionFailed
+			return nil, r.acquireFailed(err)
 		}
+		// The statement's own r.queryLimit clock starts only once the
+		// connection is in hand, not from when this call began — see
+		// acquireConn's doc comment for why the wait is bounded separately,
+		// and discardConn's doc comment for why reusing one window for both
+		// would fail the statement for a reason that has nothing to do with
+		// the statement.
+		var cancel context.CancelFunc
+		queryCtx, cancel = context.WithTimeout(ctx, r.queryLimit)
+		defer cancel()
+		tx, err := conn.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+		if err != nil {
+			discardConn(conn)
+			return nil, executionFailed(err)
+		}
+		// A closure, not discardConn(conn) directly: a plain call's argument
+		// is evaluated immediately at the defer statement, which would miss
+		// the conn = nil below. Reading the variable lazily means this
+		// no-ops on the success path once that has already discarded it
+		// itself, and still catches every early-return error path below.
+		defer func() { discardConn(conn) }()
 		defer func() { _ = tx.Rollback(queryCtx) }()
 		if err := r.applyReplay(queryCtx, tx); err != nil {
 			return nil, executionFailed(err)
@@ -240,6 +276,14 @@ func (r *Runner) Explain(ctx context.Context, sql string, analyze bool) (*Explai
 		if err := tx.Commit(queryCtx); err != nil {
 			return nil, apperrors.ErrQueryExecutionFailed
 		}
+		// The statement is done; discard this connection now, before
+		// enrichExplainFindings below acquires its own connections from this
+		// same pool. Holding this one through that call would needlessly
+		// serialize unrelated work behind a connection that is already done
+		// being used, and can self-deadlock a small pool: enrichment would
+		// wait for the one connection this call is still holding itself.
+		discardConn(conn)
+		conn = nil
 	}
 
 	elapsed := time.Since(start).Milliseconds()
@@ -287,35 +331,46 @@ func buildExplainSQL(innerSQL string, opts ExplainOptions) string {
 }
 
 // runGenericPlanExplain runs a parameterized EXPLAIN (GENERIC_PLAN) statement
-// over the simple query protocol so $1/$2/... are seen by the EXPLAIN parser as
-// literal SQL text rather than driver bind placeholders. Wrapped in a READ ONLY
-// transaction; GENERIC_PLAN never executes the query so this is cheap and safe.
-func (r *Runner) runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL string) (string, error) {
-	conn, err := pool.Acquire(ctx)
+// over the simple query protocol so $1/$2/... are seen by the EXPLAIN parser
+// as literal SQL text rather than driver bind placeholders. GENERIC_PLAN
+// never executes the query itself, but planning its all-constant
+// sub-expressions can still run an IMMUTABLE-declared function's body (see
+// the comment in Explain and discardConn's doc comment in runner.go), so
+// this connection is discarded afterward like every other EXPLAIN path —
+// never released back to the pool.
+//
+// Returns the context the batch ran under (bound by r.queryLimit from once
+// the connection was acquired, independent of how long acquiring itself
+// took) and its cancel func, which the caller must invoke — reused for
+// enrichExplainFindings's own pool work, which must not start until this
+// call's connection has already been discarded.
+func (r *Runner) runGenericPlanExplain(ctx context.Context, pool *pgxpool.Pool, explainSQL string) (planText string, queryCtx context.Context, cancel context.CancelFunc, err error) {
+	conn, err := r.acquireConn(ctx, pool)
 	if err != nil {
-		return "", err
+		return "", nil, nil, r.acquireFailed(err)
 	}
-	defer conn.Release()
+	defer discardConn(conn)
+	queryCtx, cancel = context.WithTimeout(ctx, r.queryLimit)
 
 	pgConn := conn.Conn().PgConn()
-	batch := "BEGIN TRANSACTION READ ONLY;\n" + r.replayBatchSQL(ctx) + explainSQL + ";\nROLLBACK;"
-	results, err := pgConn.Exec(ctx, batch).ReadAll()
-	if err != nil {
-		return "", err
+	batch := "BEGIN TRANSACTION READ ONLY;\n" + r.replayBatchSQL(queryCtx) + explainSQL + ";\nROLLBACK;"
+	results, berr := pgConn.Exec(queryCtx, batch).ReadAll()
+	if berr != nil {
+		return "", queryCtx, cancel, berr
 	}
 	for _, res := range results {
 		if res.Err != nil {
-			return "", res.Err
+			return "", queryCtx, cancel, res.Err
 		}
 	}
 	// The EXPLAIN is the last statement that returns rows; replay set_config
 	// calls before it return rows too.
 	for i := len(results) - 1; i >= 0; i-- {
 		if res := results[i]; len(res.Rows) > 0 && len(res.Rows[0]) > 0 {
-			return string(res.Rows[0][0]), nil
+			return string(res.Rows[0][0]), queryCtx, cancel, nil
 		}
 	}
-	return "", fmt.Errorf("%w: generic-plan explain returned no rows", apperrors.ErrQueryExecutionFailed)
+	return "", queryCtx, cancel, fmt.Errorf("%w: generic-plan explain returned no rows", apperrors.ErrQueryExecutionFailed)
 }
 
 var positionalParamRe = regexp.MustCompile(`\$\d`)
