@@ -451,7 +451,108 @@ func (s *InvestigationsService) Get(ctx context.Context, payload *investigations
 	inv.FixBaselineMeanMs = fixBaselineMean
 	inv.FixConfirmedMeanMs = fixConfirmedMean
 	inv.Candidates = s.loadInvestigationCandidates(ctx, inv.ID, inv.CandidateSQL)
+	applyInvestigationVisibility(ctx, &inv)
 	return &inv, nil
+}
+
+// applyInvestigationVisibility enforces role-gated access to raw investigation
+// evidence, mirroring applySQLVisibility for reports.go's ReportsService (the
+// parallel resource): a Viewer (or any role that is not admin or analyst)
+// must not see the SQL that produced an investigation, its captured bind
+// values, candidate SQL, or any literal value embedded in a plan finding, a
+// rolled-up diagnosis cause, or a captured PostgreSQL failure. Called from
+// Get, which List also calls once per row, so the two read paths can never
+// drift apart. Every write path that returns an *investigations.Investigation
+// (Create, CreateFromPostgrest, AddCandidate, RankCandidates, ...) does so by
+// calling Get, so this is the single place that needs to apply it.
+func applyInvestigationVisibility(ctx context.Context, inv *investigations.Investigation) {
+	if inv == nil {
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(auth.PrincipalFromContext(ctx).Role))
+	if auth.IsAdminRole(role) || role == auth.RoleAnalyst {
+		return
+	}
+	inv.SQL = ""
+	inv.Binds = nil
+	inv.CandidateSQL = nil
+	redactExplainEvidence(inv.Explain)
+	redactExplainEvidence(inv.CandidateExplain)
+	redactComparisonEvidence(inv.Comparison)
+	if inv.PostgrestRequest != nil {
+		pr := *inv.PostgrestRequest
+		pr.Failure = nil
+		inv.PostgrestRequest = &pr
+	}
+	for _, c := range inv.Candidates {
+		if c == nil {
+			continue
+		}
+		c.CandidateSQL = ""
+		c.Binds = nil
+		redactExplainEvidence(c.CandidateExplain)
+		redactComparisonEvidence(c.Comparison)
+	}
+}
+
+// redactExplainEvidence clears the explained SQL, the raw EXPLAIN plan JSON,
+// and strips any literal EXPLAIN filter clause embedded in a finding's
+// Message/Evidence or a rolled-up diagnosis cause's Evidence. Plan is
+// PostgreSQL's own raw EXPLAIN (FORMAT JSON) output, which carries the same
+// literal filter/join/sort text ("Filter", "Index Cond", "Hash Cond", ...) at
+// arbitrary depth, in a shape too open-ended to scrub field by field; the
+// query shape and literals it exposes are no less sensitive than SQL itself,
+// so it is withheld outright rather than partially redacted. See
+// story.RedactLiteralFilterText's doc comment for why a captured literal
+// cannot be trusted to mark its own safe boundary.
+func redactExplainEvidence(exp *investigations.ExplainQueryResult) {
+	if exp == nil {
+		return
+	}
+	exp.SQL = ""
+	exp.Plan = nil
+	for _, f := range exp.Findings {
+		if f == nil {
+			continue
+		}
+		f.Message = story.RedactLiteralFilterText(f.Message)
+		f.Evidence = story.RedactFilterEvidence(f.Evidence)
+	}
+	if exp.Diagnosis == nil {
+		return
+	}
+	redactCauseEvidence := func(c *investigations.PlanDiagnosisCause) {
+		if c == nil || len(c.Evidence) == 0 {
+			return
+		}
+		out := make([]string, len(c.Evidence))
+		for i, e := range c.Evidence {
+			out[i] = story.RedactLiteralFilterText(e)
+		}
+		c.Evidence = out
+	}
+	redactCauseEvidence(exp.Diagnosis.RootCause)
+	for _, c := range exp.Diagnosis.Causes {
+		redactCauseEvidence(c)
+	}
+}
+
+// redactComparisonEvidence applies redactExplainEvidence to both sides of a
+// comparison, and withholds a free-text equivalence note that can quote a
+// literal value from a failed comparison's error — only the Unverified
+// status's Notes carries that risk (see story.RedactSQL's doc comment on
+// EquivalenceValidation.Notes for why every other status is a fixed template
+// over counts/booleans and is left alone).
+func redactComparisonEvidence(cmp *investigations.ComparePlansResult) {
+	if cmp == nil {
+		return
+	}
+	redactExplainEvidence(cmp.Before)
+	redactExplainEvidence(cmp.After)
+	if cmp.ResultEquivalenceStatus != nil && *cmp.ResultEquivalenceStatus == "Unverified" && cmp.ResultEquivalenceNotes != nil {
+		note := "Equivalence check could not be verified; details withheld because SQL access is restricted for this view."
+		cmp.ResultEquivalenceNotes = &note
+	}
 }
 
 // fixTransitions is the allowed fix_status graph for *user-driven* transitions.

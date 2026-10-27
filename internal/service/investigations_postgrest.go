@@ -274,10 +274,17 @@ func pluralIsAre(n int) string {
 
 // modelPlanCache records whether PostgreSQL is likely to run the captured
 // statement with the custom plan the replay measured (this request's values)
-// or with its generic plan. A named prepared statement switches to the generic
-// plan after five executions on a connection when the generic plan's cost is
-// below the average custom plan's cost plus a planning allowance of
-// 1000 * cpu_operator_cost * (range table entries + 1).
+// or with its generic plan. A named prepared statement switches to the
+// generic plan after five executions on a connection when the generic plan's
+// cost is below the AVERAGE of those first five custom plans' costs plus a
+// planning allowance of 1000 * cpu_operator_cost * (range table entries + 1)
+// — an average this function cannot know from a single captured request, so
+// it draws a deterministic conclusion only where the captured
+// plan_cache_mode or prepared-statement-off shape makes one certain
+// regardless of other traffic on the connection (force_custom_plan,
+// force_generic_plan, no parameters, unnamed statement); plan_cache_mode=auto
+// (the default) reports this capture's own costs without predicting which
+// way the five-execution average will land.
 func (s *InvestigationsService) modelPlanCache(ctx context.Context, d investigationDraft, custom *queries.ExplainQueryResult) {
 	pr := d.PostgREST
 	note := func(format string, args ...any) {
@@ -314,16 +321,16 @@ func (s *InvestigationsService) modelPlanCache(ctx context.Context, d investigat
 		note("plan_cache_mode=force_generic_plan: production runs the generic plan (cost %.2f, %s the measured custom plan at %.2f). Review the generic plan before relying on the measured one.", g, shape, c)
 		return
 	}
-	rels, _ := queryrunner.CollectRelations(d.SQL)
-	fns, _ := queryrunner.CollectFunctions(d.SQL)
-	// Range table entries: the relations and functions read, plus PostgREST's
-	// CTE and subquery. An approximation, stated as one.
-	allowance := 1000 * 0.0025 * float64(len(rels)+len(fns)+3)
-	if g < c+allowance {
-		note("PostgreSQL is likely to switch this prepared statement to its generic plan after five executions on a connection: the generic plan's cost (%.2f, %s the custom plan) is below this request's custom-plan cost (%.2f) plus PostgreSQL's planning allowance (about %.1f at default costs). Production may run the generic plan; the measured plan is the custom one.", g, shape, c, allowance)
-		return
-	}
-	note("PostgreSQL is likely to keep planning this statement for each request's values: the generic plan's cost (%.2f) exceeds this request's custom-plan cost (%.2f) plus PostgreSQL's planning allowance (about %.1f at default costs). Judged from this request's values only.", g, c, allowance)
+	// plan_cache_mode=auto (the default, including when unset): PostgreSQL
+	// decides by comparing the generic plan's cost to the AVERAGE of the
+	// first five custom-plan costs on that connection — not any single
+	// execution's. This capture has only one bind's custom-plan cost, so a
+	// skewed earlier or later bind (unusually cheap or expensive relative to
+	// the rest of the workload) can pull that five-execution average either
+	// side of the generic plan's cost regardless of what this one capture
+	// cost. Production's actual choice cannot be determined from a single
+	// capture; only the two costs this capture can measure are reported.
+	note("plan_cache_mode=auto: PostgreSQL decides this by comparing the generic plan's cost to the AVERAGE of the first five custom-plan costs on that connection, not any single request's. This capture gives only this bind's custom-plan cost (%.2f) against the generic plan's cost (%.2f, %s it); whether production keeps the custom plan or switches to the generic one after five executions cannot be determined from one capture.", c, g, shape)
 }
 
 // planNodeTypes lists an EXPLAIN (FORMAT JSON) plan's node types in pre-order.

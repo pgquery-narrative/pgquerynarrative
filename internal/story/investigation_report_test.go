@@ -503,7 +503,7 @@ func TestRedactSQLScrubsLiteralFilterTextAndCapturedFailure(t *testing.T) {
 	// guidance clause after it) — exactly what a report persisted before
 	// that change still looks like. Once the filter marker is found, nothing
 	// after it can be trusted to be the safe guidance clause rather than
-	// more of the filter text (see redactLiteralFilterText), so the
+	// more of the filter text (see RedactLiteralFilterText), so the
 	// trailing clause is conservatively removed along with the secret, not
 	// preserved.
 	if strings.Contains(string(redactedJSON), "consider a btree index") {
@@ -511,7 +511,7 @@ func TestRedactSQLScrubsLiteralFilterTextAndCapturedFailure(t *testing.T) {
 	}
 }
 
-// Bug: redactLiteralFilterText found filterTextMarker, then treated the
+// Bug: RedactLiteralFilterText found filterTextMarker, then treated the
 // *next* " — " in the remainder as the start of planFindingMessage's own
 // trailing guidance clause, splicing everything from there onward back into
 // the "redacted" output. A SQL string literal can itself contain " — " —
@@ -594,7 +594,7 @@ func TestRedactSQLScrubsEmbeddedDelimiterInLiteralFilterText(t *testing.T) {
 // no longer embeds the filter clause into Message at all (see its comment in
 // queryrunner/explain.go), so the secret is not present even before
 // redaction runs — only in Evidence's "Filter=" entry, which a restricted
-// view drops outright (see redactFilterEvidence) rather than parsing.
+// view drops outright (see RedactFilterEvidence) rather than parsing.
 func TestNewFindingsNeverEmbedFilterTextInMessage(t *testing.T) {
 	const secret = "prefix — secret-filter-literal-d4e9"
 	findings := []PlanFindingInput{{

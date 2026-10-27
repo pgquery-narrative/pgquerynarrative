@@ -557,7 +557,7 @@ func normalizeEquivalenceStatus(s string) string {
 // whose Kind is executable SQL (an investigate_hint's plain-English pointer
 // is not SQL and is left alone); strips any literal filter clause from every
 // finding's Message and every candidate's WhyItMightHelp (see
-// redactLiteralFilterText), and drops any Evidence line that is entirely that
+// RedactLiteralFilterText), and drops any Evidence line that is entirely that
 // literal filter text; drops the PostgreSQLEvidence lines that state captured
 // bind values or a captured production failure verbatim (see
 // redactSensitiveEvidenceLines); and clears Provenance.PostgREST's captured
@@ -572,7 +572,7 @@ func RedactSQL(report InvestigationReport) InvestigationReport {
 			if c.Kind == CandidateKindSQLRewrite || c.Kind == CandidateKindIndexDDL {
 				c.ProposedChange = ""
 			}
-			c.WhyItMightHelp = redactLiteralFilterText(c.WhyItMightHelp)
+			c.WhyItMightHelp = RedactLiteralFilterText(c.WhyItMightHelp)
 			candidates[i] = c
 		}
 		report.CandidateImprovements = candidates
@@ -580,8 +580,8 @@ func RedactSQL(report InvestigationReport) InvestigationReport {
 	if len(report.PlanFindings) > 0 {
 		findings := make([]InvestigationFinding, len(report.PlanFindings))
 		for i, f := range report.PlanFindings {
-			f.Message = redactLiteralFilterText(f.Message)
-			f.Evidence = redactFilterEvidence(f.Evidence)
+			f.Message = RedactLiteralFilterText(f.Message)
+			f.Evidence = RedactFilterEvidence(f.Evidence)
 			findings[i] = f
 		}
 		report.PlanFindings = findings
@@ -631,7 +631,7 @@ func RedactSQLFromNarrativeTakeaways(takeaways []string) []string {
 	}
 	out := make([]string, len(takeaways))
 	for i, t := range takeaways {
-		out[i] = redactLiteralFilterText(t)
+		out[i] = RedactLiteralFilterText(t)
 	}
 	return out
 }
@@ -645,13 +645,13 @@ func RedactSQLFromNarrativeTakeaways(takeaways []string) []string {
 // next separator" logic treat part of the secret as safe trailing text; a
 // value a WHERE predicate can contain is not a safe place to look for a
 // trusted boundary). The marker is kept only to recognize a message stored
-// before that change — see redactLiteralFilterText. Matching on this marker
+// before that change — see RedactLiteralFilterText. Matching on this marker
 // — a template this package controls, not any specific captured value — lets
 // redaction remove whatever filter text follows it regardless of content,
 // including a literal that never appeared in any captured bind list.
 const filterTextMarker = " — filter: "
 
-// redactLiteralFilterText removes a historical, pre-structural-separation
+// RedactLiteralFilterText removes a historical, pre-structural-separation
 // message's literal EXPLAIN filter clause: everything from filterTextMarker
 // to the end of the string, including any trailing guidance clause that
 // followed it. It deliberately does not try to find where the filter clause
@@ -662,7 +662,7 @@ const filterTextMarker = " — filter: "
 // after planFindingMessage stopped embedding the filter clause at all (see
 // its own comment) — this function exists only so a message stored before
 // that change still redacts safely.
-func redactLiteralFilterText(s string) string {
+func RedactLiteralFilterText(s string) string {
 	idx := strings.Index(s, filterTextMarker)
 	if idx < 0 {
 		return s
@@ -670,11 +670,11 @@ func redactLiteralFilterText(s string) string {
 	return s[:idx] + " — filter withheld"
 }
 
-// redactFilterEvidence drops any Evidence entry that is entirely the literal
+// RedactFilterEvidence drops any Evidence entry that is entirely the literal
 // EXPLAIN filter text (see seqScanEvidence's "Filter="+filter in
 // queryrunner/plan_analysis.go) — unlike Message, an Evidence line carries no
 // safe prefix worth preserving once the filter is removed from it.
-func redactFilterEvidence(evidence []string) []string {
+func RedactFilterEvidence(evidence []string) []string {
 	if len(evidence) == 0 {
 		return evidence
 	}
@@ -707,7 +707,7 @@ func redactSensitiveEvidenceLines(lines []string) []string {
 		if strings.HasPrefix(l, "The request statement failed in production: ") {
 			continue
 		}
-		out = append(out, redactLiteralFilterText(l))
+		out = append(out, RedactLiteralFilterText(l))
 	}
 	return out
 }

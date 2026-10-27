@@ -175,6 +175,53 @@ func validationMessage(err error) string {
 	return ""
 }
 
+// actuallyGenericAfterPriorBinds prepares sql on a fresh connection, executes
+// it five times with priorArgs — standing in for a connection's normal prior
+// traffic — then returns whether the SIXTH execution, using capturedArgs (the
+// value under investigation), actually runs with a generic plan.
+// PostgreSQL's generic-vs-custom decision is made from the average cost of
+// the first five executions' own custom plans alone, before it ever looks at
+// the sixth call's parameters, so a cheap sixth value can still inherit the
+// generic plan if the first five were expensive enough to make the generic
+// plan look cheap by comparison (see modelPlanCache's doc comment in
+// investigations_postgrest.go for why this means the production verdict
+// cannot be judged from one capture's own cost).
+func actuallyGenericAfterPriorBinds(t *testing.T, ctx context.Context, admin *pgxpool.Pool, sql string, priorArgs, capturedArgs []string) bool {
+	t.Helper()
+	conn, err := admin.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	quote := func(args []string) string {
+		q := make([]string, len(args))
+		for i, a := range args {
+			q[i] = "'" + strings.ReplaceAll(a, "'", "''") + "'"
+		}
+		return strings.Join(q, ", ")
+	}
+	if _, err := conn.Exec(ctx, "PREPARE pqn_skew AS "+sql); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = conn.Exec(ctx, "DEALLOCATE pqn_skew") }()
+	for i := 0; i < 5; i++ {
+		if _, err := conn.Exec(ctx, "EXECUTE pqn_skew("+quote(priorArgs)+")"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var plan string
+	rows, err := conn.Query(ctx, "EXPLAIN (VERBOSE) EXECUTE pqn_skew("+quote(capturedArgs)+")")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var line string
+		_ = rows.Scan(&line)
+		plan += line + "\n"
+	}
+	return strings.Contains(plan, "$1")
+}
+
 // TestPostgRESTReplayContext verifies, against a real PostgREST and PostgreSQL,
 // that replays run in the captured request's context as far as policy allows,
 // and that what they cannot reproduce is stated.
@@ -369,28 +416,89 @@ func TestPostgRESTReplayContext(t *testing.T) {
 		}
 		return strings.Contains(plan, "$1")
 	}
-	t.Run("generic plan model agrees with PostgreSQL", func(t *testing.T) {
-		for _, tc := range []struct {
-			path          string
-			expectGeneric bool
-		}{
-			{"/events?select=id&kind=eq.rare&order=id&limit=5", false},
-			{"/events?select=id,kind&id=eq.5000", true},
+	// Bug: for plan_cache_mode=auto, PostgreSQL decides generic-vs-custom by
+	// comparing the generic plan's cost to the AVERAGE of the first five
+	// custom-plan costs on that connection — not any single capture's. The
+	// model used to compare the generic cost against only this capture's own
+	// custom-plan cost and assert a deterministic "likely to switch"/"likely
+	// to keep planning" verdict from it, which is only ever correct by
+	// accident (it happens to hold below only because actuallyGeneric also
+	// replays the identical captured value six times in a row, so the
+	// "average of five" coincides with "this one value's own cost" — real
+	// production traffic is not six repeats of one value; see
+	// TestPostgRESTPlanCacheAutoModeUnknownFromOneCapture below for the
+	// skewed-prior-binds case where that coincidence does not hold and the
+	// old deterministic claim was wrong).
+	t.Run("auto mode never claims a deterministic plan-cache verdict from one capture", func(t *testing.T) {
+		for _, path := range []string{
+			"/events?select=id&kind=eq.rare&order=id&limit=5",
+			"/events?select=id,kind&id=eq.5000",
 		} {
-			_, _, excerpt := pgrstCall(t, ctx, stack, tc.path, "", endsTransaction)
+			_, _, excerpt := pgrstCall(t, ctx, stack, path, "", endsTransaction)
 			inv, err := apiOnly.CreateFromPostgrest(reqCtx, &investigations.CreateFromPostgRESTPayload{PostgresLog: excerpt})
 			if err != nil {
 				t.Fatal(err)
 			}
 			pr := inv.PostgrestRequest
 			if pr.PreparedStatement == nil || !*pr.PreparedStatement || pr.GenericPlanTotalCost == nil || pr.PlanCacheNote == nil {
-				t.Fatalf("%s: plan cache not modelled: %+v", tc.path, pr)
+				t.Fatalf("%s: plan cache not modelled: %+v", path, pr)
 			}
-			predictsGeneric := strings.Contains(*pr.PlanCacheNote, "likely to switch")
-			t.Logf("%s: custom %.2f, generic %.2f, PostgreSQL chose generic=%v: %s", tc.path, inv.Explain.TotalCost, *pr.GenericPlanTotalCost, actuallyGeneric(t, inv), *pr.PlanCacheNote)
-			if predictsGeneric != tc.expectGeneric || actuallyGeneric(t, inv) != tc.expectGeneric {
-				t.Fatalf("%s: model predicts generic=%v, PostgreSQL generic=%v, want %v", tc.path, predictsGeneric, actuallyGeneric(t, inv), tc.expectGeneric)
+			note := *pr.PlanCacheNote
+			t.Logf("%s: custom %.2f, generic %.2f, PostgreSQL (six identical repeats) chose generic=%v: %s", path, inv.Explain.TotalCost, *pr.GenericPlanTotalCost, actuallyGeneric(t, inv), note)
+			if !strings.Contains(note, "cannot be determined from one capture") {
+				t.Fatalf("%s: note must not claim a deterministic plan-cache verdict from a single capture: %q", path, note)
 			}
+			if strings.Contains(note, "likely to switch") || strings.Contains(note, "likely to keep planning") {
+				t.Fatalf("%s: note still makes the old deterministic claim: %q", path, note)
+			}
+		}
+	})
+
+	// Regression for the bug above: a real PostgreSQL probe with five prior
+	// "common" binds (a seq scan, since "common" matches ~99.9% of
+	// api.events) followed by the captured "rare" bind (an index scan,
+	// api.events_kind, since "rare" matches ~0.1%). The rare bind's own
+	// custom-plan cost is far cheaper than the generic plan's — exactly what
+	// used to make the old per-capture model claim "likely to keep planning
+	// this statement for each request's values". But PostgreSQL's real
+	// decision is made from the average of the five *common* executions
+	// (expensive), not this one capture, so it switches the sixth (captured)
+	// execution to the generic plan regardless of how cheap that one value
+	// would have been under its own custom plan.
+	t.Run("TestPostgRESTPlanCacheAutoModeUnknownFromOneCapture", func(t *testing.T) {
+		// No ORDER BY/LIMIT here (unlike the subtest above): with them, an
+		// index scan ordered by id with an early stop can make both "common"
+		// and "rare" equally cheap, masking the cost skew this test depends
+		// on. Without them, the plan is driven purely by kind's selectivity.
+		_, _, excerpt := pgrstCall(t, ctx, stack, "/events?select=id&kind=eq.rare", "", endsTransaction)
+		inv, err := apiOnly.CreateFromPostgrest(reqCtx, &investigations.CreateFromPostgRESTPayload{PostgresLog: excerpt})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pr := inv.PostgrestRequest
+		if pr.GenericPlanTotalCost == nil || pr.PlanCacheNote == nil {
+			t.Fatalf("plan cache not modelled: %+v", pr)
+		}
+		g, c := *pr.GenericPlanTotalCost, inv.Explain.TotalCost
+		if g <= c {
+			t.Fatalf("fixture setup is broken: want the generic plan (%.2f) costlier than this capture's own rare-bind custom plan (%.2f), so the old per-capture model would have claimed \"keep custom\"", g, c)
+		}
+		if strings.Contains(*pr.PlanCacheNote, "likely to keep planning") {
+			t.Fatalf("note still makes the old deterministic claim that would have been wrong here: %q", *pr.PlanCacheNote)
+		}
+
+		// inv.Binds may carry more than the "kind" filter value (e.g. the
+		// captured LIMIT, typed bigint) — only the bind equal to "rare" is
+		// the one under test, so only it is swapped for "common"; every
+		// other bind keeps its real captured value and type.
+		commonArgs := append([]string(nil), inv.Binds...)
+		for i, b := range commonArgs {
+			if b == "rare" {
+				commonArgs[i] = "common"
+			}
+		}
+		if got := actuallyGenericAfterPriorBinds(t, ctx, admin, inv.SQL, commonArgs, inv.Binds); !got {
+			t.Fatal("after five prior 'common' executions, PostgreSQL's sixth (captured 'rare') execution should run the generic plan — the old model's per-capture claim would have been wrong")
 		}
 	})
 
