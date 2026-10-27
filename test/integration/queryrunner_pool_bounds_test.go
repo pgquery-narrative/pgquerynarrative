@@ -136,4 +136,36 @@ func TestRunPoolAndTimeoutBounds(t *testing.T) {
 			t.Fatalf("recovery Run returned %d rows, want 1", result.RowCount)
 		}
 	})
+
+	// RunSnapshot's setup (BeginTx, replay) and teardown (Commit/Rollback)
+	// steps each get their own bounded context now, not the caller's bare
+	// one — a review flagged that they previously did not, which would have
+	// let a deadline-less caller block forever on any of those steps if the
+	// server stalled (only the per-query loop was bounded). This uses
+	// context.Background() specifically — not a context with its own
+	// generous deadline — to prove the "no deadline at all" case: the one
+	// scenario a caller-supplied timeout cannot mask.
+	t.Run("RunSnapshot with no caller deadline still bounds pool exhaustion", func(t *testing.T) {
+		held, err := pool.Acquire(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		release := time.AfterFunc(2*queryLimit, func() { held.Release() })
+		defer func() {
+			if release.Stop() {
+				held.Release()
+			}
+		}()
+
+		start := time.Now()
+		results := runner.RunSnapshot(context.Background(), []queryrunner.SnapshotQuery{{SQL: "SELECT 1", Limit: 10}})
+		elapsed := time.Since(start)
+
+		if len(results) != 1 || results[0].Err == nil {
+			t.Fatalf("expected an error when the pool has no free connection, got %+v", results)
+		}
+		if elapsed > queryLimit+2*time.Second {
+			t.Fatalf("RunSnapshot(context.Background()) took %v to fail — acquisition did not respect its own ~%v bound even with no caller deadline", elapsed, queryLimit)
+		}
+	})
 }
