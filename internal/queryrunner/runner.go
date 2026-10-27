@@ -422,29 +422,46 @@ func (r *Runner) RunSnapshot(ctx context.Context, queries []SnapshotQuery) []Sna
 	}
 	// Every real execution discards its connection afterward instead of
 	// returning it to the pool — see discardConn's doc comment for why this
-	// is not limited to EXPLAIN ANALYZE. Only the initial acquire needs its
-	// own bound (acquireConn's doc comment): BeginTx/Commit here keep using
-	// the bare ctx as before, since each query below already gets its own
-	// fresh r.queryLimit window independent of how long acquiring took.
+	// is not limited to EXPLAIN ANALYZE.
 	conn, err := r.acquireConn(ctx, pool)
 	if err != nil {
 		return fail(r.acquireFailed(err))
 	}
 	defer discardConn(conn)
 
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	// BeginTx, replay, each query, and Commit/Rollback each get their own
+	// fresh r.queryLimit window — not one shared across all of them — so a
+	// caller whose own ctx carries no deadline can never be blocked forever
+	// by any single step (acquireConn's doc comment), and no step's
+	// duration eats into another's budget the way a single shared window
+	// would (see discardConn's doc comment's connection-lifetime history for
+	// why that shape of bug matters here).
+	bounded := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(ctx, r.queryLimit)
+	}
+
+	beginCtx, cancel := bounded()
+	tx, err := conn.BeginTx(beginCtx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	cancel()
 	if err != nil {
 		return fail(executionFailed(err))
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := r.applyReplay(ctx, tx); err != nil {
+	defer func() {
+		rbCtx, rbCancel := bounded()
+		_ = tx.Rollback(rbCtx)
+		rbCancel()
+	}()
+	replayCtx, replayCancel := bounded()
+	err = r.applyReplay(replayCtx, tx)
+	replayCancel()
+	if err != nil {
 		return fail(executionFailed(err))
 	}
 
 	for i, q := range queries {
-		queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
+		queryCtx, qcancel := bounded()
 		out[i].Result, out[i].Err = r.runRows(queryCtx, tx, q.SQL, q.Limit)
-		cancel()
+		qcancel()
 		if out[i].Err != nil {
 			wrapped := fmt.Errorf("not run: an earlier query in the same snapshot failed: %w", out[i].Err)
 			for j := i + 1; j < len(out); j++ {
@@ -453,7 +470,10 @@ func (r *Runner) RunSnapshot(ctx context.Context, queries []SnapshotQuery) []Sna
 			return out
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
+	commitCtx, commitCancel := bounded()
+	err = tx.Commit(commitCtx)
+	commitCancel()
+	if err != nil {
 		// The transaction was read-only: every row above was already read
 		// under the snapshot it held, and a failed COMMIT does not change
 		// what was read. Nothing left to roll back into inconsistency.
