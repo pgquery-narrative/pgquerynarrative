@@ -171,12 +171,18 @@ schema can resolve differently), request headers, and the endpoint's response
 body. Reports never claim endpoint equivalence.
 
 **Plan cache.** For a named prepared statement, the investigation also plans the
-parameterized statement with `EXPLAIN (GENERIC_PLAN)` (PostgreSQL 16+) and
-states whether PostgreSQL is likely to switch to that generic plan after five
-executions, or to keep planning per request. Unnamed statements (PostgREST
-`db-prepared-statements=false`) are planned per request. HTTP duration,
-PostgREST transaction time, the logged execute-phase duration, and replay plan
-estimates/timings remain separate.
+parameterized statement with `EXPLAIN (GENERIC_PLAN)` (PostgreSQL 16+) and reports
+its cost alongside the measured custom-plan cost. Under `plan_cache_mode=auto` (the
+default) this is reported as an estimate only, not a prediction: PostgreSQL decides
+whether to switch to the generic plan after five executions by comparing it against
+the *average* cost of those first five executions' own custom plans on that
+connection, which a single captured request cannot know. The note says so explicitly
+rather than guessing. Deterministic statements are still made where the captured
+mode supports one: `plan_cache_mode=force_custom_plan`/`force_generic_plan`, a
+statement with no parameters, and an unnamed statement (PostgREST
+`db-prepared-statements=false`, planned per request) all pin the outcome without
+needing to average anything. HTTP duration, PostgREST transaction time, the logged
+execute-phase duration, and replay plan estimates/timings remain separate.
 
 `make test-postgrest` verifies the workflow with disposable real servers
 (PostgREST 16.4 on PostgreSQL 16 and 18, plus PostgREST 13.0 and 12.2) and
