@@ -6,9 +6,11 @@ export const site = {
   tagline: "Investigate slow PostgreSQL queries with evidence.",
   description:
     "PgQueryNarrative reads a PostgreSQL execution plan, proposes a bounded rewrite or index from the query's own parse tree, compares before and after, verifies the results match, and writes the evidence into a report.",
-  // Not finalized. Change this once the domain is live; everything else
-  // (canonical URLs, OG images, sitemap, RSS) derives from it.
-  url: "https://pgquerynarrative.com",
+  // pgquerynarrative.com does not currently resolve (no DNS records).
+  // The Vercel-assigned domain is the live production origin; everything
+  // else (canonical URLs, OG images, sitemap, RSS) derives from it. Change
+  // this back once the custom domain's DNS is actually configured.
+  url: "https://pgquerynarrative.vercel.app",
 
   githubUrl: "https://github.com/pgquery-narrative/pgquerynarrative",
   issuesUrl: "https://github.com/pgquery-narrative/pgquerynarrative/issues",
