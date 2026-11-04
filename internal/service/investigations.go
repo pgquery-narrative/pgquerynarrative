@@ -565,6 +565,21 @@ func (s *InvestigationsService) UpdateFix(ctx context.Context, payload *investig
 	return s.Get(ctx, &investigations.GetPayload{ID: payload.ID})
 }
 
+// columnTypeResolverFor returns a queryrunner.ColumnTypeResolver backed by
+// the runner for connectionID, so a col::text/col::numeric cast can be
+// dropped when the catalog proves it a no-op (see
+// SuggestRewritesForInvestigationWithTypes). Returns nil — "no catalog
+// access, decline every cast" — whenever that connection's runner cannot be
+// resolved; this must never fail the caller's own request just because
+// catalog-aware cast rewriting could not be attempted.
+func (s *InvestigationsService) columnTypeResolverFor(connectionID string) queryrunner.ColumnTypeResolver {
+	runner, err := s.queriesSvc.runnerFor(&connectionID)
+	if err != nil || runner == nil {
+		return nil
+	}
+	return runner.ResolveColumnType
+}
+
 // SuggestRewrite proposes AST-based candidate rewrites from the investigation
 // SQL and stored plan findings. Does not require demo scenarios or a pasted rewrite.
 func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *investigations.SuggestRewritePayload) (*investigations.RewriteSuggestionList, error) {
@@ -574,7 +589,7 @@ func (s *InvestigationsService) SuggestRewrite(ctx context.Context, payload *inv
 	}
 
 	findings := queryrunnerFindingsFromInvestigation(inv.Explain)
-	cands := queryrunner.SuggestRewritesForInvestigation(inv.SQL, findings, inv.PostgrestRequest != nil)
+	cands := queryrunner.SuggestRewritesForInvestigationWithTypes(ctx, inv.SQL, findings, inv.PostgrestRequest != nil, s.columnTypeResolverFor(inv.ConnectionID))
 	out := &investigations.RewriteSuggestionList{
 		Candidates: make([]*investigations.RewriteCandidate, 0, len(cands)),
 	}
@@ -800,7 +815,7 @@ func (s *InvestigationsService) RankCandidates(ctx context.Context, payload *inv
 	wrapper := inv.PostgrestRequest != nil
 	var scored []queryrunner.ScoredCandidate
 	skippedCandidates := 0
-	for _, rewrite := range queryrunner.SuggestRewritesForInvestigation(inv.SQL, findings, wrapper) {
+	for _, rewrite := range queryrunner.SuggestRewritesForInvestigationWithTypes(ctx, inv.SQL, findings, wrapper, s.columnTypeResolverFor(inv.ConnectionID)) {
 		rewriteSQL, sqlErr := planSQL(rewrite.SQL, inv.Binds)
 		if sqlErr != nil {
 			skippedCandidates++
