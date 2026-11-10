@@ -140,15 +140,17 @@ At that point, an executed plan can use it. The measured plan contains a bitmap 
 
 To collect timings, the lab runs one warm-up and five measured executions before building the index, then repeats that sequence afterward. Every measurement uses `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF)`; disabling per-node timing still leaves the statement's execution time in the output.
 
+These are server execution times reported by `EXPLAIN ANALYZE`. They exclude parsing, rewriting, planning, result transfer, and application processing, and include EXPLAIN's execution instrumentation. PostgreSQL documents these [measurement boundaries and caveats](https://www.postgresql.org/docs/16/using-explain.html#USING-EXPLAIN-CAVEATS).
+
 | Measurement | Before the real index | After the real index |
 |---|---:|---:|
-| Execution time, median of five runs | 25.137 ms | 0.044 ms |
-| Execution time, observed range | 24.418–30.494 ms | 0.030–0.078 ms |
+| Server execution time, median of five runs | 25.137 ms | 0.044 ms |
+| Server execution time, observed range | 24.418–30.494 ms | 0.030–0.078 ms |
 | Shared buffer hits per measured run | 10,639 | 34 |
 | Shared buffer reads per measured run | 0 | 0 |
 | Rows returned | 31 | 31 |
 
-The buffer counts make the result easier to explain than the tiny elapsed times do. The executed query now reaches the matching rows through three index blocks and 31 heap blocks. Previously, it inspected the whole table and rejected 499,969 rows.
+The buffer counts make the result easier to explain than the tiny elapsed times do. The measured runs recorded 34 shared-buffer hits, including three hits from the bitmap index scan. The bitmap heap scan visited 31 exact heap blocks. Buffer-hit counts describe accesses; repeated accesses to the same block can count more than once. Previously, the sequential scan inspected the whole table and rejected 499,969 rows.
 
 This is a small, warm-cache experiment with uniform data and no concurrent workload. The before and after runs were collected sequentially. The timing range describes those executions; it cannot predict your endpoint's latency. Even the real index's estimated cost, 124.34, differs slightly from HypoPG's 123.97.
 
@@ -156,9 +158,9 @@ For an application, repeat the experiment with the parameter values that matter.
 
 There is also a cost outside this SELECT. PostgreSQL must [maintain a real index as the table changes](https://www.postgresql.org/docs/16/indexes-intro.html), and this read experiment measures none of that write overhead. It also does not measure production build time or contention. A concurrent build lets normal writes continue, but still performs work and has its own constraints; PostgreSQL documents those under [Building Indexes Concurrently](https://www.postgresql.org/docs/16/sql-createindex.html#SQL-CREATEINDEX-CONCURRENTLY).
 
-This is the distinction PgQueryNarrative preserves in **Rank candidates**. Index advice attached to plan findings supplies candidate DDL. When HypoPG is installed and the analytical role has the required access, the tool projects each candidate's cost through PostgreSQL's planner. The [projection implementation](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/queryrunner/hypopg.go) holds one connection for the hypothetical index and its `EXPLAIN`, then clears the session state.
+This is the distinction PgQueryNarrative preserves in **Rank candidates**. Index advice attached to plan findings supplies candidate DDL. When HypoPG is installed and the analytical role has the required access, the tool projects each candidate's cost through PostgreSQL's planner. The [projection implementation reviewed for this post](https://github.com/pgquery-narrative/pgquerynarrative/blob/7609a55da6e63cd0c2dfe666aa55ff0cc94aa9f4/internal/queryrunner/hypopg.go) holds one connection for the hypothetical index and its `EXPLAIN`, then clears the session state.
 
-If HypoPG is unavailable or the projection fails, the current fallback assumes a cost of baseline × 0.3. That fixed multiplier contains no new planner evidence. It is labeled `heuristic` and kept **review-only**; the [ranking code](https://github.com/pgquery-narrative/pgquerynarrative/blob/main/internal/queryrunner/candidates.go) excludes it from numeric ranking. A HypoPG candidate receives a rank only when its projected plan improves on the baseline.
+For a recognized `CREATE INDEX` candidate with a positive baseline cost, a missing or failed HypoPG projection falls back to baseline × 0.3. The heuristic is skipped if the statement is not recognized as `CREATE INDEX` or the baseline cost is zero or negative. That fixed multiplier contains no new planner evidence. It is labeled `heuristic` and kept **review-only**; the [ranking code reviewed for this post](https://github.com/pgquery-narrative/pgquerynarrative/blob/7609a55da6e63cd0c2dfe666aa55ff0cc94aa9f4/internal/queryrunner/candidates.go) excludes it from numeric ranking. A HypoPG candidate receives a rank only when its projected plan improves on the baseline.
 
 The two index definitions in this article were selected for the lab. They demonstrate the projection mechanism, rather than a claim that PgQueryNarrative searches every possible index definition. The tool proposes bounded candidates for a person to inspect. Creating the real index remains a separate, manual step. If you also change the SQL, [compare its results with the original](/blog/from-explain-to-verified-rewrite); candidate ranking does not run that check.
 
