@@ -181,15 +181,85 @@ func (r *Runner) queryReadOnlyRows(ctx context.Context, pool *pgxpool.Pool, sql 
 	return rows, tx, nil
 }
 
-func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error) {
-	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
-	defer cancel()
+// discardConn permanently removes conn from its pool and closes the physical
+// connection, instead of returning it for another caller to reuse.
+//
+// It is used after EXPLAIN ANALYZE, which actually executes the statement's
+// body — including any function it calls — rather than merely planning it.
+// The schema/function allowlist in Validator governs which functions a query
+// may call, but not what those functions' bodies do: a STABLE SECURITY
+// DEFINER function this connection is granted to call can itself run
+// set_config(..., false), which sets session state that outlives the
+// surrounding read-only transaction's COMMIT or ROLLBACK. If that connection
+// were returned to the pool, the next caller to acquire it — under its own
+// identity, possibly with a different impersonated role — would inherit
+// that leftover state, including any claims an RLS policy reads from it.
+//
+// Resetting the session with DISCARD ALL instead of discarding the
+// connection does not close this, for two independent reasons, confirmed
+// directly against a real PostgreSQL 16: (1) DISCARD ALL's RESET ALL does
+// not return a custom placeholder GUC — one with no predefined default,
+// such as request.jwt.claims — to a genuinely unset state; it leaves it as
+// an empty string, which then makes the very common RLS idiom
+// current_setting(name, true)::json throw "invalid input syntax for type
+// json" instead of evaluating to NULL, breaking every later query on that
+// connection rather than merely failing to isolate one; and (2) pgx caches
+// prepared statements client-side per connection, and DISCARD ALL
+// deallocates them server-side without updating that cache, so a
+// reset-and-reused connection would also fail the next query that hits its
+// own stale cache entry. A fresh connection has none of these problems.
+func discardConn(conn *pgxpool.Conn) {
+	if conn == nil {
+		return
+	}
+	raw := conn.Hijack()
+	_ = raw.Close(context.Background())
+}
 
-	pool := r.activePool(queryCtx)
+// acquireConn acquires a connection from pool, bounding the wait by
+// r.queryLimit from when this call starts — independent of whatever
+// deadline (if any) ctx itself carries, including none at all — so pool
+// exhaustion can never block a caller with no deadline of its own forever.
+func (r *Runner) acquireConn(ctx context.Context, pool *pgxpool.Pool) (*pgxpool.Conn, error) {
+	acquireCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
+	defer cancel()
+	return pool.Acquire(acquireCtx)
+}
+
+// acquireFailed classifies an acquireConn error the same way the rest of
+// this package distinguishes a timeout from any other execution failure
+// (see executionFailed): hitting acquireConn's own bound is a timeout in
+// exactly the sense callers already check apperrors.ErrQueryTimeout for, not
+// a statement failure.
+func (r *Runner) acquireFailed(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%s: acquiring a connection exceeded timeout of %v", apperrors.ErrQueryTimeout, r.queryLimit)
+	}
+	return apperrors.ErrQueryExecutionFailed
+}
+
+func (r *Runner) Run(ctx context.Context, sql string, limit int) (*Result, error) {
+	pool := r.activePool(ctx)
 	if pool == nil {
 		return nil, fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed)
 	}
-	tx, err := pool.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	// Every real execution discards its connection afterward instead of
+	// returning it to the pool — see discardConn's doc comment for why this
+	// is not limited to EXPLAIN ANALYZE.
+	conn, err := r.acquireConn(ctx, pool)
+	if err != nil {
+		return nil, r.acquireFailed(err)
+	}
+	defer discardConn(conn)
+
+	// A fresh r.queryLimit window starting now, not reduced by how long
+	// acquiring took — see acquireConn's doc comment for why the wait is
+	// bounded separately, and discardConn's doc comment's history note for
+	// why reusing one window for both would fail the statement for a reason
+	// that has nothing to do with the statement.
+	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
+	defer cancel()
+	tx, err := conn.BeginTx(queryCtx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, executionFailed(err)
 	}
@@ -350,19 +420,48 @@ func (r *Runner) RunSnapshot(ctx context.Context, queries []SnapshotQuery) []Sna
 	if pool == nil {
 		return fail(fmt.Errorf("%w: read-only pool unavailable", apperrors.ErrQueryExecutionFailed))
 	}
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	// Every real execution discards its connection afterward instead of
+	// returning it to the pool — see discardConn's doc comment for why this
+	// is not limited to EXPLAIN ANALYZE.
+	conn, err := r.acquireConn(ctx, pool)
+	if err != nil {
+		return fail(r.acquireFailed(err))
+	}
+	defer discardConn(conn)
+
+	// BeginTx, replay, each query, and Commit/Rollback each get their own
+	// fresh r.queryLimit window — not one shared across all of them — so a
+	// caller whose own ctx carries no deadline can never be blocked forever
+	// by any single step (acquireConn's doc comment), and no step's
+	// duration eats into another's budget the way a single shared window
+	// would (see discardConn's doc comment's connection-lifetime history for
+	// why that shape of bug matters here).
+	bounded := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(ctx, r.queryLimit)
+	}
+
+	beginCtx, cancel := bounded()
+	tx, err := conn.BeginTx(beginCtx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	cancel()
 	if err != nil {
 		return fail(executionFailed(err))
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := r.applyReplay(ctx, tx); err != nil {
+	defer func() {
+		rbCtx, rbCancel := bounded()
+		_ = tx.Rollback(rbCtx)
+		rbCancel()
+	}()
+	replayCtx, replayCancel := bounded()
+	err = r.applyReplay(replayCtx, tx)
+	replayCancel()
+	if err != nil {
 		return fail(executionFailed(err))
 	}
 
 	for i, q := range queries {
-		queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
+		queryCtx, qcancel := bounded()
 		out[i].Result, out[i].Err = r.runRows(queryCtx, tx, q.SQL, q.Limit)
-		cancel()
+		qcancel()
 		if out[i].Err != nil {
 			wrapped := fmt.Errorf("not run: an earlier query in the same snapshot failed: %w", out[i].Err)
 			for j := i + 1; j < len(out); j++ {
@@ -371,7 +470,10 @@ func (r *Runner) RunSnapshot(ctx context.Context, queries []SnapshotQuery) []Sna
 			return out
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
+	commitCtx, commitCancel := bounded()
+	err = tx.Commit(commitCtx)
+	commitCancel()
+	if err != nil {
 		// The transaction was read-only: every row above was already read
 		// under the snapshot it held, and a failed COMMIT does not change
 		// what was read. Nothing left to roll back into inconsistency.
