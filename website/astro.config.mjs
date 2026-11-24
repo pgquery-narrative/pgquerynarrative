@@ -4,7 +4,7 @@ import sitemap from "@astrojs/sitemap";
 import vercel from "@astrojs/vercel";
 
 export default defineConfig({
-  site: "https://pgquerynarrative.com",
+  site: "https://pgquerynarrative.vercel.app",
   output: "static",
   adapter: vercel(),
   integrations: [mdx(), sitemap()],

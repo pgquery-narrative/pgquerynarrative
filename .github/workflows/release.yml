@@ -91,7 +91,7 @@ jobs:
             -o pgquerynarrative-migrate-${{ matrix.goos }}-${{ matrix.goarch }} \
             github.com/golang-migrate/migrate/v4/cmd/migrate
       - name: Upload binaries
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -125,7 +125,7 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22'
           cache: npm
@@ -253,7 +253,7 @@ jobs:
           echo "✅ Packaged server is healthy"
           kill "$SERVER_PID" 2>/dev/null || true
       - name: Generate SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: bin/
           format: spdx-json

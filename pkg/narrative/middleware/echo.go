@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/pgquerynarrative/pgquerynarrative/pkg/narrative"
 )
 
@@ -27,8 +27,8 @@ func MountEcho(e *echo.Echo, client *narrative.Client, prefix string) {
 }
 
 func wrapEcho(client *narrative.Client, fn func(*narrative.Client, http.ResponseWriter, *http.Request)) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		fn(client, c.Response().Writer, c.Request())
+	return func(c *echo.Context) error {
+		fn(client, c.Response(), c.Request())
 		return nil
 	}
 }

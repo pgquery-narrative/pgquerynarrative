@@ -636,26 +636,36 @@ func RedactSQLFromNarrativeTakeaways(takeaways []string) []string {
 	return out
 }
 
-// filterTextMarker is the exact separator planFindingMessage
-// (queryrunner/explain.go) inserts before a literal EXPLAIN filter clause in
-// a plan finding's Message. Matching on this marker — a template this
-// package controls, not any specific captured value — lets redaction remove
-// whatever filter text follows it regardless of content, including a literal
-// that never appeared in any captured bind list.
+// filterTextMarker was the separator a previous version of
+// planFindingMessage (queryrunner/explain.go) inserted before a literal
+// EXPLAIN filter clause in a plan finding's Message. planFindingMessage no
+// longer embeds the filter clause into Message at all — see its own comment
+// for why (the clause can contain this package's own " — " guidance
+// separator, which made the previous version of this function's "find the
+// next separator" logic treat part of the secret as safe trailing text; a
+// value a WHERE predicate can contain is not a safe place to look for a
+// trusted boundary). The marker is kept only to recognize a message stored
+// before that change — see redactLiteralFilterText. Matching on this marker
+// — a template this package controls, not any specific captured value — lets
+// redaction remove whatever filter text follows it regardless of content,
+// including a literal that never appeared in any captured bind list.
 const filterTextMarker = " — filter: "
 
-// redactLiteralFilterText removes a literal EXPLAIN filter clause embedded
-// after filterTextMarker, replacing it with a fixed placeholder and leaving
-// everything before and after (including the generic guidance clause
-// planFindingMessage appends next) intact. A no-op when the marker is absent.
+// redactLiteralFilterText removes a historical, pre-structural-separation
+// message's literal EXPLAIN filter clause: everything from filterTextMarker
+// to the end of the string, including any trailing guidance clause that
+// followed it. It deliberately does not try to find where the filter clause
+// ends and safe text resumes — a WHERE predicate's literal can contain
+// anything, including this package's own " — " separator, so no delimiter
+// found inside untrusted content can ever be trusted as that boundary. A
+// no-op when the marker is absent, which is always true for a message built
+// after planFindingMessage stopped embedding the filter clause at all (see
+// its own comment) — this function exists only so a message stored before
+// that change still redacts safely.
 func redactLiteralFilterText(s string) string {
 	idx := strings.Index(s, filterTextMarker)
 	if idx < 0 {
 		return s
-	}
-	rest := s[idx+len(filterTextMarker):]
-	if end := strings.Index(rest, " — "); end >= 0 {
-		return s[:idx] + " — filter withheld" + rest[end:]
 	}
 	return s[:idx] + " — filter withheld"
 }
