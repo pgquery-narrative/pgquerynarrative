@@ -161,11 +161,8 @@ func (r *Runner) activeValidator(ctx context.Context) *Validator {
 	return r.validator.ValidateForSchemas(schemas)
 }
 
-func (r *Runner) queryReadOnlyRows(ctx context.Context, pool *pgxpool.Pool, sql string, args ...any) (pgx.Rows, pgx.Tx, error) {
-	if pool == nil {
-		return nil, nil, nil
-	}
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+func (r *Runner) queryReadOnlyRows(ctx context.Context, conn *pgxpool.Conn, sql string, args ...any) (pgx.Rows, pgx.Tx, error) {
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, nil, err
 	}

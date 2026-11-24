@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // IndexProjectionMethod identifies how an index cost was estimated.
@@ -184,28 +182,21 @@ func (r *Runner) projectWithHypopg(ctx context.Context, sql, createIndexSQL stri
 	resetSQL := `SELECT ` + qualified + `.hypopg_reset()`
 	createSQL := `SELECT indexrelid, indexname FROM ` + qualified + `.hypopg_create_index($1)`
 
-	// hypopg mutates backend-local state, and that state is not transactional: a rollback does not remove a
-	// hypothetical index, and a statement that fails aborts the transaction so a reset issued inside it
-	// cannot run. Hold one connection for the whole call and, whatever happens, clear the state on it after
-	// the transaction has ended. If that cannot be done the connection leaves the pool.
-	conn, err := pool.Acquire(ctx)
+	// hypopg's state is backend-local and not transactional, and planning the caller's SQL can run an
+	// IMMUTABLE function's body (constant folding), which may set session state. Hold one connection for
+	// the whole call and discard it afterwards (see discardConn) so neither reaches another caller.
+	conn, err := r.acquireConn(ctx, pool)
 	if err != nil {
-		return IndexProjection{}, fmt.Errorf("acquire connection for hypopg: %w", err)
+		return IndexProjection{}, fmt.Errorf("acquire connection for hypopg: %w", r.acquireFailed(err))
 	}
-	defer conn.Release()
+	defer discardConn(conn)
 
 	// The analytical role defaults to transaction_read_only=on; lift it for this short transaction only.
 	tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadWrite})
 	if err != nil {
 		return IndexProjection{}, fmt.Errorf("begin read-write tx for hypopg: %w", err)
 	}
-	dirty := true // until the reset below has run, the backend may hold a hypothetical index
-	defer func() {
-		_ = tx.Rollback(ctx)
-		if dirty {
-			clearHypopg(conn, resetSQL)
-		}
-	}()
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `SET LOCAL transaction_read_only = off`); err != nil {
 		return IndexProjection{}, fmt.Errorf("read-only transaction: cannot disable for hypopg: %w", err)
@@ -232,15 +223,10 @@ func (r *Runner) projectWithHypopg(ctx context.Context, sql, createIndexSQL stri
 		return IndexProjection{}, err
 	}
 	parsed, err := parseExplainJSON([]byte(planText))
-	if _, rerr := tx.Exec(ctx, resetSQL); rerr == nil {
-		dirty = false
-	}
 	if err != nil {
 		return IndexProjection{}, err
 	}
 	totalCost := parsed.TotalCost
-	// Keep hypothetical indexes out of the session even if commit fails.
-	_ = tx.Commit(ctx)
 	if baselineCost <= 0 {
 		baselineCost = totalCost
 	}
@@ -253,25 +239,6 @@ func (r *Runner) projectWithHypopg(ctx context.Context, sql, createIndexSQL stri
 		Rationale:       fmt.Sprintf("hypopg projected plan cost with hypothetical index %s", indexName),
 		HypotheticalOID: oid,
 	}, nil
-}
-
-// clearHypopg removes every hypothetical index from conn's backend, in a transaction of its own because
-// the caller's is finished or aborted. If that cannot be confirmed, the connection is closed rather than
-// returned to the pool with state that could colour another caller's plan.
-func clearHypopg(conn *pgxpool.Conn, resetSQL string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadWrite}); err == nil {
-		_, err = tx.Exec(ctx, `SET LOCAL transaction_read_only = off`)
-		if err == nil {
-			_, err = tx.Exec(ctx, resetSQL)
-		}
-		if err == nil && tx.Commit(ctx) == nil {
-			return
-		}
-		_ = tx.Rollback(ctx)
-	}
-	_ = conn.Hijack().Close(ctx)
 }
 
 // ErrHypopgUnavailable is returned by helpers when the extension cannot run.

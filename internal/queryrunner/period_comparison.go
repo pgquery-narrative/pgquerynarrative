@@ -96,14 +96,20 @@ func (r *Runner) PeriodComparison(ctx context.Context, innerSQL, timeCol string,
 		return nil, fmt.Errorf("period comparison SQL validation failed: %w", err)
 	}
 
-	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
-	defer cancel()
-
-	pool := r.activePool(queryCtx)
+	pool := r.activePool(ctx)
 	if pool == nil {
 		return nil, fmt.Errorf("period comparison pool unavailable")
 	}
-	rows, tx, err := r.queryReadOnlyRows(queryCtx, pool, wrappedSQL)
+	// This executes the caller's SQL: discard the connection afterwards (see discardConn).
+	conn, err := r.acquireConn(ctx, pool)
+	if err != nil {
+		return nil, fmt.Errorf("period comparison query failed: %w", r.acquireFailed(err))
+	}
+	defer discardConn(conn)
+	queryCtx, cancel := context.WithTimeout(ctx, r.queryLimit)
+	defer cancel()
+
+	rows, tx, err := r.queryReadOnlyRows(queryCtx, conn, wrappedSQL)
 	if err != nil {
 		return nil, fmt.Errorf("period comparison query failed: %w", err)
 	}

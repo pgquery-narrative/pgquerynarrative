@@ -133,3 +133,24 @@ func TestRunSnapshotNeverLeavesSessionStateOnSharedConnection(t *testing.T) {
 		t.Fatalf("a prior RunSnapshot call leaked session state onto the reused connection: clean RunSnapshot as app_role with no claims of its own saw %d row(s) of victim's data, want 0", clean[0].Result.RowCount)
 	}
 }
+
+// PeriodComparison executes the caller's SQL (wrapped), so it is a real
+// execution path like Run and must not hand its connection back either.
+func TestPeriodComparisonNeverLeavesSessionStateOnSharedConnection(t *testing.T) {
+	ctx := context.Background()
+	pool := qrIsolationPool(t, ctx)
+	validator := queryrunner.NewValidator([]string{"api"}, 10000)
+	runner := queryrunner.NewRunner(pool, validator, 100, 10*time.Second)
+
+	sql := `SELECT d AS day, 1 AS n FROM generate_series(DATE '2024-01-01', DATE '2024-03-31', INTERVAL '1 day') d, api.whoami()`
+	if _, err := runner.PeriodComparison(ctx, sql, "day", []string{"n"}, 0.5); err != nil {
+		t.Fatalf("PeriodComparison (poisoning call): %v", err)
+	}
+	clean, err := runner.Run(ctx, "SELECT id, owner FROM api.secrets", 10)
+	if err != nil {
+		t.Fatalf("Run (clean call): %v", err)
+	}
+	if clean.RowCount != 0 {
+		t.Fatalf("PeriodComparison leaked session state onto the reused connection: clean Run saw %d row(s) of victim's data, want 0", clean.RowCount)
+	}
+}
