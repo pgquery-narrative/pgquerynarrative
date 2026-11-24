@@ -1,6 +1,7 @@
 package queryrunner
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -53,12 +54,16 @@ const DeclineReason = "No rewrite offered. The rewriter only proposes transforms
 // where the transform is unambiguous (DATE_TRUNC and col::date). The bind value
 // is preserved as a placeholder; equivalence/compare still need sample binds.
 // OR→UNION ALL and IN/NOT IN→EXISTS stay literals-only.
+//
+// This has no catalog access, so col::text/col::numeric casts are never
+// dropped (see DeclineReason) — use SuggestRewritesForInvestigationWithTypes
+// for that, when a resolver is available.
 func SuggestRewrites(sql string, findings []PlanFinding) []RewriteCandidate {
 	trimmed := trimSQL(sql)
 	if trimmed == "" {
 		return nil
 	}
-	return suggestRewrites(trimmed, findings, IsPostgRESTWrapper(trimmed))
+	return suggestRewrites(rewriteCtx{}, trimmed, findings, IsPostgRESTWrapper(trimmed))
 }
 
 // SuggestRewritesForInvestigation is SuggestRewrites for a caller that knows
@@ -77,14 +82,33 @@ func SuggestRewritesForInvestigation(sql string, findings []PlanFinding, isPostg
 	if trimmed == "" {
 		return nil
 	}
-	return suggestRewrites(trimmed, findings, isPostgREST)
+	return suggestRewrites(rewriteCtx{}, trimmed, findings, isPostgREST)
+}
+
+// SuggestRewritesForInvestigationWithTypes is SuggestRewritesForInvestigation
+// plus a column-type resolver: when resolveType is non-nil, a
+// col::text = 'const' or col::numeric_type = const predicate is rewritten to
+// compare the column directly to the literal, but only when resolveType
+// confirms the column's real catalog type already equals the cast's target
+// type — the one case where dropping the cast is provably a no-op (see
+// tryRewriteNumericCastEquality/tryRewriteTextCastEquality in
+// rewriter_cast.go). A nil resolveType, or one that cannot resolve a given
+// column, behaves exactly like SuggestRewritesForInvestigation: that cast
+// stays declined.
+func SuggestRewritesForInvestigationWithTypes(ctx context.Context, sql string, findings []PlanFinding, isPostgREST bool, resolveType ColumnTypeResolver) []RewriteCandidate {
+	trimmed := trimSQL(sql)
+	if trimmed == "" {
+		return nil
+	}
+	rc := rewriteCtx{ctx: ctx, resolveType: cachedColumnTypeResolver(resolveType)}
+	return suggestRewrites(rc, trimmed, findings, isPostgREST)
 }
 
 // suggestRewrites is SuggestRewrites' shared body. trimmed is already
 // trimSQL'd; isPostgRESTWrapper decides the PostgREST-wrapper decline (see
 // SuggestRewrites vs SuggestRewritesForInvestigation for how callers should
 // derive it).
-func suggestRewrites(trimmed string, findings []PlanFinding, isPostgRESTWrapper bool) []RewriteCandidate {
+func suggestRewrites(rc rewriteCtx, trimmed string, findings []PlanFinding, isPostgRESTWrapper bool) []RewriteCandidate {
 	// PostgREST's response wrapper is generated, not user SQL: a rewrite inside it
 	// would not reach the relation that causes the cost. Decline; see IsPostgRESTWrapper.
 	if isPostgRESTWrapper {
@@ -95,7 +119,7 @@ func suggestRewrites(trimmed string, findings []PlanFinding, isPostgRESTWrapper 
 		hasParam = selectTreeContainsParamRef(sel)
 	}
 	var out []RewriteCandidate
-	if c := suggestSargableRewrites(trimmed, findings); c != nil {
+	if c := suggestSargableRewrites(rc, trimmed, findings); c != nil {
 		out = append(out, *c)
 	}
 	if !hasParam {
@@ -151,13 +175,13 @@ func parseSingleSelect(sql string) (*pg_query.ParseResult, *pg_query.SelectStmt,
 	return result, stmt.GetSelectStmt(), true
 }
 
-func suggestSargableRewrites(sql string, findings []PlanFinding) *RewriteCandidate {
+func suggestSargableRewrites(rc rewriteCtx, sql string, findings []PlanFinding) *RewriteCandidate {
 	result, sel, ok := parseSingleSelect(sql)
 	if !ok {
 		return nil
 	}
 	var replacements []dateTruncRewrite
-	n := applySargableRewritesToSelectTree(sel, &replacements)
+	n := applySargableRewritesToSelectTree(rc, sel, &replacements)
 	if n == 0 {
 		return nil
 	}
@@ -240,6 +264,12 @@ func rewriteRationale(kinds, units []string) string {
 	if has("coalesce") {
 		parts = append(parts, "unwrap COALESCE(col, default) equality so the underlying column is sargable")
 	}
+	if has("text_cast") {
+		parts = append(parts, "drop the text cast off the column (confirmed a no-op against the catalog's column type) so an index on the column can be used")
+	}
+	if has("numeric_cast") {
+		parts = append(parts, "drop the numeric cast off the column (confirmed a no-op against the catalog's column type) so an index on the column can be used")
+	}
 	if len(parts) == 0 {
 		return "unwrap non-sargable predicates to index- and partition-friendly forms"
 	}
@@ -251,6 +281,8 @@ func rewriteCategory(kinds []string) string {
 		switch kinds[0] {
 		case "coalesce":
 			return "coalesce_unwrap"
+		case "text_cast", "numeric_cast":
+			return "implicit_cast"
 		}
 	}
 	return "function_wrap"
@@ -293,7 +325,7 @@ func findingsSuggestSargableRewrite(findings []PlanFinding) bool {
 	return false
 }
 
-func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*pg_query.Node, int) {
+func rewriteFunctionWrapInExpr(rc rewriteCtx, sel *pg_query.SelectStmt, node *pg_query.Node, out *[]dateTruncRewrite) (*pg_query.Node, int) {
 	if node == nil {
 		return nil, 0
 	}
@@ -334,22 +366,21 @@ func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*p
 			*out = append(*out, info)
 			return replacement, 1
 		}
-		// col::numeric_type = const and col::text = 'const' are intentionally
-		// NOT rewritten. Dropping the cast is only semantics-preserving when the
-		// column's actual PostgreSQL type makes the cast a no-op, and that type
-		// is not knowable from the AST alone:
-		//
-		//   amount numeric := 1.4 ;  amount::integer = 1  is TRUE
-		//                            amount          = 1  is FALSE
-		//   price  numeric := 12.0;  price::text = '12'   is FALSE ('12.0')
-		//                            price       = 12     is TRUE
-		//   sku    text            ;  sku::text = '5'  ->  sku = 5 does not even
-		//                            parse (no text = integer operator).
-		//
-		// Re-enabling these needs catalog-resolved column types (see
-		// explain_catalog.go) and a rewrite only when the cast target equals the
-		// source type, i.e. a provable no-op.
-		//
+		// col::numeric_type = const and col::text = 'const' are rewritten only
+		// when rc.resolveType confirms the column's own catalog type already
+		// equals the cast's target type — see tryRewriteNumericCastEquality /
+		// tryRewriteTextCastEquality in rewriter_cast.go for why that is the
+		// only case dropping the cast is provably a no-op. rc.resolveType is
+		// nil for SuggestRewrites/SuggestRewritesForInvestigation (no catalog
+		// access), so both always decline for those callers.
+		if replacement, info, ok := tryRewriteNumericCastEquality(rc, sel, ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
+		if replacement, info, ok := tryRewriteTextCastEquality(rc, sel, ae); ok {
+			*out = append(*out, info)
+			return replacement, 1
+		}
 		// Parameterized shapes ($1, $2, ...) — equality only.
 		// DATE_TRUNC(unit, col) BETWEEN $a AND $b is intentionally not rewritten
 		// (see tryRewriteDateTruncBetweenParam): a misaligned bind bound shifts
@@ -373,7 +404,7 @@ func rewriteFunctionWrapInExpr(node *pg_query.Node, out *[]dateTruncRewrite) (*p
 		args := make([]*pg_query.Node, len(be.Args))
 		changed := false
 		for i, arg := range be.Args {
-			rewritten, n := rewriteFunctionWrapInExpr(arg, out)
+			rewritten, n := rewriteFunctionWrapInExpr(rc, sel, arg, out)
 			total += n
 			if n > 0 && rewritten != nil {
 				args[i] = rewritten
