@@ -193,3 +193,31 @@ func TestProjectIndexCost_FailedExplainLeavesSessionClean(t *testing.T) {
 		t.Fatalf("%d hypothetical index(es) left on the pooled connection after a failed EXPLAIN", hidden)
 	}
 }
+
+// projectWithHypopg plans the caller's SQL, and planning alone runs an
+// IMMUTABLE function's body when its arguments are constant. A function that
+// sets session state must not leave it on a connection returned to the pool.
+func TestHypopgProjectionNeverLeavesSessionStateOnSharedConnection(t *testing.T) {
+	pool, ctx := setupHypopgPool(t)
+	seedHypopgSales(t, ctx, pool)
+	if _, err := pool.Exec(ctx, `
+		CREATE FUNCTION demo.poison(i int) RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$
+		BEGIN
+		  PERFORM set_config('request.jwt.claims', '{"sub":"victim"}', false);
+		  RETURN i;
+		END $$`); err != nil {
+		t.Fatal(err)
+	}
+	runner := queryrunner.NewRunner(pool, queryrunner.NewValidator([]string{"demo"}, 10000), 100, 10*time.Second)
+	proj := runner.ProjectIndexCost(ctx, `SELECT id FROM demo.sales WHERE quantity = demo.poison(1)`, `CREATE INDEX ON demo.sales (quantity)`, 1000)
+	if proj.Method != "hypopg" {
+		t.Fatalf("projection did not run through hypopg: %+v", proj)
+	}
+	var claims *string
+	if err := pool.QueryRow(ctx, `SELECT nullif(current_setting('request.jwt.claims', true), '')`).Scan(&claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims != nil {
+		t.Fatalf("hypopg projection left session state on the pooled connection: request.jwt.claims=%q", *claims)
+	}
+}
