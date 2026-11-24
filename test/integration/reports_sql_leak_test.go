@@ -72,8 +72,15 @@ func TestSharedAndViewerReportsNeverLeakEmbeddedSQLOrBinds(t *testing.T) {
 		equivalenceErrorSecret = "echoed-literal-secret-5fa2"
 		// A plan finding's Message/Evidence embeds the literal EXPLAIN filter
 		// clause verbatim (see planFindingMessage/seqScanEvidence in
-		// queryrunner) — shaped here exactly like that real output.
-		filterSecret = "secret-filter-literal-d4e9"
+		// queryrunner) — shaped here exactly like that real output. The
+		// embedded " — " (the exact separator RedactLiteralFilterText splits
+		// on) is deliberate: a captured literal containing that sequence is
+		// what defeated the old redaction's own boundary scan (see
+		// TestRedactSQLScrubsEmbeddedDelimiterInLiteralFilterText in
+		// internal/story) — this proves the fix holds through the complete
+		// serialized viewer/shared report response, not only through that
+		// helper function in isolation.
+		filterSecret = "public — bearer-secret@example.test"
 		// PostgREST.Failure is a verbatim captured production PostgreSQL error;
 		// unlike bindSecret, it is never in the Binds list at all.
 		failureSecret = "duplicate key value violates unique constraint secret-detail-b2a7"
