@@ -179,3 +179,48 @@ func TestSuggestRewrites_PlainEntryPointsNeverDropCasts(t *testing.T) {
 		}
 	}
 }
+
+// A cast carrying a typmod is not a no-op even when its base type equals the
+// column's: numeric(10,1) rounds, varchar(2) truncates, and bare char means
+// char(1). Dropping any of them changes which rows match.
+func TestSuggestRewritesWithTypes_DeclinesTypmodAndArrayCasts(t *testing.T) {
+	tests := []struct {
+		sql, colType string
+	}{
+		{`SELECT 1 FROM demo.sales WHERE amount::numeric(10,1) = 1.2`, "numeric"},
+		{`SELECT 1 FROM demo.sales WHERE amount::varchar(2) = 'ab'`, "character varying"},
+		{`SELECT 1 FROM demo.sales WHERE amount::char = 'a'`, "character"},
+		{`SELECT 1 FROM demo.sales WHERE amount::integer[] = '{1}'`, "integer"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.sql, func(t *testing.T) {
+			for _, c := range suggestWithTypes(t, tc.sql, map[string]string{"demo.sales.amount": tc.colType}) {
+				if c.Category == "implicit_cast" {
+					t.Fatalf("typmod/array cast must not be dropped, got: %s", c.SQL)
+				}
+			}
+		})
+	}
+}
+
+// A CTE named like a real table shadows it: the catalog type of the real
+// table's column says nothing about the CTE's column, so the cast must stay —
+// including from a CTE body or subquery that references an outer CTE.
+func TestSuggestRewritesWithTypes_DeclinesCTEShadowingTable(t *testing.T) {
+	types := map[string]string{".sales.amount": "numeric"}
+	for _, sql := range []string{
+		`WITH sales AS (SELECT label AS amount FROM demo.raw) SELECT 1 FROM sales WHERE amount::numeric = 5`,
+		`WITH sales AS (SELECT label AS amount FROM demo.raw), b AS (SELECT 1 FROM sales WHERE amount::numeric = 5) SELECT * FROM b`,
+		`WITH sales AS (SELECT label AS amount FROM demo.raw) SELECT * FROM (SELECT 1 FROM sales WHERE amount::numeric = 5) s`,
+	} {
+		t.Run(sql, func(t *testing.T) {
+			for _, c := range suggestWithTypes(t, sql, types) {
+				if c.Category == "implicit_cast" {
+					t.Fatalf("cast on a CTE column must not be resolved against a same-named table, got: %s", c.SQL)
+				}
+			}
+		})
+	}
+	// Sanity: the same shape without the CTE is still rewritten.
+	mustFindCategory(t, suggestWithTypes(t, `SELECT 1 FROM sales WHERE amount::numeric = 5`, types), "implicit_cast")
+}

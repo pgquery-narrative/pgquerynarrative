@@ -106,6 +106,13 @@ func TestColumnCastRewriteMatchesRealCatalogTypes(t *testing.T) {
 		`SELECT id FROM castrw.t WHERE amount::text = '12'`,
 		`SELECT id FROM castrw.t WHERE code::varchar = '12'`,
 		`SELECT id FROM castrw.t WHERE label::text = '12'`,
+		// Same base type, but the typmod makes the cast a real conversion:
+		// varchar(1) truncates 'xyz' to 'x', so dropping it loses row 1.
+		`SELECT id FROM castrw.t WHERE label::varchar(1) = 'x'`,
+		`SELECT id FROM castrw.t WHERE amount::numeric(10,1) = 1.4`,
+		// A CTE named t shadows castrw.t; its amount column is text, not
+		// castrw.t's numeric, so the catalog type must not be trusted.
+		`WITH t AS (SELECT id, code AS amount FROM castrw.t) SELECT id FROM t WHERE amount::numeric = 12`,
 	}
 	for _, sql := range declines {
 		t.Run("declines: "+sql, func(t *testing.T) {

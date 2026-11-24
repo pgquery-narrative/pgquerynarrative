@@ -13,6 +13,7 @@ func applySargableRewritesToSelectTree(rc rewriteCtx, sel *pg_query.SelectStmt, 
 	}
 	total := 0
 	if sel.WithClause != nil {
+		rc = rc.withCTEs(sel.WithClause.Ctes)
 		for _, cte := range sel.WithClause.Ctes {
 			if cteNode := cte.GetCommonTableExpr(); cteNode != nil {
 				if sub := cteNode.Ctequery.GetSelectStmt(); sub != nil {

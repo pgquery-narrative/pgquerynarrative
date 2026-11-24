@@ -27,6 +27,26 @@ type ColumnTypeResolver func(ctx context.Context, schema, relation, column strin
 type rewriteCtx struct {
 	ctx         context.Context
 	resolveType ColumnTypeResolver
+	// cteNames holds every WITH name visible at this level. A schema-less
+	// relation matching one is the CTE, not a catalog table, so its column
+	// type is unknowable here. Copied on write (see withCTEs).
+	cteNames map[string]bool
+}
+
+// withCTEs returns rc with ctes' names added to the visible set, leaving rc's
+// own map untouched so sibling scopes never see each other's names.
+func (rc rewriteCtx) withCTEs(ctes []*pg_query.Node) rewriteCtx {
+	names := make(map[string]bool, len(rc.cteNames)+len(ctes))
+	for n := range rc.cteNames {
+		names[n] = true
+	}
+	for _, c := range ctes {
+		if cte := c.GetCommonTableExpr(); cte != nil {
+			names[cte.Ctename] = true
+		}
+	}
+	rc.cteNames = names
+	return rc
 }
 
 // tryRewriteNumericCastEquality and tryRewriteTextCastEquality drop a
@@ -69,7 +89,7 @@ func tryRewriteCastEquality(rc rewriteCtx, sel *pg_query.SelectStmt, ae *pg_quer
 		return nil, dateTruncRewrite{}, false
 	}
 	schema, relation, column, ok := resolveCastColumnRelation(sel, colNode)
-	if !ok {
+	if !ok || (schema == "" && rc.cteNames[relation]) {
 		return nil, dateTruncRewrite{}, false
 	}
 	colType, ok := rc.resolveType(rc.ctx, schema, relation, column)
@@ -94,6 +114,12 @@ func splitCastEquality(a, b *pg_query.Node, wantTypeClass func(string) bool) (co
 	}
 	tc := a.GetTypeCast()
 	if tc == nil {
+		return nil, nil, "", false
+	}
+	// A typmod (numeric(10,1) rounds, varchar(2) truncates, bare char is
+	// char(1)) or array bound makes the cast a real conversion even when the
+	// base type matches the column's.
+	if tc.TypeName == nil || len(tc.TypeName.Typmods) > 0 || len(tc.TypeName.ArrayBounds) > 0 {
 		return nil, nil, "", false
 	}
 	castType = typeNameLast(tc.TypeName)
