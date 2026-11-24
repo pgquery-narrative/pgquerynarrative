@@ -152,6 +152,7 @@ func ParsePostgRESTLog(log string) (*PostgRESTCapture, error) {
 			mainIdx = append(mainIdx, i)
 		}
 	}
+	mainIdx = dropParallelWorkerEchoes(stmts, mainIdx)
 	switch len(mainIdx) {
 	case 0:
 		return nil, ErrNoPostgRESTRead
@@ -968,4 +969,34 @@ func ServerTimingDuration(header, metric string) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// dropParallelWorkerEchoes removes request candidates that are only a
+// parallel worker's own ERROR echoing its leader's statement (e.g. "could not
+// attach to dynamic shared area" when the leader is cancelled mid-startup).
+// stderr has no backend_type, so an echo is recognized by shape: a failure
+// whose backend logged nothing else in the excerpt, while another backend
+// logged the same statement inside its own session. Equal-weight candidates
+// are all kept, so a genuinely ambiguous excerpt is still refused.
+func dropParallelWorkerEchoes(stmts []logStatement, idx []int) []int {
+	if len(idx) < 2 {
+		return idx
+	}
+	logged := map[string]int{}
+	for _, s := range stmts {
+		if s.sql != "ROLLBACK" {
+			logged[s.pid]++
+		}
+	}
+	bare := func(i int) bool { return stmts[i].failure != "" && logged[stmts[i].pid] == 1 }
+	var out []int
+	for _, i := range idx {
+		echo := bare(i) && slices.ContainsFunc(idx, func(j int) bool {
+			return stmts[j].pid != stmts[i].pid && stmts[j].sql == stmts[i].sql && !bare(j)
+		})
+		if !echo {
+			out = append(out, i)
+		}
+	}
+	return out
 }

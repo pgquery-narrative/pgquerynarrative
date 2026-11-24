@@ -1072,3 +1072,38 @@ func TestParsePostgRESTLogRPCJSONPayloadNeedsExplicitCast(t *testing.T) {
 		t.Fatalf("ordinary GET falsely matched the RPC JSON-payload shape: bind %d", n)
 	}
 }
+
+// A parallel worker that is starting up as its leader's statement_timeout
+// fires can log its own ERROR ("could not attach to dynamic shared area")
+// carrying the leader's statement text under the worker's PID. That echo is
+// not a second request: it must not make the excerpt ambiguous. Observed on
+// PostgreSQL 18 with csvlog/jsonlog/stderr alike.
+func TestParsePostgRESTLogIgnoresParallelWorkerErrorEcho(t *testing.T) {
+	log := strings.Replace(fixture(t, "postgrest_timeout.log"),
+		`[114] 5261148727031343563 app= FATAL:  terminating background worker "parallel worker" due to administrator command`,
+		`[114] 5261148727031343563 app= ERROR:  could not attach to dynamic shared area`, 1)
+	if !strings.Contains(log, "could not attach") {
+		t.Fatal("fixture shape changed")
+	}
+	got, err := ParsePostgRESTLog(log)
+	if err != nil {
+		t.Fatalf("worker echo made the excerpt ambiguous: %v", err)
+	}
+	if got.Role != "slow_role" || !reflect.DeepEqual(got.Binds, []string{"1", "0"}) || !strings.Contains(got.Failure, "statement timeout") {
+		t.Fatalf("leader's request not recovered: %+v", got)
+	}
+}
+
+// Two backends that each failed the same statement with nothing else logged
+// are indistinguishable: still refused, not resolved by guessing.
+func TestParsePostgRESTLogEqualWeightFailuresStayAmbiguous(t *testing.T) {
+	stmt := `WITH pgrst_source AS ( SELECT "api"."big"."id" FROM "api"."big" )  SELECT null::bigint AS total_result_set FROM ( SELECT * FROM pgrst_source ) _postgrest_t`
+	var b strings.Builder
+	for _, pid := range []string{"201", "202"} {
+		fmt.Fprintf(&b, "2026-10-08 17:38:15.349 UTC [%s] 0 app= ERROR:  could not attach to dynamic shared area\n", pid)
+		fmt.Fprintf(&b, "2026-10-08 17:38:15.349 UTC [%s] 0 app= STATEMENT:  %s\n", pid, stmt)
+	}
+	if _, err := ParsePostgRESTLog(b.String()); err == nil || !strings.Contains(err.Error(), "2 PostgREST read requests") {
+		t.Fatalf("equal-weight failures must stay ambiguous, got %v", err)
+	}
+}
