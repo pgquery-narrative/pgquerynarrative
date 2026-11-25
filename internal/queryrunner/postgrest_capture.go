@@ -82,10 +82,13 @@ var (
 	logPIDRe      = regexp.MustCompile(`\[(\d+)(?:-\d+)?\]`)
 	logQueryIDRe  = regexp.MustCompile(`\[\d+(?:-\d+)?\] (-?\d+)(?:\s|$)`)
 	logSQLStateRe = regexp.MustCompile(`^[0-9A-Z]{5}: `)
-	csvLogLineRe  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? [A-Za-z0-9+:-]+,`)
-	syslogLineRe  = regexp.MustCompile(`^[A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \S+ [^\s\[]+\[\d+\]: \[\d+-\d+\]`)
-	endpointRe    = regexp.MustCompile(`^/[^?#\s]*$`)
-	gucNameRe     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]{0,62}$`)
+	// workerExitRe is the postmaster's record of a parallel worker exiting:
+	// the one stderr line that names a worker's PID without %b in the prefix.
+	workerExitRe = regexp.MustCompile(`^background worker "parallel worker" \(PID (\d+)\) exited`)
+	csvLogLineRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? [A-Za-z0-9+:-]+,`)
+	syslogLineRe = regexp.MustCompile(`^[A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \S+ [^\s\[]+\[\d+\]: \[\d+-\d+\]`)
+	endpointRe   = regexp.MustCompile(`^/[^?#\s]*$`)
+	gucNameRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]{0,62}$`)
 	// Settings whose values are safe to keep and matter to a replay.
 	replaySettingRe = regexp.MustCompile(`^(?i:timezone|datestyle|intervalstyle|work_mem|hash_mem_multiplier|plan_cache_mode|statement_timeout|jit|effective_cache_size|random_page_cost|seq_page_cost|join_collapse_limit|from_collapse_limit|max_parallel_workers_per_gather|enable_[a-z_]+|cpu_[a-z_]+_cost|parallel_[a-z_]+_cost)$`)
 )
@@ -126,6 +129,9 @@ type logStatement struct {
 
 type logRecord struct {
 	pid, queryID, severity, msg string
+	// worker is true when the record itself names a parallel worker
+	// (csvlog/jsonlog backend_type, or a stderr prefix with %b).
+	worker bool
 }
 
 // ParsePostgRESTLog extracts the single PostgREST read request in a PostgreSQL
@@ -152,7 +158,7 @@ func ParsePostgRESTLog(log string) (*PostgRESTCapture, error) {
 			mainIdx = append(mainIdx, i)
 		}
 	}
-	mainIdx = dropParallelWorkerEchoes(stmts, mainIdx)
+	mainIdx = dropParallelWorkerEchoes(stmts, mainIdx, parallelWorkerPIDs(recs))
 	switch len(mainIdx) {
 	case 0:
 		return nil, ErrNoPostgRESTRead
@@ -296,19 +302,21 @@ func readJSONLog(log string) ([]logRecord, error) {
 			Detail    string      `json:"detail"`
 			Context   string      `json:"context"`
 			Statement string      `json:"statement"`
+			Backend   string      `json:"backend_type"`
 		}
 		dec := json.NewDecoder(strings.NewReader(line))
 		dec.UseNumber()
 		if err := dec.Decode(&e); err != nil || e.PID == "" || e.Severity == "" {
 			return nil, fmt.Errorf("unsupported jsonlog line; include complete one-object-per-line jsonlog records")
 		}
-		recs = append(recs, structuredRecords(e.PID.String(), e.QueryID.String(), e.Severity, e.Message, e.Detail, e.Context, e.Statement)...)
+		recs = append(recs, structuredRecords(e.PID.String(), e.QueryID.String(), e.Severity, e.Message, e.Detail, e.Context, e.Statement, e.Backend == "parallel worker")...)
 	}
 	return recs, nil
 }
 
 // readCSVLog reads csvlog columns process_id(3), error_severity(11),
-// message(13), detail(14), context(18), query(19) and query_id(25, PG14+).
+// message(13), detail(14), context(18), query(19), backend_type(23, PG13+)
+// and query_id(25, PG14+).
 func readCSVLog(log string) ([]logRecord, error) {
 	r := csv.NewReader(strings.NewReader(log))
 	r.FieldsPerRecord = -1
@@ -325,18 +333,19 @@ func readCSVLog(log string) ([]logRecord, error) {
 		if len(f) >= 26 {
 			qid = f[25]
 		}
-		recs = append(recs, structuredRecords(f[3], qid, f[11], f[13], f[14], f[18], f[19])...)
+		worker := len(f) >= 24 && f[23] == "parallel worker"
+		recs = append(recs, structuredRecords(f[3], qid, f[11], f[13], f[14], f[18], f[19], worker)...)
 	}
 }
 
-func structuredRecords(pid, qid, severity, msg, detail, context, statement string) []logRecord {
+func structuredRecords(pid, qid, severity, msg, detail, context, statement string, worker bool) []logRecord {
 	if qid == "0" {
 		qid = ""
 	}
-	out := []logRecord{{pid: pid, queryID: qid, severity: severity, msg: msg}}
+	out := []logRecord{{pid: pid, queryID: qid, severity: severity, msg: msg, worker: worker}}
 	for _, part := range [][2]string{{"DETAIL", detail}, {"CONTEXT", context}, {"STATEMENT", statement}} {
 		if part[1] != "" {
-			out = append(out, logRecord{pid: pid, queryID: qid, severity: part[0], msg: part[1]})
+			out = append(out, logRecord{pid: pid, queryID: qid, severity: part[0], msg: part[1], worker: worker})
 		}
 	}
 	return out
@@ -376,7 +385,7 @@ func splitLogRecords(log string) ([]logRecord, error) {
 		if q := logQueryIDRe.FindStringSubmatch(m[1]); q != nil && q[1] != "0" {
 			qid = q[1]
 		}
-		recs = append(recs, logRecord{pid: pid[1], queryID: qid, severity: m[2], msg: logSQLStateRe.ReplaceAllString(m[3], "")})
+		recs = append(recs, logRecord{pid: pid[1], queryID: qid, severity: m[2], msg: logSQLStateRe.ReplaceAllString(m[3], ""), worker: strings.Contains(m[1], "parallel worker")})
 	}
 	return recs, nil
 }
@@ -971,15 +980,33 @@ func ServerTimingDuration(header, metric string) (float64, bool) {
 	return 0, false
 }
 
+// parallelWorkerPIDs returns the backends the excerpt itself proves are
+// parallel workers: a record whose backend_type says so (csvlog/jsonlog, or a
+// stderr prefix with %b), or a postmaster line reporting that worker's exit.
+func parallelWorkerPIDs(recs []logRecord) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range recs {
+		if r.worker {
+			out[r.pid] = true
+		}
+		if m := workerExitRe.FindStringSubmatch(r.msg); m != nil && r.severity == "LOG" {
+			out[m[1]] = true
+		}
+	}
+	return out
+}
+
 // dropParallelWorkerEchoes removes request candidates that are only a
 // parallel worker's own ERROR echoing its leader's statement (e.g. "could not
 // attach to dynamic shared area" when the leader is cancelled mid-startup).
-// stderr has no backend_type, so an echo is recognized by shape: a failure
-// whose backend logged nothing else in the excerpt, while another backend
-// logged the same statement inside its own session. Equal-weight candidates
-// are all kept, so a genuinely ambiguous excerpt is still refused.
-func dropParallelWorkerEchoes(stmts []logStatement, idx []int) []int {
-	if len(idx) < 2 {
+// Shape alone cannot tell such an echo from a separate request logged with
+// slow-query-only settings, so a candidate is dropped only when workers
+// proves its backend is a parallel worker, it carries no bind values of its
+// own (a worker never logs the portal's parameters), its backend logged
+// nothing else, and a non-worker backend logged the same statement. Anything
+// less keeps every candidate, so the excerpt is refused as ambiguous.
+func dropParallelWorkerEchoes(stmts []logStatement, idx []int, workers map[string]bool) []int {
+	if len(idx) < 2 || len(workers) == 0 {
 		return idx
 	}
 	logged := map[string]int{}
@@ -988,12 +1015,13 @@ func dropParallelWorkerEchoes(stmts []logStatement, idx []int) []int {
 			logged[s.pid]++
 		}
 	}
-	bare := func(i int) bool { return stmts[i].failure != "" && logged[stmts[i].pid] == 1 }
 	var out []int
 	for _, i := range idx {
-		echo := bare(i) && slices.ContainsFunc(idx, func(j int) bool {
-			return stmts[j].pid != stmts[i].pid && stmts[j].sql == stmts[i].sql && !bare(j)
-		})
+		w := stmts[i]
+		echo := workers[w.pid] && w.failure != "" && !w.ps.present && logged[w.pid] == 1 &&
+			slices.ContainsFunc(idx, func(j int) bool {
+				return !workers[stmts[j].pid] && stmts[j].sql == w.sql
+			})
 		if !echo {
 			out = append(out, i)
 		}
