@@ -6,16 +6,39 @@ import (
 	"testing"
 )
 
-// fakeColumnTypeResolver returns a ColumnTypeResolver backed by a static
-// column -> type map, keyed "schema.relation.column" (schema may be "" to
-// match a resolver call that could not determine it from the SQL text and
-// had to fall back — this fake never needs that fallback, since every test
-// query below names its schema explicitly).
+// fakeColumnTypeResolver models ColumnTypeResolver over a static map keyed
+// "relation.column" (relation unquoted, schema-qualified only when the SQL
+// qualified it). It stands in for the catalog's OID comparison with
+// fakeTypeIdentity, so these tests cover the AST shapes; real type identity
+// is exercised against PostgreSQL in test/integration.
 func fakeColumnTypeResolver(types map[string]string) ColumnTypeResolver {
-	return func(_ context.Context, schema, relation, column string) (string, bool) {
-		pgType, ok := types[schema+"."+relation+"."+column]
-		return pgType, ok
+	return func(_ context.Context, relation, column, castType string) (bool, bool) {
+		colType, ok := types[strings.ReplaceAll(relation, `"`, "")+"."+column]
+		if !ok {
+			return false, false
+		}
+		return fakeTypeIdentity(colType) == fakeTypeIdentity(castType), true
 	}
+}
+
+// fakeTypeIdentity folds the built-in spellings a cast and a catalog name can
+// use for one pg_catalog type. A type qualified with any other schema keeps
+// its qualifier, so it never matches a built-in.
+func fakeTypeIdentity(name string) string {
+	n := strings.TrimPrefix(strings.ToLower(strings.ReplaceAll(name, `"`, "")), "pg_catalog.")
+	switch n {
+	case "int4", "int", "integer":
+		return "integer"
+	case "int8", "bigint":
+		return "bigint"
+	case "decimal", "numeric":
+		return "numeric"
+	case "float8", "double precision":
+		return "double precision"
+	case "varchar", "character varying":
+		return "character varying"
+	}
+	return n
 }
 
 func suggestWithTypes(t *testing.T, sql string, types map[string]string) []RewriteCandidate {
@@ -207,7 +230,7 @@ func TestSuggestRewritesWithTypes_DeclinesTypmodAndArrayCasts(t *testing.T) {
 // table's column says nothing about the CTE's column, so the cast must stay —
 // including from a CTE body or subquery that references an outer CTE.
 func TestSuggestRewritesWithTypes_DeclinesCTEShadowingTable(t *testing.T) {
-	types := map[string]string{".sales.amount": "numeric"}
+	types := map[string]string{"sales.amount": "numeric"}
 	for _, sql := range []string{
 		`WITH sales AS (SELECT label AS amount FROM demo.raw) SELECT 1 FROM sales WHERE amount::numeric = 5`,
 		`WITH sales AS (SELECT label AS amount FROM demo.raw), b AS (SELECT 1 FROM sales WHERE amount::numeric = 5) SELECT * FROM b`,
@@ -223,4 +246,27 @@ func TestSuggestRewritesWithTypes_DeclinesCTEShadowingTable(t *testing.T) {
 	}
 	// Sanity: the same shape without the CTE is still rewritten.
 	mustFindCategory(t, suggestWithTypes(t, `SELECT 1 FROM sales WHERE amount::numeric = 5`, types), "implicit_cast")
+}
+
+// Shapes where the outer cast's target equals the column's type but dropping
+// it still changes results: an inner cast already converted the value, an
+// alias list renamed the columns, or the type name is qualified (a same-named
+// domain). All must decline.
+func TestSuggestRewritesWithTypes_DeclinesNestedAliasedAndQualifiedShapes(t *testing.T) {
+	types := map[string]string{"audit.t.amount": "numeric", "audit.t.old_amount": "numeric"}
+	for _, sql := range []string{
+		`SELECT id FROM audit.t WHERE (amount::integer)::numeric = 1`,
+		`SELECT id FROM audit.t WHERE (amount::numeric(10,0))::numeric = 1`,
+		`SELECT id FROM audit.t AS x(id, old_amount, amount) WHERE amount::numeric = '1'`,
+		`SELECT id FROM audit.t WHERE amount::audit.numeric = 1`,
+	} {
+		t.Run(sql, func(t *testing.T) {
+			for _, c := range suggestWithTypes(t, sql, types) {
+				if c.Category == "implicit_cast" {
+					t.Fatalf("cast must not be dropped, got: %s", c.SQL)
+				}
+			}
+		})
+	}
+	mustFindCategory(t, suggestWithTypes(t, `SELECT id FROM audit.t WHERE amount::pg_catalog.numeric = 1`, types), "implicit_cast")
 }

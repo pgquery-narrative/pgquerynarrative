@@ -234,45 +234,34 @@ func (r *Runner) resolveRelationSchema(ctx context.Context, pool *pgxpool.Pool, 
 	return schema, true
 }
 
-// ResolveColumnType looks up schema.relation.column's real PostgreSQL type
-// (regtype's display name, e.g. "integer", "numeric", "text", "character
-// varying" — never a typmod, so "numeric(10,2)" resolves to "numeric") from
-// the catalog. It satisfies queryrunner.ColumnTypeResolver: a caller wiring
-// up SuggestRewritesForInvestigationWithTypes passes this method (or a
-// closure around it) directly. schema may be empty, in which case it is
-// resolved the same way resolveRelationSchema already does for a
-// schema-less EXPLAIN relation. ok is false whenever the column cannot be
-// resolved — unknown relation/column, ambiguous schema, or no catalog access
-// (activePool returns nil, e.g. a read-only replica this runner has no pool
-// for) — and the caller must treat that exactly like "no resolver available."
-func (r *Runner) ResolveColumnType(ctx context.Context, schema, relation, column string) (string, bool) {
-	if r == nil || relation == "" || column == "" {
-		return "", false
+// ResolveColumnType satisfies ColumnTypeResolver: it reports whether
+// relation.column's declared type is exactly castType, resolving the relation
+// with to_regclass and the type with to_regtype on this runner's own pool, so
+// both follow the same search_path the rewritten query will run under
+// (never a guess among allowed schemas). Type identity is by OID: a domain
+// over a built-in type, or a same-named type in another schema, never
+// matches. A column's typmod is irrelevant — casting to the bare type is a
+// no-op either way. ok is false when anything cannot be resolved or there is
+// no pool.
+func (r *Runner) ResolveColumnType(ctx context.Context, relation, column, castType string) (same, ok bool) {
+	if r == nil || relation == "" || column == "" || castType == "" {
+		return false, false
 	}
 	pool := r.activePool(ctx)
 	if pool == nil {
-		return "", false
+		return false, false
 	}
-	if schema == "" {
-		var ok bool
-		schema, ok = r.resolveRelationSchema(ctx, pool, relation)
-		if !ok {
-			return "", false
-		}
-	}
-	var pgType string
+	var eq *bool
 	err := pool.QueryRow(ctx, `
-		SELECT a.atttypid::regtype::text
+		SELECT a.atttypid = to_regtype($3)
 		FROM pg_catalog.pg_attribute a
-		JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
-		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = $1 AND c.relname = $2 AND a.attname = $3
+		WHERE a.attrelid = to_regclass($1) AND a.attname = $2
 		  AND a.attnum > 0 AND NOT a.attisdropped
-	`, schema, relation, column).Scan(&pgType)
-	if err != nil || pgType == "" {
-		return "", false
+	`, relation, column, castType).Scan(&eq)
+	if err != nil || eq == nil {
+		return false, false
 	}
-	return pgType, true
+	return *eq, true
 }
 
 func (r *Runner) allowedSchemaList() []string {
