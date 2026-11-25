@@ -190,7 +190,12 @@ func TestApplyInvestigationVisibilityDropsLegacyLiteralColumns(t *testing.T) {
 	}
 
 	inv := fresh()
+	fp := "0123abcd"
+	inv.QueryFingerprint = &fp
 	applyInvestigationVisibility(ctxAs(auth.RoleViewer), inv)
+	if inv.QueryFingerprint != nil {
+		t.Fatal("viewer response kept the SQL-text fingerprint (a guessing oracle for its literals)")
+	}
 	body, _ := json.Marshal(inv)
 	for _, secret := range []string{"bearersecret", "privatevalue"} {
 		if strings.Contains(string(body), secret) {

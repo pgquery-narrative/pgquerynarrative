@@ -475,6 +475,8 @@ func applyInvestigationVisibility(ctx context.Context, inv *investigations.Inves
 		return
 	}
 	inv.SQL = ""
+	// A hash of the literal-bearing SQL text is a guessing oracle for its literals.
+	inv.QueryFingerprint = nil
 	inv.Binds = nil
 	inv.CandidateSQL = nil
 	redactExplainEvidence(inv.Explain)
