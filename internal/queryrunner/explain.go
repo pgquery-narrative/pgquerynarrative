@@ -838,3 +838,32 @@ func inferSingleTableRelation(node map[string]interface{}) (schema, relation str
 	}
 	return order[0].schema, order[0].relation
 }
+
+// PlanColumnNames returns every filter/sort/join column the current
+// extractor finds in a decoded EXPLAIN (FORMAT JSON) document, walking any
+// nesting of objects and arrays. Callers use it to re-validate stored
+// RelatedColumns that an older extractor may have polluted with string
+// literal tokens.
+func PlanColumnNames(plan any) map[string]bool {
+	out := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch n := v.(type) {
+		case map[string]any:
+			if _, ok := n["Node Type"]; ok {
+				for _, c := range relatedColumnsForNode(n) {
+					out[c] = true
+				}
+			}
+			for _, child := range n {
+				walk(child)
+			}
+		case []any:
+			for _, child := range n {
+				walk(child)
+			}
+		}
+	}
+	walk(plan)
+	return out
+}
