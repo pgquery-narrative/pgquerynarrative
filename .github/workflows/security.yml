@@ -43,13 +43,13 @@ jobs:
           python -m pip install --upgrade pip pip-audit
           pip-audit -r tools/db/requirements-nyc.txt
       - name: OSSF Scorecard
-        uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e
+        uses: ossf/scorecard-action@23f22cd43608bae7a1f1fa2603d7314dee9538a5
         with:
           results_file: scorecard.sarif
           results_format: sarif
           publish_results: false
       - name: Upload Scorecard SARIF
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea
         if: always() && hashFiles('scorecard.sarif') != ''
         with:
           sarif_file: scorecard.sarif
@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Check for secrets
-        uses: trufflesecurity/trufflehog@e76dff8a7e57d6df0c60ad8cbf5d5cba505a8fc9
+        uses: trufflesecurity/trufflehog@4ef51f69ca6347aaa76a5e64a87eac9c0c909f71
         with:
           path: ./
           base: ${{ github.event.repository.default_branch }}
@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Dependency Review
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec
         with:
           fail-on-severity: moderate
 
@@ -96,7 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea
         with:
           languages: ${{ matrix.language }}
       - uses: ./.github/actions/setup-go-cgo
@@ -105,9 +105,9 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Autobuild
-        uses: github/codeql-action/autobuild@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/autobuild@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea
 
   # Security audit with gosec
   gosec:
@@ -121,7 +121,7 @@ jobs:
       - name: Generate code
         run: make generate
       - name: Run gosec (blocking on high severity/confidence findings)
-        uses: securego/gosec@707f2271f66579a18e1da25794b1e8012247274b
+        uses: securego/gosec@244f1f6f4d1d0d14f89e79a73dab1219eabb5228
         with:
           # No -no-fail: the job fails when issues remain after filtering. Filtered to
           # high severity + high confidence so pre-existing low/medium findings (tracked
