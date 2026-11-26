@@ -16,8 +16,8 @@
   "dependencies": {
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router": "^8.5.1",
-    "recharts": "^3.10.1"
+    "react-router": "^8.5.2",
+    "recharts": "^3.11.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -32,14 +32,14 @@
     "eslint-plugin-react-refresh": "^0.5.8",
     "globals": "^17.14.0",
     "jsdom": "^31.0.1",
-    "lucide-react": "^1.73.0",
+    "lucide-react": "^1.78.0",
     "postcss": "^8.5.18",
-    "tailwind-merge": "^3.7.0",
+    "tailwind-merge": "^3.7.1",
     "tailwindcss": "^4.1.8",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "overrides": {
     "postcss": "^8.5.18",
