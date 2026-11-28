@@ -566,6 +566,8 @@ func normalizeEquivalenceStatus(s string) string {
 // the query text, and a viewer denied the SQL can still use them.
 func RedactSQL(report InvestigationReport) InvestigationReport {
 	report.SourceQuery = ""
+	// A hash of the literal-bearing SQL text is a guessing oracle for its literals.
+	report.Provenance.QueryFingerprint = ""
 	if len(report.CandidateImprovements) > 0 {
 		candidates := make([]CandidateImprovement, len(report.CandidateImprovements))
 		for i, c := range report.CandidateImprovements {

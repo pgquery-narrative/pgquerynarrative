@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -474,6 +475,8 @@ func applyInvestigationVisibility(ctx context.Context, inv *investigations.Inves
 		return
 	}
 	inv.SQL = ""
+	// A hash of the literal-bearing SQL text is a guessing oracle for its literals.
+	inv.QueryFingerprint = nil
 	inv.Binds = nil
 	inv.CandidateSQL = nil
 	redactExplainEvidence(inv.Explain)
@@ -509,6 +512,10 @@ func redactExplainEvidence(exp *investigations.ExplainQueryResult) {
 	if exp == nil {
 		return
 	}
+	// Re-derive the columns the stored plan actually proves before dropping
+	// it: findings stored by an older extractor can carry string-literal
+	// tokens as "columns" (and IndexAdvice built from them).
+	planCols := queryrunner.PlanColumnNames(exp.Plan)
 	exp.SQL = ""
 	exp.Plan = nil
 	for _, f := range exp.Findings {
@@ -517,6 +524,16 @@ func redactExplainEvidence(exp *investigations.ExplainQueryResult) {
 		}
 		f.Message = story.RedactLiteralFilterText(f.Message)
 		f.Evidence = story.RedactFilterEvidence(f.Evidence)
+		var kept []string
+		for _, c := range f.RelatedColumns {
+			if planCols[c] {
+				kept = append(kept, c)
+			}
+		}
+		f.RelatedColumns = kept
+		if f.IndexAdvice != nil && slices.ContainsFunc(f.IndexAdvice.RelatedColumns, func(c string) bool { return !planCols[c] }) {
+			f.IndexAdvice = nil
+		}
 	}
 	if exp.Diagnosis == nil {
 		return

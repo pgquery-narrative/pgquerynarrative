@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,6 +120,84 @@ func TestColumnCastRewriteMatchesRealCatalogTypes(t *testing.T) {
 			for _, c := range suggest(sql) {
 				if c.Category == "implicit_cast" {
 					t.Fatalf("a mismatched-type cast must not be offered as a rewrite, got: %s", c.SQL)
+				}
+			}
+		})
+	}
+}
+
+// Every implicit_cast rewrite the engine offers against a real catalog must
+// return exactly the original query's rows. These shapes each fooled an
+// earlier version: a nested cast whose inner step rounds, a column alias list
+// that renames columns, a same-named domain in another schema, and an
+// unqualified table whose search_path resolution differs from the
+// alphabetically first allowed schema. The last two queries are controls
+// that must still be rewritten.
+func TestColumnCastRewriteNeverChangesResults(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := pilotPostgres(t, ctx)
+	if _, err := pool.Exec(ctx, `
+		CREATE SCHEMA audit;
+		CREATE TABLE audit.t (id integer, amount numeric, code text);
+		INSERT INTO audit.t VALUES (1, 1.4, '01'), (2, 1.0, '1');
+		CREATE DOMAIN audit.numeric AS integer;
+		CREATE SCHEMA aa;
+		CREATE TABLE aa.same (id integer, amount numeric);
+		INSERT INTO aa.same VALUES (1, 1.4);
+		CREATE TABLE public.same (id integer, amount text);
+		INSERT INTO public.same VALUES (1, '01');
+	`); err != nil {
+		t.Fatal(err)
+	}
+	runner := queryrunner.NewRunner(pool, queryrunner.NewValidator([]string{"audit", "aa", "public"}, 10000), 1000, 30*time.Second)
+
+	ids := func(t *testing.T, sql string) []int {
+		t.Helper()
+		rows, err := pool.Query(ctx, sql)
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		defer rows.Close()
+		var out []int
+		for rows.Next() {
+			var id int
+			if err := rows.Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, id)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	for _, tc := range []struct {
+		sql         string
+		wantRewrite bool
+	}{
+		{`SELECT id FROM audit.t WHERE (amount::integer)::numeric = 1 ORDER BY id`, false},
+		{`SELECT id FROM audit.t WHERE (amount::numeric(10,0))::numeric = 1 ORDER BY id`, false},
+		{`SELECT id FROM audit.t AS x(id, old_amount, amount) WHERE amount::numeric = '1' ORDER BY id`, false},
+		{`SELECT id FROM audit.t WHERE amount::audit.numeric = 1 ORDER BY id`, false},
+		{`SELECT id FROM same WHERE amount::numeric = '1' ORDER BY id`, false},
+		{`SELECT id FROM audit.t WHERE amount::numeric = 1 ORDER BY id`, true},
+		{`SELECT id FROM same WHERE amount::text = '01' ORDER BY id`, true},
+	} {
+		t.Run(tc.sql, func(t *testing.T) {
+			var offered []string
+			for _, c := range queryrunner.SuggestRewritesForInvestigationWithTypes(ctx, tc.sql, nil, false, runner.ResolveColumnType) {
+				if c.Category == "implicit_cast" {
+					offered = append(offered, c.SQL)
+				}
+			}
+			if tc.wantRewrite != (len(offered) > 0) {
+				t.Fatalf("rewrite offered=%v, want %v: %v", len(offered) > 0, tc.wantRewrite, offered)
+			}
+			before := ids(t, tc.sql)
+			for _, cand := range offered {
+				if after := ids(t, cand); !slices.Equal(before, after) {
+					t.Fatalf("rewrite changed results: %s -> %v, %s -> %v", tc.sql, before, cand, after)
 				}
 			}
 		})

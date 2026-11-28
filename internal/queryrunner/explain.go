@@ -609,7 +609,11 @@ var (
 	// "(date)::timestamp with time zone" behind makes "zone" look like the
 	// column operand of the following comparison. The optional length modifier
 	// can precede the tail, as in "::timestamp(3) with time zone".
-	typeCastRe = regexp.MustCompile(`(?i)::[a-z_][a-z0-9_]*(?:\([0-9,\s]+\))?` +
+	// planStringLiteralRe matches a single-quoted SQL string constant as
+	// EXPLAIN deparses it (quotes doubled, optional E/B/X/U& prefix), and an
+	// unterminated tail of one, so its contents are never read as identifiers.
+	planStringLiteralRe = regexp.MustCompile(`(?i)(?:\b(?:u&|[ebx]))?'(?:[^']|'')*(?:'|$)`)
+	typeCastRe          = regexp.MustCompile(`(?i)::[a-z_][a-z0-9_]*(?:\([0-9,\s]+\))?` +
 		`(?:\s+(?:with|without)\s+time\s+zone|\s+precision|\s+varying(?:\([0-9,\s]+\))?)?`)
 	// filterColumnRe captures identifiers (optionally alias-qualified) adjacent
 	// to a comparison operator in a flattened filter expression (parentheses
@@ -642,7 +646,11 @@ func extractFilterColumns(filter string) []string {
 	if strings.TrimSpace(filter) == "" {
 		return nil
 	}
-	cleaned := typeCastRe.ReplaceAllString(filter, "")
+	// Literals first: their contents are caller data, not columns, and must
+	// not leak into RelatedColumns (and from there IndexAdvice and responses
+	// shown to viewers without SQL access).
+	cleaned := planStringLiteralRe.ReplaceAllString(filter, " ? ")
+	cleaned = typeCastRe.ReplaceAllString(cleaned, "")
 	cleaned = strings.NewReplacer("(", " ", ")", " ").Replace(cleaned)
 
 	var out []string
@@ -829,4 +837,33 @@ func inferSingleTableRelation(node map[string]interface{}) (schema, relation str
 		return "", ""
 	}
 	return order[0].schema, order[0].relation
+}
+
+// PlanColumnNames returns every filter/sort/join column the current
+// extractor finds in a decoded EXPLAIN (FORMAT JSON) document, walking any
+// nesting of objects and arrays. Callers use it to re-validate stored
+// RelatedColumns that an older extractor may have polluted with string
+// literal tokens.
+func PlanColumnNames(plan any) map[string]bool {
+	out := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch n := v.(type) {
+		case map[string]any:
+			if _, ok := n["Node Type"]; ok {
+				for _, c := range relatedColumnsForNode(n) {
+					out[c] = true
+				}
+			}
+			for _, child := range n {
+				walk(child)
+			}
+		case []any:
+			for _, child := range n {
+				walk(child)
+			}
+		}
+	}
+	walk(plan)
+	return out
 }

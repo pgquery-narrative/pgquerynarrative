@@ -121,7 +121,11 @@ func TestInvestigationsViewerRedactionOverRealHTTP(t *testing.T) {
 	// exercising every redaction surface (SQL, Binds, raw Plan,
 	// Findings[].Message/Evidence, candidate history), not just report.SQL.
 	const secretEmail = "public — bearer-secret@example.test"
-	sourceSQL := "SELECT region, sales_rep FROM demo.sales WHERE sales_rep = '" + secretEmail + "'"
+	// A literal shaped like "identifier = identifier": the plan-text column
+	// extractor once read it as two columns, leaking both tokens to viewers
+	// through related_columns and IndexAdvice.
+	const operandSecret = "bearersecret = privatevalue"
+	sourceSQL := "SELECT region, sales_rep FROM demo.sales WHERE sales_rep = '" + secretEmail + "' OR region = '" + operandSecret + "'"
 	candidateSQL := sourceSQL + " AND 1=1"
 
 	resp, body := doJSON(t, http.MethodPost, "/api/v1/investigations", adminKeyRaw, map[string]any{
@@ -158,7 +162,7 @@ func TestInvestigationsViewerRedactionOverRealHTTP(t *testing.T) {
 
 	assertNoSecret := func(t *testing.T, label string, body []byte) {
 		t.Helper()
-		for _, marker := range []string{secretEmail, sourceSQL, candidateSQL} {
+		for _, marker := range []string{secretEmail, sourceSQL, candidateSQL, "bearersecret", "privatevalue"} {
 			if strings.Contains(string(body), marker) {
 				t.Errorf("%s: leaked marker %q over real HTTP: %s", label, marker, body)
 			}

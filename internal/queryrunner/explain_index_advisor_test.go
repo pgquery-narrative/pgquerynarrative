@@ -2,6 +2,7 @@ package queryrunner
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -703,5 +704,27 @@ func TestInferSingleTableRelation(t *testing.T) {
 	schema, relation = inferSingleTableRelation(multiTable)
 	if schema != "" || relation != "" {
 		t.Fatalf("expected no single-table attribution for a multi-table join, got %s.%s", schema, relation)
+	}
+}
+
+// String literals in plan filter text are data, not identifiers: a literal
+// shaped like "a = b" must never surface as related columns (they flow into
+// IndexAdvice and viewer-visible responses).
+func TestExtractFilterColumnsIgnoresStringLiteralContents(t *testing.T) {
+	tests := []struct {
+		filter string
+		want   []string
+	}{
+		{`((sales_rep)::text = 'bearersecret = privatevalue'::text)`, []string{"sales_rep"}},
+		{`(note = 'it''s x = y'::text)`, []string{"note"}},
+		{`(note = E'a\\ = b'::text)`, []string{"note"}},
+		{`((region = 'North'::text) AND (rep ~~ 'p IS q%'::text))`, []string{"region", "rep"}},
+		{`(note = 'unterminated x = y`, []string{"note"}},
+		{`(("Weird Col")::text = 'k = v'::text)`, nil},
+	}
+	for _, tc := range tests {
+		if got := extractFilterColumns(tc.filter); !slices.Equal(got, tc.want) {
+			t.Errorf("extractFilterColumns(%q) = %v, want %v", tc.filter, got, tc.want)
+		}
 	}
 }

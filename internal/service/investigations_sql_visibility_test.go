@@ -150,3 +150,70 @@ func TestApplyInvestigationVisibility(t *testing.T) {
 		}
 	})
 }
+
+// Investigations stored before extractFilterColumns learned to skip string
+// literals carry literal tokens in RelatedColumns and IndexAdvice. A
+// restricted view must not echo them: only columns the stored plan itself
+// proves (re-derived with the current extractor) survive, and advice built
+// from any other "column" is withheld whole (its DDL and benefit text embed
+// them). Authorized roles keep the stored evidence untouched.
+func TestApplyInvestigationVisibilityDropsLegacyLiteralColumns(t *testing.T) {
+	ctxAs := func(role string) context.Context {
+		return auth.WithPrincipal(context.Background(), auth.Principal{UserID: "u", OrgID: auth.DefaultOrganizationID, Role: role})
+	}
+	var plan any
+	if err := json.Unmarshal([]byte(`[{"Plan":{"Node Type":"Seq Scan","Relation Name":"sales","Schema":"demo",
+		"Filter":"((sales_rep)::text = 'bearersecret = privatevalue'::text)"}}]`), &plan); err != nil {
+		t.Fatal(err)
+	}
+	tainted := []string{"sales_rep", "bearersecret", "privatevalue"}
+	explain := func(withPlan bool) *investigations.ExplainQueryResult {
+		e := &investigations.ExplainQueryResult{Findings: []*investigations.PlanFinding{{
+			NodeType: "Seq Scan", Message: "Seq Scan on demo.sales",
+			RelatedColumns: append([]string(nil), tainted...),
+			IndexAdvice: &investigations.IndexAdvice{
+				RelatedColumns: append([]string(nil), tainted...),
+				CandidateDdl:   strPtr("CREATE INDEX ON demo.sales (sales_rep, bearersecret, privatevalue);"),
+			},
+		}}}
+		if withPlan {
+			e.Plan = plan
+		}
+		return e
+	}
+	fresh := func() *investigations.Investigation {
+		return &investigations.Investigation{
+			ID: "inv-legacy", Explain: explain(true), CandidateExplain: explain(false),
+			Comparison: &investigations.ComparePlansResult{Before: explain(true), After: explain(true)},
+			Candidates: []*investigations.InvestigationCandidate{{ID: "c1", CandidateExplain: explain(true)}},
+		}
+	}
+
+	inv := fresh()
+	fp := "0123abcd"
+	inv.QueryFingerprint = &fp
+	applyInvestigationVisibility(ctxAs(auth.RoleViewer), inv)
+	if inv.QueryFingerprint != nil {
+		t.Fatal("viewer response kept the SQL-text fingerprint (a guessing oracle for its literals)")
+	}
+	body, _ := json.Marshal(inv)
+	for _, secret := range []string{"bearersecret", "privatevalue"} {
+		if strings.Contains(string(body), secret) {
+			t.Fatalf("viewer response still carries legacy literal token %q: %s", secret, body)
+		}
+	}
+	if got := inv.Explain.Findings[0].RelatedColumns; len(got) != 1 || got[0] != "sales_rep" {
+		t.Fatalf("plan-proven column must survive for viewers, got %v", got)
+	}
+	if got := inv.CandidateExplain.Findings[0].RelatedColumns; len(got) != 0 {
+		t.Fatalf("without a stored plan nothing can be proven; got %v", got)
+	}
+
+	for _, role := range []string{auth.RoleAnalyst, auth.RoleAdmin} {
+		inv := fresh()
+		applyInvestigationVisibility(ctxAs(role), inv)
+		if len(inv.Explain.Findings[0].RelatedColumns) != 3 || inv.Explain.Findings[0].IndexAdvice == nil {
+			t.Fatalf("%s must keep stored evidence untouched", role)
+		}
+	}
+}

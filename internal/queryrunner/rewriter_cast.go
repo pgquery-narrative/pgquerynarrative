@@ -4,20 +4,20 @@ import (
 	"context"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	pg_query "github.com/pganalyze/pg_query_go/v6"
 )
 
-// ColumnTypeResolver resolves the real PostgreSQL type of schema.relation.column
-// (e.g. "integer", "numeric", "text", "character varying" — the names
-// pg_catalog's regtype output uses, not necessarily the spelling a cast used).
-// schema may be empty when the caller could not determine it from the SQL
-// text alone; the resolver is responsible for finding it from context (e.g.
-// search_path), the same way EXPLAIN's own schema-less partition children are
-// resolved (see Runner.resolveRelationSchema). ok is false whenever the
-// column cannot be resolved for any reason — unknown relation/column,
-// ambiguous schema, or no catalog access at all — and callers must treat that
-// exactly like having no resolver: decline the rewrite.
-type ColumnTypeResolver func(ctx context.Context, schema, relation, column string) (string, bool)
+// ColumnTypeResolver reports whether column of relation already has exactly
+// the type castType, with both names resolved the way the database session
+// that will run the rewritten query resolves them: relation is the FROM
+// clause's (possibly schema-qualified) name and castType the cast's type
+// name, each as a quoted SQL identifier chain exactly as written. Comparing
+// resolved type OIDs, not spellings, is what makes "the cast is a no-op"
+// provable: a same-named domain or a search_path-dependent relation can never
+// pass for the built-in type. ok is false whenever either name cannot be
+// resolved, or there is no catalog access; callers must then decline.
+type ColumnTypeResolver func(ctx context.Context, relation, column, castType string) (same, ok bool)
 
 // rewriteCtx carries the per-call context a sargable rewrite needs beyond the
 // AST node itself. resolveType is nil for the two catalog-free entry points
@@ -53,7 +53,7 @@ func (rc rewriteCtx) withCTEs(ctes []*pg_query.Node) rewriteCtx {
 // col::<type> = <typed literal> cast when, and only when, the catalog
 // confirms the column's own real type already equals the cast's target type
 // — the one case where the cast changes nothing about the comparison (see
-// splitCastEquality and canonicalPgType). Every other col::numeric/col::text
+// splitCastEquality and ColumnTypeResolver). Every other col::numeric/col::text
 // shape — including every one a pre-catalog version of this rewriter used to
 // drop unconditionally — is left untouched, because dropping the cast is
 // only safe when it is a provable no-op:
@@ -74,9 +74,8 @@ func tryRewriteTextCastEquality(rc rewriteCtx, sel *pg_query.SelectStmt, ae *pg_
 
 // tryRewriteCastEquality is the shared body of the numeric/text cast
 // rewrites: find a col::<type> = <literal> (or reversed) shape whose cast
-// target is in wantTypeClass, resolve the column's real catalog type, and
-// rewrite only when the two are the same type under PostgreSQL's own
-// built-in aliases (int4/integer, float8/"double precision", ...).
+// target is in wantTypeClass, and rewrite only when the catalog proves the
+// column's type is exactly the cast's target type.
 func tryRewriteCastEquality(rc rewriteCtx, sel *pg_query.SelectStmt, ae *pg_query.A_Expr, wantTypeClass func(string) bool, kind string) (*pg_query.Node, dateTruncRewrite, bool) {
 	if rc.resolveType == nil || ae == nil || ae.Kind != pg_query.A_Expr_Kind_AEXPR_OP || !aExprOpIs(ae, "=") {
 		return nil, dateTruncRewrite{}, false
@@ -92,8 +91,12 @@ func tryRewriteCastEquality(rc rewriteCtx, sel *pg_query.SelectStmt, ae *pg_quer
 	if !ok || (schema == "" && rc.cteNames[relation]) {
 		return nil, dateTruncRewrite{}, false
 	}
-	colType, ok := rc.resolveType(rc.ctx, schema, relation, column)
-	if !ok || canonicalPgType(colType) != canonicalPgType(castType) {
+	relName := pgx.Identifier{relation}
+	if schema != "" {
+		relName = pgx.Identifier{schema, relation}
+	}
+	same, ok := rc.resolveType(rc.ctx, relName.Sanitize(), column, castType)
+	if !ok || !same {
 		return nil, dateTruncRewrite{}, false
 	}
 	col := cloneColumnRef(colNode)
@@ -103,8 +106,11 @@ func tryRewriteCastEquality(rc rewriteCtx, sel *pg_query.SelectStmt, ae *pg_quer
 	return cmpExpr("=", col, rhs), dateTruncRewrite{Column: columnRefName(colNode), Kind: kind}, true
 }
 
-// splitCastEquality matches a::<type> = b where a is a bare-column cast whose
-// target type satisfies wantTypeClass and b is any constant. b is returned
+// splitCastEquality matches a::<type> = b where a is a cast applied directly
+// to a bare column (never a nested cast: (amount::integer)::numeric rounds
+// first) whose target type satisfies wantTypeClass and b is any constant.
+// castType is the cast's full type name as a quoted identifier chain, so a
+// schema-qualified name (a same-named domain) is resolved as written. b is returned
 // unmodified — dropping the cast changes nothing about what b must coerce to,
 // since the catalog check above only fires when the column's real type is
 // already the cast's target type.
@@ -119,18 +125,22 @@ func splitCastEquality(a, b *pg_query.Node, wantTypeClass func(string) bool) (co
 	// A typmod (numeric(10,1) rounds, varchar(2) truncates, bare char is
 	// char(1)) or array bound makes the cast a real conversion even when the
 	// base type matches the column's.
-	if tc.TypeName == nil || len(tc.TypeName.Typmods) > 0 || len(tc.TypeName.ArrayBounds) > 0 {
+	tn := tc.TypeName
+	if tn == nil || len(tn.Typmods) > 0 || len(tn.ArrayBounds) > 0 || tn.Setof || tn.PctType {
 		return nil, nil, "", false
 	}
-	castType = typeNameLast(tc.TypeName)
-	if !wantTypeClass(castType) {
+	if !wantTypeClass(typeNameLast(tn)) || tc.Arg.GetColumnRef() == nil {
 		return nil, nil, "", false
 	}
-	col = unwrapColumnRefNode(tc.Arg)
-	if col == nil {
-		return nil, nil, "", false
+	names := make(pgx.Identifier, 0, len(tn.Names))
+	for _, n := range tn.Names {
+		v, ok := stringNodeValue(n)
+		if !ok {
+			return nil, nil, "", false
+		}
+		names = append(names, v)
 	}
-	return col, b, castType, true
+	return tc.Arg, b, names.Sanitize(), true
 }
 
 func isTextTypeName(name string) bool {
@@ -152,40 +162,6 @@ func isNumericTypeName(name string) bool {
 	}
 }
 
-// canonicalPgType maps every spelling PostgreSQL uses for the same built-in
-// type — a cast's own target name (typeNameLast's "int4", "float8", ...) and
-// pg_catalog's display name for a real column (regtype's "integer", "double
-// precision", ...) — onto one token, so the two can be compared for exact
-// type equality regardless of which side used which spelling. Deliberately
-// narrow: text and varchar are NOT folded together (nor is either with
-// bpchar, whose blank-padding semantics can differ from a string compare),
-// so only a cast whose target is the column's own real type — never merely
-// a same-family type — is ever treated as a no-op. That is the one case
-// this package proves safe; a general source->target coercion matrix is not
-// in scope (see internal/queryrunner's cast-rewrite tests).
-func canonicalPgType(name string) string {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "int2", "smallint":
-		return "smallint"
-	case "int4", "int", "integer":
-		return "integer"
-	case "int8", "bigint":
-		return "bigint"
-	case "numeric", "decimal":
-		return "numeric"
-	case "float4", "real":
-		return "real"
-	case "float8", "double precision":
-		return "double precision"
-	case "varchar", "character varying":
-		return "character varying"
-	case "bpchar", "character":
-		return "character"
-	default:
-		return strings.ToLower(strings.TrimSpace(name))
-	}
-}
-
 // singleFromRelation returns the schema and relation name of sel's FROM
 // clause when it is exactly one plain table reference (no JOIN, no
 // subquery), plus the name a qualified column in this SELECT would use to
@@ -198,7 +174,10 @@ func singleFromRelation(sel *pg_query.SelectStmt) (schema, relation, refName str
 		return "", "", "", false
 	}
 	rv := sel.FromClause[0].GetRangeVar()
-	if rv == nil || rv.Relname == "" {
+	// A column alias list (FROM t AS x(a, b)) renames the table's columns, so
+	// a column name no longer identifies the catalog attribute; a
+	// catalog-qualified name is not resolved here either.
+	if rv == nil || rv.Relname == "" || rv.Catalogname != "" || (rv.Alias != nil && len(rv.Alias.Colnames) > 0) {
 		return "", "", "", false
 	}
 	refName = rv.Relname
@@ -264,18 +243,15 @@ func cachedColumnTypeResolver(resolveType ColumnTypeResolver) ColumnTypeResolver
 	if resolveType == nil {
 		return nil
 	}
-	type cached struct {
-		pgType string
-		ok     bool
-	}
-	cache := map[string]cached{}
-	return func(ctx context.Context, schema, relation, column string) (string, bool) {
-		key := schema + "." + relation + "." + column
+	type cached struct{ same, ok bool }
+	cache := map[[3]string]cached{}
+	return func(ctx context.Context, relation, column, castType string) (bool, bool) {
+		key := [3]string{relation, column, castType}
 		if v, found := cache[key]; found {
-			return v.pgType, v.ok
+			return v.same, v.ok
 		}
-		pgType, ok := resolveType(ctx, schema, relation, column)
-		cache[key] = cached{pgType, ok}
-		return pgType, ok
+		same, ok := resolveType(ctx, relation, column, castType)
+		cache[key] = cached{same, ok}
+		return same, ok
 	}
 }

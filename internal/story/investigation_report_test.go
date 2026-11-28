@@ -639,3 +639,12 @@ func TestNewFindingsNeverEmbedFilterTextInMessage(t *testing.T) {
 		t.Fatalf("secret survived redaction via Evidence: %s", redactedJSON)
 	}
 }
+
+// The query hash covers the SQL text including its literals, so a restricted
+// view could confirm guessed values offline; RedactSQL withholds it.
+func TestRedactSQLWithholdsQueryFingerprint(t *testing.T) {
+	r := InvestigationReport{SourceQuery: "SELECT 1", Provenance: InvestigationProvenance{QueryFingerprint: "abc123"}}
+	if got := RedactSQL(r).Provenance.QueryFingerprint; got != "" {
+		t.Fatalf("redacted report kept query fingerprint %q", got)
+	}
+}

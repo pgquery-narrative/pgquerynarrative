@@ -1107,3 +1107,104 @@ func TestParsePostgRESTLogEqualWeightFailuresStayAmbiguous(t *testing.T) {
 		t.Fatalf("equal-weight failures must stay ambiguous, got %v", err)
 	}
 }
+
+// dropLines returns log without the lines containing substr.
+func dropLines(log, substr string) string {
+	var keep []string
+	for _, l := range strings.Split(log, "\n") {
+		if !strings.Contains(l, substr) {
+			keep = append(keep, l)
+		}
+	}
+	return strings.Join(keep, "\n")
+}
+
+// Real excerpts (PostgreSQL 18, PostgREST 16.4, 1ms statement_timeout) in
+// which parallel workers logged their own ERROR carrying the leader's
+// statement. The workers are identified positively: csvlog/jsonlog by the
+// record's own backend_type, stderr by the postmaster's
+// 'background worker "parallel worker" (PID n) exited' line.
+func TestParsePostgRESTLogRealParallelWorkerEchoes(t *testing.T) {
+	check := func(t *testing.T, log string) {
+		t.Helper()
+		got, err := ParsePostgRESTLog(log)
+		if err != nil {
+			t.Fatalf("worker echo made the excerpt ambiguous: %v", err)
+		}
+		if got.Role != "slow_role" || !reflect.DeepEqual(got.Binds, []string{"1", "0"}) || !strings.Contains(got.Failure, "statement timeout") {
+			t.Fatalf("leader's request not recovered: %+v", got)
+		}
+	}
+	for _, name := range []string{"postgrest_worker_echo.log", "postgrest_worker_echo.csv", "postgrest_worker_echo.json"} {
+		t.Run(name, func(t *testing.T) { check(t, fixture(t, name)) })
+	}
+	for _, name := range []string{"postgrest_worker_echo.csv", "postgrest_worker_echo.json"} {
+		t.Run(name+" without postmaster exit lines", func(t *testing.T) {
+			check(t, dropLines(fixture(t, name), "exited with exit code"))
+		})
+	}
+	t.Run("stderr without postmaster exit lines stays ambiguous", func(t *testing.T) {
+		_, err := ParsePostgRESTLog(dropLines(fixture(t, "postgrest_worker_echo.log"), "exited with exit code"))
+		if err == nil || !strings.Contains(err.Error(), "PostgREST read requests") {
+			t.Fatalf("an unproven worker must not be discarded, got %v", err)
+		}
+	})
+}
+
+// A real 1ms timeout can fire before PostgreSQL reaches bind, even with
+// log_min_duration_statement=0 and log_parameter_max_length_on_error=-1.
+// The context statement's parameters must never substitute for the missing
+// request parameters. Captured on PostgreSQL 18 / PostgREST 16.4; request
+// headers removed from the fixture.
+func TestParsePostgRESTLogTimeoutBeforeBind(t *testing.T) {
+	got, err := ParsePostgRESTLog(fixture(t, "postgrest_timeout_before_bind.csv"))
+	if got != nil || err == nil {
+		t.Fatalf("request without logged bind values must be refused, got %+v, %v", got, err)
+	}
+	for _, detail := range []string{"parameters are not in the log", "before binding", "cannot be replayed"} {
+		if !strings.Contains(err.Error(), detail) {
+			t.Fatalf("missing-parameter refusal should explain the early timeout: %v", err)
+		}
+	}
+}
+
+// A second backend that failed the same statement is a separate request
+// unless it is proven to be a parallel worker: differing binds, a missing
+// bind log, its own transaction, or its own PostgREST identity must all keep
+// the excerpt ambiguous rather than silently pick one request.
+func TestParsePostgRESTLogSeparateFailedRequestsStayAmbiguous(t *testing.T) {
+	base := fixture(t, "postgrest_timeout.log")
+	stmt := mainSQL(t, base)
+	const p = "2026-10-08 17:39:15.349 UTC [%s] 5261148727031343563 app=PostgREST 16.4 "
+	line := func(pid, rest string) string { return fmt.Sprintf(p, pid) + rest + "\n" }
+	var sameRequestOtherRole strings.Builder
+	for _, l := range strings.Split(base, "\n") {
+		if strings.Contains(l, "[106]") {
+			sameRequestOtherRole.WriteString(strings.ReplaceAll(strings.ReplaceAll(l, "[106]", "[204]"), "slow_role", "web_anon") + "\n")
+		}
+	}
+	for name, extra := range map[string]string{
+		"application name resembles worker metadata": strings.ReplaceAll(
+			line("205", "ERROR:  canceling statement due to statement timeout")+line("205", "STATEMENT:  "+stmt),
+			"app=PostgREST 16.4", "app=parallel worker"),
+		"different binds": line("201", "ERROR:  canceling statement due to statement timeout") +
+			line("201", "CONTEXT:  unnamed portal with parameters: $1 = '99', $2 = '100'") +
+			line("201", "STATEMENT:  "+stmt),
+		"no logged binds": line("202", "ERROR:  canceling statement due to statement timeout") +
+			line("202", "STATEMENT:  "+stmt),
+		"own transaction": line("203", "LOG:  duration: 0.010 ms  execute 0: BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY") +
+			line("203", "ERROR:  canceling statement due to statement timeout") +
+			line("203", "STATEMENT:  "+stmt),
+		"different identity": sameRequestOtherRole.String(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := ParsePostgRESTLog(base + "\n" + extra)
+			if err == nil {
+				t.Fatalf("two requests accepted as one: binds=%v role=%s", got.Binds, got.Role)
+			}
+			if !strings.Contains(err.Error(), "2 PostgREST read requests") {
+				t.Fatalf("wrong refusal: %v", err)
+			}
+		})
+	}
+}
