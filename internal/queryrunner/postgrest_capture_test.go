@@ -1151,6 +1151,23 @@ func TestParsePostgRESTLogRealParallelWorkerEchoes(t *testing.T) {
 	})
 }
 
+// A real 1ms timeout can fire before PostgreSQL reaches bind, even with
+// log_min_duration_statement=0 and log_parameter_max_length_on_error=-1.
+// The context statement's parameters must never substitute for the missing
+// request parameters. Captured on PostgreSQL 18 / PostgREST 16.4; request
+// headers removed from the fixture.
+func TestParsePostgRESTLogTimeoutBeforeBind(t *testing.T) {
+	got, err := ParsePostgRESTLog(fixture(t, "postgrest_timeout_before_bind.csv"))
+	if got != nil || err == nil {
+		t.Fatalf("request without logged bind values must be refused, got %+v, %v", got, err)
+	}
+	for _, detail := range []string{"parameters are not in the log", "before binding", "cannot be replayed"} {
+		if !strings.Contains(err.Error(), detail) {
+			t.Fatalf("missing-parameter refusal should explain the early timeout: %v", err)
+		}
+	}
+}
+
 // A second backend that failed the same statement is a separate request
 // unless it is proven to be a parallel worker: differing binds, a missing
 // bind log, its own transaction, or its own PostgREST identity must all keep
@@ -1167,6 +1184,9 @@ func TestParsePostgRESTLogSeparateFailedRequestsStayAmbiguous(t *testing.T) {
 		}
 	}
 	for name, extra := range map[string]string{
+		"application name resembles worker metadata": strings.ReplaceAll(
+			line("205", "ERROR:  canceling statement due to statement timeout")+line("205", "STATEMENT:  "+stmt),
+			"app=PostgREST 16.4", "app=parallel worker"),
 		"different binds": line("201", "ERROR:  canceling statement due to statement timeout") +
 			line("201", "CONTEXT:  unnamed portal with parameters: $1 = '99', $2 = '100'") +
 			line("201", "STATEMENT:  "+stmt),

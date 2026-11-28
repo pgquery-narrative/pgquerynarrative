@@ -274,7 +274,7 @@ func TestPostgRESTReplayContext(t *testing.T) {
 		}
 		inv, err := apiOnly.CreateFromPostgrest(reqCtx, &investigations.CreateFromPostgRESTPayload{PostgresLog: excerpt, Analyze: true})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("import request (%T): %s\nPostgreSQL log:\n%s", err, validationMessage(err), excerpt)
 		}
 		if inv.PostgrestRequest.ReplayRole == nil || *inv.PostgrestRequest.ReplayRole != "authenticated" {
 			t.Fatalf("replay role not recorded: %+v", inv.PostgrestRequest)
@@ -367,7 +367,7 @@ func TestPostgRESTReplayContext(t *testing.T) {
 		}
 		inv, err := apiOnly.CreateFromPostgrest(reqCtx, &investigations.CreateFromPostgRESTPayload{PostgresLog: excerpt, Analyze: true})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("import timed-out request (%T): %s\nPostgreSQL log:\n%s", err, validationMessage(err), excerpt)
 		}
 		pr := inv.PostgrestRequest
 		if pr.Failure == nil || !strings.Contains(*pr.Failure, "statement timeout") || pr.StatementDurationMs != nil || pr.Role != "slow_role" {
@@ -620,7 +620,7 @@ func TestPostgRESTStructuredLogs(t *testing.T) {
 				}
 				inv, err := svc.CreateFromPostgrest(reqCtx, &investigations.CreateFromPostgRESTPayload{PostgresLog: excerpt})
 				if err != nil {
-					t.Fatalf("import %s: %v", f.file, err)
+					t.Fatalf("import %s (%T): %s\nPostgreSQL log:\n%s", f.file, err, validationMessage(err), excerpt)
 				}
 				pr := inv.PostgrestRequest
 				if tc.name == "timeout" && (pr.Failure == nil || pr.Role != "slow_role") {

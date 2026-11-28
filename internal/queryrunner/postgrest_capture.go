@@ -82,8 +82,7 @@ var (
 	logPIDRe      = regexp.MustCompile(`\[(\d+)(?:-\d+)?\]`)
 	logQueryIDRe  = regexp.MustCompile(`\[\d+(?:-\d+)?\] (-?\d+)(?:\s|$)`)
 	logSQLStateRe = regexp.MustCompile(`^[0-9A-Z]{5}: `)
-	// workerExitRe is the postmaster's record of a parallel worker exiting:
-	// the one stderr line that names a worker's PID without %b in the prefix.
+	// workerExitRe is the postmaster's record of a parallel worker exiting.
 	workerExitRe = regexp.MustCompile(`^background worker "parallel worker" \(PID (\d+)\) exited`)
 	csvLogLineRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)? [A-Za-z0-9+:-]+,`)
 	syslogLineRe = regexp.MustCompile(`^[A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \S+ [^\s\[]+\[\d+\]: \[\d+-\d+\]`)
@@ -129,8 +128,7 @@ type logStatement struct {
 
 type logRecord struct {
 	pid, queryID, severity, msg string
-	// worker is true when the record itself names a parallel worker
-	// (csvlog/jsonlog backend_type, or a stderr prefix with %b).
+	// worker is true when csvlog/jsonlog's backend_type names a parallel worker.
 	worker bool
 }
 
@@ -214,7 +212,7 @@ func ParsePostgRESTLog(log string) (*PostgRESTCapture, error) {
 	switch {
 	case n == 0 && !main.ps.present:
 	case !main.ps.present && main.failure != "":
-		return nil, fmt.Errorf("the failed request statement's parameters are not in the log; set log_parameter_max_length_on_error=-1, or log_min_duration_statement=0 (which logs them at bind)")
+		return nil, fmt.Errorf("the failed request statement's parameters are not in the log; set log_parameter_max_length_on_error=-1, or log_min_duration_statement=0 (which logs them at bind). If these are already enabled, the request may have timed out before binding; this excerpt cannot be replayed without its parameter values")
 	case !main.ps.present:
 		return nil, fmt.Errorf("log has no parameters for the request statement; set log_parameter_max_length=-1")
 	case main.ps.err != nil:
@@ -385,7 +383,10 @@ func splitLogRecords(log string) ([]logRecord, error) {
 		if q := logQueryIDRe.FindStringSubmatch(m[1]); q != nil && q[1] != "0" {
 			qid = q[1]
 		}
-		recs = append(recs, logRecord{pid: pid[1], queryID: qid, severity: m[2], msg: logSQLStateRe.ReplaceAllString(m[3], ""), worker: strings.Contains(m[1], "parallel worker")})
+		// Without the configured log_line_prefix, text here cannot distinguish
+		// %b (backend type) from client-controlled %a (application_name). Only
+		// structured backend_type or a postmaster exit record proves a worker.
+		recs = append(recs, logRecord{pid: pid[1], queryID: qid, severity: m[2], msg: logSQLStateRe.ReplaceAllString(m[3], "")})
 	}
 	return recs, nil
 }
@@ -981,8 +982,8 @@ func ServerTimingDuration(header, metric string) (float64, bool) {
 }
 
 // parallelWorkerPIDs returns the backends the excerpt itself proves are
-// parallel workers: a record whose backend_type says so (csvlog/jsonlog, or a
-// stderr prefix with %b), or a postmaster line reporting that worker's exit.
+// parallel workers: a record whose backend_type says so (csvlog/jsonlog),
+// or a postmaster line reporting that worker's exit.
 func parallelWorkerPIDs(recs []logRecord) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range recs {
