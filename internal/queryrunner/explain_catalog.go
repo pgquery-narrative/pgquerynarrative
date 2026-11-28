@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -236,8 +237,8 @@ func (r *Runner) resolveRelationSchema(ctx context.Context, pool *pgxpool.Pool, 
 
 // ResolveColumnType satisfies ColumnTypeResolver: it reports whether
 // relation.column's declared type is exactly castType, resolving the relation
-// with to_regclass and the type with to_regtype on this runner's own pool, so
-// both follow the same search_path the rewritten query will run under
+// with to_regclass and the type with to_regtype under this runner's replay
+// context, so both follow the same search_path the rewritten query will run under
 // (never a guess among allowed schemas). Type identity is by OID: a domain
 // over a built-in type, or a same-named type in another schema, never
 // matches. A column's typmod is irrelevant — casting to the bare type is a
@@ -251,11 +252,34 @@ func (r *Runner) ResolveColumnType(ctx context.Context, relation, column, castTy
 	if pool == nil {
 		return false, false
 	}
+	ctx, cancel := context.WithTimeout(ctx, r.queryLimit)
+	defer cancel()
+	var catalog interface {
+		QueryRow(context.Context, string, ...any) pgx.Row
+	} = pool
+	if replayContextFrom(ctx) != nil {
+		conn, err := r.acquireConn(ctx, pool)
+		if err != nil {
+			return false, false
+		}
+		// Replay settings include custom GUCs, whose session placeholders
+		// survive rollback. Keep the same isolation as query execution.
+		defer discardConn(conn)
+		tx, err := conn.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+		if err != nil {
+			return false, false
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if err := r.applyReplay(ctx, tx); err != nil {
+			return false, false
+		}
+		catalog = tx
+	}
 	var eq *bool
-	err := pool.QueryRow(ctx, `
-		SELECT a.atttypid = to_regtype($3)
+	err := catalog.QueryRow(ctx, `
+		SELECT a.atttypid = pg_catalog.to_regtype($3)
 		FROM pg_catalog.pg_attribute a
-		WHERE a.attrelid = to_regclass($1) AND a.attname = $2
+		WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attname = $2
 		  AND a.attnum > 0 AND NOT a.attisdropped
 	`, relation, column, castType).Scan(&eq)
 	if err != nil || eq == nil {
